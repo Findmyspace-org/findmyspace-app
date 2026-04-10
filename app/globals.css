@@ -1,0 +1,156 @@
+@import "leaflet/dist/leaflet.css";
+@import "tailwindcss";
+
+:root {
+  --background: #ffffff;
+  --foreground: #0c1d2f; /* ✅ YOUR BRAND COLOR */
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+
+  /* Optional but powerful for later */
+  --color-brand: #0c1d2f;
+
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #e5e7eb; /* softer white for readability */
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground); /* ✅ GLOBAL TEXT COLOR */
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+/* ===================== */
+/* Calendar styling */
+/* ===================== */
+
+.airbnb-calendar .rdp {
+  --rdp-cell-size: 40px;
+  --rdp-accent-color: #0c1d2f; /* updated from black */
+  --rdp-background-color: #f3f4f6;
+  margin: 0;
+}
+
+.airbnb-calendar .rdp-months {
+  justify-content: space-between;
+}
+
+.airbnb-calendar .rdp-day_range_middle {
+  background: #f3f4f6;
+  color: #0c1d2f;
+}
+
+.airbnb-calendar .rdp-day_selected,
+.airbnb-calendar .rdp-day_range_start,
+.airbnb-calendar .rdp-day_range_end {
+  background: #0c1d2f; /* updated */
+  color: #ffffff;
+}
+
+.airbnb-calendar .rdp-day_disabled {
+  color: #d1d5db;
+  text-decoration: line-through;
+  opacity: 1;
+}
+
+.fms-pending-day {
+  background: #fde68a !important;
+  color: #000 !important;
+  border-radius: 9999px;
+}
+
+/* ===================== */
+/* FindMySpace UI system */
+/* ===================== */
+
+.fms-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 1.5rem;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.fms-card-soft {
+  border: 1px solid #e5e7eb;
+  border-radius: 1rem;
+  background: #f9fafb;
+}
+
+.fms-button-primary {
+  background: #0c1d2f;
+  color: #ffffff;
+  border-radius: 1rem;
+  font-weight: 500;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.fms-button-primary:hover {
+  opacity: 0.92;
+}
+
+.fms-button-secondary {
+  background: #ffffff;
+  color: #0c1d2f;
+  border: 1px solid #d1d5db;
+  border-radius: 1rem;
+  font-weight: 500;
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+
+.fms-button-secondary:hover {
+  background: #f9fafb;
+}
+
+.fms-pill {
+  background: #f3f4f6;
+  color: #0c1d2f;
+  border-radius: 9999px;
+  font-weight: 500;
+}
+
+.fms-input {
+  width: 100%;
+  border: 1px solid #9ca3af;
+  border-radius: 1rem;
+  background: #ffffff;
+  color: #0c1d2f;
+  padding: 0.875rem 1rem;
+  outline: none;
+}
+
+.fms-input:focus {
+  border-color: #0c1d2f;
+  box-shadow: 0 0 0 1px #0c1d2f;
+}
+
+.fms-link-action {
+  color: #0c1d2f;
+  font-weight: 500;
+}
+
+.fms-muted {
+  color: #6b7280;
+}
+
+.leaflet-container {
+  position: relative !important;
+  z-index: 0 !important;
+}
+
+.leaflet-pane,
+.leaflet-top,
+.leaflet-bottom,
+.leaflet-control,
+.leaflet-popup-pane {
+  z-index: 0 !important;
+}

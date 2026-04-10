@@ -1,0 +1,891 @@
+"use client";
+
+import Link from "next/link";
+import Image from "next/image";
+import { useEffect, useMemo, useState } from "react";
+import { supabase } from "@/lib/supabase";
+import RequireAuth from "@/app/components/RequireAuth";
+import OwnerVerificationAlerts from "@/app/components/OwnerVerificationAlerts";
+import {
+  MapPin,
+  Tag,
+  CalendarDays,
+  Wallet,
+  Clock3,
+  ShieldCheck,
+  Eye,
+  Pencil,
+  BadgeCheck,
+  PauseCircle,
+  PlayCircle,
+  Trash2,
+  ClipboardList,
+  Home,
+  Landmark,
+  LayoutDashboard,
+  Search,
+  X,
+} from "lucide-react";
+
+type DepositType = "none" | "one_month" | "two_months" | null;
+
+type Space = {
+  id: string;
+  owner_id: string;
+  title: string;
+  description: string | null;
+  city: string | null;
+  suburb: string | null;
+  address_line_1: string | null;
+  space_type: string | null;
+  booking_unit: string | null;
+  price_per_hour: number | null;
+  price_per_day: number | null;
+  price_per_month: number | null;
+  status: string | null;
+  created_at: string | null;
+  ownership_proof_status?: string | null;
+  owner_verification_status?: string | null;
+  bank_verification_status?: string | null;
+  cover_image_url?: string | null;
+  deposit_type?: DepositType;
+  deposit_months?: number | null;
+  monthly_payment_day?: number | null;
+};
+
+type SpaceRow = {
+  id: string;
+  owner_id: string;
+  title: string;
+  description: string | null;
+  city: string | null;
+  suburb: string | null;
+  address_line_1: string | null;
+  space_type: string | null;
+  booking_unit: string | null;
+  price_per_hour: number | null;
+  price_per_day: number | null;
+  price_per_month: number | null;
+  status: string | null;
+  created_at: string | null;
+  ownership_proof_status: string | null;
+  deposit_type: DepositType;
+  deposit_months: number | null;
+  monthly_payment_day: number | null;
+};
+
+type SpaceImageRow = {
+  space_id: string;
+  image_url: string;
+  sort_order: number | null;
+};
+
+type ProfileVerificationRow = {
+  id: string;
+  is_host: boolean | null;
+  owner_verification_status: string | null;
+  bank_verification_status: string | null;
+};
+
+
+export default function MyListingsPage() {
+  const [sessionEmail, setSessionEmail] = useState<string | null>(null);
+  const [spaces, setSpaces] = useState<Space[]>([]);
+
+  const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [isHost, setIsHost] = useState(false);
+
+  const [searchText, setSearchText] = useState("");
+  const [selectedSpace, setSelectedSpace] = useState<Space | null>(null);
+
+  const createdStatus =
+    typeof window !== "undefined"
+      ? new URLSearchParams(window.location.search).get("created")
+      : null;
+
+  useEffect(() => {
+    loadMyListings();
+  }, []);
+
+  async function loadMyListings() {
+    setLoading(true);
+    setMessage("");
+
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        setMessage("Please log in first.");
+        setLoading(false);
+        return;
+      }
+
+      setSessionEmail(user.email ?? null);
+
+      const { data: rawProfileData, error: profileError } = await (supabase
+        .from("profiles") as any)
+        .select("id, is_host, owner_verification_status, bank_verification_status")
+        .eq("id", user.id)
+        .single();
+
+      const profileData = rawProfileData as ProfileVerificationRow | null;
+
+      if (profileError) {
+        setMessage(profileError.message);
+        setLoading(false);
+        return;
+      }
+
+      if (!profileData?.is_host) {
+        window.location.href = "/dashboard/become-host";
+        return;
+      }
+
+      setIsHost(true);
+
+      const { data, error } = await supabase
+        .from("spaces")
+        .select(
+          "id, owner_id, title, description, city, suburb, address_line_1, space_type, booking_unit, price_per_hour, price_per_day, price_per_month, status, created_at, ownership_proof_status, deposit_type, deposit_months, monthly_payment_day"
+        )
+        .eq("owner_id", user.id)
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        setMessage(error.message);
+        setLoading(false);
+        return;
+      }
+
+      const baseSpaces = (data || []) as unknown as SpaceRow[];
+      const spaceIds = baseSpaces.map((space) => space.id);
+
+      const imageMap = new Map<string, string>();
+      const profileMap = new Map<
+        string,
+        {
+          owner_verification_status: string | null;
+          bank_verification_status: string | null;
+        }
+      >();
+
+      if (spaceIds.length > 0) {
+        const { data: imagesData, error: imagesError } = await supabase
+          .from("space_images")
+          .select("space_id, image_url, sort_order")
+          .in("space_id", spaceIds)
+          .order("sort_order", { ascending: true });
+
+        if (imagesError) {
+          setMessage(imagesError.message);
+          setLoading(false);
+          return;
+        }
+
+        for (const image of (imagesData || []) as SpaceImageRow[]) {
+          if (!imageMap.has(image.space_id)) {
+            imageMap.set(image.space_id, image.image_url);
+          }
+        }
+      }
+
+      if (profileData?.id) {
+        profileMap.set(profileData.id, {
+          owner_verification_status: profileData.owner_verification_status,
+          bank_verification_status: profileData.bank_verification_status,
+        });
+      }
+
+      const mergedSpaces: Space[] = baseSpaces.map((space) => ({
+        ...space,
+        cover_image_url: imageMap.get(space.id) || null,
+        ownership_proof_status: space.ownership_proof_status || "pending",
+        owner_verification_status:
+          profileMap.get(space.owner_id)?.owner_verification_status || "pending",
+        bank_verification_status:
+          profileMap.get(space.owner_id)?.bank_verification_status || "pending",
+        deposit_type: space.deposit_type || "none",
+        deposit_months: space.deposit_months ?? 0,
+        monthly_payment_day: space.monthly_payment_day ?? 1,
+      }));
+
+      const visibleSpaces = mergedSpaces.filter(
+        (space) => (space.status || "pending") !== "deleted"
+      );
+
+      setSpaces(visibleSpaces);
+      setLoading(false);
+    } catch {
+      setMessage("Something went wrong while loading your listings.");
+      setLoading(false);
+    }
+  }
+
+  function getPriceLabel(space: Space) {
+    if (space.booking_unit === "hour") {
+      return space.price_per_hour ? `R${space.price_per_hour} / hour` : "Not set";
+    }
+
+    if (space.booking_unit === "month") {
+      return space.price_per_month
+        ? `R${space.price_per_month} / month`
+        : "Not set";
+    }
+
+    return space.price_per_day ? `R${space.price_per_day} / day` : "Not set";
+  }
+
+  function getStatusBadgeClass(status: string | null) {
+    if (status === "active") return "bg-green-100 text-green-800";
+    if (status === "paused") return "bg-gray-200 text-gray-800";
+    if (status === "rejected") return "bg-red-100 text-red-800";
+    if (status === "deleted") return "bg-red-100 text-red-800";
+    if (status === "pending") return "bg-blue-100 text-blue-800";
+    return "bg-yellow-100 text-yellow-800";
+  }
+
+  function getVerificationBadgeClass(status: string | null | undefined) {
+    if (status === "verified") return "bg-green-100 text-green-800";
+    if (status === "rejected") return "bg-red-100 text-red-800";
+    if (status === "missing") return "bg-yellow-100 text-yellow-800";
+    return "bg-blue-100 text-blue-800";
+  }
+
+  function getMissingChecks(space: Space) {
+    const missing: string[] = [];
+
+    if ((space.owner_verification_status || "pending") !== "verified") {
+      missing.push("owner verification");
+    }
+
+    if ((space.bank_verification_status || "pending") !== "verified") {
+      missing.push("bank verification");
+    }
+
+    if ((space.ownership_proof_status || "pending") !== "verified") {
+      missing.push("ownership proof");
+    }
+
+    return missing;
+  }
+
+  async function updateListingStatus(
+    spaceId: string,
+    nextStatus: "active" | "paused" | "deleted"
+  ) {
+    setMessage("");
+
+    const targetSpace = spaces.find((space) => space.id === spaceId);
+
+    if (!targetSpace) {
+      setMessage("Listing not found.");
+      return;
+    }
+
+    if (nextStatus === "active") {
+      const missingChecks = getMissingChecks(targetSpace);
+
+      if (missingChecks.length > 0) {
+        setMessage(
+          `This listing cannot be activated yet. Missing: ${missingChecks.join(", ")}.`
+        );
+        return;
+      }
+    }
+
+    const { error } = await (supabase.from("spaces") as any)
+      .update({ status: nextStatus })
+      .eq("id", spaceId);
+
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+
+    setSpaces((current) =>
+      nextStatus === "deleted"
+        ? current.filter((space) => space.id !== spaceId)
+        : current.map((space) =>
+          space.id === spaceId ? { ...space, status: nextStatus } : space
+        )
+    );
+
+  }
+
+
+  function goToBooking(bookingId: string) {
+    window.location.href = `/dashboard/requests?booking=${bookingId}`;
+  }
+
+  const filteredSpaces = useMemo(() => {
+    const normalizedSearch = searchText.trim().toLowerCase();
+
+    return spaces.filter((space) => {
+      const matchesStatus =
+        statusFilter === "all" || (space.status || "pending") === statusFilter;
+
+      if (!matchesStatus) return false;
+
+      if (!normalizedSearch) return true;
+
+      const searchable = [
+        space.title,
+        space.address_line_1,
+        space.suburb,
+        space.city,
+        space.space_type,
+        space.booking_unit,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+      return searchable.includes(normalizedSearch);
+    });
+  }, [spaces, statusFilter, searchText]);
+
+  const counts = useMemo(() => {
+    return {
+      all: spaces.length,
+      active: spaces.filter((s) => s.status === "active").length,
+      pending: spaces.filter((s) => !s.status || s.status === "pending").length,
+      paused: spaces.filter((s) => s.status === "paused").length,
+    };
+  }, [spaces]);
+
+  return (
+    <RequireAuth>
+      <main className="min-h-screen bg-white px-6 py-10 text-[#192a3a]">
+        <div className="mx-auto max-w-6xl">
+          <div className="mb-5 flex flex-wrap items-center gap-2 border-b border-gray-200 pb-4">
+            <Link
+              href="/dashboard/owner"
+              className="inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm text-gray-600 hover:bg-white hover:text-[#192a3a]"
+            >
+              <LayoutDashboard className="h-4 w-4" />
+              <span>Overview</span>
+            </Link>
+            <div className="inline-flex items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-[#192a3a] shadow-sm">
+              <Home className="h-4 w-4" />
+              <span>Listings</span>
+            </div>
+            <Link
+              href="/dashboard/requests"
+              className="inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm text-gray-600 hover:bg-white hover:text-[#192a3a]"
+            >
+              <ClipboardList className="h-4 w-4" />
+              <span>Requests</span>
+            </Link>
+            <Link
+              href="/dashboard/calendar"
+              className="inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm text-gray-600 hover:bg-white hover:text-[#192a3a]"
+            >
+              <CalendarDays className="h-4 w-4" />
+              <span>Calendar</span>
+            </Link>
+            <button
+              type="button"
+              className="inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm text-gray-600 hover:bg-white hover:text-[#192a3a]"
+            >
+              <Landmark className="h-4 w-4" />
+              <span>Finance</span>
+            </button>
+          </div>
+
+          <div className="mb-6 rounded-md border border-gray-200 bg-white p-5 shadow-sm">
+            <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+              <div>
+                <h1 className="mb-1 text-3xl font-semibold">My Spaces</h1>
+                <p className="text-gray-600 text-sm">
+                  Manage and monitor your spaces.
+                </p>
+
+                {sessionEmail && (
+                  <p className="mt-2 text-sm text-gray-500">
+                    Logged in as {sessionEmail}
+                  </p>
+                )}
+              </div>
+
+              <div className="flex flex-wrap gap-3">
+                <Link
+                  href="/dashboard/calendar"
+                  className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-[#192a3a] hover:bg-gray-50"
+                >
+                  Open calendar
+                </Link>
+                <Link
+                  href="/dashboard/new-space"
+                  className="rounded-md bg-[#192a3a] px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+                >
+                  + Add new listing
+                </Link>
+              </div>
+            </div>
+
+            <div className="mt-5 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+              <div className="relative min-w-[240px] flex-1 xl:max-w-[340px]">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                <input
+                  value={searchText}
+                  onChange={(e) => setSearchText(e.target.value)}
+                  placeholder="Search by listing name or area"
+                  className="w-full rounded-md border border-gray-300 bg-white py-2 pl-10 pr-3 text-sm outline-none focus:border-[#192a3a]"
+                />
+              </div>
+
+              <div className="flex flex-wrap gap-3">
+                {[
+                  { key: "all", label: "All", count: counts.all },
+                  { key: "active", label: "Active", count: counts.active },
+                  { key: "pending", label: "Pending", count: counts.pending },
+                  { key: "paused", label: "Paused", count: counts.paused },
+                ].map((item) => (
+                  <button
+                    key={item.key}
+                    onClick={() => setStatusFilter(item.key)}
+                    className={`flex items-center gap-2 rounded-md border px-4 py-2 text-sm ${statusFilter === item.key
+                        ? "bg-[#192a3a] text-white"
+                        : "bg-white text-[#192a3a]"
+                      }`}
+                  >
+                    <span>{item.label}</span>
+
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusFilter === item.key
+                          ? "bg-white text-[#192a3a]"
+                          : "bg-gray-200 text-gray-700"
+                        }`}
+                    >
+                      {item.count}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {createdStatus === "pending" && (
+            <div className="mb-6 rounded-md border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
+              Your listing has been submitted and is waiting for admin approval.
+            </div>
+          )}
+
+          {isHost && (
+            <div className="mb-6">
+              <OwnerVerificationAlerts />
+            </div>
+          )}
+
+          {message && (
+            <div className="mb-6 rounded-md bg-gray-100 p-3 text-sm text-gray-800">
+              {message}
+            </div>
+          )}
+
+          {loading ? (
+            <Box>Loading your listings...</Box>
+          ) : filteredSpaces.length === 0 ? (
+            <Box>No listings found.</Box>
+          ) : (
+            <div className="space-y-4">
+              {filteredSpaces.map((space) => {
+                const missingChecks = getMissingChecks(space);
+                const canActivate = missingChecks.length === 0;
+                return (
+                  <div
+                    key={space.id}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setSelectedSpace(space)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        setSelectedSpace(space);
+                      }
+                    }}
+                    className="w-full overflow-hidden rounded-md border border-gray-200 bg-white text-left shadow-sm transition hover:border-gray-300 hover:bg-[#fbfcfd] focus:outline-none focus:ring-2 focus:ring-[#192a3a]/20"
+                  >
+                    <div className="grid items-center gap-3 p-3 md:grid-cols-[92px_1fr_auto]">
+                      <div className="relative h-[72px] w-full overflow-hidden rounded-md bg-gray-100 md:w-[92px]">
+                        {space.cover_image_url ? (
+                          <Image
+                            src={space.cover_image_url}
+                            alt={space.title || "Listing image"}
+                            fill
+                            className="object-cover"
+                            unoptimized
+                          />
+                        ) : (
+                          <div className="flex h-full items-center justify-center text-xs text-gray-500">
+                            No image
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="min-w-0">
+                        <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                          <div className="min-w-0">
+                            <h2 className="truncate text-base font-semibold text-[#192a3a]">
+                              {space.title || "Untitled listing"}
+                            </h2>
+                            <div className="mt-1 flex items-start gap-2 text-sm text-gray-600">
+                              <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-gray-500" />
+                              <p className="truncate">
+                                {[space.address_line_1, space.suburb, space.city]
+                                  .filter(Boolean)
+                                  .join(", ") || "Address not set"}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          <span
+                            className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${getVerificationBadgeClass(
+                              space.owner_verification_status
+                            )}`}
+                          >
+                            Owner verification: {space.owner_verification_status || "pending"}
+                          </span>
+
+                          <span
+                            className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${getVerificationBadgeClass(
+                              space.bank_verification_status
+                            )}`}
+                          >
+                            Bank verification: {space.bank_verification_status || "pending"}
+                          </span>
+
+                          <span
+                            className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${getVerificationBadgeClass(
+                              space.ownership_proof_status
+                            )}`}
+                          >
+                            Ownership proof: {space.ownership_proof_status || "pending"}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col items-end justify-center gap-2 md:min-w-[92px] md:items-center">
+                        <span
+                          className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${getStatusBadgeClass(
+                            space.status
+                          )}`}
+                        >
+                          {space.status || "pending"}
+                        </span>
+
+                        {(space.status === "active" || space.status === "paused") && (
+                          <label
+                            className="inline-flex items-center"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                updateListingStatus(
+                                  space.id,
+                                  space.status === "paused" ? "active" : "paused"
+                                );
+                              }}
+                              disabled={space.status !== "paused" && space.status !== "active"}
+                              aria-label={space.status === "paused" ? "Activate listing" : "Pause listing"}
+                              className={`relative inline-flex h-5 w-10 items-center rounded-full transition ${space.status === "active"
+                                ? "bg-green-600"
+                                : "bg-gray-300"
+                                } ${space.status !== "paused" && space.status !== "active"
+                                  ? "cursor-not-allowed opacity-50"
+                                  : ""
+                                }`}
+                            >
+                              <span
+                                className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${space.status === "paused" ? "translate-x-1" : "translate-x-5"
+                                  }`}
+                              />
+                            </button>
+                          </label>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        {selectedSpace && (
+          <>
+            <div
+              className="fixed inset-0 z-40 bg-black/20"
+              onClick={() => setSelectedSpace(null)}
+            />
+
+            <aside className="fixed right-0 top-0 z-50 flex h-full w-full max-w-2xl flex-col border-l border-gray-200 bg-white shadow-2xl">
+              <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
+                    Listing details
+                  </p>
+                  <h2 className="mt-1 text-lg font-semibold text-[#192a3a]">
+                    {selectedSpace.title || "Untitled listing"}
+                  </h2>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setSelectedSpace(null)}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-gray-300 text-gray-600 hover:bg-gray-50"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto px-5 py-5">
+                <div className="space-y-6">
+                  <div className="overflow-hidden rounded-md border border-gray-200 bg-white shadow-sm">
+                    <div className="grid gap-4 p-5 md:grid-cols-[220px_1fr]">
+                      <div className="relative min-h-[180px] rounded-md bg-gray-100">
+                        {selectedSpace.cover_image_url ? (
+                          <Image
+                            src={selectedSpace.cover_image_url}
+                            alt={selectedSpace.title || "Listing image"}
+                            fill
+                            className="object-cover rounded-md"
+                            unoptimized
+                          />
+                        ) : (
+                          <div className="flex h-full items-center justify-center text-sm text-gray-500">
+                            No image yet
+                          </div>
+                        )}
+                      </div>
+
+                      <div>
+                        <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                          <div>
+                            <h3 className="text-xl font-semibold text-[#192a3a]">
+                              {selectedSpace.title || "Untitled listing"}
+                            </h3>
+                            <div className="mt-1 flex items-start gap-2 text-sm text-gray-600">
+                              <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-gray-500" />
+                              <p>
+                                {[selectedSpace.address_line_1, selectedSpace.suburb, selectedSpace.city]
+                                  .filter(Boolean)
+                                  .join(", ") || "Address not set"}
+                              </p>
+                            </div>
+                          </div>
+
+                          <span
+                            className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${getStatusBadgeClass(
+                              selectedSpace.status
+                            )}`}
+                          >
+                            {selectedSpace.status || "pending"}
+                          </span>
+                        </div>
+
+                        {(selectedSpace.status || "pending") === "pending" && (
+                          <div className="mb-4 rounded-md border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
+                            This listing is under admin review and is not yet visible to the public.
+                          </div>
+                        )}
+
+                        <div className="mb-4 rounded-md border border-gray-200 bg-gray-50 p-3.5">
+                          <p className="mb-2 text-sm font-medium text-gray-700">
+                            Verification checks
+                          </p>
+
+                          <div className="flex flex-wrap gap-2">
+                            <span
+                              className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${getVerificationBadgeClass(
+                                selectedSpace.owner_verification_status
+                              )}`}
+                            >
+                              Owner: {selectedSpace.owner_verification_status || "pending"}
+                            </span>
+
+                            <span
+                              className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${getVerificationBadgeClass(
+                                selectedSpace.bank_verification_status
+                              )}`}
+                            >
+                              Bank: {selectedSpace.bank_verification_status || "pending"}
+                            </span>
+
+                            <span
+                              className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${getVerificationBadgeClass(
+                                selectedSpace.ownership_proof_status
+                              )}`}
+                            >
+                              Ownership proof: {selectedSpace.ownership_proof_status || "pending"}
+                            </span>
+                          </div>
+
+                          {getMissingChecks(selectedSpace).length > 0 && (
+                            <div className="mt-3 rounded-md border border-yellow-300 bg-yellow-50 p-2.5 text-sm text-yellow-900">
+                              This listing cannot go live yet. Missing: {getMissingChecks(selectedSpace).join(", ")}.
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="grid gap-4 md:grid-cols-2">
+                          <div className="space-y-2 text-sm text-gray-700">
+                            <div className="flex items-start gap-2">
+                              <Tag className="mt-0.5 h-4 w-4 shrink-0 text-gray-500" />
+                              <p>
+                                <span className="font-medium text-[#192a3a]">Type:</span> {selectedSpace.space_type || "Not set"}
+                              </p>
+                            </div>
+
+                            <div className="flex items-start gap-2">
+                              <CalendarDays className="mt-0.5 h-4 w-4 shrink-0 text-gray-500" />
+                              <p>
+                                <span className="font-medium text-[#192a3a]">Booking:</span> {selectedSpace.booking_unit || "Not set"}
+                              </p>
+                            </div>
+
+                            <div className="flex items-start gap-2">
+                              <Wallet className="mt-0.5 h-4 w-4 shrink-0 text-gray-500" />
+                              <p>
+                                <span className="font-medium text-[#192a3a]">Price:</span> {getPriceLabel(selectedSpace)}
+                              </p>
+                            </div>
+
+                            {selectedSpace.booking_unit === "month" && (
+                              <>
+                                <div className="flex items-start gap-2">
+                                  <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-gray-500" />
+                                  <p>
+                                    <span className="font-medium text-[#192a3a]">Deposit:</span> {formatDepositType(
+                                      selectedSpace.deposit_type || "none",
+                                      selectedSpace.deposit_months ?? 0
+                                    )}
+                                  </p>
+                                </div>
+
+                                <div className="flex items-start gap-2">
+                                  <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-gray-500" />
+                                  <p>
+                                    <span className="font-medium text-[#192a3a]">Deposit months:</span> {selectedSpace.deposit_months ?? 0}
+                                  </p>
+                                </div>
+
+                                <div className="flex items-start gap-2">
+                                  <Clock3 className="mt-0.5 h-4 w-4 shrink-0 text-gray-500" />
+                                  <p>
+                                    <span className="font-medium text-[#192a3a]">Monthly payment day:</span> Day {selectedSpace.monthly_payment_day ?? 1}
+                                  </p>
+                                </div>
+                              </>
+                            )}
+
+                            <div className="flex items-start gap-2">
+                              <Clock3 className="mt-0.5 h-4 w-4 shrink-0 text-gray-500" />
+                              <p>
+                                <span className="font-medium text-[#192a3a]">Created:</span> {selectedSpace.created_at
+                                  ? new Date(selectedSpace.created_at).toLocaleString()
+                                  : "Unknown"}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div>
+                            <p className="mb-2 text-sm font-medium text-[#192a3a]">Description</p>
+                            <div className="min-h-[88px] rounded-md bg-gray-50 p-3 text-sm text-gray-700">
+                              {selectedSpace.description || "No description added."}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          <Link
+                            href={`/spaces/${selectedSpace.id}`}
+                            className="inline-flex items-center gap-2 rounded-md border px-2.5 py-0.5 text-sm text-[#192a3a] hover:bg-gray-50"
+                          >
+                            <Eye className="h-4 w-4" />
+                            <span>View</span>
+                          </Link>
+
+                          <Link
+                            href={`/spaces/${selectedSpace.id}/edit`}
+                            className="inline-flex items-center gap-2 rounded-md border px-2.5 py-0.5 text-sm text-[#192a3a] hover:bg-gray-50"
+                          >
+                            <Pencil className="h-4 w-4" />
+                            <span>Edit</span>
+                          </Link>
+
+                          <Link
+                            href="/dashboard/verification"
+                            className="inline-flex items-center gap-2 rounded-md border px-2.5 py-0.5 text-sm text-[#192a3a] hover:bg-gray-50"
+                          >
+                            <BadgeCheck className="h-4 w-4" />
+                            <span>Verification center</span>
+                          </Link>
+
+                          {selectedSpace.status === "paused" ? (
+                            <button
+                              onClick={() => updateListingStatus(selectedSpace.id, "active")}
+                              disabled={getMissingChecks(selectedSpace).length > 0}
+                              className={`inline-flex items-center gap-2 rounded-md px-2.5 py-0.5 text-sm ${getMissingChecks(selectedSpace).length === 0
+                                ? "bg-[#192a3a] text-white hover:opacity-90"
+                                : "cursor-not-allowed bg-gray-200 text-gray-500"}`}
+                            >
+                              <PlayCircle className="h-4 w-4" />
+                              <span>Activate</span>
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => updateListingStatus(selectedSpace.id, "paused")}
+                              className="inline-flex items-center gap-2 rounded-md border px-2.5 py-0.5 text-sm text-[#192a3a] hover:bg-gray-50"
+                            >
+                              <PauseCircle className="h-4 w-4" />
+                              <span>Pause</span>
+                            </button>
+                          )}
+
+                          <button
+                            onClick={() => updateListingStatus(selectedSpace.id, "deleted")}
+                            className="inline-flex items-center gap-2 rounded-md border border-red-300 px-2.5 py-0.5 text-sm text-red-700 hover:bg-red-50"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                            <span>Delete</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </aside>
+          </>
+        )}
+        </div>
+      </main>
+    </RequireAuth>
+  );
+}
+
+function Box({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="rounded-md border border-gray-200 bg-white p-6 text-sm text-gray-600 shadow-sm">
+      {children}
+    </div>
+  );
+}
+
+function formatDepositType(
+  depositType: "none" | "one_month" | "two_months",
+  depositMonths: number
+) {
+  if (depositType === "one_month") return "1 month deposit";
+  if (depositType === "two_months") return "2 months deposit";
+  if (depositMonths === 1) return "1 month deposit";
+  if (depositMonths === 2) return "2 months deposit";
+  return "No deposit";
+}
