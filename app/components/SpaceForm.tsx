@@ -45,6 +45,8 @@ type SpaceInsertPayload = {
   deposit_type: DepositType;
   deposit_months: number;
   monthly_payment_day: number;
+  deposit_required: boolean;
+  deposit_amount: number | null;
 };
 
 type SpaceImageInsertRow = {
@@ -409,6 +411,8 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
         deposit_type: bookingUnit === "month" ? depositType : "none",
         deposit_months: bookingUnit === "month" ? depositMonths : 0,
         monthly_payment_day: bookingUnit === "month" ? parsedMonthlyPaymentDay : 1,
+        deposit_required: bookingUnit === "month" && depositType !== "none",
+        deposit_amount: null,
       };
 
       const { data, error: spaceError } = await supabase

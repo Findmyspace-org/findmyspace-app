@@ -54,6 +54,23 @@ type CalendarBooking = {
     } | null;
 };
 
+function bookingBlocksCalendarSlot(booking: CalendarBooking) {
+    const status = booking.status || "";
+    if (status === "expired" || status === "declined") return false;
+    return (
+        [
+            "pending",
+            "pending_owner",
+            "approved",
+            "accepted_awaiting_payment",
+            "awaiting_payment",
+            "paid_confirmed",
+            "confirmed",
+            "completed",
+        ].includes(status) || booking.payment_status === "awaiting_payment"
+    );
+}
+
 type CalendarBlockedDate = {
     id: string;
     space_id: string;
@@ -129,6 +146,10 @@ function getBookingColorClass(status?: string | null, paymentStatus?: string | n
         return "bg-yellow-400 text-yellow-950";
     }
 
+    if (status === "expired") {
+        return "bg-amber-600 text-white";
+    }
+
     if (
         status === "approved" ||
         status === "accepted_awaiting_payment" ||
@@ -197,6 +218,10 @@ function clampSegmentIndices(
 
 function buildBookingLabel(bookingType: CalendarBookingType, item: CalendarBooking | CalendarBlockedDate) {
     if ("renter_id" in item) {
+        if (item.status === "expired") {
+            return bookingType === "hour" ? "Expired booking" : "Expired";
+        }
+
         if (bookingType === "hour") {
             return item.status === "pending" || item.status === "pending_owner"
                 ? "Pending booking"
@@ -1101,8 +1126,8 @@ function BookingDrawer({ booking, space }: BookingDrawerProps) {
                         <span>›</span>
                     </button>
 
-                    <button
-                        type="button"
+                    <Link
+                        href="/dashboard/finance"
                         className="inline-flex w-full items-center justify-between rounded-md border border-gray-300 px-3 py-2 text-sm text-[#192a3a] hover:bg-white"
                     >
                         <span className="inline-flex items-center gap-2">
@@ -1110,7 +1135,7 @@ function BookingDrawer({ booking, space }: BookingDrawerProps) {
                             Open finance page
                         </span>
                         <span>›</span>
-                    </button>
+                    </Link>
                 </div>
             </section>
         </>
@@ -1392,6 +1417,7 @@ export default function CalendarPage() {
                         "approved",
                         "accepted_awaiting_payment",
                         "awaiting_payment",
+                        "expired",
                         "paid_confirmed",
                         "confirmed",
                         "completed",
@@ -1651,6 +1677,7 @@ export default function CalendarPage() {
 
         return bookings.some((booking) => {
             if (booking.space_id !== spaceId) return false;
+            if (!bookingBlocksCalendarSlot(booking)) return false;
 
             const bookingRange =
                 bookingType === "month"

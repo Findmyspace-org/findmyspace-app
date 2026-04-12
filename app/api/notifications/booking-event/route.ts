@@ -336,6 +336,83 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    if (eventType === "booking_expired") {
+      if (renter?.email) {
+        await sendEmail({
+          to: renter.email,
+          subject: "Booking expired - payment not received",
+          html: `
+            <div style="margin:0;padding:24px;background:#f5f7fb;font-family:Arial,sans-serif;color:#192a3a;line-height:1.5;">
+              <div style="max-width:640px;margin:0 auto;background:#ffffff;border:1px solid #e5e7eb;border-radius:16px;padding:32px;">
+                <h1 style="margin:0 0 16px;font-size:24px;line-height:1.3;">Booking expired</h1>
+                <p style="margin:0 0 14px;font-size:15px;">Hello ${getDisplayName(renter)},</p>
+                <p style="margin:0 0 14px;font-size:15px;">Your booking for <strong>${space?.title || "this space"}</strong> expired because payment was not completed within 24 hours.</p>
+                <p style="margin:0 0 14px;font-size:15px;"><strong>Requested period:</strong> ${periodLabel}</p>
+                <p style="margin:0 0 28px;font-size:15px;">Thank you for your interest. You can submit a new request if you would still like to book this space.</p>
+                <p style="margin:0 0 28px;">
+                  <a href="${appBaseUrl}/dashboard/my-bookings" style="display:inline-block;padding:14px 20px;background:#192a3a;color:#ffffff;text-decoration:none;border-radius:10px;font-size:15px;font-weight:600;">
+                    View my bookings
+                  </a>
+                </p>
+                <p style="margin:0;font-size:13px;color:#64748b;">FindMySpace</p>
+              </div>
+            </div>
+          `,
+        });
+      }
+
+      if (owner?.email) {
+        await sendEmail({
+          to: owner.email,
+          subject: "Booking request expired - FindMySpace",
+          html: `
+            <div style="margin:0;padding:24px;background:#f5f7fb;font-family:Arial,sans-serif;color:#192a3a;line-height:1.5;">
+              <div style="max-width:640px;margin:0 auto;background:#ffffff;border:1px solid #e5e7eb;border-radius:16px;padding:32px;">
+                <h1 style="margin:0 0 16px;font-size:24px;line-height:1.3;">Booking expired</h1>
+                <p style="margin:0 0 14px;font-size:15px;">Hello ${getDisplayName(owner)},</p>
+                <p style="margin:0 0 14px;font-size:15px;">A booking request for <strong>${space?.title || "your space"}</strong> expired because the renter did not complete payment within 24 hours. The dates are available again.</p>
+                <p style="margin:0 0 14px;font-size:15px;"><strong>Requested period:</strong> ${periodLabel}</p>
+                <p style="margin:0 0 28px;">
+                  <a href="${appBaseUrl}/dashboard/requests" style="display:inline-block;padding:14px 20px;background:#192a3a;color:#ffffff;text-decoration:none;border-radius:10px;font-size:15px;font-weight:600;">
+                    Open requests
+                  </a>
+                </p>
+                <p style="margin:0;font-size:13px;color:#64748b;">FindMySpace</p>
+              </div>
+            </div>
+          `,
+        });
+      }
+
+      if (renter?.id) {
+        await createNotification({
+          user_id: renter.id,
+          role: "renter",
+          type: "booking_expired",
+          title: "Booking expired",
+          message: `${space?.title || "Your booking"} expired — payment was not received in time`,
+          href: "/dashboard/my-bookings",
+          related_entity_type: "booking",
+          related_entity_id: booking.id,
+        });
+      }
+
+      if (owner?.id) {
+        await createNotification({
+          user_id: owner.id,
+          role: "owner",
+          type: "booking_expired",
+          title: "Booking request expired",
+          message: `A request for ${space?.title || "your space"} expired without payment; dates are open again`,
+          href: "/dashboard/requests",
+          related_entity_type: "booking",
+          related_entity_id: booking.id,
+        });
+      }
+
+      return NextResponse.json({ ok: true });
+    }
+
     if (eventType === "booking_message") {
       const rawRecipientId = recipientId;
       const rawSenderId = senderId;

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { buildInitialBookingCharges } from "@/lib/invoice";
 import DayAvailabilityCalendar from "@/app/components/DayAvailabilityCalendar";
 import AuthModal from "@/app/components/AuthModal";
 import MonthAvailabilityCalendar from "@/app/components/MonthAvailabilityCalendar";
@@ -24,6 +25,22 @@ type BlockedDate = {
   end_at: string;
   reason: string | null;
 };
+
+function isBlockingOverlapStatus(
+  status?: string | null,
+  paymentStatus?: string | null
+) {
+  return (
+    [
+      "approved",
+      "accepted_awaiting_payment",
+      "awaiting_payment",
+      "paid_confirmed",
+      "confirmed",
+      "completed",
+    ].includes(status || "") || paymentStatus === "awaiting_payment"
+  );
+}
 
 type BookingRequestFormProps = {
   spaceId: string;
@@ -368,7 +385,11 @@ export default function BookingRequestForm({
     const requestedStart = new Date(startAt);
     const requestedEnd = new Date(endAt);
 
-    const hasBookingConflict = existingBookings.some((booking) =>
+    const blockingBookings = existingBookings.filter((booking) =>
+      isBlockingOverlapStatus(booking.status, booking.payment_status)
+    );
+
+    const hasBookingConflict = blockingBookings.some((booking) =>
       overlaps(
         requestedStart,
         requestedEnd,
@@ -552,7 +573,11 @@ export default function BookingRequestForm({
       const requestedStart = new Date(startAt);
       const requestedEnd = new Date(endAt);
 
-      const hasBookingConflict = existingBookings.some((booking) =>
+      const blockingBookings = existingBookings.filter((booking) =>
+        isBlockingOverlapStatus(booking.status, booking.payment_status)
+      );
+
+      const hasBookingConflict = blockingBookings.some((booking) =>
         overlaps(
           requestedStart,
           requestedEnd,
@@ -652,7 +677,7 @@ export default function BookingRequestForm({
 
         total_price: totalPrice,
         platform_fee: platformFee,
-        owner_amount: ownerAmount,
+        owner_earnings: ownerAmount,
 
         status: "pending_owner",              // 🔥 FIXED
         payment_status: "unpaid",
@@ -683,6 +708,26 @@ export default function BookingRequestForm({
       }
 
       if (insertedBooking?.id) {
+        const chargeRows = buildInitialBookingCharges({
+          bookingId: insertedBooking.id,
+          bookingUnit: bookingUnit || "day",
+          totalPrice,
+          monthlyRent: bookingUnit === "month" ? monthlyRent : undefined,
+          depositAmount: bookingUnit === "month" ? depositAmount : undefined,
+          startAt,
+          endAt,
+        });
+
+        if (chargeRows.length > 0) {
+          const { error: chargesError } = await (supabase
+            .from("booking_charges") as any)
+            .insert(chargeRows);
+
+          if (chargesError) {
+            console.error("booking_charges insert failed:", chargesError);
+          }
+        }
+
         try {
           await fetch("/api/notifications/booking-event", {
             method: "POST",

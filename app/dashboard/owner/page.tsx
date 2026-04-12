@@ -312,13 +312,13 @@ export default function OwnerDashboardPage() {
             <CalendarDays className="h-4 w-4" />
             <span>Calendar</span>
           </Link>
-          <button
-            type="button"
+          <Link
+            href="/dashboard/finance"
             className="inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm text-gray-600 hover:bg-white hover:text-[#192a3a]"
           >
             <Landmark className="h-4 w-4" />
             <span>Finance</span>
-          </button>
+          </Link>
         </div>
 
         <div className="mb-6 rounded-md border border-gray-200 bg-white p-5 shadow-sm">

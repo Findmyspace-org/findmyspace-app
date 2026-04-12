@@ -207,6 +207,16 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    if (booking.status === "expired") {
+      return NextResponse.json(
+        {
+          error:
+            "This booking expired because payment was not completed in time. Please send a new booking request.",
+        },
+        { status: 400 }
+      );
+    }
+
     if (
       booking.status !== "accepted_awaiting_payment" ||
       (booking.payment_status || "unpaid") !== "awaiting_payment"

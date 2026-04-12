@@ -168,6 +168,7 @@ export default function OwnerBookingsPage({
     if (status === "paid_confirmed") return "Confirmed";
     if (status === "completed") return "Completed";
     if (status === "declined") return "Declined";
+    if (status === "expired") return "Expired (unpaid)";
     if (status === "approved") return "Approved";
     return "Pending";
   }
@@ -183,6 +184,10 @@ export default function OwnerBookingsPage({
 
     if (status === "declined") {
       return "bg-red-100 text-red-800";
+    }
+
+    if (status === "expired") {
+      return "bg-amber-100 text-amber-900";
     }
 
     return "bg-yellow-100 text-yellow-800";
@@ -229,6 +234,7 @@ export default function OwnerBookingsPage({
       .update({
         status: "accepted_awaiting_payment",
         payment_status: "awaiting_payment",
+        owner_response_at: new Date().toISOString(),
       })
       .eq("id", id);
 

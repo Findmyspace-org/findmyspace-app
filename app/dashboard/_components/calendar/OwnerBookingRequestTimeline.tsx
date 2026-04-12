@@ -154,6 +154,10 @@ function normalizeBookingRange(
 function getOwnerPreviewBarClass(status?: string | null, requested = false) {
   if (requested) return "bg-pink-500 text-white";
 
+  if (status === "expired") {
+    return "bg-amber-600 text-white";
+  }
+
   if (
     status === "approved" ||
     status === "accepted_awaiting_payment" ||

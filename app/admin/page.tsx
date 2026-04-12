@@ -234,6 +234,12 @@ export default function AdminPage() {
             <ShieldCheck className="h-4 w-4" />
             Verification
           </Link>
+          <Link
+            href="/admin/finance"
+            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
+          >
+            Finance
+          </Link>
         </div>
 
         <div className="mb-6 rounded-md border border-gray-300 bg-white p-4 shadow-sm">

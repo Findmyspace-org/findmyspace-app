@@ -81,6 +81,8 @@ type SpaceUpdatePayload = {
   deposit_type: DepositType;
   deposit_months: number;
   monthly_payment_day: number;
+  deposit_required: boolean;
+  deposit_amount: number | null;
 };
 
 type SpaceAttributeInsertRow = {
@@ -651,6 +653,8 @@ export default function EditListingPage({ params }: PageProps) {
       deposit_type: finalDepositType,
       deposit_months: parsedDepositMonths,
       monthly_payment_day: parsedMonthlyPaymentDay,
+      deposit_required: bookingUnit === "month" && finalDepositType !== "none",
+      deposit_amount: null,
     };
 
     const { error } = await (supabase.from("spaces") as any)

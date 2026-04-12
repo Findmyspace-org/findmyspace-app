@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   ClipboardList,
   CircleDot,
+  Clock,
   MessageSquare,
   Search,
   Send,
@@ -76,7 +77,8 @@ type BookingStage =
   | "awaiting_payment"
   | "payment_received"
   | "confirmed"
-  | "declined";
+  | "declined"
+  | "expired";
 
 type BookingMessage = {
   id: string;
@@ -248,6 +250,7 @@ function isPendingRequestStatus(status?: string | null) {
 
 function getBookingStage(status?: string | null, paymentStatus?: string | null): BookingStage {
   if (status === "declined") return "declined";
+  if (status === "expired") return "expired";
   if (status === "paid_confirmed" || status === "confirmed" || status === "completed") {
     return "confirmed";
   }
@@ -273,6 +276,8 @@ function getStageLabel(stage: BookingStage) {
       return "Confirmed";
     case "declined":
       return "Declined";
+    case "expired":
+      return "Expired";
     default:
       return "Booking request";
   }
@@ -284,6 +289,7 @@ function getStageBadgeClass(stage: BookingStage) {
   if (stage === "awaiting_payment") return "bg-blue-100 text-blue-800";
   if (stage === "booking_approved") return "bg-sky-100 text-sky-800";
   if (stage === "declined") return "bg-red-100 text-red-800";
+  if (stage === "expired") return "bg-amber-100 text-amber-900";
   return "bg-yellow-100 text-yellow-800";
 }
 
@@ -296,7 +302,7 @@ function getStageSteps(stage: BookingStage) {
     "confirmed",
   ] as const;
 
-  if (stage === "declined") return [];
+  if (stage === "declined" || stage === "expired") return [];
 
   const currentIndex = allSteps.indexOf(stage as (typeof allSteps)[number]);
 
@@ -466,6 +472,7 @@ type RequestsPageHeaderProps = {
     awaiting_payment: number;
     confirmed: number;
     declined: number;
+    expired: number;
   };
   statusFilter: string;
   onStatusFilterChange: (value: string) => void;
@@ -517,6 +524,7 @@ function RequestsPageHeader({
               icon: Wallet,
             },
             { key: "confirmed", label: "Confirmed", count: counts.confirmed, icon: CheckCircle2 },
+            { key: "expired", label: "Expired", count: counts.expired, icon: Clock },
             { key: "declined", label: "Declined", count: counts.declined, icon: XCircle },
           ]}
           activeKey={statusFilter}
@@ -1685,6 +1693,7 @@ export default function OwnerBookingRequestsPage() {
       declined: bookings.filter(
         (booking) => booking.status === "declined"
       ).length,
+      expired: bookings.filter((booking) => booking.status === "expired").length,
     };
   }, [bookings]);
 
@@ -1700,8 +1709,12 @@ export default function OwnerBookingRequestsPage() {
             : statusFilter === "awaiting_payment"
               ? booking.status === "accepted_awaiting_payment"
               : statusFilter === "confirmed"
-                ? booking.status === "paid_confirmed"
-                : (booking.status || "pending") === statusFilter;
+                ? booking.status === "paid_confirmed" ||
+                  booking.status === "confirmed" ||
+                  booking.status === "completed"
+                : statusFilter === "expired"
+                  ? booking.status === "expired"
+                  : (booking.status || "pending") === statusFilter;
 
       if (!matchesStatus) return false;
 

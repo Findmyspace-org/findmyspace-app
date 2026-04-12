@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { createClient } from "@supabase/supabase-js";
+import { markBookingChargesPaid } from "@/lib/invoice-payments";
 
 function generateNotifySignatureFromRawBody(
   rawBody: string,
@@ -67,6 +68,7 @@ export async function POST(req: Request) {
     const bookingId = data.m_payment_id || data.custom_str1 || "";
     const paymentStatus = data.payment_status || "";
     const amountGross = Number(data.amount_gross || data.amount || 0);
+    const pfPaymentId = data.pf_payment_id || "";
 
     console.log("PayFast notify booking info:", {
       bookingId,
@@ -147,16 +149,33 @@ export async function POST(req: Request) {
         return new NextResponse("OK", { status: 200 });
       }
 
+      const payable =
+        booking.status === "accepted_awaiting_payment" &&
+        (booking.payment_status || "unpaid") === "awaiting_payment";
+
+      if (!payable) {
+        console.log("Notify ignored COMPLETE: booking not awaiting payment", {
+          bookingId,
+          status: booking.status,
+          payment_status: booking.payment_status,
+        });
+        return new NextResponse("OK", { status: 200 });
+      }
+
       console.log("About to update booking to paid:", bookingId);
 
+      const paidAt = new Date().toISOString();
       const { data: updatedRows, error: updateError } = await (supabaseAdmin
         .from("bookings") as any)
         .update({
           status: "paid_confirmed",
           payment_status: "paid",
-          paid_at: new Date().toISOString(),
+          paid_at: paidAt,
+          ...(pfPaymentId ? { payment_reference: pfPaymentId } : {}),
         })
         .eq("id", bookingId)
+        .eq("status", "accepted_awaiting_payment")
+        .eq("payment_status", "awaiting_payment")
         .select("id, status, payment_status, paid_at");
 
       if (updateError) {
@@ -164,8 +183,26 @@ export async function POST(req: Request) {
         return new NextResponse("Could not update booking", { status: 500 });
       }
 
+      if (!updatedRows || updatedRows.length === 0) {
+        console.log(
+          "Notify: no row updated (race or state changed), treating as OK",
+          bookingId
+        );
+        return new NextResponse("OK", { status: 200 });
+      }
+
       console.log("Notify success: booking updated to paid_confirmed", bookingId);
       console.log("Updated booking rows:", updatedRows);
+
+      const { error: markChargesError } = await markBookingChargesPaid(
+        supabaseAdmin,
+        bookingId,
+        paidAt,
+        pfPaymentId || null
+      );
+      if (markChargesError) {
+        console.error("Notify: could not mark booking_charges paid:", markChargesError);
+      }
 
       const { data: verifyRows, error: verifyError } = await (supabaseAdmin
         .from("bookings") as any)

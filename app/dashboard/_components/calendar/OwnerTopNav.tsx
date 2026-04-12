@@ -41,10 +41,10 @@ export default function OwnerTopNav({
         <CalendarDays className="h-4 w-4" />
         <span>Calendar</span>
       </Link>
-      <button type="button" className={active === "finance" ? activeClass : itemClass}>
+      <Link href="/dashboard/finance" className={active === "finance" ? activeClass : itemClass}>
         <Landmark className="h-4 w-4" />
         <span>Finance</span>
-      </button>
+      </Link>
     </div>
   );
 }

@@ -224,6 +224,24 @@ export default function BookingPaymentPage({ params }: PageProps) {
         return;
       }
 
+      const {
+        data: { session: syncSession },
+      } = await supabase.auth.getSession();
+      if (syncSession?.access_token) {
+        try {
+          await fetch("/api/booking-charges/sync-paid", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${syncSession.access_token}`,
+            },
+            body: JSON.stringify({ bookingId: booking.id }),
+          });
+        } catch (syncErr) {
+          console.error("sync-paid failed:", syncErr);
+        }
+      }
+
       const notificationResponse = await fetch("/api/notifications/booking-event", {
         method: "POST",
         headers: {
@@ -266,6 +284,10 @@ export default function BookingPaymentPage({ params }: PageProps) {
 
   function getDisplayStatus() {
     if (!booking) return "Unknown";
+
+    if (booking.status === "expired") {
+      return "expired — payment window closed";
+    }
 
     if (
       booking.status === "accepted_awaiting_payment" &&
@@ -364,6 +386,13 @@ export default function BookingPaymentPage({ params }: PageProps) {
                         </div>
                       </div>
                     )}
+                  </div>
+                )}
+
+                {booking.status === "expired" && (
+                  <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+                    This booking expired because payment was not completed within 24 hours. Please
+                    submit a new booking request if you still need the space.
                   </div>
                 )}
 

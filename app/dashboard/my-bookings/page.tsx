@@ -16,6 +16,7 @@ import {
   FileText,
   MessageSquare,
   Send,
+  X,
 } from "lucide-react";
 
 type Booking = {
@@ -78,20 +79,74 @@ export default function MyBookingsPage() {
   const [messageDrafts, setMessageDrafts] = useState<Record<string, string>>({});
   const [sendingMessageBookingId, setSendingMessageBookingId] = useState<string | null>(null);
   const [cancellingBookingId, setCancellingBookingId] = useState<string | null>(null);
+  const [invoiceModalBookingId, setInvoiceModalBookingId] = useState<string | null>(null);
+  const [invoiceHtml, setInvoiceHtml] = useState<string | null>(null);
+  const [invoiceLoading, setInvoiceLoading] = useState(false);
+  const [invoiceError, setInvoiceError] = useState<string | null>(null);
 
   useEffect(() => {
     loadMyBookings();
   }, []);
 
   useEffect(() => {
-    if (searchParams.get("payment") === "success") {
+    const payment = searchParams.get("payment");
+    if (payment === "success") {
       const bookingId = searchParams.get("bookingId");
       setMessage("Payment received. Your booking is confirmed.");
       if (bookingId) {
         setSuccessModalBookingId(bookingId);
       }
+      return;
+    }
+    if (payment === "cancelled") {
+      setMessage(
+        "Payment was cancelled or not completed. You can try again from this page when you are ready."
+      );
     }
   }, [searchParams]);
+
+  async function openInvoiceModal(bookingId: string) {
+    setInvoiceError(null);
+    setInvoiceHtml(null);
+    setInvoiceModalBookingId(bookingId);
+    setInvoiceLoading(true);
+
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session?.access_token) {
+        setInvoiceError("Please log in to view your invoice.");
+        setInvoiceLoading(false);
+        return;
+      }
+
+      const res = await fetch(`/api/invoice/${bookingId}`, {
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      });
+
+      const text = await res.text();
+
+      if (!res.ok) {
+        setInvoiceError(
+          res.status === 403
+            ? "Invoice is only available after payment is confirmed."
+            : text || "Could not load invoice."
+        );
+        setInvoiceLoading(false);
+        return;
+      }
+
+      setInvoiceHtml(text);
+    } catch {
+      setInvoiceError("Could not load invoice.");
+    } finally {
+      setInvoiceLoading(false);
+    }
+  }
 
   async function loadMyBookings() {
     setLoading(true);
@@ -477,6 +532,7 @@ export default function MyBookingsPage() {
       return "bg-blue-100 text-blue-800";
     }
     if (status === "declined") return "bg-red-100 text-red-800";
+    if (status === "expired") return "bg-amber-100 text-amber-900";
     return "bg-yellow-100 text-yellow-800";
   }
 
@@ -485,6 +541,7 @@ export default function MyBookingsPage() {
     if (status === "accepted_awaiting_payment") return "Awaiting payment";
     if (status === "paid_confirmed") return "Confirmed";
     if (status === "declined") return "Declined";
+    if (status === "expired") return "Expired (unpaid)";
     return status || "pending";
   }
 
@@ -497,6 +554,7 @@ export default function MyBookingsPage() {
       ).length,
       paid: bookings.filter((b) => b.status === "paid_confirmed").length,
       declined: bookings.filter((b) => b.status === "declined").length,
+      expired: bookings.filter((b) => b.status === "expired").length,
     };
   }, [bookings]);
 
@@ -517,6 +575,10 @@ export default function MyBookingsPage() {
 
     if (statusFilter === "declined") {
       return bookings.filter((b) => b.status === "declined");
+    }
+
+    if (statusFilter === "expired") {
+      return bookings.filter((b) => b.status === "expired");
     }
 
     return bookings;
@@ -558,6 +620,7 @@ export default function MyBookingsPage() {
                 count: counts.awaiting_payment,
               },
               { key: "paid", label: "Paid", count: counts.paid },
+              { key: "expired", label: "Expired", count: counts.expired },
               { key: "declined", label: "Declined", count: counts.declined },
             ].map((item) => (
               <button
@@ -780,7 +843,7 @@ export default function MyBookingsPage() {
                       booking.status === "paid_confirmed") && (
                         <button
                           type="button"
-                          onClick={() => window.open(`/api/invoice/${booking.id}`, "_blank")}
+                          onClick={() => void openInvoiceModal(booking.id)}
                           className="flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm text-[#192a3a] hover:bg-gray-50"
                         >
                           <FileText className="h-4 w-4" />
@@ -891,6 +954,44 @@ export default function MyBookingsPage() {
               >
                 Go to My Bookings
               </button>
+            </div>
+          </div>
+        )}
+
+        {invoiceModalBookingId && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 px-4 py-6">
+            <div className="flex max-h-[90vh] w-full max-w-3xl flex-col rounded-xl bg-white shadow-xl">
+              <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
+                <h2 className="text-lg font-semibold text-[#192a3a]">Invoice</h2>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setInvoiceModalBookingId(null);
+                    setInvoiceHtml(null);
+                    setInvoiceError(null);
+                  }}
+                  className="rounded-md p-2 text-gray-500 hover:bg-gray-100 hover:text-[#192a3a]"
+                  aria-label="Close invoice"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+              <div className="min-h-0 flex-1 overflow-auto p-4">
+                {invoiceLoading && (
+                  <p className="text-sm text-gray-600">Loading invoice…</p>
+                )}
+                {invoiceError && (
+                  <p className="text-sm text-red-700">{invoiceError}</p>
+                )}
+                {!invoiceLoading && !invoiceError && invoiceHtml && (
+                  <iframe
+                    title="Invoice"
+                    className="h-[min(70vh,720px)] w-full rounded-md border border-gray-200 bg-white"
+                    srcDoc={invoiceHtml}
+                    sandbox="allow-same-origin"
+                  />
+                )}
+              </div>
             </div>
           </div>
         )}
