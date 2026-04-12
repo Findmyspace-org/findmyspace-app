@@ -5,6 +5,7 @@ import BookingRequestForm from "@/app/components/BookingRequestForm";
 import SpaceAttributesDisplay from "@/app/components/SpaceAttributesDisplay";
 import SpaceGallerySection from "./space-gallery-section";
 import SpaceMapSection from "./space-map-section";
+import { formatSpaceTypeLabel } from "@/app/data/spaceFeatureConfig";
 
 import {
   MapPin,
@@ -82,7 +83,7 @@ async function getSpace(id: string) {
 
 function formatLabel(value: string | null) {
   if (!value) return "Not set";
-  return value.charAt(0).toUpperCase() + value.slice(1);
+  return formatSpaceTypeLabel(value);
 }
 
 function formatBookingUnit(value: string | null) {

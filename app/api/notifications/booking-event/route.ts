@@ -10,6 +10,10 @@ import {
   formatBookingRangeForEmail,
   getDisplayName,
 } from "@/lib/bookingEmailHelpers";
+import { isCommunicationAllowed } from "@/lib/booking-communication";
+
+const MESSAGING_FORBIDDEN_MSG =
+  "Messaging is only available after payment confirmation.";
 
 type NotificationInsertRow = {
   user_id: string;
@@ -414,6 +418,18 @@ export async function POST(req: NextRequest) {
     }
 
     if (eventType === "booking_message") {
+      if (
+        !isCommunicationAllowed({
+          status: booking.status,
+          payment_status: booking.payment_status,
+        })
+      ) {
+        return NextResponse.json(
+          { error: MESSAGING_FORBIDDEN_MSG },
+          { status: 403 }
+        );
+      }
+
       const rawRecipientId = recipientId;
       const rawSenderId = senderId;
       const rawMessage = bookingMessageText;

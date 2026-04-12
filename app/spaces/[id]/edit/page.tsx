@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import SpaceCategoryFields from "@/app/components/SpaceCategoryFields";
+import { LISTING_SPACE_TYPE_OPTIONS } from "@/app/data/spaceFeatureConfig";
 import RequireAuth from "@/app/components/RequireAuth";
 import OwnerVerificationAlerts from "@/app/components/OwnerVerificationAlerts";
 
@@ -831,12 +832,15 @@ export default function EditListingPage({ params }: PageProps) {
                     }}
                     className="w-full rounded-sm border border-gray-400 px-4 py-3 outline-none"
                   >
-                    <option value="storage">Storage</option>
-                    <option value="parking">Parking</option>
-                    <option value="office">Office</option>
-                    <option value="garage">Garage</option>
-                    <option value="workspace">Workspace</option>
-                    <option value="other">Other</option>
+                    {!LISTING_SPACE_TYPE_OPTIONS.some((o) => o.value === spaceType) &&
+                      spaceType && (
+                        <option value={spaceType}>{spaceType}</option>
+                      )}
+                    {LISTING_SPACE_TYPE_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
                   </select>
                 </div>
 

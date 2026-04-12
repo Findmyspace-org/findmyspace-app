@@ -9,6 +9,7 @@ import PriceRangeFilter from "@/app/components/PriceRangeFilter";
 import MapPicker from "@/app/components/MapView";
 import { Search, MapPinned, MapPin, ArrowUpDown, X } from "lucide-react";
 import MapView from "@/app/components/MapView";
+import { LISTING_SPACE_TYPE_OPTIONS } from "@/app/data/spaceFeatureConfig";
 
 type Space = {
   id: string;
@@ -273,12 +274,11 @@ export default function SpacesPage() {
           className="rounded-md border border-gray-300 bg-white px-4 py-3 text-sm outline-none focus:border-[#192a3a]"
         >
           <option value="all">All types</option>
-          <option value="storage">Storage</option>
-          <option value="parking">Parking</option>
-          <option value="office">Office</option>
-          <option value="garage">Garage</option>
-          <option value="workspace">Workspace</option>
-          <option value="other">Other</option>
+          {LISTING_SPACE_TYPE_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
         </select>
 
         <select

@@ -22,8 +22,22 @@ import {
   ChevronDown,
   ChevronUp,
   Tag,
+  CalendarClock,
+  BookmarkCheck,
+  CircleDollarSign,
+  Mail,
+  Phone,
 } from "lucide-react";
 import { downloadInvoicePdf } from "@/lib/invoice-download-client";
+import { isCommunicationAllowed } from "@/lib/booking-communication";
+import {
+  aggregateRenterPageMetrics,
+  computeRenterBookingFinance,
+  formatPageNextPaymentSummary,
+  formatRenterNextPaymentSummary,
+  formatZarCompact,
+  type BookingChargeLite,
+} from "@/lib/renter-booking-finance";
 
 type Booking = {
   id: string;
@@ -39,6 +53,12 @@ type Booking = {
   payment_status: string | null;
   total_price: number | null;
   created_at: string | null;
+  monthly_rent?: number | null;
+  months_total?: number | null;
+  months_paid?: number | null;
+  deposit_amount?: number | null;
+  initial_payment_amount?: number | null;
+  next_payment_date?: string | null;
 };
 
 type Space = {
@@ -102,6 +122,15 @@ export default function MyBookingsPage() {
     string | null
   >(null);
   const messagesLoadedRef = useRef<Set<string>>(new Set());
+  const [chargesByBooking, setChargesByBooking] = useState<
+    Record<string, BookingChargeLite[]>
+  >({});
+  const [communicationOpenBookingId, setCommunicationOpenBookingId] = useState<
+    string | null
+  >(null);
+  const [ownerContactByBooking, setOwnerContactByBooking] = useState<
+    Record<string, { email: string | null; phone: string | null }>
+  >({});
 
   useEffect(() => {
     loadMyBookings();
@@ -202,7 +231,7 @@ export default function MyBookingsPage() {
       const { data, error } = await supabase
         .from("bookings")
         .select(
-          "id, space_id, renter_id, owner_id, booking_unit, start_at, end_at, notes, owner_response_message, status, payment_status, total_price, created_at"
+          "id, space_id, renter_id, owner_id, booking_unit, start_at, end_at, notes, owner_response_message, status, payment_status, total_price, created_at, monthly_rent, months_total, months_paid, deposit_amount, initial_payment_amount, next_payment_date"
         )
         .eq("renter_id", user.id)
         .order("created_at", { ascending: false });
@@ -270,21 +299,34 @@ export default function MyBookingsPage() {
         owner: ownersMap.get(b.owner_id),
       }));
 
+      const bookingIds = rawBookings.map((b) => b.id);
+      const chargesMap: Record<string, BookingChargeLite[]> = {};
+      if (bookingIds.length > 0) {
+        const { data: chargeRows } = await supabase
+          .from("booking_charges")
+          .select("booking_id, amount, status")
+          .in("booking_id", bookingIds);
+
+        for (const row of (chargeRows || []) as {
+          booking_id: string;
+          amount: number | null;
+          status: string | null;
+        }[]) {
+          if (!chargesMap[row.booking_id]) chargesMap[row.booking_id] = [];
+          chargesMap[row.booking_id].push({
+            amount: row.amount,
+            status: row.status,
+          });
+        }
+      }
+
+      setChargesByBooking(chargesMap);
       setBookings(enriched);
       setLoading(false);
     } catch {
       setMessage("Something went wrong while loading your bookings.");
       setLoading(false);
     }
-  }
-
-  function canUseMessaging(booking: Booking) {
-    return (
-      booking.payment_status === "paid" ||
-      booking.payment_status === "paid_confirmed" ||
-      booking.status === "paid_confirmed" ||
-      booking.status === "confirmed"
-    );
   }
 
   function canCancelBooking(booking: Booking) {
@@ -294,50 +336,89 @@ export default function MyBookingsPage() {
     );
   }
 
-  async function loadMessagesForBooking(bookingId: string) {
-    const { data, error } = await (supabase.from("booking_messages") as any)
-      .select("id, booking_id, sender_id, recipient_id, message, created_at")
-      .eq("booking_id", bookingId)
-      .order("created_at", { ascending: true });
-
-    if (error) {
-      console.error("Failed to load booking messages:", {
-        message: error?.message,
-        details: error?.details,
-        hint: error?.hint,
-        code: error?.code,
-        raw: error,
-      });
-      return;
-    }
-
-    const rows = (data || []) as BookingMessage[];
-    setMessagesByBooking((current) => ({
-      ...current,
-      [bookingId]: rows,
-    }));
-    messagesLoadedRef.current.add(bookingId);
-  }
-
-  async function ensureMessagesIfNeeded(booking: EnrichedBooking) {
-    if (!canUseMessaging(booking)) return;
-    if (messagesLoadedRef.current.has(booking.id)) return;
-
-    setMessagesLoadingBookingId(booking.id);
+  async function loadMessagesFromApi(bookingId: string) {
+    setMessagesLoadingBookingId(bookingId);
+    setMessage("");
     try {
-      await loadMessagesForBooking(booking.id);
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session?.access_token) {
+        setMessage("Please log in to load messages.");
+        return;
+      }
+
+      const res = await fetch(`/api/bookings/${bookingId}/messages`, {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+
+      const json = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        messages?: BookingMessage[];
+        counterpartyContact?: { email: string | null; phone: string | null };
+        ownerContact?: { email: string | null; phone: string | null };
+      };
+
+      if (!res.ok) {
+        setMessage(
+          typeof json.error === "string"
+            ? json.error
+            : "Could not load messages."
+        );
+        return;
+      }
+
+      const contact =
+        json.counterpartyContact ??
+        json.ownerContact ??
+        ({ email: null, phone: null } as {
+          email: string | null;
+          phone: string | null;
+        });
+
+      setMessagesByBooking((current) => ({
+        ...current,
+        [bookingId]: json.messages || [],
+      }));
+      setOwnerContactByBooking((current) => ({
+        ...current,
+        [bookingId]: contact,
+      }));
+      messagesLoadedRef.current.add(bookingId);
+    } catch {
+      setMessage("Could not load messages.");
     } finally {
       setMessagesLoadingBookingId(null);
+    }
+  }
+
+  async function toggleCommunicationPanel(
+    booking: EnrichedBooking,
+    e?: React.MouseEvent
+  ) {
+    e?.stopPropagation();
+    if (communicationOpenBookingId === booking.id) {
+      setCommunicationOpenBookingId(null);
+      return;
+    }
+    setCommunicationOpenBookingId(booking.id);
+    if (!isCommunicationAllowed(booking)) {
+      return;
+    }
+    if (!messagesLoadedRef.current.has(booking.id)) {
+      await loadMessagesFromApi(booking.id);
     }
   }
 
   async function toggleBookingExpanded(booking: EnrichedBooking) {
     if (expandedBookingId === booking.id) {
       setExpandedBookingId(null);
+      setCommunicationOpenBookingId(null);
       return;
     }
     setExpandedBookingId(booking.id);
-    await ensureMessagesIfNeeded(booking);
+    setCommunicationOpenBookingId(null);
   }
 
   async function sendBookingMessage(booking: EnrichedBooking) {
@@ -353,68 +434,72 @@ export default function MyBookingsPage() {
       return;
     }
 
-    if (!canUseMessaging(booking)) {
-      setMessage("Messaging becomes available after payment is confirmed.");
+    if (!isCommunicationAllowed(booking)) {
+      setMessage(
+        "Messaging is only available after payment confirmation."
+      );
       return;
     }
 
     setSendingMessageBookingId(booking.id);
     setMessage("");
 
-    const payload = {
-      booking_id: booking.id,
-      sender_id: sessionUserId,
-      recipient_id: booking.owner_id,
-      message: draft,
-    };
-
-    const { data, error } = await (supabase.from("booking_messages") as any)
-      .insert(payload)
-      .select("id, booking_id, sender_id, recipient_id, message, created_at")
-      .single();
-
-    if (error) {
-      setMessage(error.message || "Could not send message.");
-      setSendingMessageBookingId(null);
-      return;
-    }
-
-    const newMessage = data as BookingMessage;
-
-    messagesLoadedRef.current.add(booking.id);
-
-    setMessagesByBooking((current) => ({
-      ...current,
-      [booking.id]: [...(current[booking.id] || []), newMessage],
-    }));
-
     try {
-      await fetch("/api/notifications/booking-event", {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session?.access_token) {
+        setMessage("Please log in first.");
+        setSendingMessageBookingId(null);
+        return;
+      }
+
+      const res = await fetch(`/api/bookings/${booking.id}/messages`, {
         method: "POST",
         headers: {
+          Authorization: `Bearer ${session.access_token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          bookingId: booking.id,
-          eventType: "booking_message",
-          senderId: sessionUserId,
-          recipientId: booking.owner_id,
-          message: draft,
-        }),
+        body: JSON.stringify({ message: draft }),
       });
-    } catch (notificationError) {
-      console.error(
-        "Failed to fire booking message notification:",
-        notificationError
-      );
+
+      const json = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        message?: BookingMessage;
+      };
+
+      if (!res.ok) {
+        setMessage(
+          typeof json.error === "string"
+            ? json.error
+            : "Could not send message."
+        );
+        return;
+      }
+
+      const newMessage = json.message;
+      if (!newMessage) {
+        setMessage("Could not send message.");
+        return;
+      }
+
+      messagesLoadedRef.current.add(booking.id);
+
+      setMessagesByBooking((current) => ({
+        ...current,
+        [booking.id]: [...(current[booking.id] || []), newMessage],
+      }));
+
+      setMessageDrafts((current) => ({
+        ...current,
+        [booking.id]: "",
+      }));
+    } catch {
+      setMessage("Could not send message.");
+    } finally {
+      setSendingMessageBookingId(null);
     }
-
-    setMessageDrafts((current) => ({
-      ...current,
-      [booking.id]: "",
-    }));
-
-    setSendingMessageBookingId(null);
   }
 
   async function handleCancelBooking(booking: EnrichedBooking) {
@@ -695,6 +780,11 @@ export default function MyBookingsPage() {
     [bookings, successModalBookingId]
   );
 
+  const pageFinance = useMemo(
+    () => aggregateRenterPageMetrics(bookings, chargesByBooking),
+    [bookings, chargesByBooking]
+  );
+
   return (
     <RequireAuth>
       <main className="min-h-screen bg-white px-6 py-10 text-[#192a3a]">
@@ -710,6 +800,51 @@ export default function MyBookingsPage() {
                   Logged in as {sessionEmail}
                 </p>
               )}
+            </div>
+
+            <div className="mb-5 grid grid-cols-2 gap-2 lg:grid-cols-4">
+              {[
+                {
+                  key: "spent",
+                  icon: Wallet,
+                  label: "Total spent",
+                  value: formatZarCompact(pageFinance.totalSpent),
+                },
+                {
+                  key: "active",
+                  icon: BookmarkCheck,
+                  label: "Active bookings",
+                  value: String(pageFinance.activeBookingsCount),
+                },
+                {
+                  key: "next",
+                  icon: CalendarClock,
+                  label: "Next payment due",
+                  value: formatPageNextPaymentSummary(pageFinance),
+                },
+                {
+                  key: "out",
+                  icon: CircleDollarSign,
+                  label: "Outstanding",
+                  value: formatZarCompact(pageFinance.outstandingTotal),
+                },
+              ].map((item) => (
+                <div
+                  key={item.key}
+                  className="flex min-h-[72px] flex-col justify-center rounded-md border border-gray-100 bg-gray-50/80 px-3 py-2.5"
+                >
+                  <div className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                    <item.icon className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+                    <span className="leading-tight">{item.label}</span>
+                  </div>
+                  <p
+                    className={`text-sm font-semibold text-[#192a3a] ${item.key === "next" ? "leading-snug line-clamp-2" : "tabular-nums"}`}
+                    title={item.value}
+                  >
+                    {item.value}
+                  </p>
+                </div>
+              ))}
             </div>
 
             <div className="flex flex-wrap gap-2">
@@ -784,7 +919,11 @@ export default function MyBookingsPage() {
                   booking.payment_status === "paid" ||
                   booking.payment_status === "paid_confirmed" ||
                   booking.status === "paid_confirmed" ||
-                  booking.status === "confirmed";
+                  booking.status === "confirmed" ||
+                  booking.status === "completed";
+
+                const charges = chargesByBooking[booking.id] ?? [];
+                const fin = computeRenterBookingFinance(booking, charges);
 
                 return (
                   <div
@@ -921,6 +1060,41 @@ export default function MyBookingsPage() {
                                 </div>
                               </div>
                             </div>
+
+                            <div className="mt-3 rounded-md border border-dashed border-gray-200 bg-gray-50/80 p-3 sm:p-4">
+                              <p className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
+                                Finance
+                              </p>
+                              <div className="grid gap-3 sm:grid-cols-3">
+                                <div>
+                                  <p className="mb-0.5 flex items-center gap-1.5 text-xs font-medium text-gray-500">
+                                    <Wallet className="h-3.5 w-3.5 shrink-0" />
+                                    Amount paid
+                                  </p>
+                                  <p className="text-sm font-semibold tabular-nums text-[#192a3a]">
+                                    {formatZarCompact(fin.amountPaid)}
+                                  </p>
+                                </div>
+                                <div>
+                                  <p className="mb-0.5 flex items-center gap-1.5 text-xs font-medium text-gray-500">
+                                    <CircleDollarSign className="h-3.5 w-3.5 shrink-0" />
+                                    Amount outstanding
+                                  </p>
+                                  <p className="text-sm font-semibold tabular-nums text-[#192a3a]">
+                                    {formatZarCompact(fin.amountOutstanding)}
+                                  </p>
+                                </div>
+                                <div>
+                                  <p className="mb-0.5 flex items-center gap-1.5 text-xs font-medium text-gray-500">
+                                    <CalendarClock className="h-3.5 w-3.5 shrink-0" />
+                                    Next payment due
+                                  </p>
+                                  <p className="text-sm font-semibold leading-snug text-[#192a3a]">
+                                    {formatRenterNextPaymentSummary(fin)}
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
                           </div>
 
                           <div className="flex flex-wrap items-center gap-2">
@@ -979,11 +1153,11 @@ export default function MyBookingsPage() {
 
                           <div className="rounded-md border border-gray-200 bg-white p-4 shadow-sm">
                             <p className="mb-3 text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
-                              Request & replies
+                              Booking request
                             </p>
-                            <div className="mb-4 space-y-3">
+                            <div className="space-y-3">
                               <div>
-                                <p className="mb-1 text-xs font-medium text-gray-500">Your message</p>
+                                <p className="mb-1 text-xs font-medium text-gray-500">Notes with your request</p>
                                 <div className="min-h-[56px] rounded-md bg-gray-50 p-3 text-sm text-gray-700">
                                   {booking.notes || "No message added."}
                                 </div>
@@ -997,84 +1171,132 @@ export default function MyBookingsPage() {
                                 </div>
                               )}
                             </div>
+                          </div>
 
-                            {canUseMessaging(booking) ? (
-                              <div>
-                                <div className="mb-2 flex items-center gap-2 text-sm font-medium text-[#192a3a]">
+                          {isCommunicationAllowed(booking) && (
+                            <div className="rounded-md border border-gray-200 bg-white p-4 shadow-sm">
+                              <div className="flex flex-wrap items-center justify-between gap-3">
+                                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
+                                  Owner communication
+                                </p>
+                                <button
+                                  type="button"
+                                  onClick={(e) => void toggleCommunicationPanel(booking, e)}
+                                  className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-[#192a3a] shadow-sm hover:bg-gray-50"
+                                >
                                   <MessageSquare className="h-4 w-4" />
-                                  Messages with owner
-                                </div>
-                                {messagesLoadingBookingId === booking.id ? (
-                                  <p className="text-sm text-gray-500">Loading messages…</p>
-                                ) : (
-                                  <div className="max-h-64 space-y-2 overflow-y-auto rounded-md border border-gray-200 bg-gray-50 p-3">
-                                    {(messagesByBooking[booking.id] || []).length === 0 ? (
-                                      <p className="text-sm text-gray-500">
-                                        No messages yet. Say hello to coordinate details with the owner.
-                                      </p>
+                                  Message owner
+                                  {communicationOpenBookingId === booking.id ? (
+                                    <ChevronUp className="h-4 w-4" aria-hidden />
+                                  ) : (
+                                    <ChevronDown className="h-4 w-4" aria-hidden />
+                                  )}
+                                </button>
+                              </div>
+
+                              {communicationOpenBookingId === booking.id && (
+                                <div className="mt-4 border-t border-gray-100 pt-4">
+                                  <div className="space-y-4">
+                                    {messagesLoadingBookingId === booking.id ? (
+                                      <p className="text-sm text-gray-500">Loading messages…</p>
                                     ) : (
-                                      (messagesByBooking[booking.id] || []).map((item) => {
-                                        const isMine = item.sender_id === sessionUserId;
-                                        return (
-                                          <div
-                                            key={item.id}
-                                            className={`max-w-[88%] rounded-md px-3 py-2 text-sm ${isMine
-                                              ? "ml-auto bg-[#192a3a] text-white"
-                                              : "mr-auto border border-gray-200 bg-white text-[#192a3a]"
-                                              }`}
-                                          >
-                                            <p className="whitespace-pre-wrap">{item.message}</p>
-                                            <p
-                                              className={`mt-1 text-[11px] ${isMine ? "text-gray-200" : "text-gray-500"
-                                                }`}
-                                            >
-                                              {item.created_at
-                                                ? new Date(item.created_at).toLocaleString()
-                                                : ""}
-                                            </p>
+                                      <>
+                                        <div className="grid gap-3 rounded-md border border-gray-100 bg-gray-50/80 p-3 sm:grid-cols-2">
+                                          <div className="flex items-start gap-2 text-sm">
+                                            <Mail className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+                                            <div>
+                                              <p className="text-xs font-medium text-gray-500">Email</p>
+                                              <p className="break-all text-[#192a3a]">
+                                                {ownerContactByBooking[booking.id]?.email ||
+                                                  booking.owner?.email ||
+                                                  "—"}
+                                              </p>
+                                            </div>
                                           </div>
-                                        );
-                                      })
+                                          <div className="flex items-start gap-2 text-sm">
+                                            <Phone className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+                                            <div>
+                                              <p className="text-xs font-medium text-gray-500">Contact number</p>
+                                              <p className="text-[#192a3a]">
+                                                {ownerContactByBooking[booking.id]?.phone
+                                                  ? ownerContactByBooking[booking.id].phone
+                                                  : "Contact number not available"}
+                                              </p>
+                                            </div>
+                                          </div>
+                                        </div>
+
+                                        <div>
+                                          <p className="mb-2 text-xs font-medium text-gray-500">Conversation</p>
+                                          <div className="max-h-56 space-y-2 overflow-y-auto rounded-md border border-gray-200 bg-gray-50 p-3">
+                                            {(messagesByBooking[booking.id] || []).length === 0 ? (
+                                              <p className="text-sm text-gray-500">
+                                                No messages yet. Say hello to coordinate details with the owner.
+                                              </p>
+                                            ) : (
+                                              (messagesByBooking[booking.id] || []).map((item) => {
+                                                const isMine = item.sender_id === sessionUserId;
+                                                return (
+                                                  <div
+                                                    key={item.id}
+                                                    className={`max-w-[88%] rounded-md px-3 py-2 text-sm ${isMine
+                                                      ? "ml-auto bg-[#192a3a] text-white"
+                                                      : "mr-auto border border-gray-200 bg-white text-[#192a3a]"
+                                                      }`}
+                                                  >
+                                                    <p className="whitespace-pre-wrap">{item.message}</p>
+                                                    <p
+                                                      className={`mt-1 text-[11px] ${isMine ? "text-gray-200" : "text-gray-500"
+                                                        }`}
+                                                    >
+                                                      {item.created_at
+                                                        ? new Date(item.created_at).toLocaleString()
+                                                        : ""}
+                                                    </p>
+                                                  </div>
+                                                );
+                                              })
+                                            )}
+                                          </div>
+                                        </div>
+
+                                        <div className="flex flex-col gap-2">
+                                          <textarea
+                                            value={messageDrafts[booking.id] || ""}
+                                            onChange={(e) =>
+                                              setMessageDrafts((current) => ({
+                                                ...current,
+                                                [booking.id]: e.target.value,
+                                              }))
+                                            }
+                                            rows={3}
+                                            placeholder="Write a message to the owner"
+                                            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-[#192a3a] outline-none focus:border-[#192a3a]"
+                                          />
+                                          <div className="flex justify-end">
+                                            <button
+                                              type="button"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                void sendBookingMessage(booking);
+                                              }}
+                                              disabled={sendingMessageBookingId === booking.id}
+                                              className="flex items-center gap-2 rounded-md bg-[#192a3a] px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60"
+                                            >
+                                              <Send className="h-4 w-4" />
+                                              {sendingMessageBookingId === booking.id
+                                                ? "Sending..."
+                                                : "Send message"}
+                                            </button>
+                                          </div>
+                                        </div>
+                                      </>
                                     )}
                                   </div>
-                                )}
-                                <div className="mt-3 flex flex-col gap-2">
-                                  <textarea
-                                    value={messageDrafts[booking.id] || ""}
-                                    onChange={(e) =>
-                                      setMessageDrafts((current) => ({
-                                        ...current,
-                                        [booking.id]: e.target.value,
-                                      }))
-                                    }
-                                    rows={3}
-                                    placeholder="Send a message to the owner"
-                                    className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-[#192a3a] outline-none focus:border-[#192a3a]"
-                                  />
-                                  <div className="flex justify-end">
-                                    <button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        void sendBookingMessage(booking);
-                                      }}
-                                      disabled={sendingMessageBookingId === booking.id}
-                                      className="flex items-center gap-2 rounded-md bg-[#192a3a] px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60"
-                                    >
-                                      <Send className="h-4 w-4" />
-                                      {sendingMessageBookingId === booking.id
-                                        ? "Sending..."
-                                        : "Send message"}
-                                    </button>
-                                  </div>
                                 </div>
-                              </div>
-                            ) : (
-                              <p className="text-sm text-gray-500">
-                                Messaging opens after payment is confirmed.
-                              </p>
-                            )}
-                          </div>
+                              )}
+                            </div>
+                          )}
                         </div>
                       </div>
                     )}

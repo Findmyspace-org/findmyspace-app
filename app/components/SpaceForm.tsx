@@ -7,6 +7,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import SpaceCategoryFields from "@/app/components/SpaceCategoryFields";
+import { LISTING_SPACE_TYPE_OPTIONS } from "@/app/data/spaceFeatureConfig";
 
 const MapPicker = dynamic(() => import("@/app/components/MapPicker"), {
   ssr: false,
@@ -619,12 +620,15 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
               }}
               className="w-full rounded-md border border-gray-300 px-4 py-3 outline-none"
             >
-              <option value="storage">Storage</option>
-              <option value="parking">Parking</option>
-              <option value="office">Office</option>
-              <option value="garage">Garage</option>
-              <option value="workspace">Workspace</option>
-              <option value="other">Other</option>
+              {!LISTING_SPACE_TYPE_OPTIONS.some((o) => o.value === spaceType) &&
+                spaceType && (
+                  <option value={spaceType}>{spaceType}</option>
+                )}
+              {LISTING_SPACE_TYPE_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
             </select>
           </div>
 

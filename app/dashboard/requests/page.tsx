@@ -2,13 +2,17 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CheckCircle2,
   ClipboardList,
   CircleDot,
   Clock,
+  ChevronDown,
+  ChevronUp,
+  Mail,
   MessageSquare,
+  Phone,
   Search,
   Send,
   Wallet,
@@ -17,6 +21,7 @@ import {
 import { supabase } from "@/lib/supabase";
 import RequireAuth from "@/app/components/RequireAuth";
 import { getDisplayName } from "@/lib/utils";
+import { isCommunicationAllowed } from "@/lib/booking-communication";
 
 
 import OwnerCalendarLegend from "@/app/dashboard/_components/calendar/OwnerCalendarLegend";
@@ -103,6 +108,8 @@ type BookingRowProps = {
   booking: EnrichedBooking;
   stage: BookingStage;
   messageCount: number;
+  /** When false, hide the message-count badge (no post-payment messaging yet). */
+  showMessageBadge: boolean;
   isExpanded: boolean;
   hasBlockingConflict: boolean;
   pendingOverlapCount: number;
@@ -131,7 +138,13 @@ type ExpandedBookingPanelProps = {
   isPendingRequest: boolean;
   updateBookingStatus: (bookingId: string, nextStatus: "approved" | "declined" | "pending") => Promise<void>;
   sendBookingMessage: (booking: EnrichedBooking) => Promise<void>;
-  canUseMessaging: (booking: Booking) => boolean;
+  communicationOpenBookingId: string | null;
+  onToggleCommunication: (booking: EnrichedBooking) => void | Promise<void>;
+  messagesLoadingBookingId: string | null;
+  counterpartyContactByBooking: Record<
+    string,
+    { email: string | null; phone: string | null }
+  >;
   competingPendingRequests: EnrichedBooking[];
 };
 
@@ -553,7 +566,13 @@ type BookingConversationPanelProps = {
   setMessageDrafts: React.Dispatch<React.SetStateAction<Record<string, string>>>;
   sendingMessageBookingId: string | null;
   sendBookingMessage: (booking: EnrichedBooking) => Promise<void>;
-  canUseMessaging: (booking: Booking) => boolean;
+  communicationOpenBookingId: string | null;
+  onToggleCommunication: (booking: EnrichedBooking) => void | Promise<void>;
+  messagesLoadingBookingId: string | null;
+  counterpartyContactByBooking: Record<
+    string,
+    { email: string | null; phone: string | null }
+  >;
 };
 
 function BookingConversationPanel({
@@ -564,89 +583,155 @@ function BookingConversationPanel({
   setMessageDrafts,
   sendingMessageBookingId,
   sendBookingMessage,
-  canUseMessaging,
+  communicationOpenBookingId,
+  onToggleCommunication,
+  messagesLoadingBookingId,
+  counterpartyContactByBooking,
 }: BookingConversationPanelProps) {
+  const isOpen = communicationOpenBookingId === booking.id;
+  const contact = counterpartyContactByBooking[booking.id];
+
   return (
-    <div className="rounded-md border border-gray-200 bg-white p-4">
-      <div className="mb-3 flex items-center gap-2 text-sm font-medium text-[#192a3a]">
-        <MessageSquare className="h-4 w-4" />
-        Messages
-      </div>
-
-      <div className="max-h-80 space-y-3 overflow-y-auto rounded-md border border-gray-200 bg-gray-50 p-3">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-gray-500">
-          Previous messages
+    <div className="space-y-4">
+      <div className="rounded-md border border-gray-200 bg-white p-4">
+        <p className="mb-3 text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
+          Request thread
         </p>
-        <div className="mr-auto max-w-[88%] rounded-md border border-gray-200 bg-white px-3 py-2 text-xs text-[#192a3a]">
-          <p className="font-medium text-gray-700">Initial request</p>
-          <p className="mt-1 whitespace-pre-wrap">{booking.notes || "No message added."}</p>
-          <p className="mt-1 text-[11px] text-gray-500">
-            {booking.created_at ? new Date(booking.created_at).toLocaleString() : ""}
-          </p>
-        </div>
-
-        {booking.owner_response_message && (
-          <div className="ml-auto max-w-[88%] rounded-md bg-[#192a3a] px-3 py-2 text-xs text-white">
-            <p className="font-medium text-gray-200">Owner reply</p>
-            <p className="mt-1 whitespace-pre-wrap">{booking.owner_response_message}</p>
+        <div className="max-h-56 space-y-3 overflow-y-auto rounded-md border border-gray-100 bg-gray-50 p-3">
+          <div className="mr-auto max-w-[88%] rounded-md border border-gray-200 bg-white px-3 py-2 text-xs text-[#192a3a]">
+            <p className="font-medium text-gray-700">Initial request</p>
+            <p className="mt-1 whitespace-pre-wrap">{booking.notes || "No message added."}</p>
+            <p className="mt-1 text-[11px] text-gray-500">
+              {booking.created_at ? new Date(booking.created_at).toLocaleString() : ""}
+            </p>
           </div>
-        )}
 
-        {(messagesByBooking[booking.id] || []).map((item) => {
-          const isMine = item.sender_id === sessionUserId;
-
-          return (
-            <div
-              key={item.id}
-              className={`max-w-[88%] rounded-md px-3 py-2 text-xs ${isMine
-                ? "ml-auto bg-[#192a3a] text-white"
-                : "mr-auto border border-gray-200 bg-white text-[#192a3a]"
-                }`}
-            >
-              <p className="whitespace-pre-wrap">{item.message}</p>
-              <p className={`mt-1 text-[11px] ${isMine ? "text-gray-200" : "text-gray-500"}`}>
-                {item.created_at ? new Date(item.created_at).toLocaleString() : ""}
-              </p>
+          {booking.owner_response_message && (
+            <div className="ml-auto max-w-[88%] rounded-md bg-[#192a3a] px-3 py-2 text-xs text-white">
+              <p className="font-medium text-gray-200">Your reply (at decision)</p>
+              <p className="mt-1 whitespace-pre-wrap">{booking.owner_response_message}</p>
             </div>
-          );
-        })}
-
-        {!booking.owner_response_message && (messagesByBooking[booking.id] || []).length === 0 && (
-          <p className="text-xs text-gray-500">No conversation yet.</p>
-        )}
+          )}
+        </div>
       </div>
 
-      <div className="mt-3 flex flex-col gap-2 rounded-md border border-gray-200 bg-white p-3">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-gray-500">
-          New message
-        </p>
-        <textarea
-          value={messageDrafts[booking.id] || ""}
-          onChange={(e) =>
-            setMessageDrafts((current) => ({
-              ...current,
-              [booking.id]: e.target.value,
-            }))
-          }
-          rows={3}
-          placeholder="Add a new comment"
-          className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-[#192a3a] outline-none focus:border-[#192a3a]"
-        />
-        <div className="flex justify-end">
+      <div className="rounded-md border border-gray-200 bg-white p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
+            Renter communication
+          </p>
           <button
             type="button"
-            onClick={() => void sendBookingMessage(booking)}
-            disabled={sendingMessageBookingId === booking.id || !canUseMessaging(booking)}
-            className="flex items-center gap-2 rounded-md bg-[#192a3a] px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60"
+            onClick={(e) => {
+              e.stopPropagation();
+              void onToggleCommunication(booking);
+            }}
+            className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-[#192a3a] shadow-sm hover:bg-gray-50"
           >
-            <Send className="h-4 w-4" />
-            {sendingMessageBookingId === booking.id ? "Sending..." : "Send comment"}
+            <MessageSquare className="h-4 w-4" />
+            Message renter
+            {isOpen ? (
+              <ChevronUp className="h-4 w-4" aria-hidden />
+            ) : (
+              <ChevronDown className="h-4 w-4" aria-hidden />
+            )}
           </button>
         </div>
-        {!canUseMessaging(booking) && (
-          <p className="text-xs text-gray-500">
-            Messaging becomes available after payment is confirmed.
-          </p>
+
+        {isOpen && (
+          <div className="mt-4 border-t border-gray-100 pt-4">
+            <div className="space-y-4">
+              {messagesLoadingBookingId === booking.id ? (
+                <p className="text-sm text-gray-500">Loading messages…</p>
+              ) : (
+                <>
+                  <div className="grid gap-3 rounded-md border border-gray-100 bg-gray-50/80 p-3 sm:grid-cols-2">
+                    <div className="flex items-start gap-2 text-sm">
+                      <Mail className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+                      <div>
+                        <p className="text-xs font-medium text-gray-500">Email</p>
+                        <p className="break-all text-[#192a3a]">
+                          {contact?.email || "—"}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-start gap-2 text-sm">
+                      <Phone className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+                      <div>
+                        <p className="text-xs font-medium text-gray-500">Contact number</p>
+                        <p className="text-[#192a3a]">
+                          {contact?.phone ? contact.phone : "Contact number not available"}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <p className="mb-2 text-xs font-medium text-gray-500">Conversation</p>
+                    <div className="max-h-56 space-y-2 overflow-y-auto rounded-md border border-gray-200 bg-gray-50 p-3">
+                      {(messagesByBooking[booking.id] || []).length === 0 ? (
+                        <p className="text-sm text-gray-500">
+                          No messages yet. Say hello to coordinate with the renter.
+                        </p>
+                      ) : (
+                        (messagesByBooking[booking.id] || []).map((item) => {
+                          const isMine = item.sender_id === sessionUserId;
+                          return (
+                            <div
+                              key={item.id}
+                              className={`max-w-[88%] rounded-md px-3 py-2 text-sm ${isMine
+                                ? "ml-auto bg-[#192a3a] text-white"
+                                : "mr-auto border border-gray-200 bg-white text-[#192a3a]"
+                                }`}
+                            >
+                              <p className="whitespace-pre-wrap">{item.message}</p>
+                              <p
+                                className={`mt-1 text-[11px] ${isMine ? "text-gray-200" : "text-gray-500"
+                                  }`}
+                              >
+                                {item.created_at
+                                  ? new Date(item.created_at).toLocaleString()
+                                  : ""}
+                              </p>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-2">
+                    <textarea
+                      value={messageDrafts[booking.id] || ""}
+                      onChange={(e) =>
+                        setMessageDrafts((current) => ({
+                          ...current,
+                          [booking.id]: e.target.value,
+                        }))
+                      }
+                      rows={3}
+                      placeholder="Write a message to the renter"
+                      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-[#192a3a] outline-none focus:border-[#192a3a]"
+                    />
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void sendBookingMessage(booking);
+                        }}
+                        disabled={sendingMessageBookingId === booking.id}
+                        className="flex items-center gap-2 rounded-md bg-[#192a3a] px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60"
+                      >
+                        <Send className="h-4 w-4" />
+                        {sendingMessageBookingId === booking.id ? "Sending..." : "Send message"}
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
         )}
       </div>
     </div>
@@ -658,6 +743,7 @@ function BookingRow({
   booking,
   stage,
   messageCount,
+  showMessageBadge,
   isExpanded,
   hasBlockingConflict,
   pendingOverlapCount,
@@ -738,10 +824,12 @@ function BookingRow({
       </div>
 
       <div className="flex items-center justify-end gap-3">
-        <div className="inline-flex items-center gap-2 rounded-full border border-gray-200 px-3 py-1 text-xs text-gray-700">
-          <MessageSquare className="h-4 w-4" />
-          <span>{messageCount}</span>
-        </div>
+        {showMessageBadge && (
+          <div className="inline-flex items-center gap-2 rounded-full border border-gray-200 px-3 py-1 text-xs text-gray-700">
+            <MessageSquare className="h-4 w-4" />
+            <span>{messageCount}</span>
+          </div>
+        )}
         <span className="text-sm text-gray-400">{isExpanded ? "−" : "+"}</span>
       </div>
     </div>
@@ -769,9 +857,15 @@ function ExpandedBookingPanel({
   isPendingRequest,
   updateBookingStatus,
   sendBookingMessage,
-  canUseMessaging,
+  communicationOpenBookingId,
+  onToggleCommunication,
+  messagesLoadingBookingId,
+  counterpartyContactByBooking,
   competingPendingRequests,
 }: ExpandedBookingPanelProps) {
+  const showRenterContact =
+    isCommunicationAllowed(booking) && booking.renter?.email;
+
   return (
     <div className="border-t border-gray-200 bg-[#fbfcfd] p-4">
       <div className="space-y-4">
@@ -781,12 +875,24 @@ function ExpandedBookingPanel({
               <span className="font-medium text-[#192a3a]">Requester:</span> {getDisplayName(booking.renter)}
             </div>
             <div>
-              <span className="font-medium text-[#192a3a]">Email:</span> {booking.renter?.email || "No email"}
+              <span className="font-medium text-[#192a3a]">Email:</span>{" "}
+              {showRenterContact ? booking.renter?.email || "No email" : (
+                <span className="text-gray-500">Hidden until payment is confirmed</span>
+              )}
             </div>
             <div>
               <span className="font-medium text-[#192a3a]">Total:</span> R{Number(booking.total_price || 0).toFixed(2)}
             </div>
           </div>
+
+          {!isCommunicationAllowed(booking) && (booking.notes || "").trim() !== "" && (
+            <div className="mb-3 rounded-md border border-gray-100 bg-gray-50 p-3 text-sm">
+              <p className="mb-1 text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
+                Notes with this request
+              </p>
+              <p className="whitespace-pre-wrap text-[#192a3a]">{booking.notes}</p>
+            </div>
+          )}
 
           <div className="rounded-md border border-gray-200 bg-[#fbfcfd] p-3">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-4">
@@ -963,18 +1069,23 @@ function ExpandedBookingPanel({
             </div>
           </div>
 
-          <div className="space-y-4">
-            <BookingConversationPanel
-              booking={booking}
-              sessionUserId={sessionUserId}
-              messagesByBooking={messagesByBooking}
-              messageDrafts={messageDrafts}
-              setMessageDrafts={setMessageDrafts}
-              sendingMessageBookingId={sendingMessageBookingId}
-              sendBookingMessage={sendBookingMessage}
-              canUseMessaging={canUseMessaging}
-            />
-          </div>
+          {isCommunicationAllowed(booking) && (
+            <div className="space-y-4">
+              <BookingConversationPanel
+                booking={booking}
+                sessionUserId={sessionUserId}
+                messagesByBooking={messagesByBooking}
+                messageDrafts={messageDrafts}
+                setMessageDrafts={setMessageDrafts}
+                sendingMessageBookingId={sendingMessageBookingId}
+                sendBookingMessage={sendBookingMessage}
+                communicationOpenBookingId={communicationOpenBookingId}
+                onToggleCommunication={onToggleCommunication}
+                messagesLoadingBookingId={messagesLoadingBookingId}
+                counterpartyContactByBooking={counterpartyContactByBooking}
+              />
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -994,6 +1105,15 @@ export default function OwnerBookingRequestsPage() {
   const [messagesByBooking, setMessagesByBooking] = useState<Record<string, BookingMessage[]>>({});
   const [messageDrafts, setMessageDrafts] = useState<Record<string, string>>({});
   const [sendingMessageBookingId, setSendingMessageBookingId] = useState<string | null>(null);
+  const [communicationOpenBookingId, setCommunicationOpenBookingId] = useState<
+    string | null
+  >(null);
+  const [messagesLoadingBookingId, setMessagesLoadingBookingId] = useState<
+    string | null
+  >(null);
+  const [counterpartyContactByBooking, setCounterpartyContactByBooking] =
+    useState<Record<string, { email: string | null; phone: string | null }>>({});
+  const messagesLoadedRef = useRef<Set<string>>(new Set());
 
   const [blockingBySpace, setBlockingBySpace] = useState<
     Record<string, BlockingBooking[]>
@@ -1006,6 +1126,10 @@ export default function OwnerBookingRequestsPage() {
   useEffect(() => {
     loadRequests();
   }, []);
+
+  useEffect(() => {
+    setCommunicationOpenBookingId(null);
+  }, [expandedBookingId]);
 
   async function loadRequests() {
     setLoading(true);
@@ -1151,7 +1275,6 @@ export default function OwnerBookingRequestsPage() {
       });
 
       setBookings(enriched);
-      await loadMessagesForBookings(enriched);
 
       const initialReplies: Record<string, string> = {};
       enriched.forEach((booking) => {
@@ -1240,51 +1363,73 @@ export default function OwnerBookingRequestsPage() {
     }
   }
 
-  function canUseMessaging(booking: Booking) {
-    return (
-      booking.payment_status === "paid" ||
-      booking.payment_status === "paid_confirmed" ||
-      booking.status === "paid_confirmed" ||
-      booking.status === "confirmed"
-    );
+  async function loadMessagesFromApi(bookingId: string) {
+    setMessagesLoadingBookingId(bookingId);
+    setMessage("");
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session?.access_token) {
+        setMessage("Please log in to load messages.");
+        return;
+      }
+
+      const res = await fetch(`/api/bookings/${bookingId}/messages`, {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+
+      const json = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        messages?: BookingMessage[];
+        counterpartyContact?: { email: string | null; phone: string | null };
+      };
+
+      if (!res.ok) {
+        setMessage(
+          typeof json.error === "string"
+            ? json.error
+            : "Could not load messages."
+        );
+        return;
+      }
+
+      const contact =
+        json.counterpartyContact ??
+        ({ email: null, phone: null } as {
+          email: string | null;
+          phone: string | null;
+        });
+
+      setMessagesByBooking((current) => ({
+        ...current,
+        [bookingId]: json.messages || [],
+      }));
+      setCounterpartyContactByBooking((current) => ({
+        ...current,
+        [bookingId]: contact,
+      }));
+      messagesLoadedRef.current.add(bookingId);
+    } catch {
+      setMessage("Could not load messages.");
+    } finally {
+      setMessagesLoadingBookingId(null);
+    }
   }
 
-  async function loadMessagesForBookings(bookingsToLoad: EnrichedBooking[]) {
-    const eligibleBookingIds = bookingsToLoad
-      .filter((booking) => canUseMessaging(booking))
-      .map((booking) => booking.id);
-
-    if (eligibleBookingIds.length === 0) {
-      setMessagesByBooking({});
+  async function toggleCommunicationPanel(booking: EnrichedBooking) {
+    if (communicationOpenBookingId === booking.id) {
+      setCommunicationOpenBookingId(null);
       return;
     }
-
-    const { data, error } = await (supabase.from("booking_messages") as any)
-      .select("id, booking_id, sender_id, recipient_id, message, created_at")
-      .in("booking_id", eligibleBookingIds)
-      .order("created_at", { ascending: true });
-
-    if (error) {
-      console.error("Failed to load booking messages:", {
-        message: error?.message,
-        details: error?.details,
-        hint: error?.hint,
-        code: error?.code,
-        raw: error,
-      });
+    setCommunicationOpenBookingId(booking.id);
+    if (!isCommunicationAllowed(booking)) {
       return;
     }
-
-    const grouped = ((data || []) as BookingMessage[]).reduce(
-      (acc, item) => {
-        if (!acc[item.booking_id]) acc[item.booking_id] = [];
-        acc[item.booking_id].push(item);
-        return acc;
-      },
-      {} as Record<string, BookingMessage[]>
-    );
-
-    setMessagesByBooking(grouped);
+    if (!messagesLoadedRef.current.has(booking.id)) {
+      await loadMessagesFromApi(booking.id);
+    }
   }
 
   async function sendBookingMessage(booking: EnrichedBooking) {
@@ -1300,66 +1445,72 @@ export default function OwnerBookingRequestsPage() {
       return;
     }
 
-    if (!canUseMessaging(booking)) {
-      setMessage("Messaging becomes available after payment is confirmed.");
+    if (!isCommunicationAllowed(booking)) {
+      setMessage(
+        "Messaging is only available after payment confirmation."
+      );
       return;
     }
 
     setSendingMessageBookingId(booking.id);
     setMessage("");
 
-    const payload = {
-      booking_id: booking.id,
-      sender_id: sessionUserId,
-      recipient_id: booking.renter_id,
-      message: draft,
-    };
-
-    const { data, error } = await (supabase.from("booking_messages") as any)
-      .insert(payload)
-      .select("id, booking_id, sender_id, recipient_id, message, created_at")
-      .single();
-
-    if (error) {
-      setMessage(error.message || "Could not send message.");
-      setSendingMessageBookingId(null);
-      return;
-    }
-
-    const newMessage = data as BookingMessage;
-
-    setMessagesByBooking((current) => ({
-      ...current,
-      [booking.id]: [...(current[booking.id] || []), newMessage],
-    }));
-
     try {
-      await fetch("/api/notifications/booking-event", {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session?.access_token) {
+        setMessage("Please log in first.");
+        setSendingMessageBookingId(null);
+        return;
+      }
+
+      const res = await fetch(`/api/bookings/${booking.id}/messages`, {
         method: "POST",
         headers: {
+          Authorization: `Bearer ${session.access_token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          bookingId: booking.id,
-          eventType: "booking_message",
-          senderId: sessionUserId,
-          recipientId: booking.renter_id,
-          message: draft,
-        }),
+        body: JSON.stringify({ message: draft }),
       });
-    } catch (notificationError) {
-      console.error(
-        "Failed to fire booking message notification:",
-        notificationError
-      );
+
+      const json = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        message?: BookingMessage;
+      };
+
+      if (!res.ok) {
+        setMessage(
+          typeof json.error === "string"
+            ? json.error
+            : "Could not send message."
+        );
+        return;
+      }
+
+      const newMessage = json.message;
+      if (!newMessage) {
+        setMessage("Could not send message.");
+        return;
+      }
+
+      messagesLoadedRef.current.add(booking.id);
+
+      setMessagesByBooking((current) => ({
+        ...current,
+        [booking.id]: [...(current[booking.id] || []), newMessage],
+      }));
+
+      setMessageDrafts((current) => ({
+        ...current,
+        [booking.id]: "",
+      }));
+    } catch {
+      setMessage("Could not send message.");
+    } finally {
+      setSendingMessageBookingId(null);
     }
-
-    setMessageDrafts((current) => ({
-      ...current,
-      [booking.id]: "",
-    }));
-
-    setSendingMessageBookingId(null);
   }
 
   async function updateBookingStatus(
@@ -1872,6 +2023,7 @@ export default function OwnerBookingRequestsPage() {
                 // 4. Timeline blocked dates: show all for this space, not just overlapping
                 const blockedTimelineDates = blockedBySpace[booking.space_id] || [];
 
+                const commAllowed = isCommunicationAllowed(booking);
                 const messageCount = (messagesByBooking[booking.id] || []).length;
                 const stage = getBookingStage(booking.status, booking.payment_status);
                 const isExpanded = expandedBookingId === booking.id;
@@ -1886,6 +2038,7 @@ export default function OwnerBookingRequestsPage() {
                       booking={booking}
                       stage={stage}
                       messageCount={messageCount}
+                      showMessageBadge={commAllowed}
                       isExpanded={isExpanded}
                       hasBlockingConflict={hasBlockingConflict}
                       pendingOverlapCount={pendingOverlapCount}
@@ -1928,7 +2081,10 @@ export default function OwnerBookingRequestsPage() {
                         isPendingRequest={isPendingRequest}
                         updateBookingStatus={updateBookingStatus}
                         sendBookingMessage={sendBookingMessage}
-                        canUseMessaging={canUseMessaging}
+                        communicationOpenBookingId={communicationOpenBookingId}
+                        onToggleCommunication={toggleCommunicationPanel}
+                        messagesLoadingBookingId={messagesLoadingBookingId}
+                        counterpartyContactByBooking={counterpartyContactByBooking}
                         competingPendingRequests={overlappingPendingRequests}
                       />
                     )}

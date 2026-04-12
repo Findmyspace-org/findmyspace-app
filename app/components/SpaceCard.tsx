@@ -9,6 +9,7 @@ import {
   Wallet,
   ArrowRight,
 } from "lucide-react";
+import { formatSpaceTypeLabel } from "@/app/data/spaceFeatureConfig";
 
 type Space = {
   id: string;
@@ -55,8 +56,7 @@ export default function SpaceCard({ space }: Props) {
   }
 
   function formatSpaceType(value?: string | null) {
-    if (!value) return "Space";
-    return value.charAt(0).toUpperCase() + value.slice(1);
+    return formatSpaceTypeLabel(value);
   }
 
   function formatBookingUnit(value?: string | null) {

@@ -1,48 +1,14 @@
 "use client";
 
 import {
-  Car,
-  Shield,
-  Key,
-  Lock,
-  Warehouse,
-  Ruler,
-  Building,
-  Camera,
-  DoorOpen,
-  MapPin,
-  CircleDollarSign,
-  Clock3,
-  Square,
-  Layers3,
-  Fence,
-  AlarmSmoke,
-  UserCheck,
-  Package,
-  Wrench,
-  Grid3X3,
-  CheckSquare,
-  FileText,
-  CircleHelp,
-  Warehouse as IndoorOutdoorIcon,
-  Thermometer,
-} from "lucide-react";
-import { spaceFieldConfig } from "@/app/data/spaceFieldConfig";
+  getSpaceFeatureLayout,
+  SPACE_TYPE_LABELS,
+  normalizeSpaceTypeForFeatures,
+  type SpaceFeatureField,
+} from "@/app/data/spaceFeatureConfig";
+import { SpaceFeatureIcon } from "@/app/components/space-feature-icons";
 
 type AttributeState = Record<string, string[]>;
-
-type FieldOption = {
-  value: string;
-  label: string;
-};
-
-type FieldConfig = {
-  key: string;
-  label: string;
-  type: "text" | "number" | "select" | "boolean" | "multiselect";
-  placeholder?: string;
-  options?: FieldOption[];
-};
 
 type Props = {
   spaceType: string;
@@ -50,92 +16,13 @@ type Props = {
   setAttributes: React.Dispatch<React.SetStateAction<AttributeState>>;
 };
 
-function getFieldIcon(key: string, label: string) {
-  const normalized = `${key} ${label}`.toLowerCase();
-
-  if (normalized.includes("indoor") || normalized.includes("outdoor")) {
-    return IndoorOutdoorIcon;
-  }
-  if (normalized.includes("climate")) return Thermometer;
-  if (normalized.includes("access")) return Key;
-  if (normalized.includes("security")) return Shield;
-  if (normalized.includes("vehicle")) return Car;
-  if (normalized.includes("parking")) return Car;
-  if (normalized.includes("alarm")) return AlarmSmoke;
-  if (normalized.includes("cctv")) return Camera;
-  if (normalized.includes("gate")) return Fence;
-  if (normalized.includes("guard")) return UserCheck;
-  if (normalized.includes("remote")) return Lock;
-  if (normalized.includes("key")) return Key;
-  if (normalized.includes("size")) return Ruler;
-  if (normalized.includes("dimension")) return Ruler;
-  if (normalized.includes("height")) return Ruler;
-  if (normalized.includes("width")) return Ruler;
-  if (normalized.includes("length")) return Ruler;
-  if (normalized.includes("storage")) return Warehouse;
-  if (normalized.includes("office")) return Building;
-  if (normalized.includes("workspace")) return Building;
-  if (normalized.includes("floor")) return Layers3;
-  if (normalized.includes("unit")) return Square;
-  if (normalized.includes("bay")) return Square;
-  if (normalized.includes("door")) return DoorOpen;
-  if (normalized.includes("location")) return MapPin;
-  if (normalized.includes("price")) return CircleDollarSign;
-  if (normalized.includes("availability")) return Clock3;
-  if (normalized.includes("feature")) return Grid3X3;
-  if (normalized.includes("condition")) return CheckSquare;
-  if (normalized.includes("equipment")) return Wrench;
-  if (normalized.includes("item")) return Package;
-  if (normalized.includes("description")) return FileText;
-
-  return CircleHelp;
-}
-
-function isIndoorOutdoorField(field: FieldConfig) {
-  const label = field.label.toLowerCase();
-  const key = field.key.toLowerCase();
-  return (
-    label.includes("indoor / outdoor") ||
-    label.includes("indoor/outdoor") ||
-    key.includes("indoor_outdoor") ||
-    key.includes("indooroutdoor")
-  );
-}
-
-function isClimateControlledField(field: FieldConfig) {
-  const label = field.label.toLowerCase();
-  const key = field.key.toLowerCase();
-  return (
-    label.includes("climate controlled") ||
-    key.includes("climate_controlled") ||
-    key.includes("climatecontrolled")
-  );
-}
-
-function isLengthField(field: FieldConfig) {
-  const label = field.label.toLowerCase();
-  const key = field.key.toLowerCase();
-  return label.includes("length") || key.includes("length");
-}
-
-function isWidthField(field: FieldConfig) {
-  const label = field.label.toLowerCase();
-  const key = field.key.toLowerCase();
-  return label.includes("width") || key.includes("width");
-}
-
-function isHeightField(field: FieldConfig) {
-  const label = field.label.toLowerCase();
-  const key = field.key.toLowerCase();
-  return label.includes("height") || key.includes("height");
-}
-
 export default function SpaceCategoryFields({
   spaceType,
   attributes,
   setAttributes,
 }: Props) {
-  const fields = (spaceFieldConfig[spaceType] || []) as FieldConfig[];
+  const layout = getSpaceFeatureLayout(spaceType);
+  const normalized = normalizeSpaceTypeForFeatures(spaceType);
 
   function getSingleValue(key: string) {
     return attributes[key]?.[0] || "";
@@ -162,166 +49,148 @@ export default function SpaceCategoryFields({
     });
   }
 
-  function updateBooleanValue(key: string, value: string) {
+  function toggleCheckbox(key: string, checked: boolean) {
     setAttributes((current) => ({
       ...current,
-      [key]: value ? [value] : [],
+      [key]: checked ? ["yes"] : [],
     }));
   }
 
-  function renderField(field: FieldConfig) {
-    const Icon = getFieldIcon(field.key, field.label);
-
-    return (
-      <div
-        key={field.key}
-        className="rounded-md border border-gray-200 bg-[#f8fafb] p-4"
-      >
-        <label className="mb-2 flex items-center gap-2 text-sm font-medium text-[#192a3a]">
-          <span className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-[#192a3a] text-white">
-            <Icon className="h-4 w-4" />
-          </span>
-          <span>{field.label}</span>
-        </label>
-
-        {field.type === "text" && (
-          <input
-            type="text"
-            value={getSingleValue(field.key)}
-            onChange={(e) => updateSingleValue(field.key, e.target.value)}
-            placeholder={field.placeholder || ""}
-            className="w-full rounded-md border border-gray-300 bg-white px-4 py-3 text-sm outline-none transition focus:border-[#192a3a]"
-          />
-        )}
-
-        {field.type === "number" && (
-          <input
-            type="number"
-            value={getSingleValue(field.key)}
-            onChange={(e) => updateSingleValue(field.key, e.target.value)}
-            className="w-full rounded-md border border-gray-300 bg-white px-4 py-3 text-sm outline-none transition focus:border-[#192a3a]"
-          />
-        )}
-
-        {field.type === "select" && (
-          <select
-            value={getSingleValue(field.key)}
-            onChange={(e) => updateSingleValue(field.key, e.target.value)}
-            className="w-full rounded-md border border-gray-300 bg-white px-4 py-3 text-sm outline-none transition focus:border-[#192a3a]"
-          >
-            <option value="">Select an option</option>
-            {field.options?.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        )}
-
-        {field.type === "boolean" && (
-          <div className="flex flex-wrap gap-2">
-            {[
-              { value: "yes", label: "Yes" },
-              { value: "no", label: "No" },
-            ].map((option) => {
-              const selected = getSingleValue(field.key) === option.value;
-
-              return (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() => updateBooleanValue(field.key, option.value)}
-                  className={`rounded-md border px-3 py-2 text-sm transition ${
-                    selected
-                      ? "border-[#192a3a] bg-[#192a3a] text-white"
-                      : "border-gray-300 bg-white text-[#192a3a] hover:border-[#192a3a]"
-                  }`}
-                >
-                  {option.label}
-                </button>
-              );
-            })}
-          </div>
-        )}
-
-        {field.type === "multiselect" && (
-          <div className="flex flex-wrap gap-2">
-            {field.options?.map((option) => {
-              const selected = (attributes[field.key] || []).includes(
-                option.value
-              );
-
-              return (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() => toggleMultiValue(field.key, option.value)}
-                  className={`rounded-md border px-3 py-2 text-sm leading-none transition ${
-                    selected
-                      ? "border-[#192a3a] bg-[#192a3a] text-white"
-                      : "border-gray-300 bg-white text-[#192a3a] hover:border-[#192a3a]"
-                  }`}
-                >
-                  {option.label}
-                </button>
-              );
-            })}
-          </div>
-        )}
-      </div>
-    );
+  function isCheckboxChecked(key: string) {
+    return (attributes[key] || []).includes("yes");
   }
 
-  if (fields.length === 0) {
+  function renderField(field: SpaceFeatureField) {
+    if (field.kind === "checkbox") {
+      const checked = isCheckboxChecked(field.key);
+      return (
+        <label
+          key={field.key}
+          className="flex cursor-pointer items-start gap-2 rounded-md border border-transparent px-1 py-1 text-sm text-[#192a3a] transition hover:border-gray-200 hover:bg-white"
+        >
+          <input
+            type="checkbox"
+            checked={checked}
+            onChange={(e) => toggleCheckbox(field.key, e.target.checked)}
+            className="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300 text-[#192a3a] focus:ring-[#192a3a]"
+          />
+          <SpaceFeatureIcon name={field.icon} className="mt-0.5 h-4 w-4 shrink-0 text-gray-500" />
+          <span className="leading-snug">{field.label}</span>
+        </label>
+      );
+    }
+
+    if (field.kind === "radio") {
+      return (
+        <div key={field.key} className="space-y-2">
+          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.08em] text-gray-500">
+            <SpaceFeatureIcon name={field.icon} className="h-4 w-4 text-gray-500" />
+            {field.label}
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {field.options.map((opt) => {
+              const selected = getSingleValue(field.key) === opt.value;
+              return (
+                <label
+                  key={opt.value}
+                  className={`inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition ${
+                    selected
+                      ? "border-[#192a3a] bg-[#192a3a] text-white"
+                      : "border-gray-200 bg-white text-[#192a3a] hover:border-gray-300"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name={field.key}
+                    value={opt.value}
+                    checked={selected}
+                    onChange={() => updateSingleValue(field.key, opt.value)}
+                    className="sr-only"
+                  />
+                  {opt.label}
+                </label>
+              );
+            })}
+          </div>
+        </div>
+      );
+    }
+
+    if (field.kind === "multiselect") {
+      const selected = attributes[field.key] || [];
+      return (
+        <div key={field.key} className="space-y-2">
+          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.08em] text-gray-500">
+            <SpaceFeatureIcon name={field.icon} className="h-4 w-4 text-gray-500" />
+            {field.label}
+          </div>
+          <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+            {field.options.map((opt) => {
+              const on = selected.includes(opt.value);
+              return (
+                <label
+                  key={opt.value}
+                  className="flex cursor-pointer items-center gap-2 rounded-md border border-gray-100 bg-white px-2 py-1.5 text-xs text-[#192a3a] hover:border-gray-200"
+                >
+                  <input
+                    type="checkbox"
+                    checked={on}
+                    onChange={() => toggleMultiValue(field.key, opt.value)}
+                    className="h-3.5 w-3.5 rounded border-gray-300 text-[#192a3a]"
+                  />
+                  {opt.label}
+                </label>
+              );
+            })}
+          </div>
+        </div>
+      );
+    }
+
     return null;
   }
 
-  const indoorOutdoorField = fields.find(isIndoorOutdoorField);
-  const climateControlledField = fields.find(isClimateControlledField);
-
-  const lengthField = fields.find(isLengthField);
-  const widthField = fields.find(isWidthField);
-  const heightField = fields.find(isHeightField);
-
-  const groupedKeys = new Set<string>(
-    [
-      indoorOutdoorField?.key,
-      climateControlledField?.key,
-      lengthField?.key,
-      widthField?.key,
-      heightField?.key,
-    ].filter(Boolean) as string[]
-  );
-
-  const remainingFields = fields.filter((field) => !groupedKeys.has(field.key));
+  if (layout.sections.length === 0) {
+    return null;
+  }
 
   return (
-    <div className="space-y-4 rounded-md border border-gray-300 bg-white p-5 shadow-sm">
-      <div className="border-b border-gray-200 pb-3">
-        <h3 className="text-lg font-semibold text-[#192a3a]">
-          Category-specific details
-        </h3>
-        <p className="mt-1 text-sm text-gray-600">
-          Add the details that help renters understand this type of space.
+    <div className="space-y-4 rounded-md border border-gray-200 bg-white p-4 shadow-sm md:p-5">
+      <div className="border-b border-gray-100 pb-3">
+        <h3 className="text-base font-semibold text-[#192a3a]">Features &amp; amenities</h3>
+        <p className="mt-0.5 text-xs text-gray-600">
+          Select what applies — tailored for{" "}
+          {SPACE_TYPE_LABELS[normalized] || spaceType}.
         </p>
       </div>
 
-      {(indoorOutdoorField || climateControlledField) && (
-        <div className="grid gap-4 md:grid-cols-2">
-          {indoorOutdoorField && renderField(indoorOutdoorField)}
-          {climateControlledField && renderField(climateControlledField)}
-        </div>
-      )}
+      <div className="space-y-4">
+        {layout.sections.map((section) => {
+          const checkboxes = section.fields.filter((f) => f.kind === "checkbox");
+          const others = section.fields.filter((f) => f.kind !== "checkbox");
 
-      {(lengthField || widthField || heightField) && (
-        <div className="grid gap-4 md:grid-cols-3">
-          {lengthField && renderField(lengthField)}
-          {widthField && renderField(widthField)}
-          {heightField && renderField(heightField)}
-        </div>
-      )}
-
-      {remainingFields.map((field) => renderField(field))}
+          return (
+            <div
+              key={section.id}
+              className="rounded-md border border-gray-100 bg-[#f8fafb] p-3 md:p-4"
+            >
+              <p className="mb-3 text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
+                {section.title}
+              </p>
+              <div className="space-y-4">
+                {checkboxes.length > 0 && (
+                  <div className="grid grid-cols-1 gap-x-3 gap-y-1 sm:grid-cols-2 lg:grid-cols-3">
+                    {checkboxes.map((field) => renderField(field))}
+                  </div>
+                )}
+                {others.map((field) => (
+                  <div key={field.key}>{renderField(field)}</div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
