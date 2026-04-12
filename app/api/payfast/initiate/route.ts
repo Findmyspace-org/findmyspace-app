@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { createClient } from "@supabase/supabase-js";
+import { isAwaitingGatewayPayment } from "@/lib/finance-status";
 
 type BookingRow = {
   id: string;
@@ -78,17 +79,6 @@ export async function POST(req: NextRequest) {
         { error: "Missing required environment variables." },
         { status: 500 }
       );
-    }
-
-    console.log("Has service role key:", !!SUPABASE_SERVICE_ROLE_KEY);
-    console.log("Supabase URL:", NEXT_PUBLIC_SUPABASE_URL);
-
-    const keyParts = SUPABASE_SERVICE_ROLE_KEY.split(".");
-    if (keyParts.length === 3) {
-      const payload = JSON.parse(
-        Buffer.from(keyParts[1], "base64").toString("utf-8")
-      );
-      console.log("Service key role:", payload.role);
     }
 
     const body = await req.json();
@@ -217,10 +207,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (
-      booking.status !== "accepted_awaiting_payment" ||
-      (booking.payment_status || "unpaid") !== "awaiting_payment"
-    ) {
+    if (!isAwaitingGatewayPayment(booking)) {
       return NextResponse.json(
         { error: "This booking is not ready for payment." },
         { status: 400 }
@@ -261,9 +248,6 @@ export async function POST(req: NextRequest) {
       custom_str1: String(booking.id),
       custom_str2: String(booking.space_id),
     };
-
-    console.log("PayFast paymentData:", paymentData);
-    console.log("PayFast passphrase set:", !!PAYFAST_PASSPHRASE);
 
     const signature = generatePayFastSignature(
       paymentData,

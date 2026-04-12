@@ -1,7 +1,38 @@
 import { NextResponse } from "next/server";
 import crypto from "crypto";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { markBookingChargesPaid } from "@/lib/invoice-payments";
+import { isAwaitingGatewayPayment } from "@/lib/finance-status";
+
+/** Revert booking to payable state if charge lines could not be marked paid (keeps row + charges in sync). */
+async function revertBookingToAwaitingPayment(
+  admin: SupabaseClient,
+  bookingId: string
+): Promise<{ error: Error | null }> {
+  const { error } = await (admin.from("bookings") as any)
+    .update({
+      status: "accepted_awaiting_payment",
+      payment_status: "awaiting_payment",
+      paid_at: null,
+      payment_reference: null,
+    })
+    .eq("id", bookingId)
+    .eq("status", "paid_confirmed");
+
+  if (error) {
+    return { error: new Error(error.message) };
+  }
+  return { error: null };
+}
+
+function amountsMatchForPayFast(expectedTotal: unknown, amountGross: number): boolean {
+  const expected = Number(expectedTotal ?? 0);
+  const actual = Number(amountGross ?? 0);
+  if (!Number.isFinite(expected) || !Number.isFinite(actual)) return false;
+  const roundedExpected = Math.round(expected * 100) / 100;
+  const roundedActual = Math.round(actual * 100) / 100;
+  return Math.abs(roundedExpected - roundedActual) < 0.005;
+}
 
 function generateNotifySignatureFromRawBody(
   rawBody: string,
@@ -124,18 +155,11 @@ export async function POST(req: Request) {
 
     console.log("Current booking row before notify update:", booking);
 
-    const expectedAmount = Number(booking.total_price || 0).toFixed(2);
-    const actualAmount = Number(amountGross || 0).toFixed(2);
-
-    console.log("PayFast notify amount check:", {
-      expectedAmount,
-      actualAmount,
-    });
-
-    if (expectedAmount !== actualAmount) {
+    if (!amountsMatchForPayFast(booking.total_price, amountGross)) {
+      const expected = Number(booking.total_price ?? 0);
       console.error("Notify error: amount mismatch", {
-        expectedAmount,
-        actualAmount,
+        expected,
+        amountGross,
       });
       return new NextResponse("Amount mismatch", { status: 400 });
     }
@@ -149,11 +173,7 @@ export async function POST(req: Request) {
         return new NextResponse("OK", { status: 200 });
       }
 
-      const payable =
-        booking.status === "accepted_awaiting_payment" &&
-        (booking.payment_status || "unpaid") === "awaiting_payment";
-
-      if (!payable) {
+      if (!isAwaitingGatewayPayment(booking)) {
         console.log("Notify ignored COMPLETE: booking not awaiting payment", {
           bookingId,
           status: booking.status,
@@ -200,20 +220,43 @@ export async function POST(req: Request) {
         paidAt,
         pfPaymentId || null
       );
-      if (markChargesError) {
-        console.error("Notify: could not mark booking_charges paid:", markChargesError);
-      }
 
-      const { data: verifyRows, error: verifyError } = await (supabaseAdmin
-        .from("bookings") as any)
-        .select("id, status, payment_status, paid_at")
-        .eq("id", bookingId)
+      const { data: stillPendingRows } = await (supabaseAdmin
+        .from("booking_charges") as any)
+        .select("id")
+        .eq("booking_id", bookingId)
+        .eq("status", "pending")
         .limit(1);
 
-      if (verifyError) {
-        console.error("Notify verify read error:", verifyError);
-      } else {
-        console.log("Booking row after update verification:", verifyRows?.[0]);
+      const chargesStillPending =
+        Array.isArray(stillPendingRows) && stillPendingRows.length > 0;
+
+      if (markChargesError || chargesStillPending) {
+        if (markChargesError) {
+          console.error(
+            "Notify: could not mark booking_charges paid:",
+            markChargesError
+          );
+        } else {
+          console.error(
+            "Notify: booking_charges still pending after update; reverting booking"
+          );
+        }
+
+        const { error: revertError } = await revertBookingToAwaitingPayment(
+          supabaseAdmin,
+          bookingId
+        );
+        if (revertError) {
+          console.error(
+            "Notify: CRITICAL failed to revert booking after charge sync failure",
+            revertError
+          );
+        }
+
+        return new NextResponse("Could not sync payment line items", {
+          status: 500,
+        });
       }
 
       if (appBaseUrl) {

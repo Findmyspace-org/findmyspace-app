@@ -22,6 +22,8 @@ import {
   groupMonthlyPaidLines,
   summarizePaidLines,
 } from "@/lib/admin-finance-filters";
+import { isChargeLinePendingForReporting } from "@/lib/finance-status";
+import { FINANCE_BOOKINGS_QUERY_LIMIT } from "@/lib/finance-query-limits";
 
 type SpaceOption = { id: string; title: string | null };
 
@@ -80,6 +82,7 @@ export default function OwnerFinancePage() {
             owner_earnings,
             status,
             payment_status,
+            paid_at,
             created_at,
             renter:profiles!bookings_renter_id_fkey(first_name, last_name, email),
             space:spaces(title),
@@ -98,7 +101,8 @@ export default function OwnerFinancePage() {
           `
           )
           .eq("owner_id", user.id)
-          .order("created_at", { ascending: false });
+          .order("created_at", { ascending: false })
+          .limit(FINANCE_BOOKINGS_QUERY_LIMIT);
 
         if (bookErr) throw bookErr;
         setBookings((bookingRows || []) as FinanceBookingInput[]);
@@ -156,7 +160,7 @@ export default function OwnerFinancePage() {
 
     let outstanding = 0;
     for (const t of allTransactions) {
-      if (t.status !== "pending") continue;
+      if (!isChargeLinePendingForReporting(t.status)) continue;
       const b = bookings.find((x) => x.id === t.bookingId);
       if (
         b?.status === "accepted_awaiting_payment" &&
@@ -176,8 +180,8 @@ export default function OwnerFinancePage() {
   }, [filtered, allTransactions, bookings]);
 
   const statementsByMonth = useMemo(
-    () => groupMonthlyPaidLines(filtered),
-    [filtered]
+    () => groupMonthlyPaidLines(filtered, bookings),
+    [filtered, bookings]
   );
 
   return (

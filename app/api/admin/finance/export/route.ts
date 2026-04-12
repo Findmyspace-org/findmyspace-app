@@ -9,6 +9,7 @@ import {
   filterFinanceLineItems,
   parseAdminFinanceFilters,
 } from "@/lib/admin-finance-filters";
+import { FINANCE_BOOKINGS_QUERY_LIMIT } from "@/lib/finance-query-limits";
 
 function csvEscape(value: string): string {
   if (/[",\n\r]/.test(value)) {
@@ -46,6 +47,7 @@ export async function GET(req: NextRequest) {
       owner_earnings,
       status,
       payment_status,
+      paid_at,
       created_at,
       space:spaces(title),
       renter:profiles!bookings_renter_id_fkey(first_name, last_name, email),
@@ -65,7 +67,7 @@ export async function GET(req: NextRequest) {
     `
     )
     .order("created_at", { ascending: false })
-    .limit(8000);
+    .limit(FINANCE_BOOKINGS_QUERY_LIMIT);
 
   if (bookingError) {
     return NextResponse.json(

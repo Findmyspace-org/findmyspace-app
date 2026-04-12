@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { generateInvoiceNumber } from "@/lib/invoice";
+import { isInvoiceEligibleBooking } from "@/lib/finance-status";
 
 function escapeHtml(s: string | number | null | undefined): string {
   if (s === null || s === undefined) return "";
@@ -118,10 +119,10 @@ export async function GET(
     return new NextResponse("Forbidden", { status: 403 });
   }
 
-  const paidForInvoice =
-    (row.status === "paid_confirmed" || row.status === "confirmed") &&
-    (row.payment_status === "paid" ||
-      row.payment_status === "paid_confirmed");
+  const paidForInvoice = isInvoiceEligibleBooking(
+    row.status,
+    row.payment_status
+  );
 
   if (!paidForInvoice) {
     return new NextResponse("Invoice available after payment is confirmed.", {

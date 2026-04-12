@@ -725,6 +725,26 @@ export default function BookingRequestForm({
 
           if (chargesError) {
             console.error("booking_charges insert failed:", chargesError);
+            const { error: deleteError } = await supabase
+              .from("bookings")
+              .delete()
+              .eq("id", insertedBooking.id);
+
+            if (deleteError) {
+              console.error(
+                "Could not roll back booking after charge insert failure:",
+                deleteError
+              );
+              setStatusMessage(
+                `Payment lines could not be created (${chargesError.message}). Your booking may need to be cancelled by support — reference: ${insertedBooking.id}.`
+              );
+            } else {
+              setStatusMessage(
+                `Your booking could not be completed: ${chargesError.message}. Please try again.`
+              );
+            }
+            setLoading(false);
+            return;
           }
         }
 

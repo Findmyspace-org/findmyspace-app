@@ -1,4 +1,8 @@
 import { getDisplayName } from "@/lib/utils";
+import {
+  isLegacyPaidBookingWithoutCharges,
+  normalizeChargeLineStatus,
+} from "@/lib/finance-status";
 
 export type BookingChargeRow = {
   id: string;
@@ -21,6 +25,8 @@ export type FinanceBookingInput = {
   owner_earnings: number | null;
   status: string | null;
   payment_status: string | null;
+  /** When set, used for synthetic lines and date filters on legacy paid bookings. */
+  paid_at?: string | null;
   created_at: string | null;
   renter: {
     first_name: string | null;
@@ -66,17 +72,22 @@ export function formatChargePeriod(c: BookingChargeRow): string {
   return "—";
 }
 
+/**
+ * Split booking-level platform_fee and owner_earnings across charge lines.
+ * Uses `allocationBase` = sum of charge amounts when line items exist (handles
+ * rounding drift vs total_price); otherwise falls back to booking total.
+ */
 export function allocateFees(
   chargeAmount: number,
-  bookingTotal: number,
+  allocationBase: number,
   platformFee: number,
   ownerEarnings: number
 ) {
-  const tp = bookingTotal > 0 ? bookingTotal : 0;
-  if (tp <= 0) {
+  const base = allocationBase > 0 ? allocationBase : 0;
+  if (base <= 0 || chargeAmount <= 0) {
     return { platformAlloc: 0, netAlloc: 0 };
   }
-  const share = chargeAmount / tp;
+  const share = chargeAmount / base;
   return {
     platformAlloc: share * (platformFee || 0),
     netAlloc: share * (ownerEarnings || 0),
@@ -99,9 +110,22 @@ export function buildFinanceLineItems(bookings: FinanceBookingInput[]): FinanceL
     const ownerLabel = getDisplayName(b.owner ?? null);
 
     if (charges.length > 0) {
+      const chargesSum = charges.reduce(
+        (s, c) => s + Number(c.amount || 0),
+        0
+      );
+      const allocationBase =
+        chargesSum > 0 ? chargesSum : tp > 0 ? tp : 0;
+
       for (const c of charges) {
         const gross = Number(c.amount || 0);
-        const { platformAlloc, netAlloc } = allocateFees(gross, tp, pf, oe);
+        const { platformAlloc, netAlloc } = allocateFees(
+          gross,
+          allocationBase,
+          pf,
+          oe
+        );
+        const lineStatus = normalizeChargeLineStatus(c.status);
         rows.push({
           id: c.id,
           bookingId: b.id,
@@ -113,17 +137,13 @@ export function buildFinanceLineItems(bookings: FinanceBookingInput[]): FinanceL
           gross,
           platformFee: platformAlloc,
           netOwner: netAlloc,
-          status: c.status || "pending",
+          status: lineStatus,
           paidAt: c.paid_at,
           paymentRef: c.payment_reference,
           isSynthetic: false,
         });
       }
-    } else if (
-      b.status === "paid_confirmed" &&
-      (b.payment_status === "paid" || b.payment_status === "paid_confirmed") &&
-      tp > 0
-    ) {
+    } else if (isLegacyPaidBookingWithoutCharges(b)) {
       rows.push({
         id: `legacy-${b.id}`,
         bookingId: b.id,
@@ -136,7 +156,7 @@ export function buildFinanceLineItems(bookings: FinanceBookingInput[]): FinanceL
         platformFee: pf,
         netOwner: oe,
         status: "paid",
-        paidAt: null,
+        paidAt: b.paid_at ?? null,
         paymentRef: null,
         isSynthetic: true,
       });
@@ -144,6 +164,16 @@ export function buildFinanceLineItems(bookings: FinanceBookingInput[]): FinanceL
   }
 
   return rows;
+}
+
+/** Paid date for filters: charge row, or booking.paid_at for synthetic legacy lines. */
+export function resolveEffectivePaidAt(
+  line: FinanceLineItem,
+  booking: FinanceBookingInput | undefined
+): string | null {
+  if (line.paidAt) return line.paidAt;
+  if (line.isSynthetic && booking?.paid_at) return booking.paid_at;
+  return null;
 }
 
 export function monthKeyFromPaidAt(iso: string | null): string {

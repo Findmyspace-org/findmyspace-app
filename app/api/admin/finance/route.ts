@@ -11,6 +11,7 @@ import {
   parseAdminFinanceFilters,
   summarizePaidLines,
 } from "@/lib/admin-finance-filters";
+import { FINANCE_BOOKINGS_QUERY_LIMIT } from "@/lib/finance-query-limits";
 
 export async function GET(req: NextRequest) {
   const auth = await requireAdminApi(req);
@@ -41,6 +42,7 @@ export async function GET(req: NextRequest) {
       owner_earnings,
       status,
       payment_status,
+      paid_at,
       created_at,
       space:spaces(title),
       renter:profiles!bookings_renter_id_fkey(first_name, last_name, email),
@@ -60,7 +62,7 @@ export async function GET(req: NextRequest) {
     `
     )
     .order("created_at", { ascending: false })
-    .limit(8000);
+    .limit(FINANCE_BOOKINGS_QUERY_LIMIT);
 
   if (bookingError) {
     console.error("admin finance bookings:", bookingError);
@@ -74,7 +76,7 @@ export async function GET(req: NextRequest) {
   const allLines = buildFinanceLineItems(bookings);
   const filteredLines = filterFinanceLineItems(allLines, bookings, filters);
   const paidSummary = summarizePaidLines(filteredLines);
-  const monthly = groupMonthlyPaidLines(filteredLines);
+  const monthly = groupMonthlyPaidLines(filteredLines, bookings);
 
   const { data: expiredRows } = await admin
     .from("bookings")
