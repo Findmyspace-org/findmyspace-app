@@ -12,6 +12,7 @@ import {
   summarizePaidLines,
 } from "@/lib/admin-finance-filters";
 import { FINANCE_BOOKINGS_QUERY_LIMIT } from "@/lib/finance-query-limits";
+import { sumCommittedFutureIncomeGross } from "@/lib/monthly-contract-finance";
 
 export async function GET(req: NextRequest) {
   const auth = await requireAdminApi(req);
@@ -37,6 +38,7 @@ export async function GET(req: NextRequest) {
       `
       id,
       space_id,
+      booking_unit,
       total_price,
       platform_fee,
       owner_earnings,
@@ -44,6 +46,12 @@ export async function GET(req: NextRequest) {
       payment_status,
       paid_at,
       created_at,
+      monthly_rent,
+      months_total,
+      months_paid,
+      deposit_amount,
+      initial_payment_amount,
+      next_payment_date,
       space:spaces(title),
       renter:profiles!bookings_renter_id_fkey(first_name, last_name, email),
       owner:profiles!bookings_owner_id_fkey(first_name, last_name, email),
@@ -77,6 +85,13 @@ export async function GET(req: NextRequest) {
   const filteredLines = filterFinanceLineItems(allLines, bookings, filters);
   const paidSummary = summarizePaidLines(filteredLines);
   const monthly = groupMonthlyPaidLines(filteredLines, bookings);
+
+  const bookingsForCommitted =
+    filters.spaceId === "all"
+      ? bookings
+      : bookings.filter((b) => b.space_id === filters.spaceId);
+  const committedFutureIncomeGross =
+    sumCommittedFutureIncomeGross(bookingsForCommitted);
 
   const { data: expiredRows } = await admin
     .from("bookings")
@@ -140,6 +155,7 @@ export async function GET(req: NextRequest) {
       totalPlatformFees: paidSummary.totalPlatformFees,
       totalOwnerEarnings: paidSummary.totalOwnerEarnings,
       depositsCollected: paidSummary.depositsCollected,
+      committedFutureIncomeGross,
       expiredUnpaid,
       paymentFailures: paymentFailureCount,
       paymentFailureAmount,

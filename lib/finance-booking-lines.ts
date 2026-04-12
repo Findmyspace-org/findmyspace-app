@@ -28,6 +28,14 @@ export type FinanceBookingInput = {
   /** When set, used for synthetic lines and date filters on legacy paid bookings. */
   paid_at?: string | null;
   created_at: string | null;
+  /** Monthly lease metadata (committed future income is derived; not extra charges). */
+  booking_unit?: string | null;
+  monthly_rent?: number | null;
+  months_total?: number | null;
+  months_paid?: number | null;
+  deposit_amount?: number | null;
+  initial_payment_amount?: number | null;
+  next_payment_date?: string | null;
   renter: {
     first_name: string | null;
     last_name: string | null;

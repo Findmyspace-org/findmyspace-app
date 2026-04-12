@@ -19,6 +19,7 @@ type AdminFinanceSummary = {
   totalPlatformFees: number;
   totalOwnerEarnings: number;
   depositsCollected: number;
+  committedFutureIncomeGross: number;
   expiredUnpaid: number;
   paymentFailures: number;
   paymentFailureAmount: number;
@@ -264,7 +265,7 @@ export default function AdminFinancePage() {
         )}
 
         <>
-            <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+            <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
               {[
                 {
                   title: "Gross booking value",
@@ -285,6 +286,11 @@ export default function AdminFinancePage() {
                   title: "Deposits collected",
                   value: formatMoney(summary.depositsCollected),
                   sub: "Deposit charges",
+                },
+                {
+                  title: "Committed future income",
+                  value: formatMoney(summary.committedFutureIncomeGross),
+                  sub: "Monthly leases — rent not yet due (not cash received)",
                 },
                 {
                   title: "Expired unpaid",
@@ -390,8 +396,10 @@ export default function AdminFinancePage() {
                 </label>
               </div>
               <p className="mt-2 text-xs text-gray-500">
-                Summary metrics (first four cards) follow filters. Expired unpaid
-                and payment failures are global snapshots.
+                Gross booking value, fees, deposits, and paid transaction rows
+                follow filters. Committed future income uses the property filter
+                only (not paid-date filters). Expired unpaid and payment failures
+                are global snapshots.
               </p>
             </div>
 

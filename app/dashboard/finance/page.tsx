@@ -24,6 +24,7 @@ import {
 } from "@/lib/admin-finance-filters";
 import { isChargeLinePendingForReporting } from "@/lib/finance-status";
 import { FINANCE_BOOKINGS_QUERY_LIMIT } from "@/lib/finance-query-limits";
+import { sumCommittedFutureIncomeGross } from "@/lib/monthly-contract-finance";
 
 type SpaceOption = { id: string; title: string | null };
 
@@ -77,6 +78,7 @@ export default function OwnerFinancePage() {
             `
             id,
             space_id,
+            booking_unit,
             total_price,
             platform_fee,
             owner_earnings,
@@ -84,6 +86,12 @@ export default function OwnerFinancePage() {
             payment_status,
             paid_at,
             created_at,
+            monthly_rent,
+            months_total,
+            months_paid,
+            deposit_amount,
+            initial_payment_amount,
+            next_payment_date,
             renter:profiles!bookings_renter_id_fkey(first_name, last_name, email),
             space:spaces(title),
             booking_charges(
@@ -155,6 +163,11 @@ export default function OwnerFinancePage() {
     ]
   );
 
+  const bookingsForCommitted = useMemo(() => {
+    if (spaceId === "all") return bookings;
+    return bookings.filter((b) => b.space_id === spaceId);
+  }, [bookings, spaceId]);
+
   const summary = useMemo(() => {
     const paid = summarizePaidLines(filtered);
 
@@ -170,14 +183,17 @@ export default function OwnerFinancePage() {
       }
     }
 
+    const committedFutureIncome = sumCommittedFutureIncomeGross(bookingsForCommitted);
+
     return {
       grossReceived: paid.grossBookingValue,
       deposits: paid.depositsCollected,
       platformFees: paid.totalPlatformFees,
       netOwner: paid.totalOwnerEarnings,
       outstanding,
+      committedFutureIncome,
     };
-  }, [filtered, allTransactions, bookings]);
+  }, [filtered, allTransactions, bookings, bookingsForCommitted]);
 
   const statementsByMonth = useMemo(
     () => groupMonthlyPaidLines(filtered, bookings),
@@ -245,7 +261,7 @@ export default function OwnerFinancePage() {
             <p className="text-sm text-gray-600">Loading finance data…</p>
           ) : (
             <>
-              <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+              <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
                 {[
                   {
                     title: "Gross received",
@@ -268,9 +284,14 @@ export default function OwnerFinancePage() {
                     sub: "After platform fee",
                   },
                   {
-                    title: "Outstanding",
+                    title: "Outstanding (current)",
                     value: formatMoney(summary.outstanding),
-                    sub: "Awaiting renter payment",
+                    sub: "Awaiting renter payment now",
+                  },
+                  {
+                    title: "Committed future income",
+                    value: formatMoney(summary.committedFutureIncome),
+                    sub: "Monthly leases — rent not yet due (not cash received)",
                   },
                 ].map((card) => (
                   <div

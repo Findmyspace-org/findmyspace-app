@@ -9,11 +9,13 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@sparticuz/chromium": "^131.0.0",
     "@supabase/supabase-js": "^2.99.2",
     "date-fns": "^4.1.0",
     "leaflet": "^1.9.4",
     "lucide-react": "^1.7.0",
     "next": "16.1.7",
+    "puppeteer-core": "^24.1.1",
     "react": "19.2.3",
     "react-day-picker": "^9.14.0",
     "react-dom": "19.2.3",
