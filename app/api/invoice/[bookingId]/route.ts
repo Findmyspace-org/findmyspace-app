@@ -73,6 +73,7 @@ export async function GET(
       `
       id,
       renter_id,
+      owner_id,
       booking_unit,
       start_at,
       end_at,
@@ -108,11 +109,12 @@ export async function GET(
 
   const row = booking as typeof booking & {
     renter_id: string;
+    owner_id: string;
     payment_reference?: string | null;
     paid_at?: string | null;
   };
 
-  if (row.renter_id !== user.id) {
+  if (row.renter_id !== user.id && row.owner_id !== user.id) {
     return new NextResponse("Forbidden", { status: 403 });
   }
 

@@ -3,7 +3,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
     CalendarDays,
     ChevronLeft,
@@ -50,7 +50,7 @@ type CalendarBooking = {
         first_name?: string | null;
         last_name?: string | null;
         email?: string | null;
-        cell?: string | null;
+        phone?: string | null;
     } | null;
 };
 
@@ -248,15 +248,6 @@ function getSegmentShapeClass(segment: TimelineSegment) {
     const leftClass = segment.isTruncatedStart ? "rounded-l-md" : "rounded-l-full";
     const rightClass = segment.isTruncatedEnd ? "rounded-r-md" : "rounded-r-full";
     return `${leftClass} ${rightClass}`;
-}
-
-function getRenterDisplayName(booking: CalendarBooking) {
-    const first = booking.renter?.first_name?.trim() || "";
-    const last = booking.renter?.last_name?.trim() || "";
-    const fullName = `${first} ${last}`.trim();
-
-    if (fullName) return fullName;
-    return booking.renter?.email || "Guest";
 }
 
 function formatBookingStatus(status?: string | null) {
@@ -1052,92 +1043,258 @@ function CalendarGrid({
 
 // ---- Drawer and Modal Components ----
 
-type BookingDrawerProps = {
-    booking: CalendarBooking;
-    space: CalendarSpace;
+type BookingModalProps = {
+    open: boolean;
+    booking: CalendarBooking | null;
+    space: CalendarSpace | null;
+    onClose: () => void;
 };
 
-function BookingDrawer({ booking, space }: BookingDrawerProps) {
+function BookingModal({ open, booking, space, onClose }: BookingModalProps) {
+    const [invoiceModalOpen, setInvoiceModalOpen] = useState(false);
+    const [invoiceHtml, setInvoiceHtml] = useState<string | null>(null);
+    const [invoiceLoading, setInvoiceLoading] = useState(false);
+    const [invoiceError, setInvoiceError] = useState<string | null>(null);
+
+    useEffect(() => {
+        if (!open) {
+            setInvoiceModalOpen(false);
+            setInvoiceHtml(null);
+            setInvoiceError(null);
+            setInvoiceLoading(false);
+        }
+    }, [open]);
+
+    const openInvoice = useCallback(async () => {
+        if (!booking) return;
+        setInvoiceError(null);
+        setInvoiceHtml(null);
+        setInvoiceModalOpen(true);
+        setInvoiceLoading(true);
+
+        try {
+            const {
+                data: { session },
+            } = await supabase.auth.getSession();
+
+            if (!session?.access_token) {
+                setInvoiceError("Please log in to view the invoice.");
+                setInvoiceLoading(false);
+                return;
+            }
+
+            const res = await fetch(`/api/invoice/${booking.id}`, {
+                headers: {
+                    Authorization: `Bearer ${session.access_token}`,
+                },
+            });
+
+            const text = await res.text();
+
+            if (!res.ok) {
+                setInvoiceError(
+                    res.status === 403
+                        ? "Invoice is only available after payment is confirmed."
+                        : text || "Could not load invoice."
+                );
+                setInvoiceLoading(false);
+                return;
+            }
+
+            setInvoiceHtml(text);
+        } catch {
+            setInvoiceError("Could not load invoice.");
+        } finally {
+            setInvoiceLoading(false);
+        }
+    }, [booking]);
+
+    if (!open || !booking || !space) return null;
+
+    const firstName = booking.renter?.first_name?.trim() || "";
+    const lastName = booking.renter?.last_name?.trim() || "";
+
     return (
         <>
-            <section className="space-y-3 rounded-xl border border-gray-200 bg-[#fbfcfd] p-4">
-                <h3 className="text-sm font-semibold text-[#192a3a]">Booking</h3>
-                <div className="space-y-2 text-sm text-gray-700">
-                    <p><span className="font-medium text-[#192a3a]">Renter:</span> {getRenterDisplayName(booking)}</p>
-                    <p><span className="font-medium text-[#192a3a]">Email:</span> {booking.renter?.email || "Not available"}</p>
-                    <p><span className="font-medium text-[#192a3a]">Phone:</span> {booking.renter?.cell || "Not available"}</p>
-                    {booking.booking_unit === "month" ? (
-                        <p><span className="font-medium text-[#192a3a]">Booking period:</span> {formatMonthBookingRange(booking)}</p>
-                    ) : (
-                        <>
-                            <p><span className="font-medium text-[#192a3a]">Start:</span> {new Date(booking.start_at).toLocaleString()}</p>
-                            <p><span className="font-medium text-[#192a3a]">End:</span> {new Date(booking.end_at).toLocaleString()}</p>
-                        </>
-                    )}
-                    <p><span className="font-medium text-[#192a3a]">Booking status:</span> {formatBookingStatus(booking.status)}</p>
-                    <p><span className="font-medium text-[#192a3a]">Payment status:</span> {formatBookingStatus(booking.payment_status)}</p>
-                </div>
-            </section>
+            <div className="fixed inset-0 z-40 bg-black/40" onClick={onClose} aria-hidden />
 
-            <section className="space-y-3 rounded-xl border border-gray-200 bg-[#fbfcfd] p-4">
-                <h3 className="text-sm font-semibold text-[#192a3a]">Listing</h3>
-                <div className="space-y-3">
-                    <Link
-                        href={`/spaces/${space.id}`}
-                        className="inline-flex w-full items-center justify-between rounded-md border border-gray-300 px-3 py-2 text-sm text-[#192a3a] hover:bg-white"
-                    >
-                        <span className="inline-flex items-center gap-2">
-                            <Eye className="h-4 w-4" />
-                            View listing
-                        </span>
-                        <span>›</span>
-                    </Link>
+            <div
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="booking-modal-title"
+                className="fixed left-1/2 top-1/2 z-50 flex max-h-[min(90vh,880px)] w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 flex-col rounded-xl border border-gray-200 bg-white shadow-2xl"
+            >
+                <div className="flex shrink-0 items-start justify-between gap-4 border-b border-gray-200 px-5 py-4">
+                    <div className="min-w-0">
+                        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">Booking</p>
+                        <h2 id="booking-modal-title" className="mt-1 truncate text-lg font-semibold text-[#192a3a]">
+                            {space.title || "Untitled space"}
+                        </h2>
+                    </div>
 
-                    <Link
-                        href={`/spaces/${space.id}/edit`}
-                        className="inline-flex w-full items-center justify-between rounded-md border border-gray-300 px-3 py-2 text-sm text-[#192a3a] hover:bg-white"
-                    >
-                        <span className="inline-flex items-center gap-2">
-                            <Pencil className="h-4 w-4" />
-                            Edit listing
-                        </span>
-                        <span>›</span>
-                    </Link>
-                </div>
-            </section>
-
-            <section className="space-y-3 rounded-xl border border-gray-200 bg-[#fbfcfd] p-4">
-                <h3 className="text-sm font-semibold text-[#192a3a]">Finance</h3>
-                <div className="space-y-2 text-sm text-gray-700">
-                    <p><span className="font-medium text-[#192a3a]">Amount:</span> {formatMoney(booking.total_price)}</p>
-                    <p><span className="font-medium text-[#192a3a]">Payment status:</span> {formatBookingStatus(booking.payment_status)}</p>
-                    <p><span className="font-medium text-[#192a3a]">Payout status:</span> Coming soon</p>
-                </div>
-
-                <div className="space-y-3 pt-1">
                     <button
                         type="button"
-                        className="inline-flex w-full items-center justify-between rounded-md border border-gray-300 px-3 py-2 text-sm text-[#192a3a] hover:bg-white"
+                        onClick={onClose}
+                        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-gray-300 text-gray-600 hover:bg-gray-50"
+                        aria-label="Close"
                     >
-                        <span className="inline-flex items-center gap-2">
-                            <Receipt className="h-4 w-4" />
-                            View invoice
-                        </span>
-                        <span>›</span>
+                        <X className="h-4 w-4" />
                     </button>
-
-                    <Link
-                        href="/dashboard/finance"
-                        className="inline-flex w-full items-center justify-between rounded-md border border-gray-300 px-3 py-2 text-sm text-[#192a3a] hover:bg-white"
-                    >
-                        <span className="inline-flex items-center gap-2">
-                            <Wallet className="h-4 w-4" />
-                            Open finance page
-                        </span>
-                        <span>›</span>
-                    </Link>
                 </div>
-            </section>
+
+                <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-5">
+                    <section className="space-y-3 rounded-xl border border-gray-200 bg-[#fbfcfd] p-4">
+                        <h3 className="text-sm font-semibold text-[#192a3a]">Renter</h3>
+                        <div className="space-y-2 text-sm text-gray-700">
+                            <p>
+                                <span className="font-medium text-[#192a3a]">First name:</span>{" "}
+                                {firstName || "—"}
+                            </p>
+                            <p>
+                                <span className="font-medium text-[#192a3a]">Last name:</span>{" "}
+                                {lastName || "—"}
+                            </p>
+                            <p>
+                                <span className="font-medium text-[#192a3a]">Email:</span>{" "}
+                                {booking.renter?.email || "—"}
+                            </p>
+                            <p>
+                                <span className="font-medium text-[#192a3a]">Phone:</span>{" "}
+                                {booking.renter?.phone || "—"}
+                            </p>
+                        </div>
+                    </section>
+
+                    <section className="space-y-3 rounded-xl border border-gray-200 bg-[#fbfcfd] p-4">
+                        <h3 className="text-sm font-semibold text-[#192a3a]">Booking details</h3>
+                        <div className="space-y-2 text-sm text-gray-700">
+                            {booking.booking_unit === "month" ? (
+                                <p>
+                                    <span className="font-medium text-[#192a3a]">Booking period:</span>{" "}
+                                    {formatMonthBookingRange(booking)}
+                                </p>
+                            ) : (
+                                <>
+                                    <p>
+                                        <span className="font-medium text-[#192a3a]">Start:</span>{" "}
+                                        {new Date(booking.start_at).toLocaleString()}
+                                    </p>
+                                    <p>
+                                        <span className="font-medium text-[#192a3a]">End:</span>{" "}
+                                        {new Date(booking.end_at).toLocaleString()}
+                                    </p>
+                                </>
+                            )}
+                            <p>
+                                <span className="font-medium text-[#192a3a]">Booking status:</span>{" "}
+                                {formatBookingStatus(booking.status)}
+                            </p>
+                            <p>
+                                <span className="font-medium text-[#192a3a]">Payment status:</span>{" "}
+                                {formatBookingStatus(booking.payment_status)}
+                            </p>
+                        </div>
+                    </section>
+
+                    <section className="space-y-3 rounded-xl border border-gray-200 bg-[#fbfcfd] p-4">
+                        <h3 className="text-sm font-semibold text-[#192a3a]">Listing</h3>
+                        <div className="space-y-3">
+                            <Link
+                                href={`/spaces/${space.id}`}
+                                className="inline-flex w-full items-center justify-between rounded-md border border-gray-300 px-3 py-2 text-sm text-[#192a3a] hover:bg-white"
+                            >
+                                <span className="inline-flex items-center gap-2">
+                                    <Eye className="h-4 w-4" />
+                                    View listing
+                                </span>
+                                <span>›</span>
+                            </Link>
+
+                            <Link
+                                href={`/spaces/${space.id}/edit`}
+                                className="inline-flex w-full items-center justify-between rounded-md border border-gray-300 px-3 py-2 text-sm text-[#192a3a] hover:bg-white"
+                            >
+                                <span className="inline-flex items-center gap-2">
+                                    <Pencil className="h-4 w-4" />
+                                    Edit listing
+                                </span>
+                                <span>›</span>
+                            </Link>
+                        </div>
+                    </section>
+
+                    <section className="space-y-3 rounded-xl border border-gray-200 bg-[#fbfcfd] p-4">
+                        <h3 className="text-sm font-semibold text-[#192a3a]">Finance</h3>
+                        <div className="space-y-2 text-sm text-gray-700">
+                            <p>
+                                <span className="font-medium text-[#192a3a]">Amount:</span> {formatMoney(booking.total_price)}
+                            </p>
+                            <p>
+                                <span className="font-medium text-[#192a3a]">Payout status:</span> Coming soon
+                            </p>
+                        </div>
+
+                        <div className="space-y-3 pt-1">
+                            <button
+                                type="button"
+                                onClick={() => void openInvoice()}
+                                className="inline-flex w-full items-center justify-between rounded-md border border-gray-300 px-3 py-2 text-sm text-[#192a3a] hover:bg-white"
+                            >
+                                <span className="inline-flex items-center gap-2">
+                                    <Receipt className="h-4 w-4" />
+                                    View invoice
+                                </span>
+                                <span>›</span>
+                            </button>
+
+                            <Link
+                                href="/dashboard/finance"
+                                className="inline-flex w-full items-center justify-between rounded-md border border-gray-300 px-3 py-2 text-sm text-[#192a3a] hover:bg-white"
+                            >
+                                <span className="inline-flex items-center gap-2">
+                                    <Wallet className="h-4 w-4" />
+                                    Open finance page
+                                </span>
+                                <span>›</span>
+                            </Link>
+                        </div>
+                    </section>
+                </div>
+            </div>
+
+            {invoiceModalOpen && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 px-4 py-6">
+                    <div className="flex max-h-[90vh] w-full max-w-3xl flex-col rounded-xl bg-white shadow-xl">
+                        <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
+                            <h2 className="text-lg font-semibold text-[#192a3a]">Invoice</h2>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setInvoiceModalOpen(false);
+                                    setInvoiceHtml(null);
+                                    setInvoiceError(null);
+                                }}
+                                className="rounded-md p-2 text-gray-500 hover:bg-gray-100 hover:text-[#192a3a]"
+                                aria-label="Close invoice"
+                            >
+                                <X className="h-5 w-5" />
+                            </button>
+                        </div>
+                        <div className="min-h-0 flex-1 overflow-auto p-4">
+                            {invoiceLoading && <p className="text-sm text-gray-600">Loading invoice…</p>}
+                            {invoiceError && <p className="text-sm text-red-700">{invoiceError}</p>}
+                            {!invoiceLoading && !invoiceError && invoiceHtml && (
+                                <iframe
+                                    title="Invoice"
+                                    className="h-[min(70vh,720px)] w-full rounded-md border border-gray-200 bg-white"
+                                    srcDoc={invoiceHtml}
+                                    sandbox="allow-same-origin"
+                                />
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
         </>
     );
 }
@@ -1409,15 +1566,33 @@ export default function CalendarPage() {
 
             if (spaceIds.length > 0) {
                 const { data: bookingData, error: bookingError } = await (supabase.from("bookings") as any)
-                    .select("id, space_id, renter_id, booking_unit, start_at, end_at, status, payment_status, total_price")
+                    .select(
+                        `
+                        id,
+                        space_id,
+                        renter_id,
+                        booking_unit,
+                        start_at,
+                        end_at,
+                        status,
+                        payment_status,
+                        total_price,
+                        renter:profiles!bookings_renter_id_fkey (
+                          first_name,
+                          last_name,
+                          email,
+                          phone
+                        )
+                      `
+                    )
                     .in("space_id", spaceIds)
+                    // Exclude "expired": those dates are free again; showing them blocks the owner's view of availability.
                     .in("status", [
                         "pending",
                         "pending_owner",
                         "approved",
                         "accepted_awaiting_payment",
                         "awaiting_payment",
-                        "expired",
                         "paid_confirmed",
                         "confirmed",
                         "completed",
@@ -1431,41 +1606,13 @@ export default function CalendarPage() {
                     setMessage(bookingError.message || "Could not load bookings.");
                     setBookings([]);
                 } else {
-                    const baseBookings = (bookingData || []) as CalendarBooking[];
-                    const renterIds = Array.from(
-                        new Set(baseBookings.map((booking) => booking.renter_id).filter(Boolean))
-                    ) as string[];
-
-                    let renterMap = new Map<string, { first_name?: string | null; last_name?: string | null; email?: string | null; cell?: string | null }>();
-
-                    if (renterIds.length > 0) {
-                        const { data: renterProfiles } = await (supabase.from("profiles") as any)
-                            .select("id, first_name, last_name, email, cell")
-                            .in("id", renterIds);
-
-                        renterMap = new Map(
-                            ((renterProfiles || []) as Array<{
-                                id: string;
-                                first_name?: string | null;
-                                last_name?: string | null;
-                                email?: string | null;
-                                cell?: string | null;
-                            }>).map((profile) => [
-                                profile.id,
-                                {
-                                    first_name: profile.first_name,
-                                    last_name: profile.last_name,
-                                    email: profile.email,
-                                    cell: profile.cell,
-                                },
-                            ])
-                        );
-                    }
-
+                    const rows = (bookingData || []) as Array<
+                        CalendarBooking & { renter?: CalendarBooking["renter"] }
+                    >;
                     setBookings(
-                        baseBookings.map((booking) => ({
-                            ...booking,
-                            renter: booking.renter_id ? renterMap.get(booking.renter_id) || null : null,
+                        rows.map((row) => ({
+                            ...row,
+                            renter: row.renter ?? null,
                         }))
                     );
                 }
@@ -1931,16 +2078,19 @@ export default function CalendarPage() {
                         onBlockedDateClick={handleTimelineBlockedDateClick}
                     />
                 </div>
+                <BookingModal
+                    open={Boolean(selectedBooking && selectedDrawerSpace)}
+                    booking={selectedBooking}
+                    space={selectedDrawerSpace}
+                    onClose={closeDrawer}
+                />
+
                 <SideDrawer
-                    open={Boolean((selectedBooking || selectedBlockedDate) && selectedDrawerSpace)}
+                    open={Boolean(selectedBlockedDate && selectedDrawerSpace && !selectedBooking)}
                     title={selectedDrawerSpace?.title || "Untitled space"}
-                    subtitle={selectedBooking ? "Booking" : "Blocked availability"}
+                    subtitle="Blocked availability"
                     onClose={closeDrawer}
                 >
-                    {selectedBooking && selectedDrawerSpace && (
-                        <BookingDrawer booking={selectedBooking} space={selectedDrawerSpace} />
-                    )}
-
                     {selectedBlockedDate && selectedDrawerSpace && (
                         <BlockedDateDrawer
                             blockedDate={selectedBlockedDate}

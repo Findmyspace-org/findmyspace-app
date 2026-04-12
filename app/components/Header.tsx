@@ -522,16 +522,17 @@ export default function Header() {
       menuSections.push({
         title: "Hosting",
         items: [
+          { label: "Dashboard", href: "/dashboard/owner", icon: LayoutDashboard },
           { label: "List a space", onClick: handleListSpaceClick, icon: HousePlus },
           { label: "My listings", href: "/dashboard/listings", icon: Building2 },
           {
-            label: "Booking requests",
+            label: "Bookings & Request",
             href: "/dashboard/requests",
             icon: ClipboardList,
             badgeCount: bookingRequestActionCount,
           },
           {
-            label: "Host settings",
+            label: "Host Admin",
             href: "/dashboard/verification?step=overview",
             icon: Settings,
           },

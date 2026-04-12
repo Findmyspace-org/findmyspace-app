@@ -21,7 +21,9 @@ import { getDisplayName } from "@/lib/utils";
 
 import OwnerCalendarLegend from "@/app/dashboard/_components/calendar/OwnerCalendarLegend";
 import OwnerTopNav from "@/app/dashboard/_components/calendar/OwnerTopNav";
-import OwnerBookingRequestTimeline from "@/app/dashboard/_components/calendar/OwnerBookingRequestTimeline";
+import OwnerBookingRequestTimeline, {
+  shouldShowCurrentBookingAsExisting,
+} from "@/app/dashboard/_components/calendar/OwnerBookingRequestTimeline";
 
 type Booking = {
   id: string;
@@ -430,7 +432,11 @@ function StatusFilterButtons({
   onChange,
 }: StatusFilterButtonsProps) {
   return (
-    <div className="flex flex-wrap gap-3">
+    <div
+      className="-mx-0.5 flex flex-nowrap gap-1.5 overflow-x-auto pb-0.5 pt-0.5 [scrollbar-width:thin]"
+      role="toolbar"
+      aria-label="Filter by status"
+    >
       {items.map((item) => {
         const Icon = item.icon;
 
@@ -439,15 +445,15 @@ function StatusFilterButtons({
             key={item.key}
             type="button"
             onClick={() => onChange(item.key)}
-            className={`flex items-center gap-2 rounded-md border px-4 py-2 text-sm ${activeKey === item.key
-              ? "bg-[#192a3a] text-white"
-              : "bg-white text-[#192a3a]"
+            className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md border px-2.5 py-1.5 text-xs font-medium sm:px-3 sm:text-sm ${activeKey === item.key
+              ? "border-[#192a3a] bg-[#192a3a] text-white"
+              : "border-gray-300 bg-white text-[#192a3a]"
               }`}
           >
-            <Icon className="h-4 w-4" />
+            <Icon className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
             <span>{item.label}</span>
             <span
-              className={`rounded-full px-2 py-0.5 text-xs font-medium ${activeKey === item.key
+              className={`min-w-[1.25rem] rounded-full px-1.5 py-0.5 text-[0.65rem] font-semibold leading-none sm:text-xs ${activeKey === item.key
                 ? "bg-white text-[#192a3a]"
                 : "bg-gray-200 text-gray-700"
                 }`}
@@ -502,8 +508,8 @@ function RequestsPageHeader({
         </div>
       </div>
 
-      <div className="mt-5 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-        <div className="relative min-w-[240px] flex-1 xl:max-w-[340px]">
+      <div className="mt-5 flex flex-col gap-3 lg:flex-row lg:items-center lg:gap-4">
+        <div className="relative w-full shrink-0 lg:max-w-[min(100%,260px)]">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
           <input
             value={searchText}
@@ -513,23 +519,25 @@ function RequestsPageHeader({
           />
         </div>
 
-        <StatusFilterButtons
-          items={[
-            { key: "all", label: "All", count: counts.all, icon: ClipboardList },
-            { key: "pending", label: "Pending", count: counts.pending, icon: CircleDot },
-            {
-              key: "awaiting_payment",
-              label: "Awaiting payment",
-              count: counts.awaiting_payment,
-              icon: Wallet,
-            },
-            { key: "confirmed", label: "Confirmed", count: counts.confirmed, icon: CheckCircle2 },
-            { key: "expired", label: "Expired", count: counts.expired, icon: Clock },
-            { key: "declined", label: "Declined", count: counts.declined, icon: XCircle },
-          ]}
-          activeKey={statusFilter}
-          onChange={onStatusFilterChange}
-        />
+        <div className="min-w-0 flex-1">
+          <StatusFilterButtons
+            items={[
+              { key: "all", label: "All", count: counts.all, icon: ClipboardList },
+              { key: "pending", label: "Pending", count: counts.pending, icon: CircleDot },
+              {
+                key: "awaiting_payment",
+                label: "Awaiting payment",
+                count: counts.awaiting_payment,
+                icon: Wallet,
+              },
+              { key: "confirmed", label: "Confirmed", count: counts.confirmed, icon: CheckCircle2 },
+              { key: "expired", label: "Expired", count: counts.expired, icon: Clock },
+              { key: "declined", label: "Declined", count: counts.declined, icon: XCircle },
+            ]}
+            activeKey={statusFilter}
+            onChange={onStatusFilterChange}
+          />
+        </div>
       </div>
     </div>
   );
@@ -789,10 +797,12 @@ function ExpandedBookingPanel({
               </div>
 
               <div className="flex flex-wrap items-center gap-4 text-xs text-gray-600">
-                <span className="inline-flex items-center gap-2">
-                  <span className="h-3 w-3 rounded-full bg-pink-500" />
-                  Requested
-                </span>
+                {!shouldShowCurrentBookingAsExisting(booking.status, booking.payment_status) && (
+                  <span className="inline-flex items-center gap-2">
+                    <span className="h-3 w-3 rounded-full bg-pink-500" />
+                    Requested
+                  </span>
+                )}
                 <OwnerCalendarLegend />
               </div>
             </div>
@@ -804,6 +814,7 @@ function ExpandedBookingPanel({
                   requestedStart={booking.start_at}
                   requestedEnd={booking.end_at}
                   requestedStatus={booking.status}
+                  requestedPaymentStatus={booking.payment_status}
                   existingBookings={blockingBookings}
                   pendingBookings={pendingTimelineBookings}
                   blockedDates={blockedTimelineDates}

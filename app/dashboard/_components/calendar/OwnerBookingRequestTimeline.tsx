@@ -177,11 +177,88 @@ function getOwnerPreviewBarClass(status?: string | null, requested = false) {
   return "bg-gray-400 text-white";
 }
 
+/** When true, this booking is treated as calendar inventory — show green on "Existing", not pink on "Requested". */
+export function shouldShowCurrentBookingAsExisting(
+  status?: string | null,
+  paymentStatus?: string | null
+): boolean {
+  if (!status) return false;
+  if (status === "declined" || status === "expired") return false;
+  if (status === "pending" || status === "pending_owner") return false;
+  if (status === "paid_confirmed" || status === "confirmed" || status === "completed") {
+    return true;
+  }
+  if (paymentStatus === "paid" || paymentStatus === "paid_confirmed") {
+    return true;
+  }
+  return false;
+}
+
+function getExistingRowBarLabel(item: SharedBlockingBooking): string {
+  if (item.status === "pending" || item.status === "pending_owner") return "Pending";
+
+  const paid =
+    item.payment_status === "paid" || item.payment_status === "paid_confirmed";
+
+  if (
+    paid &&
+    item.status !== "paid_confirmed" &&
+    item.status !== "confirmed" &&
+    item.status !== "completed"
+  ) {
+    return "Payment received";
+  }
+
+  if (
+    item.status === "approved" ||
+    item.status === "accepted_awaiting_payment" ||
+    item.status === "awaiting_payment"
+  ) {
+    return "Awaiting payment";
+  }
+
+  return "Confirmed";
+}
+
+function getExistingRowBarClass(item: SharedBlockingBooking): string {
+  if (item.status === "pending" || item.status === "pending_owner") {
+    return "bg-yellow-500 text-white";
+  }
+
+  const paid =
+    item.payment_status === "paid" || item.payment_status === "paid_confirmed";
+
+  if (
+    paid ||
+    item.status === "paid_confirmed" ||
+    item.status === "confirmed" ||
+    item.status === "completed"
+  ) {
+    return "bg-green-500 text-white";
+  }
+
+  if (item.status === "expired") {
+    return "bg-amber-600 text-white";
+  }
+
+  if (
+    item.status === "approved" ||
+    item.status === "accepted_awaiting_payment" ||
+    item.status === "awaiting_payment"
+  ) {
+    return "bg-blue-500 text-white";
+  }
+
+  return getOwnerPreviewBarClass(item.status);
+}
+
 type Props = {
   bookingUnit: string | null;
   requestedStart: string;
   requestedEnd: string;
   requestedStatus?: string | null;
+  /** Used with requestedStatus so paid / confirmed bookings render on the Existing row. */
+  requestedPaymentStatus?: string | null;
   existingBookings: SharedBlockingBooking[];
   pendingBookings: SharedBlockingBooking[];
   blockedDates: SharedBlockedDate[];
@@ -192,6 +269,7 @@ export default function OwnerBookingRequestTimeline({
   requestedStart,
   requestedEnd,
   requestedStatus,
+  requestedPaymentStatus,
   existingBookings,
   pendingBookings,
   blockedDates,
@@ -316,9 +394,34 @@ export default function OwnerBookingRequestTimeline({
 
   const requestedSegment = getSegment(requested.start, requested.end);
 
-  function renderExistingRow(items: SharedBlockingBooking[]) {
+  const showCurrentAsExisting = shouldShowCurrentBookingAsExisting(
+    requestedStatus,
+    requestedPaymentStatus
+  );
+
+  const currentBookingAsExisting: SharedBlockingBooking | null = showCurrentAsExisting
+    ? {
+        id: "__current_booking__",
+        space_id: "",
+        booking_unit: bookingUnit,
+        start_at: requestedStart,
+        end_at: requestedEnd,
+        status: requestedStatus ?? null,
+        payment_status: requestedPaymentStatus ?? null,
+      }
+    : null;
+
+  function renderExistingRow(
+    items: SharedBlockingBooking[],
+    options?: { withTopBorder?: boolean }
+  ) {
     return (
-      <OwnerTimelineRow label="Existing" columns={columns} bookingUnit={resolvedBookingUnit}>
+      <OwnerTimelineRow
+        label="Existing"
+        columns={columns}
+        bookingUnit={resolvedBookingUnit}
+        withTopBorder={options?.withTopBorder ?? true}
+      >
         {items.map((item) => {
           const itemBookingUnit = resolveBookingUnit(
             item.booking_unit,
@@ -333,19 +436,8 @@ export default function OwnerBookingRequestTimeline({
           const segment = getSegment(normalized.start, normalized.end);
           if (!segment) return null;
 
-          const labelText =
-            item.status === "pending" || item.status === "pending_owner"
-              ? "Pending"
-              : item.status === "approved" ||
-                item.status === "accepted_awaiting_payment" ||
-                item.status === "awaiting_payment"
-              ? "Awaiting payment"
-              : "Confirmed";
-
-          const barClass =
-            item.status === "pending" || item.status === "pending_owner"
-              ? "bg-yellow-500 text-white"
-              : getOwnerPreviewBarClass(item.status);
+          const labelText = getExistingRowBarLabel(item);
+          const barClass = getExistingRowBarClass(item);
 
           return (
             <OwnerTimelineBar
@@ -391,26 +483,35 @@ export default function OwnerBookingRequestTimeline({
     <div className="w-full overflow-x-auto">
       <div className="min-w-[720px] overflow-hidden rounded-md border border-gray-200 bg-white">
         <OwnerTimelineHeader columns={columns} bookingUnit={resolvedBookingUnit} />
-        <OwnerTimelineRow
-          label="Requested"
-          columns={columns}
-          bookingUnit={resolvedBookingUnit}
-          withTopBorder={false}
-        >
-          {requestedSegment && (
-            <OwnerTimelineBar
-              label={requestedStatus === "declined" ? "Declined" : "Requested"}
-              className={getOwnerPreviewBarClass(requestedStatus, true)}
-              style={{
-                left: `calc(${requestedSegment.left} + 4px)`,
-                width: `calc(${requestedSegment.width} - 8px)`,
-              }}
-              kind="booking"
-            />
-          )}
-        </OwnerTimelineRow>
+        {!showCurrentAsExisting && (
+          <OwnerTimelineRow
+            label="Requested"
+            columns={columns}
+            bookingUnit={resolvedBookingUnit}
+            withTopBorder={false}
+          >
+            {requestedSegment && (
+              <OwnerTimelineBar
+                label={requestedStatus === "declined" ? "Declined" : "Requested"}
+                className={getOwnerPreviewBarClass(requestedStatus, true)}
+                style={{
+                  left: `calc(${requestedSegment.left} + 4px)`,
+                  width: `calc(${requestedSegment.width} - 8px)`,
+                }}
+                kind="booking"
+              />
+            )}
+          </OwnerTimelineRow>
+        )}
 
-        {renderExistingRow([...existingBookings, ...pendingBookings])}
+        {renderExistingRow(
+          [
+            ...(currentBookingAsExisting ? [currentBookingAsExisting] : []),
+            ...existingBookings,
+            ...pendingBookings,
+          ],
+          { withTopBorder: !showCurrentAsExisting }
+        )}
       </div>
     </div>
   );
