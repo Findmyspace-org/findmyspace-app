@@ -14,6 +14,7 @@ import {
   Building2,
   ClipboardList,
   Settings,
+  Landmark,
   ShieldCheck,
   BadgeCheck,
   UserPlus,
@@ -121,6 +122,7 @@ export default function DashboardPage() {
           icon: ClipboardList,
           badgeCount: bookingRequestActionCount,
         },
+        { label: "Finance", href: "/dashboard/finance", icon: Landmark },
         { label: "Host settings", href: "/dashboard/verification", icon: Settings },
       ]
     : [

@@ -15,6 +15,7 @@ import {
   Building2,
   ClipboardList,
   Settings,
+  Landmark,
   ShieldCheck,
   BadgeCheck,
   LogIn,
@@ -25,7 +26,6 @@ import {
   Clock3,
   FileText,
   CheckCircle2,
-  Landmark,
   MessageSquare,
 } from "lucide-react";
 
@@ -536,6 +536,11 @@ export default function Header() {
             href: "/dashboard/verification?step=overview",
             icon: Settings,
           },
+          {
+            label: "Finance",
+            href: "/dashboard/finance",
+            icon: Landmark,
+          },
         ],
       });
     } else {
@@ -592,12 +597,12 @@ export default function Header() {
             />
           </Link>
 
-          <div className="flex items-center gap-1.5 sm:gap-2 md:gap-2.5">
+          <div className="flex items-center gap-1.5 sm:gap-1.5 md:gap-2">
             {loading ? null : !isLoggedIn ? (
               <button
                 type="button"
                 onClick={openLoginModal}
-                className="fms-button-primary rounded-md px-3 py-2 text-xs sm:px-4 sm:py-2.5 sm:text-sm md:px-5"
+                className="fms-button-primary inline-flex h-10 items-center !rounded-md px-3 text-sm font-medium shadow-[0_1px_2px_rgba(12,29,47,0.18)] transition-all duration-200 hover:-translate-y-[1px] hover:bg-[#0a1726] sm:h-11 sm:px-4"
               >
                 Login
               </button>
@@ -605,14 +610,14 @@ export default function Header() {
               <button
                 type="button"
                 onClick={handleListSpaceClick}
-                className="fms-button-primary rounded-md px-3 py-2 text-xs sm:px-4 sm:py-2.5 sm:text-sm md:px-5"
+                className="fms-button-primary inline-flex h-10 items-center !rounded-md px-3 text-sm font-medium shadow-[0_1px_2px_rgba(12,29,47,0.18)] transition-all duration-200 hover:-translate-y-[1px] hover:bg-[#0a1726] sm:h-11 sm:px-4"
               >
                 List space
               </button>
             ) : (
               <Link
                 href="/dashboard/become-host"
-                className="fms-button-primary rounded-md px-3 py-2 text-xs sm:px-4 sm:py-2.5 sm:text-sm md:px-5"
+                className="fms-button-primary inline-flex h-10 items-center !rounded-md px-3 text-sm font-medium shadow-[0_1px_2px_rgba(12,29,47,0.18)] transition-all duration-200 hover:-translate-y-[1px] hover:bg-[#0a1726] sm:h-11 sm:px-4"
               >
                 Host with us
               </Link>
@@ -622,7 +627,7 @@ export default function Header() {
               {loading ? null : isLoggedIn ? (
                 <button
                   onClick={handleLogout}
-                  className="fms-button-secondary rounded-md px-3 py-2.5 text-sm md:px-4"
+                  className="fms-button-secondary inline-flex h-10 items-center !rounded-md border border-gray-300 bg-white px-3 text-sm font-medium text-[#192a3a] transition-colors duration-200 hover:border-gray-400 hover:bg-gray-50 sm:h-11 sm:px-4"
                 >
                   Log out
                 </button>
@@ -630,7 +635,7 @@ export default function Header() {
                 <button
                   type="button"
                   onClick={openSignupModal}
-                  className="fms-button-secondary rounded-md px-3 py-2.5 text-sm md:px-4"
+                  className="fms-button-secondary inline-flex h-10 items-center !rounded-md border border-gray-300 bg-white px-3 text-sm font-medium text-[#192a3a] transition-colors duration-200 hover:border-gray-400 hover:bg-gray-50 sm:h-11 sm:px-4"
                 >
                   Sign up
                 </button>
