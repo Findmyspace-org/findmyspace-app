@@ -3,9 +3,13 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import {
+  AlertCircle,
   Building2,
   Download,
   LayoutDashboard,
+  Loader2,
+  MessageSquare,
+  RefreshCw,
   Search,
   ShieldCheck,
   Users,
@@ -31,6 +35,7 @@ export default function AdminFinancePage() {
   const [role, setRole] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
+  const [messageIsError, setMessageIsError] = useState(false);
   const [summary, setSummary] = useState<AdminFinanceSummary | null>(null);
   const [transactions, setTransactions] = useState<FinanceLineItem[]>([]);
   const [monthly, setMonthly] = useState<MonthlyFinanceRollup[]>([]);
@@ -65,6 +70,7 @@ export default function AdminFinancePage() {
 
   const loadFinance = useCallback(async () => {
     setMessage("");
+    setMessageIsError(false);
     setLoading(true);
     try {
       const ok = await checkRole();
@@ -77,7 +83,8 @@ export default function AdminFinancePage() {
         data: { session },
       } = await supabase.auth.getSession();
       if (!session?.access_token) {
-        setMessage("Please log in.");
+        setMessage("Sign in to view finance data.");
+        setMessageIsError(true);
         setLoading(false);
         return;
       }
@@ -98,6 +105,7 @@ export default function AdminFinancePage() {
       const json = await res.json().catch(() => null);
       if (!res.ok) {
         setMessage(json?.error || "Could not load finance data.");
+        setMessageIsError(true);
         setLoading(false);
         return;
       }
@@ -108,7 +116,8 @@ export default function AdminFinancePage() {
       setChargeTypes(json.filters?.chargeTypes || []);
       setSpaceOptions(json.filters?.spaceOptions || []);
     } catch {
-      setMessage("Something went wrong.");
+      setMessage("Something went wrong while loading. Try again.");
+      setMessageIsError(true);
     } finally {
       setLoading(false);
     }
@@ -127,12 +136,14 @@ export default function AdminFinancePage() {
 
   async function handleExportCsv() {
     setMessage("");
+    setMessageIsError(false);
     try {
       const {
         data: { session },
       } = await supabase.auth.getSession();
       if (!session?.access_token) {
-        setMessage("Please log in to export.");
+        setMessage("Sign in to export.");
+        setMessageIsError(true);
         return;
       }
 
@@ -152,6 +163,7 @@ export default function AdminFinancePage() {
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         setMessage(err?.error || "Export failed.");
+        setMessageIsError(true);
         return;
       }
 
@@ -165,7 +177,8 @@ export default function AdminFinancePage() {
       a.remove();
       URL.revokeObjectURL(url);
     } catch {
-      setMessage("Export failed.");
+      setMessage("Export failed. Try again.");
+      setMessageIsError(true);
     }
   }
 
@@ -178,9 +191,22 @@ export default function AdminFinancePage() {
 
   if (loading && !summary) {
     return (
-      <main className="min-h-screen bg-white px-6 py-10 text-black">
-        <div className="mx-auto max-w-7xl rounded-md border border-gray-300 p-5 shadow-sm">
-          Loading finance…
+      <main className="min-h-screen bg-[#f7f9fb] px-4 py-10 text-[#192a3a] sm:px-6">
+        <div className="mx-auto max-w-7xl">
+          <div className="mb-6 h-9 w-56 max-w-full animate-pulse rounded-md bg-gray-200/90" />
+          <div className="mb-8 h-4 w-full max-w-md animate-pulse rounded-md bg-gray-200/80" />
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+              <div
+                key={i}
+                className="h-28 animate-pulse rounded-lg border border-gray-200/80 bg-white shadow-sm"
+              />
+            ))}
+          </div>
+          <div className="mt-8 flex items-center justify-center gap-2 text-sm text-gray-500">
+            <Loader2 className="h-4 w-4 animate-spin text-[#192a3a]" aria-hidden />
+            Loading finance data…
+          </div>
         </div>
       </main>
     );
@@ -188,12 +214,17 @@ export default function AdminFinancePage() {
 
   if (role !== "admin") {
     return (
-      <main className="min-h-screen bg-white px-6 py-10 text-black">
-        <div className="mx-auto max-w-4xl rounded-md border border-red-300 bg-red-50 p-5">
-          <h1 className="mb-3 text-2xl font-bold">Access denied</h1>
-          <p className="text-sm text-red-700">
-            You do not have admin access to this area.
-          </p>
+      <main className="min-h-screen bg-[#f7f9fb] px-4 py-10 text-[#192a3a] sm:px-6">
+        <div className="mx-auto max-w-lg rounded-xl border border-red-200 bg-white p-6 shadow-sm">
+          <div className="flex gap-3">
+            <AlertCircle className="h-6 w-6 shrink-0 text-red-600" aria-hidden />
+            <div>
+              <h1 className="text-lg font-semibold text-[#192a3a]">Access denied</h1>
+              <p className="mt-2 text-sm text-gray-600">
+                You don&apos;t have permission to view admin finance.
+              </p>
+            </div>
+          </div>
         </div>
       </main>
     );
@@ -201,22 +232,37 @@ export default function AdminFinancePage() {
 
   if (!summary) {
     return (
-      <main className="min-h-screen bg-white px-6 py-10 text-black">
-        <div className="mx-auto max-w-7xl">
-          <h1 className="mb-2 text-2xl font-bold">Admin — Finance</h1>
-          <p className="text-red-600">
-            {message || "Could not load finance data."}
-          </p>
+      <main className="min-h-screen bg-[#f7f9fb] px-4 py-10 text-[#192a3a] sm:px-6">
+        <div className="mx-auto max-w-lg rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+          <div className="flex gap-3">
+            <AlertCircle className="h-6 w-6 shrink-0 text-amber-600" aria-hidden />
+            <div className="min-w-0">
+              <h1 className="text-lg font-semibold">Couldn&apos;t load finance</h1>
+              <p className="mt-2 text-sm text-gray-600">
+                {message || "Check your connection and try again."}
+              </p>
+              <button
+                type="button"
+                onClick={() => void loadFinance()}
+                className="mt-4 inline-flex items-center gap-2 rounded-md bg-[#192a3a] px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+              >
+                <RefreshCw className="h-4 w-4" aria-hidden />
+                Retry
+              </button>
+            </div>
+          </div>
         </div>
       </main>
     );
   }
 
   return (
-    <main className="min-h-screen bg-white px-6 py-10 text-black">
+    <main className="min-h-screen bg-[#f7f9fb] px-4 py-10 text-[#192a3a] sm:px-6">
       <div className="mx-auto max-w-7xl">
-        <h1 className="mb-2 text-4xl font-bold">Admin — Finance</h1>
-        <p className="mb-6 text-gray-600">
+        <h1 className="mb-2 text-3xl font-semibold tracking-tight sm:text-4xl">
+          Admin — Finance
+        </h1>
+        <p className="mb-6 max-w-2xl text-sm text-gray-600 sm:text-base">
           Platform revenue, owner liabilities, deposits, and reconciliation.
         </p>
 
@@ -249,19 +295,39 @@ export default function AdminFinancePage() {
             <ShieldCheck className="h-4 w-4" />
             Verification
           </Link>
+          <Link
+            href="/admin/messages"
+            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
+          >
+            <MessageSquare className="h-4 w-4" />
+            Messages
+          </Link>
           <div className="inline-flex items-center gap-2 rounded-md border border-[#192a3a] bg-[#192a3a] px-4 py-2 text-sm text-white">
             Finance
           </div>
         </div>
 
         {message && (
-          <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-            {message}
+          <div
+            className={`mb-4 flex items-start gap-2 rounded-lg border px-4 py-3 text-sm ${
+              messageIsError
+                ? "border-red-200 bg-red-50 text-red-900"
+                : "border-amber-200 bg-amber-50 text-amber-950"
+            }`}
+            role={messageIsError ? "alert" : "status"}
+          >
+            {messageIsError ? (
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+            ) : null}
+            <span>{message}</span>
           </div>
         )}
 
         {loading && (
-          <p className="mb-4 text-sm text-gray-600">Refreshing data…</p>
+          <div className="mb-4 flex items-center gap-2 text-sm text-gray-600">
+            <Loader2 className="h-4 w-4 animate-spin text-[#192a3a]" aria-hidden />
+            Updating…
+          </div>
         )}
 
         <>
@@ -305,7 +371,7 @@ export default function AdminFinancePage() {
               ].map((c) => (
                 <div
                   key={c.title}
-                  className="rounded-md border border-gray-200 bg-white p-4 shadow-sm"
+                  className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm"
                 >
                   <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
                     {c.title}
@@ -429,11 +495,11 @@ export default function AdminFinancePage() {
                 <tbody>
                   {transactions.length === 0 ? (
                     <tr>
-                      <td
-                        colSpan={12}
-                        className="px-3 py-8 text-center text-gray-500"
-                      >
-                        No rows match filters.
+                      <td colSpan={12} className="px-4 py-14 text-center">
+                        <p className="text-sm font-medium text-gray-700">No transactions match</p>
+                        <p className="mt-1 text-sm text-gray-500">
+                          Widen your date range or clear filters to see more rows.
+                        </p>
                       </td>
                     </tr>
                   ) : (
@@ -484,8 +550,8 @@ export default function AdminFinancePage() {
                 Monthly report (paid lines, filtered)
               </h2>
               {monthly.length === 0 ? (
-                <p className="text-sm text-gray-500">
-                  No paid rows in this filter selection.
+                <p className="text-sm leading-relaxed text-gray-600">
+                  No paid activity in this filter selection. Adjust filters or dates to include paid lines.
                 </p>
               ) : (
                 <ul className="space-y-2">

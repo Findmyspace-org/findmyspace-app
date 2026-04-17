@@ -22,6 +22,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import DecisionSuggestion from "@/app/components/DecisionSuggestion";
 
 type Space = {
   id: string;
@@ -802,6 +803,13 @@ export default function AdminSpacesPage() {
             <CheckCircle2 className="h-4 w-4" />
             Verification
           </Link>
+          <Link
+            href="/admin/messages"
+            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
+          >
+            <MessageSquare className="h-4 w-4" />
+            Messages
+          </Link>
         </div>
 
         <div className="mb-4 flex flex-wrap gap-3">
@@ -943,14 +951,27 @@ export default function AdminSpacesPage() {
                   {expandedListings[space.id] && (
                     <div className="border-t border-gray-200 bg-[#fcfcfd] px-4 pb-4 pt-3">
                       {(space.status || "pending") === "pending" && (
-                        <div className="mb-3 rounded-sm border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900">
-                          This listing is awaiting admin approval and is not yet visible to the public.
+                        <div className="mb-3">
+                          <DecisionSuggestion
+                            variant="info"
+                            size="sm"
+                            multiline
+                            text="This listing is awaiting admin approval and is not yet visible to the public."
+                            className="max-w-full"
+                          />
                         </div>
                       )}
 
                       {!canActivate && (
-                        <div className="mb-3 rounded-sm border border-yellow-300 bg-yellow-50 px-3 py-2 text-xs text-yellow-900">
-                          This listing cannot be activated yet. Missing: {missingChecks.join(", ")}.
+                        <div className="mb-3">
+                          <DecisionSuggestion
+                            variant="warning"
+                            size="sm"
+                            multiline
+                            text={`This listing cannot be activated yet. Missing: ${missingChecks.join(", ")}.`}
+                            tooltip="Complete owner verification, bank verification, and ownership proof before activation."
+                            className="max-w-full"
+                          />
                         </div>
                       )}
 
@@ -1012,9 +1033,11 @@ export default function AdminSpacesPage() {
                                       </span>
                                     </span>
                                   ) : (
-                                    <span className="rounded-md border border-yellow-300 bg-yellow-50 px-2.5 py-1.5 text-xs text-yellow-800">
-                                      No proof uploaded
-                                    </span>
+                                    <DecisionSuggestion
+                                      variant="warning"
+                                      text="No proof uploaded"
+                                      size="sm"
+                                    />
                                   )}
                                   <span className="group relative">
                                     <button

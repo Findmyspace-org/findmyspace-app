@@ -6,6 +6,10 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import RequireAuth from "@/app/components/RequireAuth";
 import SpaceForm from "@/app/components/SpaceForm";
+import {
+  HOST_VERIFICATION_IN_PROGRESS_NOTE,
+  LISTING_GOES_LIVE_AFTER_APPROVALS,
+} from "@/lib/host-onboarding-copy";
 
 type ProfileRow = {
   id: string;
@@ -105,17 +109,14 @@ export default function NewSpacePage() {
     <RequireAuth>
       <main className="min-h-screen bg-white px-6 py-10 text-[#192a3a]">
         <div className="mx-auto max-w-5xl space-y-6">
-          <div className="rounded-md border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
-            You can create your listing now. It will stay pending until identity,
-            bank, and ownership proof are approved.
+          <div className="rounded-md border border-sky-200 bg-sky-50 p-4 text-sm text-sky-950">
+            {LISTING_GOES_LIVE_AFTER_APPROVALS}
           </div>
 
           {(profile.owner_verification_status !== "verified" ||
             profile.bank_verification_status !== "verified") && (
-            <div className="rounded-md border border-yellow-300 bg-yellow-50 p-4 text-sm text-yellow-900">
-              Your host verification is still in progress. That does not stop you
-              from creating a listing, but the listing will only go live after all
-              required checks are approved.
+            <div className="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+              {HOST_VERIFICATION_IN_PROGRESS_NOTE}
             </div>
           )}
 

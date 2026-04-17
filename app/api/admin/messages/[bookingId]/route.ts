@@ -6,6 +6,7 @@ type BookingRow = {
   space_id: string | null;
   renter_id: string;
   owner_id: string;
+  booking_unit: string | null;
   status: string | null;
   payment_status: string | null;
   start_at: string | null;
@@ -95,7 +96,7 @@ export async function GET(
   const { data: bookingData, error: bookingErr } = await adminClient
     .from("bookings")
     .select(
-      "id, space_id, renter_id, owner_id, status, payment_status, start_at, end_at, total_price"
+      "id, space_id, renter_id, owner_id, booking_unit, status, payment_status, start_at, end_at, total_price"
     )
     .eq("id", bookingId)
     .single();
@@ -171,6 +172,7 @@ export async function GET(
       id: booking.id,
       status: booking.status || "pending",
       paymentStatus: booking.payment_status || "unpaid",
+      bookingUnit: booking.booking_unit || null,
       startAt: booking.start_at,
       endAt: booking.end_at,
       totalPrice: booking.total_price,
@@ -269,6 +271,19 @@ export async function POST(
     );
   }
 
+  const { data: senderProfile } = await (adminClient.from("profiles") as any)
+    .select("first_name, last_name, full_name, email, role")
+    .eq("id", userId)
+    .single();
+
+  const sender = (senderProfile || null) as {
+    first_name?: string | null;
+    last_name?: string | null;
+    full_name?: string | null;
+    email?: string | null;
+    role?: string | null;
+  } | null;
+
   const origin =
     process.env.NEXT_PUBLIC_SITE_URL?.trim() ||
     (() => {
@@ -303,7 +318,12 @@ export async function POST(
       message: inserted.message,
       createdAt: inserted.created_at,
       senderId: inserted.sender_id,
-      senderRole: "Admin",
+      senderName:
+        `${sender?.first_name || ""} ${sender?.last_name || ""}`.trim() ||
+        sender?.full_name ||
+        sender?.email ||
+        "Admin",
+      senderRole: sender?.role === "admin" ? "Admin" : "User",
     },
   });
 }

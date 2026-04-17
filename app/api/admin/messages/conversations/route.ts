@@ -6,6 +6,7 @@ type BookingRow = {
   space_id: string | null;
   renter_id: string;
   owner_id: string;
+  booking_unit: string | null;
   status: string | null;
   payment_status: string | null;
   start_at: string | null;
@@ -103,7 +104,7 @@ export async function GET(req: NextRequest) {
   const { data: bookingData, error: bookingErr } = await adminClient
     .from("bookings")
     .select(
-      "id, space_id, renter_id, owner_id, status, payment_status, start_at, end_at, total_price, created_at"
+      "id, space_id, renter_id, owner_id, booking_unit, status, payment_status, start_at, end_at, total_price, created_at"
     )
     .order("created_at", { ascending: false })
     .limit(500);
@@ -192,6 +193,7 @@ export async function GET(req: NextRequest) {
         renterName: displayName(renter),
         bookingStatus: booking.status || "pending",
         paymentStatus: booking.payment_status || "unpaid",
+        bookingUnit: booking.booking_unit || null,
         startAt: booking.start_at,
         endAt: booking.end_at,
         totalPrice: booking.total_price,
@@ -203,6 +205,7 @@ export async function GET(req: NextRequest) {
         searchable,
       };
     })
+    .filter((row) => row.messageCount > 0 || Boolean(q))
     .filter((row) => (statusFilter === "all" ? true : row.bookingStatus === statusFilter))
     .filter((row) => (unreadOnly ? row.unread : true))
     .filter((row) => (q ? row.searchable.includes(q) : true))

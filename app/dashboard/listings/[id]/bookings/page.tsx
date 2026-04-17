@@ -5,6 +5,11 @@ import { supabase } from "@/lib/supabase";
 import RequireAuth from "@/app/components/RequireAuth";
 import { getDisplayName } from "@/lib/utils";
 import BookingAvailabilityPreview from "@/app/components/BookingAvailabilityPreview";
+import {
+  ownerListingBookingStatusLabel,
+  renterPaymentStatusLabel,
+} from "@/lib/booking-ui-labels";
+import { shouldShowBookingRequestNotes } from "@/lib/booking-notes-visibility";
 
 type Booking = {
   id: string;
@@ -163,16 +168,6 @@ export default function OwnerBookingsPage({
     return `${start.toLocaleDateString()} - ${end.toLocaleDateString()}`;
   }
 
-  function getDisplayStatus(status: string | null) {
-    if (status === "accepted_awaiting_payment") return "Awaiting payment";
-    if (status === "paid_confirmed") return "Confirmed";
-    if (status === "completed") return "Completed";
-    if (status === "declined") return "Declined";
-    if (status === "expired") return "Expired (unpaid)";
-    if (status === "approved") return "Approved";
-    return "Pending";
-  }
-
   function getStatusBadge(status: string | null) {
     if (status === "accepted_awaiting_payment") {
       return "bg-blue-100 text-blue-800";
@@ -285,7 +280,7 @@ export default function OwnerBookingsPage({
               {bookings.length} request{bookings.length === 1 ? "" : "s"}
             </div>
             <div className="rounded-md border border-gray-200 bg-white px-4 py-3 text-sm shadow-sm">
-              {pendingCount} pending
+              {pendingCount} awaiting response
             </div>
           </div>
 
@@ -330,11 +325,18 @@ export default function OwnerBookingsPage({
                           b.status
                         )}`}
                       >
-                        {getDisplayStatus(b.status)}
+                        {ownerListingBookingStatusLabel(b.status)}
                       </span>
                     </div>
 
-                    <div className="grid gap-4 md:grid-cols-2">
+                    <div
+                      className={`grid gap-4 ${
+                        shouldShowBookingRequestNotes(b.status, b.payment_status) &&
+                        (b.notes || "").trim() !== ""
+                          ? "md:grid-cols-2"
+                          : ""
+                      }`}
+                    >
                       <div className="space-y-1.5 text-xs">
                         <p>
                           <span className="font-medium">Booking type:</span>{" "}
@@ -350,16 +352,19 @@ export default function OwnerBookingsPage({
                         </p>
                         <p>
                           <span className="font-medium">Payment:</span>{" "}
-                          {b.payment_status || "unpaid"}
+                          {renterPaymentStatusLabel(b.payment_status)}
                         </p>
                       </div>
 
-                      <div>
-                        <p className="mb-2 text-xs font-medium">Message</p>
-                        <div className="min-h-[88px] rounded-md bg-gray-50 p-3 text-xs text-gray-700">
-                          {b.notes || "None"}
-                        </div>
-                      </div>
+                      {shouldShowBookingRequestNotes(b.status, b.payment_status) &&
+                        (b.notes || "").trim() !== "" && (
+                          <div>
+                            <p className="mb-2 text-xs font-medium">Message</p>
+                            <div className="min-h-[88px] rounded-md bg-gray-50 p-3 text-xs text-gray-700">
+                              {b.notes}
+                            </div>
+                          </div>
+                        )}
                     </div>
 
                     <div className="mt-4">

@@ -11,7 +11,7 @@ export async function downloadInvoicePdf(
   } = await supabase.auth.getSession();
 
   if (!session?.access_token) {
-    return { ok: false, message: "Please log in to download the invoice." };
+    return { ok: false, message: "Sign in to download your invoice." };
   }
 
   const res = await fetch(`/api/invoice/${bookingId}/pdf`, {

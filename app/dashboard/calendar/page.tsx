@@ -26,6 +26,10 @@ import { downloadInvoicePdf } from "@/lib/invoice-download-client";
 import OwnerCalendarLegend from "@/app/dashboard/_components/calendar/OwnerCalendarLegend";
 import OwnerTopNav from "@/app/dashboard/_components/calendar/OwnerTopNav";
 import { supabase } from "@/lib/supabase";
+import {
+    ownerListingBookingStatusLabel,
+    renterPaymentStatusLabel,
+} from "@/lib/booking-ui-labels";
 
 type CalendarBookingType = "hour" | "day" | "month";
 
@@ -251,11 +255,6 @@ function getSegmentShapeClass(segment: TimelineSegment) {
     const rightClass = segment.isTruncatedEnd ? "rounded-r-md" : "rounded-r-full";
     return `${leftClass} ${rightClass}`;
 }
-
-function formatBookingStatus(status?: string | null) {
-    return (status || "unknown").replace(/_/g, " ");
-}
-
 
 function formatMoney(amount?: number | null) {
     return `R${Number(amount || 0).toFixed(2)}`;
@@ -1082,7 +1081,7 @@ function BookingModal({ open, booking, space, onClose }: BookingModalProps) {
             } = await supabase.auth.getSession();
 
             if (!session?.access_token) {
-                setInvoiceError("Please log in to view the invoice.");
+                setInvoiceError("Sign in to view your invoice.");
                 setInvoiceLoading(false);
                 return;
             }
@@ -1098,8 +1097,8 @@ function BookingModal({ open, booking, space, onClose }: BookingModalProps) {
             if (!res.ok) {
                 setInvoiceError(
                     res.status === 403
-                        ? "Invoice is only available after payment is confirmed."
-                        : text || "Could not load invoice."
+                        ? "Your invoice appears here once payment has been confirmed—usually within a few minutes after checkout."
+                        : text || "We couldn’t load your invoice. Try again in a moment."
                 );
                 setInvoiceLoading(false);
                 return;
@@ -1107,7 +1106,7 @@ function BookingModal({ open, booking, space, onClose }: BookingModalProps) {
 
             setInvoiceHtml(text);
         } catch {
-            setInvoiceError("Could not load invoice.");
+            setInvoiceError("We couldn’t load your invoice. Try again in a moment.");
         } finally {
             setInvoiceLoading(false);
         }
@@ -1205,11 +1204,11 @@ function BookingModal({ open, booking, space, onClose }: BookingModalProps) {
                             )}
                             <p>
                                 <span className="font-medium text-[#192a3a]">Booking status:</span>{" "}
-                                {formatBookingStatus(booking.status)}
+                                {ownerListingBookingStatusLabel(booking.status)}
                             </p>
                             <p>
                                 <span className="font-medium text-[#192a3a]">Payment status:</span>{" "}
-                                {formatBookingStatus(booking.payment_status)}
+                                {renterPaymentStatusLabel(booking.payment_status)}
                             </p>
                         </div>
                     </section>
@@ -1284,7 +1283,7 @@ function BookingModal({ open, booking, space, onClose }: BookingModalProps) {
                 <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 px-4 py-6">
                     <div className="flex max-h-[90vh] w-full max-w-3xl flex-col rounded-xl bg-white shadow-xl">
                         <div className="flex items-center justify-between gap-3 border-b border-gray-200 px-4 py-3">
-                            <h2 className="text-lg font-semibold text-[#192a3a]">Invoice</h2>
+                            <h2 className="text-lg font-semibold text-[#192a3a]">Your invoice</h2>
                             <div className="flex shrink-0 items-center gap-2">
                                 <button
                                     type="button"
@@ -1310,7 +1309,7 @@ function BookingModal({ open, booking, space, onClose }: BookingModalProps) {
                             </div>
                         </div>
                         <div className="min-h-0 flex-1 overflow-auto p-4">
-                            {invoiceLoading && <p className="text-sm text-gray-600">Loading invoice…</p>}
+                            {invoiceLoading && <p className="text-sm text-gray-600">Fetching your invoice…</p>}
                             {invoiceError && <p className="text-sm text-red-700">{invoiceError}</p>}
                             {!invoiceLoading && !invoiceError && invoiceHtml && (
                                 <iframe

@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import RequireAuth from "@/app/components/RequireAuth";
+import { shouldShowBookingRequestNotes } from "@/lib/booking-notes-visibility";
 
 type PageProps = {
   params: Promise<{ id: string }>;
@@ -367,16 +368,19 @@ export default function BookingPaymentPage({ params }: PageProps) {
                   </div>
                 </div>
 
-                {(booking.notes || booking.owner_response_message) && (
+                {((shouldShowBookingRequestNotes(booking.status, booking.payment_status) &&
+                  (booking.notes || "").trim() !== "") ||
+                  booking.owner_response_message) && (
                   <div className="mt-6 space-y-3">
-                    {booking.notes && (
-                      <div>
-                        <p className="mb-2 text-sm font-medium">Your message</p>
-                        <div className="rounded-xl bg-gray-50 p-4 text-sm text-gray-700">
-                          {booking.notes}
+                    {shouldShowBookingRequestNotes(booking.status, booking.payment_status) &&
+                      (booking.notes || "").trim() !== "" && (
+                        <div>
+                          <p className="mb-2 text-sm font-medium">Your message</p>
+                          <div className="rounded-xl bg-gray-50 p-4 text-sm text-gray-700">
+                            {booking.notes}
+                          </div>
                         </div>
-                      </div>
-                    )}
+                      )}
 
                     {booking.owner_response_message && (
                       <div>

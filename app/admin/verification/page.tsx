@@ -13,6 +13,7 @@ import {
   LayoutDashboard,
   List,
   Mail,
+  MessageSquare,
   Phone,
   Users,
   UserSquare2,
@@ -559,6 +560,13 @@ export default function AdminVerificationPage() {
           >
             <CheckCircle2 className="h-4 w-4" />
             Verification
+          </Link>
+          <Link
+            href="/admin/messages"
+            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
+          >
+            <MessageSquare className="h-4 w-4" />
+            Messages
           </Link>
         </div>
 

@@ -8,6 +8,7 @@ import AuthModal from "@/app/components/AuthModal";
 import MonthAvailabilityCalendar from "@/app/components/MonthAvailabilityCalendar";
 import HourAvailabilitySelector from "@/app/components/HourAvailabilitySelector";
 import { useRouter } from "next/navigation";
+import { Loader2 } from "lucide-react";
 
 type ExistingBooking = {
   id: string;
@@ -83,9 +84,9 @@ export default function BookingRequestForm({
   minDays = null,
   minMonths = null,
 }: BookingRequestFormProps) {
-  const [message, setMessage] = useState("");
   const [statusMessage, setStatusMessage] = useState("");
   const [loading, setLoading] = useState(false);
+  const [availabilityLoading, setAvailabilityLoading] = useState(true);
   const [existingBookings, setExistingBookings] = useState<ExistingBooking[]>([]);
   const [blockedDates, setBlockedDates] = useState<BlockedDate[]>([]);
   const [authModalOpen, setAuthModalOpen] = useState(false);
@@ -120,6 +121,7 @@ export default function BookingRequestForm({
   }, [hourDate, bookingUnit]);
 
   async function loadAvailabilityData() {
+    setAvailabilityLoading(true);
     setStatusMessage("");
     const { data, error } = await supabase
       .from("bookings")
@@ -154,6 +156,7 @@ export default function BookingRequestForm({
     } else {
       setBlockedDates((blockedData || []) as BlockedDate[]);
     }
+    setAvailabilityLoading(false);
   }
 
   async function loadSpacePaymentSettings() {
@@ -683,7 +686,7 @@ export default function BookingRequestForm({
         payment_status: "unpaid",
         payout_status: "unpaid_to_owner",
 
-        notes: message || null,
+        notes: null,
 
         // monthly fields
         monthly_rent: bookingUnit === "month" ? monthlyRent : null,
@@ -765,7 +768,6 @@ export default function BookingRequestForm({
       }
 
       // 🔥 CLEAN RESET
-      setMessage("");
       setHourDate("");
       setHourStart("");
       setHourEnd("");
@@ -865,7 +867,22 @@ export default function BookingRequestForm({
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form
+          onSubmit={handleSubmit}
+          className="space-y-4"
+          aria-busy={loading || availabilityLoading}
+        >
+          {availabilityLoading && (
+            <div
+              className="flex items-center gap-2 rounded-md border border-gray-200 bg-[#f8fafb] px-3 py-2.5 text-sm text-gray-600"
+              role="status"
+              aria-live="polite"
+            >
+              <Loader2 className="h-4 w-4 shrink-0 animate-spin text-[#192a3a]" aria-hidden />
+              Loading availability…
+            </div>
+          )}
+
           {bookingUnit === "hour" && (
             <>
               <div>
@@ -923,28 +940,21 @@ export default function BookingRequestForm({
           )}
 
           {liveConflictMessage && (
-            <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+            <div
+              className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800"
+              role="status"
+            >
               {liveConflictMessage}
             </div>
           )}
           {liveMinimumMessage && (
-            <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+            <div
+              className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
+              role="status"
+            >
               {liveMinimumMessage}
             </div>
           )}
-
-          <div>
-            <label className="mb-2 block text-sm font-medium">
-              Message to owner
-            </label>
-            <textarea
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              placeholder="Hi, I would like to book this space..."
-              rows={4}
-              className="w-full rounded-md border border-gray-300 px-4 py-3 outline-none focus:border-[#192a3a]"
-            />
-          </div>
 
           <div className="rounded-md border border-gray-200 bg-[#f8fafb] p-3 text-xs text-gray-600">
             <label className="flex items-start gap-2">
@@ -952,6 +962,7 @@ export default function BookingRequestForm({
                 type="checkbox"
                 checked={acceptedTerms}
                 onChange={(e) => setAcceptedTerms(e.target.checked)}
+                disabled={loading}
                 className="mt-0.5"
               />
               <span>
@@ -964,30 +975,56 @@ export default function BookingRequestForm({
             </label>
           </div>
 
+          {statusMessage && (
+            <div
+              className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800"
+              role="alert"
+            >
+              {statusMessage}
+            </div>
+          )}
+
           <button
             type="submit"
-            disabled={loading || Boolean(liveConflictMessage) || Boolean(liveMinimumMessage) || !acceptedTerms}
-            className="w-full rounded-md bg-[#192a3a] px-4 py-3 text-white disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={
+              loading ||
+              availabilityLoading ||
+              Boolean(liveConflictMessage) ||
+              Boolean(liveMinimumMessage) ||
+              !acceptedTerms
+            }
+            className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-[#192a3a] px-4 py-3 text-sm font-medium text-white transition hover:opacity-[0.97] disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {loading ? "Sending..." : "Request booking"}
+            {loading ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                Sending request…
+              </>
+            ) : (
+              "Request booking"
+            )}
           </button>
         </form>
-
-        {statusMessage && (
-          <div className="mt-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-            {statusMessage}
-          </div>
-        )}
       </div>
 
       {requestSentModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
-            <h3 className="text-2xl font-semibold text-[#192a3a]">
+          <div
+            className="w-full max-w-md rounded-2xl bg-white p-6 text-center shadow-xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="booking-request-sent-title"
+          >
+            <h3
+              id="booking-request-sent-title"
+              className="text-2xl font-semibold text-[#192a3a]"
+            >
               Booking request sent
             </h3>
-            <p className="mt-3 text-sm text-gray-600">
-              Your request has been sent to the owner and is waiting for approval.
+            <p className="mt-3 text-sm leading-relaxed text-gray-600">
+              Your request has been sent to the host. They will review it and either
+              confirm or decline. No payment will be charged until they approve your
+              request.
             </p>
             <button
               type="button"

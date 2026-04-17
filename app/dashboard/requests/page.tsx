@@ -10,6 +10,7 @@ import {
   Clock,
   ChevronDown,
   ChevronUp,
+  Loader2,
   Mail,
   MessageSquare,
   Phone,
@@ -20,8 +21,11 @@ import {
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import RequireAuth from "@/app/components/RequireAuth";
+import DecisionSuggestion from "@/app/components/DecisionSuggestion";
 import { getDisplayName } from "@/lib/utils";
 import { isCommunicationAllowed } from "@/lib/booking-communication";
+import { OWNER_BOOKING_STAGE_LABELS } from "@/lib/booking-ui-labels";
+import { shouldShowBookingRequestNotes } from "@/lib/booking-notes-visibility";
 
 
 import OwnerCalendarLegend from "@/app/dashboard/_components/calendar/OwnerCalendarLegend";
@@ -29,6 +33,33 @@ import OwnerTopNav from "@/app/dashboard/_components/calendar/OwnerTopNav";
 import OwnerBookingRequestTimeline, {
   shouldShowCurrentBookingAsExisting,
 } from "@/app/dashboard/_components/calendar/OwnerBookingRequestTimeline";
+
+/** Shown to the renter as owner_response_message when declining from the requests UI. */
+const DECLINE_REASON_OPTIONS: { value: string; label: string }[] = [
+  {
+    value: "Apologies — this space is not available during the time you requested.",
+    label: "Not available during this time",
+  },
+  {
+    value:
+      "Thank you for your interest. We’re fully booked for the dates you selected — please try other dates.",
+    label: "Fully booked for these dates",
+  },
+  {
+    value:
+      "We’re unable to accept this booking right now. Please consider another listing or try again later.",
+    label: "Unable to accept this request now",
+  },
+  {
+    value:
+      "This space isn’t a good fit for what you need for this booking. Thank you for understanding.",
+    label: "Not a good fit for this booking",
+  },
+  {
+    value: "Thank you for your request. We’re unable to proceed with this booking.",
+    label: "Decline (short, neutral)",
+  },
+];
 
 type Booking = {
   id: string;
@@ -119,14 +150,6 @@ type BookingRowProps = {
 
 type ExpandedBookingPanelProps = {
   booking: EnrichedBooking;
-  sessionUserId: string | null;
-  busyBookingId: string | null;
-  sendingMessageBookingId: string | null;
-  ownerReplies: Record<string, string>;
-  setOwnerReplies: React.Dispatch<React.SetStateAction<Record<string, string>>>;
-  messagesByBooking: Record<string, BookingMessage[]>;
-  messageDrafts: Record<string, string>;
-  setMessageDrafts: React.Dispatch<React.SetStateAction<Record<string, string>>>;
   blockingBookings: BlockingBooking[];
   pendingTimelineBookings: BlockingBooking[];
   blockedTimelineDates: RequestBlockedDate[];
@@ -135,17 +158,12 @@ type ExpandedBookingPanelProps = {
   hasAnyConflict: boolean;
   overlappingBlockingRequests: EnrichedBooking[];
   overlappingPendingRequests: EnrichedBooking[];
-  isPendingRequest: boolean;
-  updateBookingStatus: (bookingId: string, nextStatus: "approved" | "declined" | "pending") => Promise<void>;
-  sendBookingMessage: (booking: EnrichedBooking) => Promise<void>;
-  communicationOpenBookingId: string | null;
   onToggleCommunication: (booking: EnrichedBooking) => void | Promise<void>;
-  messagesLoadingBookingId: string | null;
-  counterpartyContactByBooking: Record<
-    string,
-    { email: string | null; phone: string | null }
-  >;
   competingPendingRequests: EnrichedBooking[];
+  onApprove: () => void | Promise<void>;
+  onDecline: (reason: string) => void | Promise<void>;
+  /** When set, all decision controls are disabled; spinner on matching `booking.id`. */
+  busyBookingId: string | null;
 };
 
 type StatusFilterItem = {
@@ -278,24 +296,7 @@ function getBookingStage(status?: string | null, paymentStatus?: string | null):
 }
 
 function getStageLabel(stage: BookingStage) {
-  switch (stage) {
-    case "booking_request":
-      return "Booking request";
-    case "booking_approved":
-      return "Booking approved";
-    case "awaiting_payment":
-      return "Awaiting payment";
-    case "payment_received":
-      return "Payment received";
-    case "confirmed":
-      return "Confirmed";
-    case "declined":
-      return "Declined";
-    case "expired":
-      return "Expired";
-    default:
-      return "Booking request";
-  }
+  return OWNER_BOOKING_STAGE_LABELS[stage];
 }
 
 function getStageBadgeClass(stage: BookingStage) {
@@ -598,13 +599,16 @@ function BookingConversationPanel({
           Request thread
         </p>
         <div className="max-h-56 space-y-3 overflow-y-auto rounded-md border border-gray-100 bg-gray-50 p-3">
-          <div className="mr-auto max-w-[88%] rounded-md border border-gray-200 bg-white px-3 py-2 text-xs text-[#192a3a]">
-            <p className="font-medium text-gray-700">Initial request</p>
-            <p className="mt-1 whitespace-pre-wrap">{booking.notes || "No message added."}</p>
-            <p className="mt-1 text-[11px] text-gray-500">
-              {booking.created_at ? new Date(booking.created_at).toLocaleString() : ""}
-            </p>
-          </div>
+          {shouldShowBookingRequestNotes(booking.status, booking.payment_status) &&
+            (booking.notes || "").trim() !== "" && (
+              <div className="mr-auto max-w-[88%] rounded-md border border-gray-200 bg-white px-3 py-2 text-xs text-[#192a3a]">
+                <p className="font-medium text-gray-700">Initial request</p>
+                <p className="mt-1 whitespace-pre-wrap">{booking.notes}</p>
+                <p className="mt-1 text-[11px] text-gray-500">
+                  {booking.created_at ? new Date(booking.created_at).toLocaleString() : ""}
+                </p>
+              </div>
+            )}
 
           {booking.owner_response_message && (
             <div className="ml-auto max-w-[88%] rounded-md bg-[#192a3a] px-3 py-2 text-xs text-white">
@@ -750,6 +754,14 @@ function BookingRow({
   highestCompetingValue,
   onToggle,
 }: BookingRowProps) {
+  const hasPendingConflict = pendingOverlapCount > 0;
+  const decisionSuggestion = !hasBlockingConflict && !hasPendingConflict
+    ? "No conflicts detected"
+    : hasBlockingConflict
+      ? `Conflict with ${highestCompetingValue} confirmed/payment-in-progress booking${highestCompetingValue === 1 ? "" : "s"}`
+      : `${pendingOverlapCount} competing pending request${pendingOverlapCount === 1 ? "" : "s"}`;
+  const decisionVariant = hasBlockingConflict ? "danger" : hasPendingConflict ? "warning" : "success";
+
   return (
     <div
       role="button"
@@ -792,25 +804,8 @@ function BookingRow({
       </div>
 
       <div className="min-w-0">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${getStageBadgeClass(stage)}`}>
-            {getStageLabel(stage)}
-          </span>
-
-          {hasBlockingConflict && (
-            <span className="inline-flex rounded-full border border-red-300 bg-red-100 px-2.5 py-0.5 text-xs font-medium text-red-700">
-              Conflict
-            </span>
-          )}
-          {pendingOverlapCount > 0 && (
-            <span className="inline-flex rounded-full border border-amber-300 bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800">
-              {pendingOverlapCount} competing
-            </span>
-          )}
-        </div>
-
         {stage !== "declined" && (
-          <div className="mt-2 flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2">
             {getStageSteps(stage).map((item) => (
               <div key={item.step} className="flex items-center gap-1.5">
                 <span className={`h-2.5 w-2.5 rounded-full ${getStageStepClass(item.state)}`} />
@@ -823,14 +818,39 @@ function BookingRow({
         )}
       </div>
 
-      <div className="flex items-center justify-end gap-3">
-        {showMessageBadge && (
-          <div className="inline-flex items-center gap-2 rounded-full border border-gray-200 px-3 py-1 text-xs text-gray-700">
-            <MessageSquare className="h-4 w-4" />
-            <span>{messageCount}</span>
-          </div>
-        )}
-        <span className="text-sm text-gray-400">{isExpanded ? "−" : "+"}</span>
+      <div className="flex flex-col items-end gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${getStageBadgeClass(stage)}`}>
+            {getStageLabel(stage)}
+          </span>
+          {hasBlockingConflict && (
+            <span className="inline-flex rounded-full border border-red-300 bg-red-100 px-2.5 py-0.5 text-xs font-medium text-red-700">
+              Conflict
+            </span>
+          )}
+          {pendingOverlapCount > 0 && (
+            <span className="inline-flex rounded-full border border-amber-300 bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800">
+              {pendingOverlapCount} competing
+            </span>
+          )}
+        </div>
+
+        <DecisionSuggestion
+          variant={decisionVariant}
+          text={decisionSuggestion}
+          size="sm"
+          className="max-w-[280px]"
+        />
+
+        <div className="flex items-center justify-end gap-3">
+          {showMessageBadge && (
+            <div className="inline-flex items-center gap-2 rounded-full border border-gray-200 px-3 py-1 text-xs text-gray-700">
+              <MessageSquare className="h-4 w-4" />
+              <span>{messageCount}</span>
+            </div>
+          )}
+          <span className="text-sm text-gray-400">{isExpanded ? "−" : "+"}</span>
+        </div>
       </div>
     </div>
   );
@@ -838,14 +858,6 @@ function BookingRow({
 
 function ExpandedBookingPanel({
   booking,
-  sessionUserId,
-  busyBookingId,
-  sendingMessageBookingId,
-  ownerReplies,
-  setOwnerReplies,
-  messagesByBooking,
-  messageDrafts,
-  setMessageDrafts,
   blockingBookings,
   pendingTimelineBookings,
   blockedTimelineDates,
@@ -854,43 +866,155 @@ function ExpandedBookingPanel({
   hasAnyConflict,
   overlappingBlockingRequests,
   overlappingPendingRequests,
-  isPendingRequest,
-  updateBookingStatus,
-  sendBookingMessage,
-  communicationOpenBookingId,
   onToggleCommunication,
-  messagesLoadingBookingId,
-  counterpartyContactByBooking,
   competingPendingRequests,
+  onApprove,
+  onDecline,
+  busyBookingId,
 }: ExpandedBookingPanelProps) {
   const showRenterContact =
     isCommunicationAllowed(booking) && booking.renter?.email;
+  const canMessageRenter = isCommunicationAllowed(booking);
+  const canDecide = isPendingRequestStatus(booking.status);
+  const [declineOpen, setDeclineOpen] = useState(false);
+  const [declineReason, setDeclineReason] = useState("");
+  const decisionInFlight = busyBookingId !== null;
+  const thisBookingBusy = busyBookingId === booking.id;
 
   return (
     <div className="border-t border-gray-200 bg-[#fbfcfd] p-4">
       <div className="space-y-4">
         <div className="rounded-md border border-gray-200 bg-white p-4">
-          <div className="mb-3 flex flex-wrap items-center gap-3 text-sm text-gray-700">
-            <div>
-              <span className="font-medium text-[#192a3a]">Requester:</span> {getDisplayName(booking.renter)}
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3 text-sm text-gray-700">
+            <div className="flex min-w-0 flex-wrap items-center gap-3">
+              <div>
+                <span className="font-medium text-[#192a3a]">Requester:</span> {getDisplayName(booking.renter)}
+              </div>
+              <div>
+                <span className="font-medium text-[#192a3a]">Email:</span>{" "}
+                {showRenterContact ? booking.renter?.email || "No email" : (
+                  <span className="text-gray-500">Hidden until payment is confirmed</span>
+                )}
+              </div>
+              <div>
+                <span className="font-medium text-[#192a3a]">Total:</span> R{Number(booking.total_price || 0).toFixed(2)}
+              </div>
             </div>
-            <div>
-              <span className="font-medium text-[#192a3a]">Email:</span>{" "}
-              {showRenterContact ? booking.renter?.email || "No email" : (
-                <span className="text-gray-500">Hidden until payment is confirmed</span>
+
+            <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+              <Link
+                href={`/spaces/${booking.space_id}`}
+                className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-[#192a3a] transition hover:bg-gray-50 active:scale-[0.99]"
+              >
+                View listing
+              </Link>
+              {canMessageRenter && (
+                <button
+                  type="button"
+                  onClick={() => void onToggleCommunication(booking)}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-[#192a3a] shadow-sm transition hover:bg-gray-50 active:scale-[0.99]"
+                >
+                  <MessageSquare className="h-4 w-4" />
+                  Open messages
+                </button>
               )}
-            </div>
-            <div>
-              <span className="font-medium text-[#192a3a]">Total:</span> R{Number(booking.total_price || 0).toFixed(2)}
             </div>
           </div>
 
-          {!isCommunicationAllowed(booking) && (booking.notes || "").trim() !== "" && (
-            <div className="mb-3 rounded-md border border-gray-100 bg-gray-50 p-3 text-sm">
-              <p className="mb-1 text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
-                Notes with this request
+          {shouldShowBookingRequestNotes(booking.status, booking.payment_status) &&
+            (booking.notes || "").trim() !== "" && (
+              <div className="mb-3 rounded-md border border-gray-100 bg-gray-50 p-3 text-sm">
+                <p className="mb-1 text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
+                  Notes with this request
+                </p>
+                <p className="whitespace-pre-wrap text-[#192a3a]">{booking.notes}</p>
+              </div>
+            )}
+
+          {canDecide && (
+            <div className="mb-4 rounded-md border border-amber-200/80 bg-amber-50/50 p-3">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-gray-600">
+                Your decision
               </p>
-              <p className="whitespace-pre-wrap text-[#192a3a]">{booking.notes}</p>
+              <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+                <button
+                  type="button"
+                  onClick={() => void onApprove()}
+                  disabled={decisionInFlight || hasBlockingConflict}
+                  className="inline-flex items-center justify-center gap-2 rounded-md bg-[#192a3a] px-4 py-2 text-sm font-medium text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {thisBookingBusy ? (
+                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                  ) : null}
+                  Approve &amp; request payment
+                </button>
+
+                {!declineOpen ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDeclineOpen(true);
+                      setDeclineReason("");
+                    }}
+                    disabled={decisionInFlight}
+                    className="rounded-md border border-red-300 bg-white px-4 py-2 text-sm font-medium text-red-800 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Decline
+                  </button>
+                ) : (
+                  <div className="flex w-full min-w-0 flex-col gap-2 sm:flex-1 sm:flex-row sm:items-center">
+                    <label className="flex min-w-0 flex-1 flex-col gap-1 text-xs text-gray-600">
+                      Reason for declining
+                      <select
+                        value={declineReason}
+                        onChange={(e) => setDeclineReason(e.target.value)}
+                        disabled={decisionInFlight}
+                        className="rounded-md border border-gray-300 bg-white px-2 py-2 text-sm text-[#192a3a] disabled:opacity-60"
+                      >
+                        <option value="">Choose a reason…</option>
+                        {DECLINE_REASON_OPTIONS.map((opt) => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void onDecline(declineReason);
+                          setDeclineOpen(false);
+                          setDeclineReason("");
+                        }}
+                        disabled={!declineReason.trim() || decisionInFlight}
+                        className="inline-flex items-center justify-center gap-2 rounded-md border border-red-600 bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {thisBookingBusy ? (
+                          <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                        ) : null}
+                        Confirm decline
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDeclineOpen(false);
+                          setDeclineReason("");
+                        }}
+                        disabled={decisionInFlight}
+                        className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+              {hasBlockingConflict && (
+                <p className="mt-2 text-xs text-red-700">
+                  You can&apos;t approve this request: it overlaps with a confirmed or active booking.
+                </p>
+              )}
             </div>
           )}
 
@@ -974,118 +1098,32 @@ function ExpandedBookingPanel({
         )}
 
         <div className="grid gap-4 xl:grid-cols-[1fr_1fr]">
+          <div className="space-y-4" />
+
           <div className="space-y-4">
-            <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
-              <div className="font-semibold">Decision summary</div>
-              {!hasAnyConflict ? (
-                <div className="mt-1 text-amber-800">No overlapping conflicts detected for this request.</div>
-              ) : (
-                <>
-                  {hasBlockingConflict && (
-                    <div className="mt-1">
-                      This booking overlaps with {overlappingBlockingRequests.length} confirmed or payment-in-progress booking{overlappingBlockingRequests.length === 1 ? "" : "s"}.
-                    </div>
-                  )}
-                  {hasPendingConflict && (
-                    <div className="mt-1">
-                      This booking also overlaps with {overlappingPendingRequests.length} pending request{overlappingPendingRequests.length === 1 ? "" : "s"}.
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-
-            <div className="rounded-md border border-gray-200 bg-white p-4">
-              <p className="mb-3 text-sm font-medium text-[#192a3a]">Actions</p>
-              <div className="flex flex-wrap gap-2">
-                <Link
-                  href={`/spaces/${booking.space_id}`}
-                  className="rounded-md border border-gray-300 px-3 py-2 text-sm hover:bg-gray-50"
-                >
-                  View listing
-                </Link>
-
-                {isPendingRequest && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => updateBookingStatus(booking.id, "approved")}
-                      disabled={busyBookingId === booking.id || hasBlockingConflict}
-                      title={
-                        hasBlockingConflict
-                          ? "This request overlaps with an already confirmed or payment-in-progress booking"
-                          : "Approve booking"
-                      }
-                      className={`rounded-md px-3 py-2 text-sm text-white ${hasBlockingConflict ? "bg-gray-400 cursor-not-allowed" : "bg-[#192a3a] hover:opacity-90"} disabled:opacity-60`}
-                    >
-                      {busyBookingId === booking.id
-                        ? "Processing..."
-                        : hasBlockingConflict
-                          ? "Cannot approve - date conflict"
-                          : "Approve & request payment"}
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => updateBookingStatus(booking.id, "pending")}
-                      disabled={busyBookingId === booking.id}
-                      className="rounded-md border border-gray-300 px-3 py-2 text-sm text-[#192a3a] hover:bg-gray-50 disabled:opacity-60"
-                    >
-                      Keep pending
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => updateBookingStatus(booking.id, "declined")}
-                      disabled={busyBookingId === booking.id}
-                      className="rounded-md border border-red-300 px-3 py-2 text-sm text-red-700 hover:bg-red-50 disabled:opacity-60"
-                    >
-                      Decline
-                    </button>
-                  </>
+            {hasAnyConflict && (
+              <div className="space-y-2">
+                {hasBlockingConflict && (
+                  <DecisionSuggestion
+                    variant="warning"
+                    size="sm"
+                    multiline
+                    text={`Overlap with ${overlappingBlockingRequests.length} confirmed/payment-in-progress booking${overlappingBlockingRequests.length === 1 ? "" : "s"}.`}
+                    className="max-w-full"
+                  />
+                )}
+                {hasPendingConflict && (
+                  <DecisionSuggestion
+                    variant="warning"
+                    size="sm"
+                    multiline
+                    text={`Also overlaps with ${overlappingPendingRequests.length} pending request${overlappingPendingRequests.length === 1 ? "" : "s"}.`}
+                    className="max-w-full"
+                  />
                 )}
               </div>
-
-              {hasBlockingConflict && (
-                <div className="mt-3 text-xs text-red-600">
-                  Approval blocked because these dates overlap with an existing confirmed or payment-in-progress booking.
-                </div>
-              )}
-            </div>
-
-            <div className="rounded-md border border-gray-200 bg-white p-4">
-              <p className="mb-2 text-sm font-medium text-[#192a3a]">Reply to renter</p>
-              <textarea
-                value={ownerReplies[booking.id] || ""}
-                onChange={(e) =>
-                  setOwnerReplies((current) => ({
-                    ...current,
-                    [booking.id]: e.target.value,
-                  }))
-                }
-                placeholder="Add a note for the renter before approving, keeping pending, or declining"
-                className="min-h-[110px] w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-[#192a3a] outline-none focus:border-[#192a3a]"
-              />
-            </div>
+            )}
           </div>
-
-          {isCommunicationAllowed(booking) && (
-            <div className="space-y-4">
-              <BookingConversationPanel
-                booking={booking}
-                sessionUserId={sessionUserId}
-                messagesByBooking={messagesByBooking}
-                messageDrafts={messageDrafts}
-                setMessageDrafts={setMessageDrafts}
-                sendingMessageBookingId={sendingMessageBookingId}
-                sendBookingMessage={sendBookingMessage}
-                communicationOpenBookingId={communicationOpenBookingId}
-                onToggleCommunication={onToggleCommunication}
-                messagesLoadingBookingId={messagesLoadingBookingId}
-                counterpartyContactByBooking={counterpartyContactByBooking}
-              />
-            </div>
-          )}
         </div>
       </div>
     </div>
@@ -1130,6 +1168,21 @@ export default function OwnerBookingRequestsPage() {
   useEffect(() => {
     setCommunicationOpenBookingId(null);
   }, [expandedBookingId]);
+
+  useEffect(() => {
+    if (!communicationOpenBookingId) return;
+    function onEsc(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        setCommunicationOpenBookingId(null);
+      }
+    }
+    document.addEventListener("keydown", onEsc);
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onEsc);
+      document.body.style.overflow = "";
+    };
+  }, [communicationOpenBookingId]);
 
   async function loadRequests() {
     setLoading(true);
@@ -1515,7 +1568,8 @@ export default function OwnerBookingRequestsPage() {
 
   async function updateBookingStatus(
     bookingId: string,
-    nextStatus: "approved" | "declined" | "pending"
+    nextStatus: "approved" | "declined" | "pending",
+    ownerMessageOverride?: string
   ) {
     setMessage("");
     setBusyBookingId(bookingId);
@@ -1527,7 +1581,11 @@ export default function OwnerBookingRequestsPage() {
       setBusyBookingId(null);
       return;
     }
-    const ownerResponseMessage = (ownerReplies[bookingId] || "").trim();
+    const ownerResponseMessage = (
+      ownerMessageOverride !== undefined
+        ? ownerMessageOverride
+        : ownerReplies[bookingId] || ""
+    ).trim();
 
     let competingPendingBookings: Array<{
       id: string;
@@ -2062,14 +2120,6 @@ export default function OwnerBookingRequestsPage() {
                             }
                             : undefined,
                         }}
-                        sessionUserId={sessionUserId}
-                        busyBookingId={busyBookingId}
-                        sendingMessageBookingId={sendingMessageBookingId}
-                        ownerReplies={ownerReplies}
-                        setOwnerReplies={setOwnerReplies}
-                        messagesByBooking={messagesByBooking}
-                        messageDrafts={messageDrafts}
-                        setMessageDrafts={setMessageDrafts}
                         blockingBookings={blockingBookings}
                         pendingTimelineBookings={pendingTimelineBookings}
                         blockedTimelineDates={blockedTimelineDates}
@@ -2078,14 +2128,13 @@ export default function OwnerBookingRequestsPage() {
                         hasAnyConflict={hasAnyConflict}
                         overlappingBlockingRequests={overlappingBlockingRequests}
                         overlappingPendingRequests={overlappingPendingRequests}
-                        isPendingRequest={isPendingRequest}
-                        updateBookingStatus={updateBookingStatus}
-                        sendBookingMessage={sendBookingMessage}
-                        communicationOpenBookingId={communicationOpenBookingId}
                         onToggleCommunication={toggleCommunicationPanel}
-                        messagesLoadingBookingId={messagesLoadingBookingId}
-                        counterpartyContactByBooking={counterpartyContactByBooking}
                         competingPendingRequests={overlappingPendingRequests}
+                        onApprove={() => void updateBookingStatus(booking.id, "approved")}
+                        onDecline={(reason) =>
+                          void updateBookingStatus(booking.id, "declined", reason)
+                        }
+                        busyBookingId={busyBookingId}
                       />
                     )}
                   </div>
@@ -2094,6 +2143,121 @@ export default function OwnerBookingRequestsPage() {
             </div>
           )}
         </div>
+
+        {communicationOpenBookingId && (() => {
+          const booking = bookings.find((b) => b.id === communicationOpenBookingId);
+          if (!booking || !isCommunicationAllowed(booking)) return null;
+          const thread = messagesByBooking[booking.id] || [];
+          const contact = counterpartyContactByBooking[booking.id];
+          return (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4"
+              onClick={() => setCommunicationOpenBookingId(null)}
+            >
+              <div
+                className="flex max-h-[86vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl bg-white shadow-xl"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="p-5">
+                <div className="mb-4 flex items-start justify-between gap-3 border-b border-gray-100 pb-3">
+                  <div>
+                    <h2 className="text-lg font-semibold text-[#192a3a]">
+                      {booking.space?.title || "Booking conversation"}
+                    </h2>
+                    <p className="text-xs text-gray-600">{formatBookingRange(booking)}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setCommunicationOpenBookingId(null)}
+                    className="rounded-md border border-gray-300 p-1.5 text-gray-600 hover:bg-gray-50"
+                    aria-label="Close messaging modal"
+                  >
+                    <XCircle className="h-4 w-4" />
+                  </button>
+                </div>
+
+                <div className="mb-3 grid gap-3 rounded-md border border-gray-100 bg-gray-50/80 p-3 sm:grid-cols-2">
+                  <div className="flex items-start gap-2 text-sm">
+                    <Mail className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+                    <div>
+                      <p className="text-xs font-medium text-gray-500">Renter email</p>
+                      <p className="break-all text-[#192a3a]">{contact?.email || "—"}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2 text-sm">
+                    <Phone className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+                    <div>
+                      <p className="text-xs font-medium text-gray-500">Renter phone</p>
+                      <p className="text-[#192a3a]">
+                        {contact?.phone ? contact.phone : "Contact number not available"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mb-3">
+                  <p className="mb-2 text-xs font-medium text-gray-500">Conversation</p>
+                  <div className="max-h-[38vh] space-y-2 overflow-y-auto rounded-md border border-gray-200 bg-gray-50 p-3">
+                    {messagesLoadingBookingId === booking.id ? (
+                      <p className="text-sm text-gray-500">Loading conversation...</p>
+                    ) : thread.length === 0 ? (
+                      <p className="text-sm text-gray-500">
+                        No messages yet. Your first message will start the conversation.
+                      </p>
+                    ) : (
+                      thread.map((item) => {
+                        const isMine = item.sender_id === sessionUserId;
+                        return (
+                          <div
+                            key={item.id}
+                            className={`max-w-[88%] rounded-md px-3 py-2 text-sm ${
+                              isMine
+                                ? "ml-auto bg-[#192a3a] text-white"
+                                : "mr-auto border border-gray-200 bg-white text-[#192a3a]"
+                            }`}
+                          >
+                            <p className="whitespace-pre-wrap">{item.message}</p>
+                            <p className={`mt-1 text-[11px] ${isMine ? "text-gray-200" : "text-gray-500"}`}>
+                              <span className="font-medium">{isMine ? "Owner" : "Renter"}</span> •{" "}
+                              {item.created_at ? new Date(item.created_at).toLocaleString() : "No timestamp"}
+                            </p>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  <textarea
+                    value={messageDrafts[booking.id] || ""}
+                    onChange={(e) =>
+                      setMessageDrafts((current) => ({
+                        ...current,
+                        [booking.id]: e.target.value,
+                      }))
+                    }
+                    rows={3}
+                    placeholder="Write a message to the renter"
+                    className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-[#192a3a] outline-none focus:border-[#192a3a] focus:ring-2 focus:ring-[#192a3a]/20"
+                  />
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => void sendBookingMessage(booking)}
+                      disabled={sendingMessageBookingId === booking.id || !(messageDrafts[booking.id] || "").trim()}
+                      className="inline-flex items-center gap-2 rounded-md bg-[#192a3a] px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60"
+                    >
+                      <Send className="h-4 w-4" />
+                      {sendingMessageBookingId === booking.id ? "Sending..." : "Send message"}
+                    </button>
+                  </div>
+                </div>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
       </main>
     </RequireAuth>
   );

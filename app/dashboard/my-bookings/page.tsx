@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import RequireAuth from "@/app/components/RequireAuth";
+import DecisionSuggestion from "@/app/components/DecisionSuggestion";
 import { getDisplayName } from "@/lib/utils";
 import {
   MapPin,
@@ -30,6 +31,11 @@ import {
 } from "lucide-react";
 import { downloadInvoicePdf } from "@/lib/invoice-download-client";
 import { isCommunicationAllowed } from "@/lib/booking-communication";
+import {
+  renterBookingStatusLabel,
+  renterPaymentStatusLabel,
+} from "@/lib/booking-ui-labels";
+import { shouldShowBookingRequestNotes } from "@/lib/booking-notes-visibility";
 import {
   aggregateRenterPageMetrics,
   computeRenterBookingFinance,
@@ -153,6 +159,21 @@ export default function MyBookingsPage() {
     }
   }, [searchParams]);
 
+  useEffect(() => {
+    if (!communicationOpenBookingId) return;
+    function onEsc(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        setCommunicationOpenBookingId(null);
+      }
+    }
+    document.addEventListener("keydown", onEsc);
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onEsc);
+      document.body.style.overflow = "";
+    };
+  }, [communicationOpenBookingId]);
+
   async function openInvoiceModal(bookingId: string) {
     setInvoiceError(null);
     setInvoiceHtml(null);
@@ -165,7 +186,7 @@ export default function MyBookingsPage() {
       } = await supabase.auth.getSession();
 
       if (!session?.access_token) {
-        setInvoiceError("Please log in to view your invoice.");
+        setInvoiceError("Sign in to view your invoice.");
         setInvoiceLoading(false);
         return;
       }
@@ -181,8 +202,8 @@ export default function MyBookingsPage() {
       if (!res.ok) {
         setInvoiceError(
           res.status === 403
-            ? "Invoice is only available after payment is confirmed."
-            : text || "Could not load invoice."
+            ? "Your invoice appears here once payment has been confirmed—usually within a few minutes after checkout."
+            : text || "We couldn’t load your invoice. Try again in a moment."
         );
         setInvoiceLoading(false);
         return;
@@ -190,7 +211,7 @@ export default function MyBookingsPage() {
 
       setInvoiceHtml(text);
     } catch {
-      setInvoiceError("Could not load invoice.");
+      setInvoiceError("We couldn’t load your invoice. Try again in a moment.");
     } finally {
       setInvoiceLoading(false);
     }
@@ -691,21 +712,6 @@ export default function MyBookingsPage() {
     return "bg-gray-100 text-gray-800";
   }
 
-  function getDisplayStatus(status: string | null) {
-    if (status === "pending_owner") return "Pending";
-    if (status === "accepted_awaiting_payment") return "Awaiting payment";
-    if (
-      status === "paid_confirmed" ||
-      status === "confirmed" ||
-      status === "completed"
-    ) {
-      return "Confirmed";
-    }
-    if (status === "declined") return "Declined";
-    if (status === "expired") return "Expired";
-    return status || "Pending";
-  }
-
   function formatBookingTypeLabel(unit: string | null | undefined) {
     const u = (unit || "day").toLowerCase();
     if (u === "month") return "Monthly";
@@ -850,7 +856,7 @@ export default function MyBookingsPage() {
             <div className="flex flex-wrap gap-2">
               {[
                 { key: "all", label: "All", count: counts.all },
-                { key: "pending", label: "Pending", count: counts.pending },
+                { key: "pending", label: "Awaiting host", count: counts.pending },
                 {
                   key: "awaiting_payment",
                   label: "Awaiting payment",
@@ -921,6 +927,10 @@ export default function MyBookingsPage() {
                   booking.status === "paid_confirmed" ||
                   booking.status === "confirmed" ||
                   booking.status === "completed";
+                const showInvoiceHint =
+                  !showInvoice &&
+                  booking.status !== "declined" &&
+                  booking.status !== "expired";
 
                 const charges = chargesByBooking[booking.id] ?? [];
                 const fin = computeRenterBookingFinance(booking, charges);
@@ -995,7 +1005,7 @@ export default function MyBookingsPage() {
                               booking.status
                             )}`}
                           >
-                            {getDisplayStatus(booking.status)}
+                            {renterBookingStatusLabel(booking.status)}
                           </span>
                           <p className="text-xs font-medium tabular-nums text-gray-700">
                             R{Number(booking.total_price || 0).toLocaleString("en-ZA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -1046,7 +1056,7 @@ export default function MyBookingsPage() {
                                       booking.payment_status
                                     )}`}
                                   >
-                                    {booking.payment_status || "unpaid"}
+                                    {renterPaymentStatusLabel(booking.payment_status)}
                                   </span>
                                 </div>
                               </div>
@@ -1111,6 +1121,11 @@ export default function MyBookingsPage() {
                                 View invoice
                               </button>
                             )}
+                            {showInvoiceHint && (
+                              <p className="w-full text-xs text-gray-500 sm:w-auto">
+                                Your invoice will be available here once payment is confirmed.
+                              </p>
+                            )}
                             <Link
                               href={`/spaces/${booking.space_id}`}
                               onClick={(e) => e.stopPropagation()}
@@ -1151,152 +1166,66 @@ export default function MyBookingsPage() {
                             )}
                           </div>
 
-                          <div className="rounded-md border border-gray-200 bg-white p-4 shadow-sm">
-                            <p className="mb-3 text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
-                              Booking request
-                            </p>
-                            <div className="space-y-3">
-                              <div>
-                                <p className="mb-1 text-xs font-medium text-gray-500">Notes with your request</p>
-                                <div className="min-h-[56px] rounded-md bg-gray-50 p-3 text-sm text-gray-700">
-                                  {booking.notes || "No message added."}
-                                </div>
-                              </div>
-                              {booking.owner_response_message && (
-                                <div>
-                                  <p className="mb-1 text-xs font-medium text-gray-500">Owner reply</p>
-                                  <div className="min-h-[48px] rounded-md bg-blue-50 p-3 text-sm text-blue-900">
-                                    {booking.owner_response_message}
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-
-                          {isCommunicationAllowed(booking) && (
+                          {((shouldShowBookingRequestNotes(booking.status, booking.payment_status) &&
+                            (booking.notes || "").trim() !== "") ||
+                            booking.owner_response_message) && (
                             <div className="rounded-md border border-gray-200 bg-white p-4 shadow-sm">
-                              <div className="flex flex-wrap items-center justify-between gap-3">
-                                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
-                                  Owner communication
-                                </p>
-                                <button
-                                  type="button"
-                                  onClick={(e) => void toggleCommunicationPanel(booking, e)}
-                                  className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-[#192a3a] shadow-sm hover:bg-gray-50"
-                                >
-                                  <MessageSquare className="h-4 w-4" />
-                                  Message owner
-                                  {communicationOpenBookingId === booking.id ? (
-                                    <ChevronUp className="h-4 w-4" aria-hidden />
-                                  ) : (
-                                    <ChevronDown className="h-4 w-4" aria-hidden />
+                              <p className="mb-3 text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
+                                Booking request
+                              </p>
+                              <div className="space-y-3">
+                                {shouldShowBookingRequestNotes(
+                                  booking.status,
+                                  booking.payment_status
+                                ) &&
+                                  (booking.notes || "").trim() !== "" && (
+                                    <div>
+                                      <p className="mb-1 text-xs font-medium text-gray-500">
+                                        Notes with your request
+                                      </p>
+                                      <div className="min-h-[56px] rounded-md bg-gray-50 p-3 text-sm text-gray-700">
+                                        {booking.notes}
+                                      </div>
+                                    </div>
                                   )}
-                                </button>
-                              </div>
-
-                              {communicationOpenBookingId === booking.id && (
-                                <div className="mt-4 border-t border-gray-100 pt-4">
-                                  <div className="space-y-4">
-                                    {messagesLoadingBookingId === booking.id ? (
-                                      <p className="text-sm text-gray-500">Loading messages…</p>
-                                    ) : (
-                                      <>
-                                        <div className="grid gap-3 rounded-md border border-gray-100 bg-gray-50/80 p-3 sm:grid-cols-2">
-                                          <div className="flex items-start gap-2 text-sm">
-                                            <Mail className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
-                                            <div>
-                                              <p className="text-xs font-medium text-gray-500">Email</p>
-                                              <p className="break-all text-[#192a3a]">
-                                                {ownerContactByBooking[booking.id]?.email ||
-                                                  booking.owner?.email ||
-                                                  "—"}
-                                              </p>
-                                            </div>
-                                          </div>
-                                          <div className="flex items-start gap-2 text-sm">
-                                            <Phone className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
-                                            <div>
-                                              <p className="text-xs font-medium text-gray-500">Contact number</p>
-                                              <p className="text-[#192a3a]">
-                                                {ownerContactByBooking[booking.id]?.phone
-                                                  ? ownerContactByBooking[booking.id].phone
-                                                  : "Contact number not available"}
-                                              </p>
-                                            </div>
-                                          </div>
-                                        </div>
-
-                                        <div>
-                                          <p className="mb-2 text-xs font-medium text-gray-500">Conversation</p>
-                                          <div className="max-h-56 space-y-2 overflow-y-auto rounded-md border border-gray-200 bg-gray-50 p-3">
-                                            {(messagesByBooking[booking.id] || []).length === 0 ? (
-                                              <p className="text-sm text-gray-500">
-                                                No messages yet. Say hello to coordinate details with the owner.
-                                              </p>
-                                            ) : (
-                                              (messagesByBooking[booking.id] || []).map((item) => {
-                                                const isMine = item.sender_id === sessionUserId;
-                                                return (
-                                                  <div
-                                                    key={item.id}
-                                                    className={`max-w-[88%] rounded-md px-3 py-2 text-sm ${isMine
-                                                      ? "ml-auto bg-[#192a3a] text-white"
-                                                      : "mr-auto border border-gray-200 bg-white text-[#192a3a]"
-                                                      }`}
-                                                  >
-                                                    <p className="whitespace-pre-wrap">{item.message}</p>
-                                                    <p
-                                                      className={`mt-1 text-[11px] ${isMine ? "text-gray-200" : "text-gray-500"
-                                                        }`}
-                                                    >
-                                                      {item.created_at
-                                                        ? new Date(item.created_at).toLocaleString()
-                                                        : ""}
-                                                    </p>
-                                                  </div>
-                                                );
-                                              })
-                                            )}
-                                          </div>
-                                        </div>
-
-                                        <div className="flex flex-col gap-2">
-                                          <textarea
-                                            value={messageDrafts[booking.id] || ""}
-                                            onChange={(e) =>
-                                              setMessageDrafts((current) => ({
-                                                ...current,
-                                                [booking.id]: e.target.value,
-                                              }))
-                                            }
-                                            rows={3}
-                                            placeholder="Write a message to the owner"
-                                            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-[#192a3a] outline-none focus:border-[#192a3a]"
-                                          />
-                                          <div className="flex justify-end">
-                                            <button
-                                              type="button"
-                                              onClick={(e) => {
-                                                e.stopPropagation();
-                                                void sendBookingMessage(booking);
-                                              }}
-                                              disabled={sendingMessageBookingId === booking.id}
-                                              className="flex items-center gap-2 rounded-md bg-[#192a3a] px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60"
-                                            >
-                                              <Send className="h-4 w-4" />
-                                              {sendingMessageBookingId === booking.id
-                                                ? "Sending..."
-                                                : "Send message"}
-                                            </button>
-                                          </div>
-                                        </div>
-                                      </>
-                                    )}
+                                {booking.owner_response_message && (
+                                  <div>
+                                    <p className="mb-1 text-xs font-medium text-gray-500">Owner reply</p>
+                                    <div className="min-h-[48px] rounded-md bg-blue-50 p-3 text-sm text-blue-900">
+                                      {booking.owner_response_message}
+                                    </div>
                                   </div>
-                                </div>
-                              )}
+                                )}
+                              </div>
                             </div>
                           )}
+
+                          <div className="rounded-md border border-gray-200 bg-white p-4 shadow-sm">
+                            <div className="flex flex-wrap items-center justify-between gap-3">
+                              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
+                                Owner communication
+                              </p>
+                              <button
+                                type="button"
+                                onClick={(e) => void toggleCommunicationPanel(booking, e)}
+                                disabled={!isCommunicationAllowed(booking)}
+                                className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-[#192a3a] shadow-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-55"
+                              >
+                                <MessageSquare className="h-4 w-4" />
+                                Message owner
+                              </button>
+                            </div>
+                            {!isCommunicationAllowed(booking) && (
+                              <div className="mt-2">
+                                <DecisionSuggestion
+                                  variant="info"
+                                  text="Messaging available after payment."
+                                  size="sm"
+                                  tooltip="Messaging unlocks once payment is confirmed."
+                                />
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </div>
                     )}
@@ -1306,6 +1235,122 @@ export default function MyBookingsPage() {
             </div>
           )}
         </div>
+
+        {communicationOpenBookingId && (() => {
+          const booking = bookings.find((b) => b.id === communicationOpenBookingId);
+          if (!booking) return null;
+          const thread = messagesByBooking[booking.id] || [];
+          return (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4"
+              onClick={() => setCommunicationOpenBookingId(null)}
+            >
+              <div
+                className="flex max-h-[86vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl bg-white shadow-xl"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="p-5">
+                <div className="mb-4 flex items-start justify-between gap-3 border-b border-gray-100 pb-3">
+                  <div>
+                    <h2 className="text-lg font-semibold text-[#192a3a]">
+                      {booking.space?.title || "Booking conversation"}
+                    </h2>
+                    <p className="text-xs text-gray-600">{formatBookingRange(booking)}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setCommunicationOpenBookingId(null)}
+                    className="rounded-md border border-gray-300 p-1.5 text-gray-600 hover:bg-gray-50"
+                    aria-label="Close messaging modal"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+
+                <div className="mb-3 grid gap-3 rounded-md border border-gray-100 bg-gray-50/80 p-3 sm:grid-cols-2">
+                  <div className="flex items-start gap-2 text-sm">
+                    <Mail className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+                    <div>
+                      <p className="text-xs font-medium text-gray-500">Owner email</p>
+                      <p className="break-all text-[#192a3a]">
+                        {ownerContactByBooking[booking.id]?.email || booking.owner?.email || "—"}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2 text-sm">
+                    <Phone className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+                    <div>
+                      <p className="text-xs font-medium text-gray-500">Owner phone</p>
+                      <p className="text-[#192a3a]">
+                        {ownerContactByBooking[booking.id]?.phone || "Contact number not available"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mb-3">
+                  <p className="mb-2 text-xs font-medium text-gray-500">Conversation</p>
+                  <div className="max-h-[38vh] space-y-2 overflow-y-auto rounded-md border border-gray-200 bg-gray-50 p-3">
+                    {messagesLoadingBookingId === booking.id ? (
+                      <p className="text-sm text-gray-500">Loading conversation...</p>
+                    ) : thread.length === 0 ? (
+                      <p className="text-sm text-gray-500">
+                        No messages yet. Your first message will start the conversation.
+                      </p>
+                    ) : (
+                      thread.map((item) => {
+                        const isMine = item.sender_id === sessionUserId;
+                        return (
+                          <div
+                            key={item.id}
+                            className={`max-w-[88%] rounded-md px-3 py-2 text-sm ${
+                              isMine
+                                ? "ml-auto bg-[#192a3a] text-white"
+                                : "mr-auto border border-gray-200 bg-white text-[#192a3a]"
+                            }`}
+                          >
+                            <p className="whitespace-pre-wrap">{item.message}</p>
+                            <p className={`mt-1 text-[11px] ${isMine ? "text-gray-200" : "text-gray-500"}`}>
+                              <span className="font-medium">{isMine ? "Renter" : "Owner"}</span> •{" "}
+                              {item.created_at ? new Date(item.created_at).toLocaleString() : "No timestamp"}
+                            </p>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  <textarea
+                    value={messageDrafts[booking.id] || ""}
+                    onChange={(e) =>
+                      setMessageDrafts((current) => ({
+                        ...current,
+                        [booking.id]: e.target.value,
+                      }))
+                    }
+                    rows={3}
+                    placeholder="Write a message to the owner"
+                    className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-[#192a3a] outline-none focus:border-[#192a3a] focus:ring-2 focus:ring-[#192a3a]/20"
+                  />
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => void sendBookingMessage(booking)}
+                      disabled={sendingMessageBookingId === booking.id || !(messageDrafts[booking.id] || "").trim()}
+                      className="inline-flex items-center gap-2 rounded-md bg-[#192a3a] px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60"
+                    >
+                      <Send className="h-4 w-4" />
+                      {sendingMessageBookingId === booking.id ? "Sending..." : "Send message"}
+                    </button>
+                  </div>
+                </div>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
         {paymentModalBooking && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
@@ -1389,7 +1434,7 @@ export default function MyBookingsPage() {
           <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 px-4 py-6">
             <div className="flex max-h-[90vh] w-full max-w-3xl flex-col rounded-xl bg-white shadow-xl">
               <div className="flex items-center justify-between gap-3 border-b border-gray-200 px-4 py-3">
-                <h2 className="text-lg font-semibold text-[#192a3a]">Invoice</h2>
+                <h2 className="text-lg font-semibold text-[#192a3a]">Your invoice</h2>
                 <div className="flex shrink-0 items-center gap-2">
                   <button
                     type="button"
@@ -1416,7 +1461,7 @@ export default function MyBookingsPage() {
               </div>
               <div className="min-h-0 flex-1 overflow-auto p-4">
                 {invoiceLoading && (
-                  <p className="text-sm text-gray-600">Loading invoice…</p>
+                  <p className="text-sm text-gray-600">Fetching your invoice…</p>
                 )}
                 {invoiceError && (
                   <p className="text-sm text-red-700">{invoiceError}</p>

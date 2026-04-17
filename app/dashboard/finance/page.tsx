@@ -1,14 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  AlertCircle,
   CalendarDays,
   ClipboardList,
   Download,
   Home,
   Landmark,
   LayoutDashboard,
+  Loader2,
   Search,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
@@ -48,34 +50,33 @@ export default function OwnerFinancePage() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [chargeTypeFilter, setChargeTypeFilter] = useState<string>("all");
 
-  useEffect(() => {
-    async function load() {
-      setLoading(true);
-      setError("");
-      try {
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
-        if (!user) {
-          setError("Please log in.");
-          setLoading(false);
-          return;
-        }
-        setSessionEmail(user.email ?? null);
+  const loadOwnerFinance = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) {
+        setError("Sign in to view your finance.");
+        setLoading(false);
+        return;
+      }
+      setSessionEmail(user.email ?? null);
 
-        const { data: spaceRows, error: spaceErr } = await supabase
-          .from("spaces")
-          .select("id, title")
-          .eq("owner_id", user.id)
-          .order("title", { ascending: true });
+      const { data: spaceRows, error: spaceErr } = await supabase
+        .from("spaces")
+        .select("id, title")
+        .eq("owner_id", user.id)
+        .order("title", { ascending: true });
 
-        if (spaceErr) throw spaceErr;
-        setSpaces((spaceRows || []) as SpaceOption[]);
+      if (spaceErr) throw spaceErr;
+      setSpaces((spaceRows || []) as SpaceOption[]);
 
-        const { data: bookingRows, error: bookErr } = await (supabase
-          .from("bookings") as any)
-          .select(
-            `
+      const { data: bookingRows, error: bookErr } = await (supabase
+        .from("bookings") as any)
+        .select(
+          `
             id,
             space_id,
             booking_unit,
@@ -107,30 +108,32 @@ export default function OwnerFinancePage() {
               statement_month
             )
           `
-          )
-          .eq("owner_id", user.id)
-          .order("created_at", { ascending: false })
-          .limit(FINANCE_BOOKINGS_QUERY_LIMIT);
+        )
+        .eq("owner_id", user.id)
+        .order("created_at", { ascending: false })
+        .limit(FINANCE_BOOKINGS_QUERY_LIMIT);
 
-        if (bookErr) throw bookErr;
-        setBookings((bookingRows || []) as FinanceBookingInput[]);
-      } catch (e: unknown) {
-        const msg =
-          e instanceof Error
-            ? e.message
-            : typeof e === "object" &&
-                e !== null &&
-                "message" in e &&
-                typeof (e as { message: unknown }).message === "string"
-              ? (e as { message: string }).message
-              : "Could not load finance data.";
-        setError(msg);
-      } finally {
-        setLoading(false);
-      }
+      if (bookErr) throw bookErr;
+      setBookings((bookingRows || []) as FinanceBookingInput[]);
+    } catch (e: unknown) {
+      const msg =
+        e instanceof Error
+          ? e.message
+          : typeof e === "object" &&
+              e !== null &&
+              "message" in e &&
+              typeof (e as { message: unknown }).message === "string"
+            ? (e as { message: string }).message
+            : "Could not load finance data.";
+      setError(msg);
+    } finally {
+      setLoading(false);
     }
-    void load();
   }, []);
+
+  useEffect(() => {
+    void loadOwnerFinance();
+  }, [loadOwnerFinance]);
 
   const allTransactions = useMemo(
     () => buildFinanceLineItems(bookings),
@@ -252,13 +255,47 @@ export default function OwnerFinancePage() {
           </div>
 
           {error && (
-            <div className="mb-6 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-              {error}
+            <div
+              className="mb-6 flex flex-col gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900 sm:flex-row sm:items-start sm:justify-between"
+              role="alert"
+            >
+              <div className="flex gap-2">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+                <span>{error}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => void loadOwnerFinance()}
+                className="shrink-0 self-start rounded-md border border-red-300 bg-white px-3 py-1.5 text-xs font-medium text-red-900 hover:bg-red-100/80"
+              >
+                Try again
+              </button>
             </div>
           )}
 
           {loading ? (
-            <p className="text-sm text-gray-600">Loading finance data…</p>
+            <div className="space-y-6">
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+                {[1, 2, 3, 4, 5, 6].map((i) => (
+                  <div
+                    key={i}
+                    className="h-28 animate-pulse rounded-lg border border-gray-200 bg-white shadow-sm"
+                  />
+                ))}
+              </div>
+              <div className="h-36 animate-pulse rounded-lg border border-gray-200 bg-white shadow-sm" />
+              <div className="h-48 animate-pulse rounded-lg border border-gray-200 bg-white shadow-sm" />
+              <div className="flex items-center justify-center gap-2 text-sm text-gray-500">
+                <Loader2 className="h-4 w-4 animate-spin text-[#192a3a]" aria-hidden />
+                Loading your numbers…
+              </div>
+            </div>
+          ) : error ? (
+            <div className="rounded-lg border border-gray-200 bg-white px-6 py-10 text-center shadow-sm">
+              <p className="text-sm text-gray-600">
+                Finance data didn&apos;t load. Use <strong>Try again</strong> above.
+              </p>
+            </div>
           ) : (
             <>
               <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
@@ -406,11 +443,13 @@ export default function OwnerFinancePage() {
                   <tbody>
                     {filtered.length === 0 ? (
                       <tr>
-                        <td
-                          colSpan={10}
-                          className="px-3 py-8 text-center text-gray-500"
-                        >
-                          No transactions match your filters.
+                        <td colSpan={10} className="px-4 py-14 text-center">
+                          <p className="text-sm font-medium text-gray-700">
+                            No transactions match
+                          </p>
+                          <p className="mt-1 text-sm text-gray-500">
+                            Clear filters or widen the paid date range to see more activity.
+                          </p>
                         </td>
                       </tr>
                     ) : (
@@ -463,9 +502,9 @@ export default function OwnerFinancePage() {
                   </span>
                 </div>
                 {statementsByMonth.length === 0 ? (
-                  <p className="text-sm text-gray-500">
-                    No paid transactions in the current filter selection. Adjust
-                    filters or date range to see statement groupings.
+                  <p className="text-sm leading-relaxed text-gray-600">
+                    No paid activity in this filter selection. Adjust filters or dates to
+                    group statements by month.
                   </p>
                 ) : (
                   <ul className="space-y-3">
