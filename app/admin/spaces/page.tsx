@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   Building2,
   CheckCircle2,
@@ -16,6 +17,7 @@ import {
   Save,
   Search,
   ShieldCheck,
+  MessageSquare,
   Users,
   XCircle,
 } from "lucide-react";
@@ -69,6 +71,13 @@ type ProfileVerificationRow = {
   bank_verification_status: string | null;
 };
 
+type OwnerMessageHistoryItem = {
+  id: string;
+  content: string;
+  createdAt: string;
+  source: "admin_note" | "admin_message";
+};
+
 export default function AdminSpacesPage() {
   const [role, setRole] = useState<string | null>(null);
   const [spaces, setSpaces] = useState<Space[]>([]);
@@ -80,10 +89,44 @@ export default function AdminSpacesPage() {
   const [listingComments, setListingComments] = useState<Record<string, string>>({});
   const [searchQuery, setSearchQuery] = useState("");
   const [expandedListings, setExpandedListings] = useState<Record<string, boolean>>({});
+  const [proofModalOpen, setProofModalOpen] = useState(false);
+  const [proofModalUrl, setProofModalUrl] = useState<string | null>(null);
+  const [proofModalTitle, setProofModalTitle] = useState("Ownership proof");
+  const [messageModalOpen, setMessageModalOpen] = useState(false);
+  const [messageModalSpaceId, setMessageModalSpaceId] = useState<string | null>(null);
+  const [messageDraft, setMessageDraft] = useState("");
+  const [sendingMessage, setSendingMessage] = useState(false);
+  const [messageHistory, setMessageHistory] = useState<Record<string, OwnerMessageHistoryItem[]>>(
+    {}
+  );
+  const [modalMounted, setModalMounted] = useState(false);
 
   useEffect(() => {
     loadAdminSpaces();
   }, []);
+
+  useEffect(() => {
+    setModalMounted(true);
+  }, []);
+
+  useEffect(() => {
+    function onEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        closeProofModal();
+        closeMessageModal();
+      }
+    }
+
+    if (proofModalOpen || messageModalOpen) {
+      document.addEventListener("keydown", onEscape);
+      document.body.style.overflow = "hidden";
+    }
+
+    return () => {
+      document.removeEventListener("keydown", onEscape);
+      document.body.style.overflow = "";
+    };
+  }, [proofModalOpen, messageModalOpen]);
 
   async function loadAdminSpaces() {
     setLoading(true);
@@ -514,6 +557,103 @@ export default function AdminSpacesPage() {
     }));
   }
 
+  function openProofModal(url: string, listingTitle: string) {
+    setProofModalTitle(listingTitle ? `Ownership proof - ${listingTitle}` : "Ownership proof");
+    setProofModalUrl(url);
+    setProofModalOpen(true);
+  }
+
+  function closeProofModal() {
+    setProofModalOpen(false);
+    setProofModalUrl(null);
+  }
+
+  function openMessageModal(space: Space) {
+    setMessageModalSpaceId(space.id);
+    setMessageDraft("");
+    setMessageModalOpen(true);
+    setMessageHistory((current) => {
+      if (current[space.id]) return current;
+      const seeded: OwnerMessageHistoryItem[] = [];
+      const adminNote = (space.listing_admin_comment || "").trim();
+      if (adminNote) {
+        seeded.push({
+          id: `seed-${space.id}`,
+          content: adminNote,
+          createdAt: space.created_at || new Date().toISOString(),
+          source: "admin_note",
+        });
+      }
+      return { ...current, [space.id]: seeded };
+    });
+  }
+
+  function closeMessageModal() {
+    setMessageModalOpen(false);
+    setMessageModalSpaceId(null);
+    setMessageDraft("");
+  }
+
+  async function sendOwnerMessage(space: Space) {
+    const trimmed = messageDraft.trim();
+    if (!trimmed) {
+      setMessage("Please enter a message before sending.");
+      return;
+    }
+
+    setSendingMessage(true);
+    setMessage("");
+
+    const { error } = await (supabase.from("spaces") as any)
+      .update({ listing_admin_comment: trimmed })
+      .eq("id", space.id);
+
+    if (error) {
+      setSendingMessage(false);
+      setMessage(error.message);
+      return;
+    }
+
+    await fireListingEvent(space.id, "listing_pending", trimmed);
+
+    setSpaces((current) =>
+      current.map((item) =>
+        item.id === space.id ? { ...item, listing_admin_comment: trimmed } : item
+      )
+    );
+
+    const now = new Date().toISOString();
+    setMessageHistory((current) => ({
+      ...current,
+      [space.id]: [
+        ...(current[space.id] || []),
+        {
+          id: `msg-${space.id}-${Date.now()}`,
+          content: trimmed,
+          createdAt: now,
+          source: "admin_message",
+        },
+      ],
+    }));
+
+    setListingComments((current) => ({
+      ...current,
+      [space.id]: trimmed,
+    }));
+
+    setMessageDraft("");
+    setSendingMessage(false);
+    setMessage("Message sent to owner and saved as admin note.");
+  }
+
+  function getProofFileType(url: string | null): "image" | "pdf" | "unknown" {
+    if (!url) return "unknown";
+    const clean = url.split("?")[0].toLowerCase();
+    if (/\.(png|jpg|jpeg|gif|webp|bmp|svg)$/.test(clean)) return "image";
+    if (/\.pdf$/.test(clean)) return "pdf";
+    return "unknown";
+  }
+
   function getStatusBadgeClass(status: string | null) {
     if (status === "active") return "bg-green-100 text-green-800";
     if (status === "paused") return "bg-yellow-100 text-yellow-800";
@@ -588,6 +728,19 @@ export default function AdminSpacesPage() {
       return searchableText.includes(normalizedSearch);
     });
   }, [spaces, statusFilter, searchQuery]);
+
+  const buttonBase =
+    "inline-flex items-center justify-center gap-1.5 rounded-md border text-xs font-medium transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 active:translate-y-[1px] disabled:cursor-not-allowed disabled:opacity-50";
+  const buttonNeutral =
+    `${buttonBase} border-gray-300 bg-white px-2.5 py-1.5 text-gray-700 hover:border-gray-400 hover:bg-gray-50 active:bg-gray-100 focus-visible:ring-gray-300`;
+  const buttonPrimary =
+    `${buttonBase} border-[#192a3a] bg-[#192a3a] px-3 py-1.5 text-white shadow-sm hover:bg-[#22384d] hover:shadow active:bg-[#162534] focus-visible:ring-[#192a3a]`;
+  const buttonPositive =
+    `${buttonBase} border-green-300 bg-green-50 px-2.5 py-1.5 text-green-700 hover:border-green-400 hover:bg-green-100 active:bg-green-200 focus-visible:ring-green-400`;
+  const buttonDestructive =
+    `${buttonBase} border-red-300 bg-red-50 px-2.5 py-1.5 text-red-700 hover:border-red-400 hover:bg-red-100 active:bg-red-200 focus-visible:ring-red-400`;
+  const tooltipSurface =
+    "pointer-events-none absolute bottom-full left-1/2 z-20 mb-1.5 w-52 -translate-x-1/2 rounded-md border border-gray-200 bg-[#111827] px-2 py-1.5 text-[11px] font-normal leading-snug text-white opacity-0 shadow-lg transition-opacity duration-150 group-hover:opacity-100";
 
   if (loading) {
     return (
@@ -734,7 +887,6 @@ export default function AdminSpacesPage() {
                           </p>
                           <p className="mt-1 text-sm text-gray-500">
                             Owner: {getOwnerDisplayName(space)}
-                            {space.owner_email ? ` | ${space.owner_email}` : ""}
                           </p>
                           <p className="mt-1 text-sm text-gray-500">
                             Type: {space.space_type || "Not set"} | Booking: {space.booking_unit || "Not set"}
@@ -789,206 +941,187 @@ export default function AdminSpacesPage() {
                   </button>
 
                   {expandedListings[space.id] && (
-                    <div className="border-t border-gray-200 px-4 pb-4 pt-4">
+                    <div className="border-t border-gray-200 bg-[#fcfcfd] px-4 pb-4 pt-3">
                       {(space.status || "pending") === "pending" && (
-                        <div className="mb-4 rounded-sm border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
+                        <div className="mb-3 rounded-sm border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900">
                           This listing is awaiting admin approval and is not yet visible to the public.
                         </div>
                       )}
 
                       {!canActivate && (
-                        <div className="mb-4 rounded-sm border border-yellow-300 bg-yellow-50 p-3 text-sm text-yellow-900">
+                        <div className="mb-3 rounded-sm border border-yellow-300 bg-yellow-50 px-3 py-2 text-xs text-yellow-900">
                           This listing cannot be activated yet. Missing: {missingChecks.join(", ")}.
                         </div>
                       )}
 
-                      {space.listing_admin_comment && (
-                        <div className="mb-4 rounded-sm border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
-                          <span className="font-medium">Admin comment:</span> {space.listing_admin_comment}
-                        </div>
-                      )}
-
-                      <div className="space-y-4">
-                        <div className="rounded-sm border border-gray-200 bg-gray-50 p-4">
-                          <p className="mb-3 text-sm font-medium text-gray-700">Owner details</p>
-                          <div className="space-y-2 text-sm text-gray-700">
-                            <p>
-                              <span className="font-medium">Name:</span> {getOwnerDisplayName(space)}
+                      <div className="space-y-3">
+                        <div className="grid gap-2.5 lg:grid-cols-2">
+                          <div className="rounded-sm border border-gray-200 bg-white p-2">
+                            <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-gray-500">
+                              Owner
                             </p>
-                            <p>
-                              <span className="font-medium">Email:</span> {space.owner_email || "Email not set"}
-                            </p>
-                            <p>
-                              <span className="font-medium">Phone:</span> {space.owner_phone || "Phone not set"}
-                            </p>
-                            <p>
-                              <span className="font-medium">Owner ID:</span> {space.owner_id}
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="rounded-sm border border-gray-200 bg-gray-50 p-4">
-                          <p className="mb-3 text-sm font-medium text-gray-700">Platform fee</p>
-
-                          <div className="flex flex-wrap items-center gap-3">
-                            <input
-                              type="number"
-                              min="0"
-                              max="100"
-                              step="0.01"
-                              value={feeInputs[space.id] || ""}
-                              onChange={(e) =>
-                                setFeeInputs((current) => ({
-                                  ...current,
-                                  [space.id]: e.target.value,
-                                }))
-                              }
-                              className="w-32 rounded-md border border-gray-300 px-3 py-2 text-sm outline-none"
-                            />
-
-                            <span className="text-sm text-gray-600">%</span>
-
-                            <button
-                              type="button"
-                              onClick={() => savePlatformFee(space.id)}
-                              disabled={savingFeeId === space.id}
-                              className="inline-flex items-center gap-2 rounded-md border px-4 py-2 text-sm disabled:opacity-50"
-                            >
-                              <Save className="h-4 w-4" />
-                              {savingFeeId === space.id ? "Saving..." : "Save fee"}
-                            </button>
+                            <div className="mt-1.5 space-y-0.5 text-sm text-[#192a3a]">
+                              <p className="font-medium">{getOwnerDisplayName(space)}</p>
+                              <p className="text-xs text-gray-600">{space.owner_email || "Email not set"}</p>
+                              <p className="text-xs text-gray-600">{space.owner_phone || "Phone not set"}</p>
+                            </div>
+                            <p className="mt-1.5 text-[11px] text-gray-400">ID: {space.owner_id}</p>
+                            <div className="mt-2">
+                              <button
+                                type="button"
+                                onClick={() => openMessageModal(space)}
+                                className={buttonNeutral}
+                              >
+                                <MessageSquare className="h-3.5 w-3.5" />
+                                Message owner
+                              </button>
+                            </div>
                           </div>
 
-                          <p className="mt-2 text-xs text-gray-500">
-                            Current saved fee: {Number(space.platform_fee_percent ?? 15)}%
-                          </p>
-                        </div>
-
-                        <div className="rounded-sm border border-gray-200 bg-gray-50 p-4">
-                          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                            <div>
-                              <p className="text-sm font-medium text-gray-700">Ownership proof</p>
-                              <div className="mt-2">
-                                <span
-                                  className={`inline-flex rounded-full px-3 py-1 text-xs font-medium ${getOwnershipBadgeClass(
-                                    space.ownership_proof_status
-                                  )}`}
-                                >
-                                  {space.ownership_proof_status || "pending"}
-                                </span>
+                          <div className="space-y-2">
+                            <div className="rounded-sm border border-gray-200 bg-white p-2">
+                              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                <div className="flex items-center gap-2">
+                                  <p className="text-sm font-medium text-gray-700">Ownership proof</p>
+                                  <span
+                                    className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-medium ${getOwnershipBadgeClass(
+                                      space.ownership_proof_status
+                                    )}`}
+                                  >
+                                    {space.ownership_proof_status || "pending"}
+                                  </span>
+                                </div>
+                                <div className="flex flex-wrap gap-1.5">
+                                  {space.ownership_proof_url ? (
+                                    <span className="group relative">
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          openProofModal(
+                                            space.ownership_proof_url as string,
+                                            space.title || "Listing"
+                                          )
+                                        }
+                                        className={`${buttonNeutral} h-8 w-8 p-0`}
+                                        aria-label="View proof"
+                                      >
+                                        <FileText className="h-3.5 w-3.5" />
+                                      </button>
+                                      <span className={tooltipSurface}>
+                                        Open the uploaded ownership document for review.
+                                      </span>
+                                    </span>
+                                  ) : (
+                                    <span className="rounded-md border border-yellow-300 bg-yellow-50 px-2.5 py-1.5 text-xs text-yellow-800">
+                                      No proof uploaded
+                                    </span>
+                                  )}
+                                  <span className="group relative">
+                                    <button
+                                      type="button"
+                                      onClick={() => updateOwnershipProofStatus(space.id, "verified")}
+                                      className={`${buttonPositive} h-8 w-8 p-0`}
+                                      aria-label="Mark verified"
+                                    >
+                                      <ShieldCheck className="h-3.5 w-3.5" />
+                                    </button>
+                                    <span className={tooltipSurface}>
+                                      Use when the proof is valid and ownership is confirmed.
+                                    </span>
+                                  </span>
+                                  <span className="group relative">
+                                    <button
+                                      type="button"
+                                      onClick={() => updateOwnershipProofStatus(space.id, "pending")}
+                                      className={`${buttonNeutral} h-8 w-8 p-0`}
+                                      aria-label="Mark pending"
+                                    >
+                                      <CircleDashed className="h-3.5 w-3.5" />
+                                    </button>
+                                    <span className={tooltipSurface}>
+                                      Use when more review is needed or clarification is required.
+                                    </span>
+                                  </span>
+                                  <span className="group relative">
+                                    <button
+                                      type="button"
+                                      onClick={() => updateOwnershipProofStatus(space.id, "rejected")}
+                                      className={`${buttonDestructive} h-8 w-8 p-0`}
+                                      aria-label="Mark rejected"
+                                    >
+                                      <XCircle className="h-3.5 w-3.5" />
+                                    </button>
+                                    <span className={tooltipSurface}>
+                                      Use when the proof is invalid, insufficient, or does not match the listing.
+                                    </span>
+                                  </span>
+                                </div>
                               </div>
                             </div>
 
-                            <div className="flex flex-wrap gap-3">
-                              {space.ownership_proof_url ? (
-                                <a
-                                  href={space.ownership_proof_url}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="inline-flex items-center gap-2 rounded-md border px-4 py-2 text-sm"
-                                >
-                                  <FileText className="h-4 w-4" />
-                                  View ownership proof
-                                </a>
-                              ) : (
-                                <span className="rounded-md border border-yellow-300 bg-yellow-50 px-4 py-2 text-sm text-yellow-800">
-                                  No ownership proof uploaded
+                            <div className="rounded-sm border border-gray-200 bg-white p-2">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="text-sm font-medium text-gray-700">
+                                  Platform fee
                                 </span>
-                              )}
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max="100"
+                                  step="0.01"
+                                  value={feeInputs[space.id] || ""}
+                                  onChange={(e) =>
+                                    setFeeInputs((current) => ({
+                                      ...current,
+                                      [space.id]: e.target.value,
+                                    }))
+                                  }
+                                  className="w-24 rounded-md border border-gray-300 px-2.5 py-1.5 text-sm outline-none"
+                                />
+                                <span className="text-sm text-gray-600">%</span>
+                                <span className="text-xs text-gray-500">
+                                  Current: {Number(space.platform_fee_percent ?? 15)}%
+                                </span>
+                                <div className="ml-auto">
+                                  <button
+                                    type="button"
+                                    onClick={() => savePlatformFee(space.id)}
+                                    disabled={savingFeeId === space.id}
+                                    className={buttonNeutral}
+                                  >
+                                    <Save className="h-3.5 w-3.5" />
+                                    {savingFeeId === space.id ? "Saving..." : "Save"}
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
 
-                              <button
-                                type="button"
-                                onClick={() => updateOwnershipProofStatus(space.id, "verified")}
-                                className="inline-flex items-center gap-2 rounded-md border border-green-300 px-4 py-2 text-sm text-green-700"
-                              >
-                                <ShieldCheck className="h-4 w-4" />
-                                Mark verified
-                              </button>
+                            <div className="rounded-sm border border-gray-200 bg-white p-2">
+                              <div className="flex flex-wrap items-center justify-end gap-1.5">
+                                <Link
+                                  href={`/spaces/${space.id}`}
+                                  className={buttonNeutral}
+                                >
+                                  <Eye className="h-3.5 w-3.5" />
+                                  View listing
+                                </Link>
 
-                              <button
-                                type="button"
-                                onClick={() => updateOwnershipProofStatus(space.id, "pending")}
-                                className="inline-flex items-center gap-2 rounded-md border px-4 py-2 text-sm"
-                              >
-                                <CircleDashed className="h-4 w-4" />
-                                Mark pending
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() => updateOwnershipProofStatus(space.id, "rejected")}
-                                className="inline-flex items-center gap-2 rounded-md border border-red-300 px-4 py-2 text-sm text-red-700"
-                              >
-                                <XCircle className="h-4 w-4" />
-                                Mark rejected
-                              </button>
+                                <button
+                                  type="button"
+                                  onClick={() => updateSpaceStatus(space.id, "active")}
+                                  disabled={!canActivate}
+                                  className={
+                                    canActivate
+                                      ? buttonPrimary
+                                      : `${buttonBase} border-gray-200 bg-gray-200 px-3 py-1.5 text-gray-500`
+                                  }
+                                >
+                                  <CheckCircle2 className="h-3.5 w-3.5" />
+                                  Approve / Activate
+                                </button>
+                              </div>
                             </div>
                           </div>
-                        </div>
-
-                        <div className="rounded-sm border border-gray-200 bg-gray-50 p-4">
-                          <p className="mb-3 text-sm font-medium text-gray-700">Listing comment</p>
-                          <textarea
-                            value={listingComments[space.id] || ""}
-                            onChange={(e) =>
-                              setListingComments((current) => ({
-                                ...current,
-                                [space.id]: e.target.value,
-                              }))
-                            }
-                            placeholder="Add clarification needed, pending reason, or rejection reason"
-                            className="min-h-[96px] w-full rounded-md border border-gray-300 p-3 text-sm outline-none"
-                          />
-                        </div>
-
-                        <div className="flex flex-wrap gap-3">
-                          <Link
-                            href={`/spaces/${space.id}`}
-                            className="inline-flex items-center gap-2 rounded-md border px-4 py-2 text-sm"
-                          >
-                            <Eye className="h-4 w-4" />
-                            View listing
-                          </Link>
-
-                          <button
-                            type="button"
-                            onClick={() => updateSpaceStatus(space.id, "active")}
-                            disabled={!canActivate}
-                            className={`inline-flex items-center gap-2 rounded-md px-4 py-2 text-sm ${canActivate
-                                ? "bg-black text-white"
-                                : "cursor-not-allowed bg-gray-200 text-gray-500"
-                              }`}
-                          >
-                            <CheckCircle2 className="h-4 w-4" />
-                            Approve / Activate
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => updateSpaceStatus(space.id, "paused")}
-                            className="inline-flex items-center gap-2 rounded-md border px-4 py-2 text-sm"
-                          >
-                            <PauseCircle className="h-4 w-4" />
-                            Pause
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => updateSpaceStatus(space.id, "pending")}
-                            className="inline-flex items-center gap-2 rounded-md border px-4 py-2 text-sm"
-                          >
-                            <CircleDashed className="h-4 w-4" />
-                            Pending / Need clarification
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => updateSpaceStatus(space.id, "rejected")}
-                            className="inline-flex items-center gap-2 rounded-md border border-red-300 px-4 py-2 text-sm text-red-700"
-                          >
-                            <XCircle className="h-4 w-4" />
-                            Reject with reason
-                          </button>
                         </div>
                       </div>
                     </div>
@@ -999,6 +1132,202 @@ export default function AdminSpacesPage() {
           </div>
         )}
       </div>
+      {modalMounted &&
+        proofModalOpen &&
+        createPortal(
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center px-4 py-6">
+            <div
+              className="absolute inset-0 bg-black/45 backdrop-blur-[1px]"
+              onClick={closeProofModal}
+            />
+
+            <div className="relative z-[10000] flex h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-md border border-gray-200 bg-white shadow-2xl">
+              <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
+                <div className="min-w-0">
+                  <h3 className="truncate text-sm font-semibold text-[#192a3a]">
+                    {proofModalTitle}
+                  </h3>
+                  <p className="text-xs text-gray-500">
+                    Review ownership proof without leaving approvals
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeProofModal}
+                  className={`${buttonNeutral} h-8 w-8 shrink-0 p-0`}
+                  aria-label="Close ownership proof modal"
+                >
+                  <XCircle className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="min-h-0 flex-1 bg-[#f8fafb] p-3">
+                {(() => {
+                  const proofType = getProofFileType(proofModalUrl);
+
+                  if (!proofModalUrl) {
+                    return (
+                      <div className="flex h-full items-center justify-center rounded-md border border-dashed border-gray-300 bg-white p-6 text-sm text-gray-600">
+                        Ownership proof URL is missing.
+                      </div>
+                    );
+                  }
+
+                  if (proofType === "image") {
+                    return (
+                      <div className="relative h-full overflow-auto rounded-md border border-gray-200 bg-white">
+                        <div className="relative mx-auto h-full min-h-[420px] max-w-4xl">
+                          <Image
+                            src={proofModalUrl}
+                            alt="Ownership proof"
+                            fill
+                            className="object-contain"
+                            unoptimized
+                          />
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  if (proofType === "pdf") {
+                    return (
+                      <iframe
+                        src={proofModalUrl}
+                        title="Ownership proof document"
+                        className="h-full w-full rounded-md border border-gray-200 bg-white"
+                      />
+                    );
+                  }
+
+                  return (
+                    <div className="flex h-full flex-col items-center justify-center gap-3 rounded-md border border-dashed border-gray-300 bg-white p-6 text-center">
+                      <p className="text-sm text-gray-700">
+                        Preview is unavailable for this file type.
+                      </p>
+                      <a
+                        href={proofModalUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className={buttonNeutral}
+                      >
+                        Open document in new tab
+                      </a>
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
+      {modalMounted &&
+        messageModalOpen &&
+        messageModalSpaceId &&
+        (() => {
+          const targetSpace = spaces.find((space) => space.id === messageModalSpaceId);
+          if (!targetSpace) return null;
+          const history = messageHistory[targetSpace.id] || [];
+          return createPortal(
+            <div className="fixed inset-0 z-[9999] flex items-center justify-center px-4 py-6">
+              <div
+                className="absolute inset-0 bg-black/45 backdrop-blur-[1px]"
+                onClick={closeMessageModal}
+              />
+              <div className="relative z-[10000] flex h-[80vh] w-full max-w-2xl flex-col overflow-hidden rounded-md border border-gray-200 bg-white shadow-2xl">
+                <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
+                  <div className="min-w-0">
+                    <h3 className="truncate text-sm font-semibold text-[#192a3a]">
+                      Message owner
+                    </h3>
+                    <p className="text-xs text-gray-500">
+                      Send an update without leaving listing review
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={closeMessageModal}
+                    className={`${buttonNeutral} h-8 w-8 shrink-0 p-0`}
+                    aria-label="Close message owner modal"
+                  >
+                    <XCircle className="h-4 w-4" />
+                  </button>
+                </div>
+
+                <div className="grid gap-2 border-b border-gray-200 bg-[#f8fafb] px-4 py-3 text-xs text-gray-700 sm:grid-cols-3">
+                  <div>
+                    <p className="text-[11px] uppercase tracking-[0.08em] text-gray-500">Owner</p>
+                    <p className="mt-0.5 font-medium text-[#192a3a]">{getOwnerDisplayName(targetSpace)}</p>
+                  </div>
+                  <div>
+                    <p className="text-[11px] uppercase tracking-[0.08em] text-gray-500">Email</p>
+                    <p className="mt-0.5">{targetSpace.owner_email || "Email not set"}</p>
+                  </div>
+                  <div>
+                    <p className="text-[11px] uppercase tracking-[0.08em] text-gray-500">Phone</p>
+                    <p className="mt-0.5">{targetSpace.owner_phone || "Phone not set"}</p>
+                  </div>
+                </div>
+
+                <div className="min-h-0 flex-1 overflow-auto p-4">
+                  <p className="mb-2 text-xs font-medium uppercase tracking-[0.08em] text-gray-500">
+                    Message history
+                  </p>
+                  {history.length === 0 ? (
+                    <div className="rounded-md border border-dashed border-gray-300 bg-gray-50 px-3 py-3 text-sm text-gray-600">
+                      No messages yet.
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {history.map((entry) => (
+                        <div
+                          key={entry.id}
+                          className="rounded-md border border-gray-200 bg-white px-3 py-2"
+                        >
+                          <p className="text-sm text-[#192a3a]">{entry.content}</p>
+                          <p className="mt-1 text-[11px] text-gray-500">
+                            {entry.source === "admin_message" ? "Admin message" : "Saved admin note"}{" "}
+                            • {new Date(entry.createdAt).toLocaleString()}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="border-t border-gray-200 bg-white px-4 py-3">
+                  <label className="mb-1 block text-xs font-medium uppercase tracking-[0.08em] text-gray-500">
+                    New message
+                  </label>
+                  <textarea
+                    value={messageDraft}
+                    onChange={(e) => setMessageDraft(e.target.value)}
+                    placeholder="Write a clear message to the owner..."
+                    className="min-h-[88px] w-full rounded-md border border-gray-300 px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-[#192a3a]/30"
+                  />
+                  <div className="mt-2 flex items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={closeMessageModal}
+                      className={buttonNeutral}
+                    >
+                      Close
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => sendOwnerMessage(targetSpace)}
+                      disabled={sendingMessage}
+                      className={buttonPrimary}
+                    >
+                      <MessageSquare className="h-3.5 w-3.5" />
+                      {sendingMessage ? "Sending..." : "Send"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>,
+            document.body
+          );
+        })()}
     </main>
   );
 }

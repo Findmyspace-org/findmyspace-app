@@ -78,37 +78,42 @@ const multi = (
   options: { value: string; label: string }[]
 ): SpaceFeatureMultiselect => ({ kind: "multiselect", key, label, icon, options });
 
-/** Shared building & access options (appended per space type). */
-const COMMON_ACCESS: SpaceFeatureCheckbox[] = [
+const ACCESS_BUILDING_CHECKS: SpaceFeatureCheckbox[] = [
   cb("sf_access_24_7", "24/7 access", "Clock"),
   cb("sf_weekend_access", "Weekend access", "CalendarDays"),
   cb("sf_secure_entry", "Secure entry", "ShieldCheck"),
   cb("sf_cctv", "CCTV", "Cctv"),
-  cb("sf_gated_access", "Gated access", "Fence"),
-  cb("sf_electricity_included", "Electricity included", "Zap"),
-  cb("sf_backup_power", "Backup power", "BatteryCharging"),
+  cb("sf_gated", "Gated", "Fence"),
   cb("sf_wheelchair", "Wheelchair accessible", "Accessibility"),
   cb("sf_ground_floor", "Ground floor", "Layers"),
   cb("sf_elevator", "Elevator access", "ArrowUpFromLine"),
 ];
 
-const OFFICE_WORKSPACE_CHECKS: SpaceFeatureCheckbox[] = [
+const OFFICE_CONNECTIVITY_TECH_CHECKS: SpaceFeatureCheckbox[] = [
   cb("sf_wifi_high_speed", "High-speed WiFi", "Wifi"),
+  cb("sf_printing", "Printing", "Printer"),
+  cb("sf_scanning", "Scanning", "ScanLine"),
+  cb("sf_video_conferencing", "Video conferencing setup", "Video"),
+  cb("sf_hdmi_usbc", "HDMI / USB-C connection", "Cable"),
+];
+
+const OFFICE_COMFORT_ENVIRONMENT_CHECKS: SpaceFeatureCheckbox[] = [
   cb("sf_aircon", "Air conditioning", "Wind"),
   cb("sf_natural_light", "Natural light", "Sun"),
   cb("sf_ergonomic_furniture", "Ergonomic furniture", "Armchair"),
+  cb("sf_quiet_workspace", "Quiet workspace", "VolumeX"),
+  cb("sf_phone_booth", "Phone booth", "Phone"),
+  cb("sf_private_toilet", "Private toilet", "Bath"),
+  cb("sf_shared_bathroom", "Shared bathroom", "Droplets"),
+];
+
+const OFFICE_WORKSPACE_CHECKS: SpaceFeatureCheckbox[] = [
   cb("sf_desk_included", "Desk included", "Laptop"),
   cb("sf_standing_desk", "Standing desk", "ArrowUpDown"),
   cb("sf_storage_cabinet", "Storage cabinet", "Archive"),
   cb("sf_kitchen_access", "Kitchen access", "UtensilsCrossed"),
   cb("sf_coffee_tea", "Coffee / tea", "Coffee"),
-  cb("sf_printing", "Printing", "Printer"),
-  cb("sf_scanning", "Scanning", "ScanLine"),
-  cb("sf_private_toilet", "Private toilet", "Bath"),
-  cb("sf_shared_bathroom", "Shared bathroom", "Droplets"),
   cb("sf_meeting_room_access", "Meeting room access", "Users"),
-  cb("sf_quiet_workspace", "Quiet workspace", "VolumeX"),
-  cb("sf_phone_booth", "Phone booth", "Phone"),
 ];
 
 const MEETING_CAPACITY_RADIO = radio(
@@ -124,17 +129,23 @@ const MEETING_CAPACITY_RADIO = radio(
 );
 
 const MEETING_ROOM_CHECKS: SpaceFeatureCheckbox[] = [
-  cb("sf_mr_wifi", "WiFi", "Wifi"),
   cb("sf_tv_screen", "TV / screen", "Tv"),
   cb("sf_projector", "Projector", "Projector"),
   cb("sf_whiteboard", "Whiteboard", "Presentation"),
   cb("sf_flip_chart", "Flip chart", "FileText"),
+];
+
+const MEETING_CONNECTIVITY_TECH_CHECKS: SpaceFeatureCheckbox[] = [
+  cb("sf_wifi_high_speed", "High-speed WiFi", "Wifi"),
   cb("sf_video_conferencing", "Video conferencing setup", "Video"),
   cb("sf_hdmi_usbc", "HDMI / USB-C connection", "Cable"),
-  cb("sf_mr_aircon", "Air conditioning", "Wind"),
+];
+
+const MEETING_COMFORT_ENVIRONMENT_CHECKS: SpaceFeatureCheckbox[] = [
+  cb("sf_aircon", "Air conditioning", "Wind"),
   cb("sf_soundproofing", "Soundproofing", "Mic"),
-  cb("sf_mr_natural_light", "Natural light", "Sun"),
-  cb("sf_mr_coffee_tea", "Coffee / tea", "Coffee"),
+  cb("sf_natural_light", "Natural light", "Sun"),
+  cb("sf_coffee_tea", "Coffee / tea", "Coffee"),
   cb("sf_catering", "Catering available", "UtensilsCrossed"),
   cb("sf_reception", "Reception service", "Bell"),
 ];
@@ -153,13 +164,16 @@ const PARKING_TYPE_RADIO = radio(
 );
 
 const PARKING_CHECKS: SpaceFeatureCheckbox[] = [
-  cb("sf_pk_gated", "Gated", "Fence"),
-  cb("sf_pk_guarded", "Guarded", "Shield"),
-  cb("sf_pk_cctv", "CCTV", "Cctv"),
+  cb("sf_gated", "Gated", "Fence"),
+  cb("sf_guarded", "Guarded", "Shield"),
+  cb("sf_cctv", "CCTV", "Cctv"),
   cb("sf_pk_remote_access", "Remote access", "RadioReceiver"),
-  cb("sf_pk_24_7", "24/7 access", "Clock"),
+  cb("sf_access_24_7", "24/7 access", "Clock"),
   cb("sf_pk_daytime_only", "Daytime only", "Sun"),
   cb("sf_pk_night_access", "Night access", "Moon"),
+];
+
+const PARKING_CONVENIENCE_CHECKS: SpaceFeatureCheckbox[] = [
   cb("sf_pk_ev_charging", "Electric charging", "PlugZap"),
   cb("sf_pk_wide_bay", "Wide bay", "StretchHorizontal"),
   cb("sf_pk_near_entrance", "Near entrance", "DoorOpen"),
@@ -199,14 +213,21 @@ const STORAGE_SIZE_RADIO = radio(
 );
 
 const STORAGE_CHECKS: SpaceFeatureCheckbox[] = [
+  cb("sf_cctv", "CCTV", "Cctv"),
+  cb("sf_gated", "Gated", "Fence"),
+  cb("sf_guarded", "Guarded", "Shield"),
+  cb("sf_st_lockable", "Lockable", "Lock"),
+];
+
+const STORAGE_ACCESS_CHECKS: SpaceFeatureCheckbox[] = [
+  cb("sf_access_24_7", "24/7 access", "Clock"),
+  cb("sf_st_limited_hours", "Limited hours", "Clock3"),
+];
+
+const STORAGE_CONDITIONS_CHECKS: SpaceFeatureCheckbox[] = [
   cb("sf_st_dry", "Dry", "Sun"),
   cb("sf_st_climate", "Climate controlled", "Thermometer"),
   cb("sf_st_ventilated", "Ventilated", "Fan"),
-  cb("sf_st_lockable", "Lockable", "Lock"),
-  cb("sf_st_cctv", "CCTV", "Cctv"),
-  cb("sf_st_gated", "Gated access", "Fence"),
-  cb("sf_st_24_7", "24/7 access", "Clock"),
-  cb("sf_st_limited_hours", "Limited hours", "Clock3"),
 ];
 
 const EVENT_VENUE_RADIO = radio(
@@ -233,19 +254,35 @@ const EVENT_CAPACITY_RADIO = radio(
 );
 
 const EVENT_CHECKS: SpaceFeatureCheckbox[] = [
-  cb("sf_ev_kitchen", "Kitchen", "ChefHat"),
-  cb("sf_ev_bar", "Bar area", "Wine"),
-  cb("sf_ev_toilets", "Toilets", "Bath"),
   cb("sf_ev_stage", "Stage / DJ area", "Music2"),
   cb("sf_ev_sound", "Sound system", "Speaker"),
   cb("sf_ev_lighting", "Lighting", "Lightbulb"),
   cb("sf_ev_projector", "Projector / screen", "Projector"),
+];
+
+const EVENT_FACILITIES_CHECKS: SpaceFeatureCheckbox[] = [
+  cb("sf_ev_kitchen", "Kitchen", "ChefHat"),
+  cb("sf_ev_bar", "Bar area", "Wine"),
+  cb("sf_ev_toilets", "Toilets", "Bath"),
+  cb("sf_ev_parking", "Parking available", "ParkingCircle"),
+];
+
+const EVENT_SERVICES_CHECKS: SpaceFeatureCheckbox[] = [
   cb("sf_ev_alcohol", "Alcohol allowed", "Beer"),
   cb("sf_ev_music", "Music allowed", "Music"),
   cb("sf_ev_late_night", "Late night allowed", "Moon"),
   cb("sf_ev_cleaning", "Cleaning service", "Sparkles"),
   cb("sf_ev_security", "Security", "Shield"),
-  cb("sf_ev_parking", "Parking available", "ParkingCircle"),
+];
+
+const EVENT_ACCESS_LOGISTICS_CHECKS: SpaceFeatureCheckbox[] = [
+  cb("sf_access_24_7", "24/7 access", "Clock"),
+  cb("sf_weekend_access", "Weekend access", "CalendarDays"),
+  cb("sf_secure_entry", "Secure entry", "ShieldCheck"),
+  cb("sf_cctv", "CCTV", "Cctv"),
+  cb("sf_gated", "Gated", "Fence"),
+  cb("sf_ground_floor", "Ground floor", "Layers"),
+  cb("sf_elevator", "Elevator access", "ArrowUpFromLine"),
 ];
 
 const WORKSHOP_CHECKS: SpaceFeatureCheckbox[] = [
@@ -266,72 +303,122 @@ function section(id: string, title: string, fields: SpaceFeatureField[]): SpaceF
 export const spaceFeatureLayouts: Record<string, SpaceFeatureLayout> = {
   office: {
     sections: [
-      section("workspace", "Workspace & amenities", OFFICE_WORKSPACE_CHECKS),
-      section("access", "Access & building", COMMON_ACCESS),
+      section("workspace_features", "Workspace features", OFFICE_WORKSPACE_CHECKS),
+      section("connectivity_tech", "Connectivity & tech", OFFICE_CONNECTIVITY_TECH_CHECKS),
+      section("comfort_environment", "Comfort & environment", OFFICE_COMFORT_ENVIRONMENT_CHECKS),
+      section("access_building", "Access & building", ACCESS_BUILDING_CHECKS),
     ],
   },
 
   meeting_room: {
     sections: [
       section("capacity", "Layout", [MEETING_CAPACITY_RADIO]),
-      section("equipment", "Equipment & services", MEETING_ROOM_CHECKS),
-      section("access", "Access & building", COMMON_ACCESS),
+      section("workspace_features", "Workspace features", MEETING_ROOM_CHECKS),
+      section("connectivity_tech", "Connectivity & tech", MEETING_CONNECTIVITY_TECH_CHECKS),
+      section("comfort_environment", "Comfort & environment", MEETING_COMFORT_ENVIRONMENT_CHECKS),
+      section("access_building", "Access & building", ACCESS_BUILDING_CHECKS),
     ],
   },
 
   boardroom: {
     sections: [
       section("capacity", "Layout", [MEETING_CAPACITY_RADIO]),
-      section("equipment", "Equipment & services", MEETING_ROOM_CHECKS),
-      section("access", "Access & building", COMMON_ACCESS),
+      section("workspace_features", "Workspace features", MEETING_ROOM_CHECKS),
+      section("connectivity_tech", "Connectivity & tech", MEETING_CONNECTIVITY_TECH_CHECKS),
+      section("comfort_environment", "Comfort & environment", MEETING_COMFORT_ENVIRONMENT_CHECKS),
+      section("access_building", "Access & building", ACCESS_BUILDING_CHECKS),
     ],
   },
 
   desk_coworking: {
     sections: [
-      section("workspace", "Workspace & amenities", OFFICE_WORKSPACE_CHECKS),
-      section("access", "Access & building", COMMON_ACCESS),
+      section("workspace_features", "Workspace features", OFFICE_WORKSPACE_CHECKS),
+      section("connectivity_tech", "Connectivity & tech", OFFICE_CONNECTIVITY_TECH_CHECKS),
+      section("comfort_environment", "Comfort & environment", OFFICE_COMFORT_ENVIRONMENT_CHECKS),
+      section("access_building", "Access & building", ACCESS_BUILDING_CHECKS),
     ],
   },
 
   parking: {
     sections: [
-      section("type", "Parking", [PARKING_TYPE_RADIO]),
-      section("features", "Features", PARKING_CHECKS),
-      section("vehicles", "Vehicle suitability", [VEHICLE_MULTI]),
-      section("access", "Access & building", COMMON_ACCESS),
+      section("parking_type", "Parking type", [PARKING_TYPE_RADIO]),
+      section("security_access", "Security & access", PARKING_CHECKS),
+      section("convenience", "Convenience", PARKING_CONVENIENCE_CHECKS),
+      section("vehicle_suitability", "Vehicle suitability", [VEHICLE_MULTI]),
     ],
   },
 
   storage: {
     sections: [
-      section("type", "Storage", [STORAGE_TYPE_RADIO, STORAGE_SIZE_RADIO]),
-      section("features", "Features", STORAGE_CHECKS),
-      section("access", "Access & building", COMMON_ACCESS),
+      section("storage_type", "Storage type", [STORAGE_TYPE_RADIO, STORAGE_SIZE_RADIO]),
+      section("security", "Security", STORAGE_CHECKS),
+      section("access", "Access", STORAGE_ACCESS_CHECKS),
+      section("conditions", "Conditions", STORAGE_CONDITIONS_CHECKS),
     ],
   },
 
   event_space: {
     sections: [
-      section("venue", "Venue", [EVENT_VENUE_RADIO, EVENT_CAPACITY_RADIO]),
-      section("features", "Features & services", EVENT_CHECKS),
-      section("access", "Access & building", COMMON_ACCESS),
+      section("venue_features", "Venue features", [EVENT_VENUE_RADIO, EVENT_CAPACITY_RADIO, ...EVENT_CHECKS]),
+      section("facilities", "Facilities", EVENT_FACILITIES_CHECKS),
+      section("services", "Services", EVENT_SERVICES_CHECKS),
+      section("access_logistics", "Access & logistics", EVENT_ACCESS_LOGISTICS_CHECKS),
     ],
   },
 
   workshop_studio: {
     sections: [
       section("studio", "Studio & utilities", WORKSHOP_CHECKS),
-      section("access", "Access & building", COMMON_ACCESS),
+      section("access_building", "Access & building", ACCESS_BUILDING_CHECKS),
     ],
   },
 
   other: {
     sections: [
-      section("access", "Access & building", COMMON_ACCESS),
+      section("access_building", "Access & building", ACCESS_BUILDING_CHECKS),
     ],
   },
 };
+
+const FEATURE_KEY_ALIASES: Record<string, string[]> = {
+  sf_gated: ["sf_gated_access", "sf_pk_gated", "sf_st_gated"],
+  sf_cctv: ["sf_pk_cctv", "sf_st_cctv"],
+  sf_access_24_7: ["sf_pk_24_7", "sf_st_24_7"],
+  sf_wifi_high_speed: ["sf_mr_wifi"],
+  sf_aircon: ["sf_mr_aircon"],
+  sf_natural_light: ["sf_mr_natural_light"],
+  sf_coffee_tea: ["sf_mr_coffee_tea"],
+};
+
+const aliasToCanonicalMap: Map<string, string> = new Map();
+
+for (const [canonical, aliases] of Object.entries(FEATURE_KEY_ALIASES)) {
+  aliasToCanonicalMap.set(canonical, canonical);
+  for (const alias of aliases) {
+    aliasToCanonicalMap.set(alias, canonical);
+  }
+}
+
+export function toCanonicalFeatureKey(key: string): string {
+  return aliasToCanonicalMap.get(key) || key;
+}
+
+export function getFeatureAliasKeys(canonicalKey: string): string[] {
+  return FEATURE_KEY_ALIASES[canonicalKey] || [];
+}
+
+export function normalizeFeatureAttributes(
+  attributes: Record<string, string[]>
+): Record<string, string[]> {
+  const normalized: Record<string, string[]> = {};
+  for (const [rawKey, rawValues] of Object.entries(attributes || {})) {
+    const canonicalKey = toCanonicalFeatureKey(rawKey);
+    const current = normalized[canonicalKey] || [];
+    const incoming = rawValues || [];
+    normalized[canonicalKey] = Array.from(new Set([...current, ...incoming]));
+  }
+  return normalized;
+}
 
 /** Map legacy DB space_type values to config keys used in spaceFeatureLayouts. */
 export function normalizeSpaceTypeForFeatures(spaceType: string | null | undefined): string {
@@ -359,6 +446,30 @@ function registerFields(layout: SpaceFeatureLayout) {
 
 for (const layout of Object.values(spaceFeatureLayouts)) {
   registerFields(layout);
+}
+
+function validateLayoutNoDuplicates(layoutKey: string, layout: SpaceFeatureLayout) {
+  const seen = new Set<string>();
+  const duplicates: string[] = [];
+  for (const sec of layout.sections) {
+    for (const f of sec.fields) {
+      const canonicalKey = toCanonicalFeatureKey(f.key);
+      if (seen.has(canonicalKey)) {
+        duplicates.push(canonicalKey);
+      } else {
+        seen.add(canonicalKey);
+      }
+    }
+  }
+  if (duplicates.length > 0 && process.env.NODE_ENV !== "production") {
+    throw new Error(
+      `Duplicate features in "${layoutKey}" layout: ${Array.from(new Set(duplicates)).join(", ")}`
+    );
+  }
+}
+
+for (const [layoutKey, layout] of Object.entries(spaceFeatureLayouts)) {
+  validateLayoutNoDuplicates(layoutKey, layout);
 }
 
 export function getSpaceFeatureField(key: string): SpaceFeatureField | undefined {

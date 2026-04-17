@@ -3,6 +3,8 @@
 import {
   getSpaceFeatureField,
   getOptionLabel,
+  normalizeFeatureAttributes,
+  toCanonicalFeatureKey,
 } from "@/app/data/spaceFeatureConfig";
 import { spaceFieldConfig, type SpaceField } from "@/app/data/spaceFieldConfig";
 import { SpaceFeatureIcon } from "@/app/components/space-feature-icons";
@@ -131,8 +133,10 @@ export default function SpaceAttributesDisplay({
 }: Props) {
   if (!spaceType) return null;
 
-  const keys = Object.keys(attributes).filter(
-    (k) => (attributes[k] || []).length > 0
+  const normalizedAttributes = normalizeFeatureAttributes(attributes);
+
+  const keys = Object.keys(normalizedAttributes).filter(
+    (k) => (normalizedAttributes[k] || []).length > 0
   );
 
   if (keys.length === 0) return null;
@@ -146,12 +150,13 @@ export default function SpaceAttributesDisplay({
   }> = [];
 
   for (const key of keys) {
-    const values = attributes[key] || [];
+    const canonicalKey = toCanonicalFeatureKey(key);
+    const values = normalizedAttributes[canonicalKey] || [];
 
-    const modern = formatNewFeatureDisplay(key, values);
+    const modern = formatNewFeatureDisplay(canonicalKey, values);
     if (modern) {
       rows.push({
-        key,
+        key: canonicalKey,
         label: modern.label,
         text: modern.text,
         iconName: modern.iconName,
@@ -159,7 +164,7 @@ export default function SpaceAttributesDisplay({
       continue;
     }
 
-    const legacy = formatLegacyDisplay(spaceType, key, values);
+    const legacy = formatLegacyDisplay(spaceType, canonicalKey, values);
     if (legacy) {
       rows.push({
         key,

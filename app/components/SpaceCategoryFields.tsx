@@ -4,6 +4,9 @@ import {
   getSpaceFeatureLayout,
   SPACE_TYPE_LABELS,
   normalizeSpaceTypeForFeatures,
+  normalizeFeatureAttributes,
+  toCanonicalFeatureKey,
+  getFeatureAliasKeys,
   type SpaceFeatureField,
 } from "@/app/data/spaceFeatureConfig";
 import { SpaceFeatureIcon } from "@/app/components/space-feature-icons";
@@ -23,41 +26,52 @@ export default function SpaceCategoryFields({
 }: Props) {
   const layout = getSpaceFeatureLayout(spaceType);
   const normalized = normalizeSpaceTypeForFeatures(spaceType);
+  const normalizedAttributes = normalizeFeatureAttributes(attributes);
+
+  function setCanonicalValue(canonicalKey: string, values: string[]) {
+    setAttributes((current) => {
+      const next: AttributeState = { ...current, [canonicalKey]: values };
+      for (const aliasKey of getFeatureAliasKeys(canonicalKey)) {
+        delete next[aliasKey];
+      }
+      return next;
+    });
+  }
 
   function getSingleValue(key: string) {
-    return attributes[key]?.[0] || "";
+    const canonicalKey = toCanonicalFeatureKey(key);
+    return normalizedAttributes[canonicalKey]?.[0] || "";
   }
 
   function updateSingleValue(key: string, value: string) {
-    setAttributes((current) => ({
-      ...current,
-      [key]: value ? [value] : [],
-    }));
+    const canonicalKey = toCanonicalFeatureKey(key);
+    setCanonicalValue(canonicalKey, value ? [value] : []);
   }
 
   function toggleMultiValue(key: string, value: string) {
+    const canonicalKey = toCanonicalFeatureKey(key);
     setAttributes((current) => {
-      const existing = current[key] || [];
+      const normalizedCurrent = normalizeFeatureAttributes(current);
+      const existing = normalizedCurrent[canonicalKey] || [];
       const next = existing.includes(value)
         ? existing.filter((item) => item !== value)
         : [...existing, value];
-
-      return {
-        ...current,
-        [key]: next,
-      };
+      const withUpdate: AttributeState = { ...current, [canonicalKey]: next };
+      for (const aliasKey of getFeatureAliasKeys(canonicalKey)) {
+        delete withUpdate[aliasKey];
+      }
+      return withUpdate;
     });
   }
 
   function toggleCheckbox(key: string, checked: boolean) {
-    setAttributes((current) => ({
-      ...current,
-      [key]: checked ? ["yes"] : [],
-    }));
+    const canonicalKey = toCanonicalFeatureKey(key);
+    setCanonicalValue(canonicalKey, checked ? ["yes"] : []);
   }
 
   function isCheckboxChecked(key: string) {
-    return (attributes[key] || []).includes("yes");
+    const canonicalKey = toCanonicalFeatureKey(key);
+    return (normalizedAttributes[canonicalKey] || []).includes("yes");
   }
 
   function renderField(field: SpaceFeatureField) {
@@ -117,7 +131,8 @@ export default function SpaceCategoryFields({
     }
 
     if (field.kind === "multiselect") {
-      const selected = attributes[field.key] || [];
+      const selected =
+        normalizedAttributes[toCanonicalFeatureKey(field.key)] || [];
       return (
         <div key={field.key} className="space-y-2">
           <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.08em] text-gray-500">
