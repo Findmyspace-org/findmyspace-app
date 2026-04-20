@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { getPendingAdvisorCode, setPendingAdvisorCode } from "@/lib/advisor-code";
 
 type AuthFormProps = {
   mode: "login" | "signup";
@@ -37,6 +38,26 @@ export default function AuthForm({
 
   const loginHref = `/login?next=${encodeURIComponent(nextPath)}`;
   const signupHref = `/signup?next=${encodeURIComponent(nextPath)}`;
+
+  async function claimPendingAdvisor(accessToken: string) {
+    const code = getPendingAdvisorCode();
+    if (!code) return;
+    try {
+      const res = await fetch("/api/advisor/claim-profile", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ code }),
+      });
+      if (res.ok) {
+        setPendingAdvisorCode(null);
+      }
+    } catch {
+      /* non-fatal */
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -93,6 +114,11 @@ export default function AuthForm({
             setLoading(false);
             return;
           }
+
+          const { data: sess } = await supabase.auth.getSession();
+          if (sess?.session?.access_token) {
+            await claimPendingAdvisor(sess.session.access_token);
+          }
         }
 
         setLoading(false);
@@ -127,6 +153,11 @@ export default function AuthForm({
         setMessage(error.message);
         setLoading(false);
         return;
+      }
+
+      const { data: sessAfter } = await supabase.auth.getSession();
+      if (sessAfter?.session?.access_token) {
+        await claimPendingAdvisor(sessAfter.session.access_token);
       }
 
       window.location.replace(nextPath);

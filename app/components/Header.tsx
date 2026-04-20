@@ -537,6 +537,11 @@ export default function Header() {
             icon: Settings,
           },
           {
+            label: "Messages",
+            href: "/dashboard/requests",
+            icon: MessageSquare,
+          },
+          {
             label: "Finance",
             href: "/dashboard/finance",
             icon: Landmark,

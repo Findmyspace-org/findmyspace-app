@@ -1133,6 +1133,14 @@ function MyBookingsPageContent({
                           </p>
                         ) : null}
 
+                        {(rowUi.primary.kind === "pay_now" ||
+                          rowUi.primary.kind === "retry_payment") && (
+                          <div className="space-y-0.5 text-[10px] leading-snug text-gray-500 md:text-right">
+                            <p className="font-medium text-gray-600">Secure payment</p>
+                            <p>Your booking is only confirmed once payment is complete.</p>
+                          </div>
+                        )}
+
                         <div className="flex w-full justify-end">
                           <div className="flex items-center gap-0.5 sm:gap-1">
                             <BookingCardPrimaryAction
@@ -1498,9 +1506,25 @@ function MyBookingsPageContent({
         })()}
 
         {paymentModalBooking && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
-            <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
-              <h2 className="mb-2 text-xl font-semibold text-[#192a3a]">
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4"
+            role="presentation"
+            onClick={() => {
+              if (payingBookingId === paymentModalBooking.id) return;
+              setPaymentModalBookingId(null);
+            }}
+          >
+            <div
+              className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="payment-modal-title"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h2
+                id="payment-modal-title"
+                className="mb-2 text-xl font-semibold text-[#192a3a]"
+              >
                 Complete payment
               </h2>
 
@@ -1528,16 +1552,20 @@ function MyBookingsPageContent({
                   type="button"
                   onClick={() => void handlePayFastRedirect(paymentModalBooking)}
                   disabled={payingBookingId === paymentModalBooking.id}
-                  className="rounded-md bg-[#192a3a] px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60"
+                  className="w-full min-h-[48px] rounded-md bg-[#192a3a] px-4 py-3 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-60"
                 >
                   {payingBookingId === paymentModalBooking.id ? "Processing..." : "Pay now"}
                 </button>
+                <p className="text-center text-xs text-gray-600">Secure payment</p>
+                <p className="text-center text-[11px] leading-snug text-gray-500">
+                  Your booking is only confirmed once payment is complete.
+                </p>
 
                 <button
                   type="button"
                   onClick={() => setPaymentModalBookingId(null)}
                   disabled={payingBookingId === paymentModalBooking.id}
-                  className="rounded-md border border-gray-300 px-4 py-2 text-sm text-[#192a3a] hover:bg-gray-50 disabled:opacity-60"
+                  className="mt-1 w-full min-h-[44px] rounded-md border border-gray-300 px-4 py-2 text-sm text-[#192a3a] hover:bg-gray-50 disabled:opacity-60"
                 >
                   Cancel
                 </button>

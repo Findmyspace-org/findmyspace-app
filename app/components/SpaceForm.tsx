@@ -1,17 +1,29 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import Image from "next/image";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { CheckCircle2, Share2, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import {
+  getPendingAdvisorCode,
+  normalizeAdvisorCode,
+  setPendingAdvisorCode,
+} from "@/lib/advisor-code";
 import SpaceCategoryFields from "@/app/components/SpaceCategoryFields";
 import { LISTING_SPACE_TYPE_OPTIONS } from "@/app/data/spaceFeatureConfig";
+import {
+  clearSpaceFormDraft,
+  readSpaceFormDraft,
+  writeSpaceFormDraft,
+} from "@/lib/spaceFormDraftStorage";
 
 const MapPicker = dynamic(() => import("@/app/components/MapPicker"), {
   ssr: false,
 });
+
+const DRAFT_BANNER_DISMISSED_KEY = "findmyspace_listing_draft_banner_dismissed";
 
 type SpaceFormProps = {
   onCreated?: () => void | Promise<void>;
@@ -48,6 +60,9 @@ type SpaceInsertPayload = {
   monthly_payment_day: number;
   deposit_required: boolean;
   deposit_amount: number | null;
+  advisor_id?: string | null;
+  advisor_code?: string | null;
+  advisor_source?: string | null;
 };
 
 type SpaceImageInsertRow = {
@@ -73,8 +88,6 @@ type ListingOwnershipInsertRow = {
 };
 
 export default function SpaceForm({ onCreated }: SpaceFormProps) {
-  const router = useRouter();
-
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [city, setCity] = useState("");
@@ -103,6 +116,156 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
   const [loading, setLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
+  const [draftRestored, setDraftRestored] = useState(false);
+  const [draftBannerDismissed, setDraftBannerDismissed] = useState(false);
+  const draftSaveSkipRef = useRef(true);
+
+  const [createdListingId, setCreatedListingId] = useState<string | null>(null);
+  const [submittedPhotoCount, setSubmittedPhotoCount] = useState(0);
+  const [momentumAdvisorNote, setMomentumAdvisorNote] = useState<string | null>(
+    null
+  );
+  const [shareCopied, setShareCopied] = useState(false);
+
+  const [manualAdvisorCode, setManualAdvisorCode] = useState("");
+  const [profileAdvisor, setProfileAdvisor] = useState<{
+    advisor_id: string | null;
+    advisor_code: string | null;
+    advisor_source: string | null;
+  } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user || cancelled) return;
+      const { data } = await (supabase.from("profiles") as any)
+        .select("advisor_id, advisor_code, advisor_source")
+        .eq("id", user.id)
+        .maybeSingle();
+      if (!cancelled && data) {
+        setProfileAdvisor(
+          data as {
+            advisor_id: string | null;
+            advisor_code: string | null;
+            advisor_source: string | null;
+          }
+        );
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    try {
+      if (
+        typeof window !== "undefined" &&
+        localStorage.getItem(DRAFT_BANNER_DISMISSED_KEY) === "1"
+      ) {
+        setDraftBannerDismissed(true);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  useEffect(() => {
+    const d = readSpaceFormDraft();
+    if (!d) return;
+    draftSaveSkipRef.current = true;
+    setTitle(d.title);
+    setDescription(d.description);
+    setCity(d.city);
+    setSuburb(d.suburb);
+    setAddressLine1(d.addressLine1);
+    setSpaceType(d.spaceType);
+    setBookingUnit(d.bookingUnit);
+    setPricePerHour(d.pricePerHour);
+    setPricePerDay(d.pricePerDay);
+    setPricePerMonth(d.pricePerMonth);
+    setMinBookingHours(d.minBookingHours);
+    setMinBookingDays(d.minBookingDays);
+    setMinBookingMonths(d.minBookingMonths);
+    setDepositType((d.depositType as DepositType) || "none");
+    setLatitude(d.latitude);
+    setLongitude(d.longitude);
+    setManualAdvisorCode(d.manualAdvisorCode);
+    setAttributes(d.attributes || {});
+    setDraftRestored(true);
+    setTimeout(() => {
+      draftSaveSkipRef.current = false;
+    }, 0);
+  }, []);
+
+  function dismissDraftBanner() {
+    try {
+      localStorage.setItem(DRAFT_BANNER_DISMISSED_KEY, "1");
+    } catch {
+      /* ignore */
+    }
+    setDraftBannerDismissed(true);
+  }
+
+  useEffect(() => {
+    if (draftSaveSkipRef.current || submitted) return;
+    const t = window.setTimeout(() => {
+      writeSpaceFormDraft({
+        title,
+        description,
+        city,
+        suburb,
+        addressLine1,
+        spaceType,
+        bookingUnit,
+        pricePerHour,
+        pricePerDay,
+        pricePerMonth,
+        minBookingHours,
+        minBookingDays,
+        minBookingMonths,
+        depositType,
+        latitude,
+        longitude,
+        manualAdvisorCode,
+        attributes,
+      });
+    }, 500);
+    return () => window.clearTimeout(t);
+  }, [
+    title,
+    description,
+    city,
+    suburb,
+    addressLine1,
+    spaceType,
+    bookingUnit,
+    pricePerHour,
+    pricePerDay,
+    pricePerMonth,
+    minBookingHours,
+    minBookingDays,
+    minBookingMonths,
+    depositType,
+    latitude,
+    longitude,
+    manualAdvisorCode,
+    attributes,
+    submitted,
+  ]);
+
+  const priceMissing = useMemo(() => {
+    if (bookingUnit === "hour") {
+      return !pricePerHour || Number(pricePerHour) <= 0;
+    }
+    if (bookingUnit === "month") {
+      return !pricePerMonth || Number(pricePerMonth) <= 0;
+    }
+    return !pricePerDay || Number(pricePerDay) <= 0;
+  }, [bookingUnit, pricePerHour, pricePerDay, pricePerMonth]);
 
   const imagePreviews = useMemo(() => {
     return imageFiles.map((file) => ({
@@ -319,6 +482,12 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
       return;
     }
 
+    if (imageFiles.length < 1) {
+      setMessage("Add at least one image so renters can see your space.");
+      setLoading(false);
+      return;
+    }
+
     try {
       const {
         data: { user },
@@ -383,6 +552,63 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
         }
       }
 
+      const manualNorm = normalizeAdvisorCode(manualAdvisorCode);
+      let advId: string | null = null;
+      let advCode: string | null = null;
+      let advSource: string | null = null;
+      let advisorNote: string | null = null;
+
+      if (manualNorm) {
+        try {
+          const lr = await fetch(
+            `/api/advisor/lookup?code=${encodeURIComponent(manualNorm)}`
+          );
+          const lj = await lr.json().catch(() => null);
+          const adv = (lj as { advisor?: { id: string; advisor_code: string } } | null)
+            ?.advisor;
+          if (lr.ok && adv?.id) {
+            advId = adv.id;
+            advCode = adv.advisor_code;
+            advSource = "manual";
+          } else {
+            advisorNote =
+              "That advisor code could not be verified — your listing will be created without it.";
+          }
+        } catch {
+          advisorNote =
+            "Advisor lookup failed — your listing will be created without that link.";
+        }
+      } else if (profileAdvisor?.advisor_id) {
+        advId = profileAdvisor.advisor_id;
+        advCode = profileAdvisor.advisor_code;
+        advSource = profileAdvisor.advisor_source || "profile";
+      } else {
+        const pending = getPendingAdvisorCode();
+        if (pending) {
+          try {
+            const lr = await fetch(
+              `/api/advisor/lookup?code=${encodeURIComponent(pending)}`
+            );
+            const lj = await lr.json().catch(() => null);
+            const adv = (lj as { advisor?: { id: string; advisor_code: string } } | null)
+              ?.advisor;
+            if (lr.ok && adv?.id) {
+              advId = adv.id;
+              advCode = adv.advisor_code;
+              advSource = "link";
+            } else {
+              setPendingAdvisorCode(null);
+              advisorNote =
+                "Referral code could not be applied — you can add an advisor code above or continue without it.";
+            }
+          } catch {
+            setPendingAdvisorCode(null);
+            advisorNote =
+              "Referral code could not be verified — continuing without advisor link.";
+          }
+        }
+      }
+
       const spacePayload: SpaceInsertPayload = {
         owner_id: user.id,
         title,
@@ -414,6 +640,13 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
         monthly_payment_day: bookingUnit === "month" ? parsedMonthlyPaymentDay : 1,
         deposit_required: bookingUnit === "month" && depositType !== "none",
         deposit_amount: null,
+        ...(advId
+          ? {
+              advisor_id: advId,
+              advisor_code: advCode,
+              advisor_source: advSource,
+            }
+          : {}),
       };
 
       const { data, error: spaceError } = await supabase
@@ -531,19 +764,15 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
         }),
       });
 
+      setPendingAdvisorCode(null);
+      clearSpaceFormDraft();
+
+      setMomentumAdvisorNote(advisorNote);
+      setSubmittedPhotoCount(imageFiles.length);
+      setCreatedListingId(insertedSpace.id);
       setSubmitted(true);
-      setMessage("Listing submitted - Pending approval by admin.");
+      setMessage("");
       setLoading(false);
-
-      await new Promise((resolve) => setTimeout(resolve, 1200));
-
-      if (onCreated) {
-        await onCreated();
-        return;
-      }
-
-      router.push("/dashboard/listings?created=pending");
-      router.refresh();
     } catch (error) {
       console.error(error);
       setSubmitted(false);
@@ -552,11 +781,125 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
     }
   }
 
+  function fireOnCreated() {
+    void onCreated?.();
+  }
+
+  async function copyListingShareLink() {
+    if (!createdListingId || typeof window === "undefined") return;
+    const url = `${window.location.origin}/spaces/${createdListingId}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      setShareCopied(true);
+      window.setTimeout(() => setShareCopied(false), 2200);
+    } catch {
+      setShareCopied(false);
+    }
+  }
+
+  if (createdListingId) {
+    return (
+      <div className="overflow-x-hidden rounded-md border border-emerald-200 bg-gradient-to-b from-emerald-50/90 to-white p-6 shadow-sm sm:p-8">
+        <div className="mb-6 flex items-start gap-3">
+          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200">
+            <CheckCircle2 className="h-7 w-7" strokeWidth={2} aria-hidden />
+          </span>
+          <div className="min-w-0 flex-1">
+            <h2 className="text-2xl font-semibold text-[#192a3a]">
+              Your listing has been submitted
+            </h2>
+            <p className="mt-1 text-sm text-gray-600">
+              It will appear to renters after review. What would you like to do next?
+            </p>
+          </div>
+        </div>
+
+        {momentumAdvisorNote ? (
+          <p className="mb-5 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+            {momentumAdvisorNote}
+          </p>
+        ) : null}
+
+        {submittedPhotoCount <= 2 && (
+          <p className="mb-5 text-sm text-gray-600">
+            <span className="font-medium text-[#192a3a]">Tip:</span> listings with more
+            photos tend to get more booking requests.
+          </p>
+        )}
+
+        <div className="flex flex-col gap-3">
+          <Link
+            href={`/spaces/${createdListingId}`}
+            onClick={fireOnCreated}
+            className="flex w-full min-h-[48px] items-center justify-center rounded-md bg-[#192a3a] px-4 py-3 text-center text-sm font-semibold text-white shadow-sm hover:opacity-95"
+          >
+            View your listing
+          </Link>
+
+          <Link
+            href={`/spaces/${createdListingId}/edit`}
+            onClick={fireOnCreated}
+            className="flex w-full min-h-[48px] items-center justify-center rounded-md border-2 border-[#192a3a] bg-white px-4 py-3 text-center text-sm font-semibold text-[#192a3a] hover:bg-gray-50"
+          >
+            Add more photos
+          </Link>
+
+          <button
+            type="button"
+            onClick={() => void copyListingShareLink()}
+            className="inline-flex w-full min-h-[48px] items-center justify-center gap-2 rounded-md border border-gray-300 bg-white px-4 py-3 text-sm font-medium text-[#192a3a] hover:bg-gray-50"
+          >
+            <Share2 className="h-4 w-4 shrink-0" aria-hidden />
+            {shareCopied ? "Link copied" : "Share listing link"}
+          </button>
+
+          <Link
+            href="/dashboard/listings?created=pending"
+            onClick={fireOnCreated}
+            className="pt-1 text-center text-sm text-gray-600 underline underline-offset-2 hover:text-[#192a3a]"
+          >
+            Manage in dashboard
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <form
       onSubmit={handleCreateSpace}
-      className="space-y-8 rounded-md border border-gray-200 bg-white p-8 shadow-sm"
+      className="space-y-8 overflow-x-hidden rounded-md border border-gray-200 bg-white p-6 shadow-sm sm:p-8"
     >
+      {draftRestored && !draftBannerDismissed && (
+        <div
+          className="flex items-start gap-3 rounded-md border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-950"
+          role="status"
+        >
+          <p className="min-w-0 flex-1">
+            <span className="font-medium text-sky-950">We saved your progress.</span>{" "}
+            Text fields were restored; add photos and ownership proof again if needed.
+          </p>
+          <button
+            type="button"
+            onClick={dismissDraftBanner}
+            className="shrink-0 rounded-md p-1 text-sky-800 hover:bg-sky-100"
+            aria-label="Dismiss"
+          >
+            <X className="h-4 w-4" aria-hidden />
+          </button>
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-xs text-gray-600">
+        <span className="font-semibold text-[#192a3a]">Step 1 of 3</span>
+        <span className="hidden sm:inline">·</span>
+        <span>Details &amp; pricing</span>
+        <span className="text-gray-400">→</span>
+        <span>Step 2 — Location &amp; photos</span>
+        <span className="text-gray-400">→</span>
+        <span>Step 3 — Proof &amp; submit</span>
+      </div>
+
       <div className="rounded-md border border-gray-200 bg-gray-50 p-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
@@ -577,6 +920,44 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
           </Link>
         </div>
       </div>
+
+      <section className="rounded-md border border-sky-200 bg-sky-50/80 p-5">
+        <h3 className="mb-1 text-lg font-semibold text-[#192a3a]">
+          Space Advisor (optional)
+        </h3>
+        <p className="mb-3 text-sm text-gray-700">
+          If a Space Advisor helped you set up this listing, enter their code here.
+        </p>
+        <label className="mb-1 block text-xs font-medium text-gray-600">
+          Advisor code
+        </label>
+        <input
+          type="text"
+          value={manualAdvisorCode}
+          onChange={(e) => setManualAdvisorCode(e.target.value.toUpperCase())}
+          placeholder="e.g. SPACER1"
+          className="w-full max-w-md rounded-md border border-gray-300 px-3 py-2 text-sm uppercase outline-none"
+          autoComplete="off"
+        />
+        <p className="mt-2 text-xs text-gray-600">
+          This helps us track who assisted you. It does not give them access to your
+          account or payments.
+        </p>
+        {profileAdvisor?.advisor_code && !manualAdvisorCode.trim() && (
+          <p className="mt-3 text-xs text-green-900">
+            This listing will be linked to Space Advisor{" "}
+            <strong>{profileAdvisor.advisor_code}</strong> (from your referral).
+          </p>
+        )}
+        {!manualAdvisorCode.trim() &&
+          !profileAdvisor?.advisor_id &&
+          getPendingAdvisorCode() && (
+            <p className="mt-3 text-xs text-green-900">
+              Referral code <strong>{getPendingAdvisorCode()}</strong> will be
+              applied to this listing.
+            </p>
+          )}
+      </section>
 
       <section className="rounded-md border border-gray-200 p-6">
         <h3 className="mb-2 text-xl font-semibold text-[#192a3a]">
@@ -648,13 +1029,19 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
           Set how people can book your space and what they will pay.
         </p>
 
+        {priceMissing && (
+          <p className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            Enter a valid price for the booking unit you selected.
+          </p>
+        )}
+
         <div className="space-y-6">
           <div>
             <label className="mb-2 block text-sm font-medium">Booking unit</label>
             <select
               value={bookingUnit}
               onChange={(e) => setBookingUnit(e.target.value)}
-              className="w-full rounded-md border border-gray-300 px-4 py-3 outline-none"
+              className="w-full min-h-[48px] rounded-md border border-gray-300 px-4 py-3 outline-none"
             >
               <option value="hour">By hour</option>
               <option value="day">By day</option>
@@ -670,7 +1057,9 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
                 value={pricePerHour}
                 onChange={(e) => setPricePerHour(e.target.value)}
                 placeholder="50"
-                className="w-full rounded-md border border-gray-300 px-4 py-3 outline-none"
+                className={`w-full min-h-[48px] rounded-md border px-4 py-3 outline-none ${
+                  priceMissing ? "border-amber-400 bg-amber-50/50" : "border-gray-300"
+                }`}
               />
 
               {pricePerHour && Number(pricePerHour) > 0 && (() => {
@@ -716,7 +1105,9 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
                 value={pricePerDay}
                 onChange={(e) => setPricePerDay(e.target.value)}
                 placeholder="150"
-                className="w-full rounded-md border border-gray-300 px-4 py-3 outline-none"
+                className={`w-full min-h-[48px] rounded-md border px-4 py-3 outline-none ${
+                  priceMissing ? "border-amber-400 bg-amber-50/50" : "border-gray-300"
+                }`}
               />
 
               {pricePerDay && Number(pricePerDay) > 0 && (() => {
@@ -763,7 +1154,9 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
                   value={pricePerMonth}
                   onChange={(e) => setPricePerMonth(e.target.value)}
                   placeholder="2500"
-                  className="w-full rounded-md border border-gray-300 px-4 py-3 outline-none"
+                  className={`w-full min-h-[48px] rounded-md border px-4 py-3 outline-none ${
+                    priceMissing ? "border-amber-400 bg-amber-50/50" : "border-gray-300"
+                  }`}
                 />
 
                 {pricePerMonth && Number(pricePerMonth) > 0 && (() => {
@@ -906,6 +1299,12 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
           Upload clear images so renters can understand the space properly.
         </p>
 
+        {imageFiles.length === 0 && (
+          <p className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            Add at least 1 image — your listing needs photos to go live after approval.
+          </p>
+        )}
+
         <div className="space-y-4">
           <div>
             <label className="mb-2 block text-sm font-medium">Upload images</label>
@@ -1024,11 +1423,11 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
         </div>
       </section>
 
-      <div className="flex flex-wrap gap-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
         <button
           type="submit"
           disabled={loading}
-          className="rounded-md bg-[#192a3a] px-6 py-3 text-sm font-medium text-white disabled:opacity-60"
+          className="w-full min-h-[48px] rounded-md bg-[#192a3a] px-6 py-3 text-sm font-medium text-white disabled:opacity-60 sm:w-auto"
         >
           {loading ? "Submitting listing..." : "Submit listing for review"}
         </button>
@@ -1042,13 +1441,7 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
       </div>
 
       {message && (
-        <div
-          className={`rounded-md p-3 text-sm ${
-            submitted
-              ? "border border-green-200 bg-green-50 text-green-900"
-              : "border border-gray-200 bg-gray-50 text-gray-800"
-          }`}
-        >
+        <div className="rounded-md border border-gray-200 bg-gray-50 p-3 text-sm text-gray-800">
           {message}
         </div>
       )}

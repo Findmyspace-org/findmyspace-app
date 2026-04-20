@@ -7,8 +7,8 @@ import DayAvailabilityCalendar from "@/app/components/DayAvailabilityCalendar";
 import AuthModal from "@/app/components/AuthModal";
 import MonthAvailabilityCalendar from "@/app/components/MonthAvailabilityCalendar";
 import HourAvailabilitySelector from "@/app/components/HourAvailabilitySelector";
-import { useRouter } from "next/navigation";
-import { Loader2 } from "lucide-react";
+import Link from "next/link";
+import { Loader2, MapPin, X } from "lucide-react";
 import {
   clearBookingDraft,
   draftMatchesSpace,
@@ -60,6 +60,8 @@ type BookingRequestFormProps = {
   minHours?: number | null;
   minDays?: number | null;
   minMonths?: number | null;
+  /** Single line for summary (address) */
+  spaceLocation?: string;
 };
 
 
@@ -90,6 +92,7 @@ export default function BookingRequestForm({
   minHours = null,
   minDays = null,
   minMonths = null,
+  spaceLocation = "",
 }: BookingRequestFormProps) {
   const [statusMessage, setStatusMessage] = useState("");
   const [loading, setLoading] = useState(false);
@@ -112,7 +115,6 @@ export default function BookingRequestForm({
 
   const [spaceSettings, setSpaceSettings] = useState<SpacePaymentSettings | null>(null);
 
-  const router = useRouter();
   const [requestSentModalOpen, setRequestSentModalOpen] = useState(false);
 
   const persistReadyRef = useRef(false);
@@ -132,8 +134,28 @@ export default function BookingRequestForm({
       setMonthEnd(draft.monthEnd || "");
     }
 
+    const sp = new URLSearchParams(window.location.search);
+    if (unitKind === "hour") {
+      const hd = sp.get("hd");
+      const hs = sp.get("hs");
+      const he = sp.get("he");
+      if (hd) setHourDate(hd);
+      if (hs) setHourStart(hs);
+      if (he) setHourEnd(he);
+    } else if (unitKind === "day") {
+      const ds = sp.get("ds");
+      const de = sp.get("de");
+      if (ds) setDayStart(ds);
+      if (de) setDayEnd(de);
+    } else {
+      const ms = sp.get("ms");
+      const me = sp.get("me");
+      if (ms) setMonthStart(ms);
+      if (me) setMonthEnd(me);
+    }
+
     persistReadyRef.current = true;
-  }, [spaceId, bookingUnit]);
+  }, [spaceId, bookingUnit, unitKind]);
 
   useEffect(() => {
     loadAvailabilityData();
@@ -160,6 +182,41 @@ export default function BookingRequestForm({
     return () => window.clearTimeout(id);
   }, [
     spaceId,
+    unitKind,
+    hourDate,
+    hourStart,
+    hourEnd,
+    dayStart,
+    dayEnd,
+    monthStart,
+    monthEnd,
+  ]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !persistReadyRef.current) return;
+    const id = window.setTimeout(() => {
+      const url = new URL(window.location.href);
+      ["hd", "hs", "he", "ds", "de", "ms", "me"].forEach((k) =>
+        url.searchParams.delete(k)
+      );
+      if (unitKind === "hour") {
+        if (hourDate) url.searchParams.set("hd", hourDate);
+        if (hourStart) url.searchParams.set("hs", hourStart);
+        if (hourEnd) url.searchParams.set("he", hourEnd);
+      } else if (unitKind === "day") {
+        if (dayStart) url.searchParams.set("ds", dayStart);
+        if (dayEnd) url.searchParams.set("de", dayEnd);
+      } else {
+        if (monthStart) url.searchParams.set("ms", monthStart);
+        if (monthEnd) url.searchParams.set("me", monthEnd);
+      }
+      const qs = url.searchParams.toString();
+      const next = `${url.pathname}${qs ? `?${qs}` : ""}${url.hash}`;
+      const cur = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+      if (next !== cur) window.history.replaceState({}, "", next);
+    }, 450);
+    return () => window.clearTimeout(id);
+  }, [
     unitKind,
     hourDate,
     hourStart,
@@ -902,15 +959,26 @@ export default function BookingRequestForm({
 
   function handleCloseRequestSentModal() {
     setRequestSentModalOpen(false);
-    router.push("/dashboard/my-bookings");
   }
 
   return (
     <>
-      <div className="rounded-md border border-gray-200 bg-white p-6 shadow-sm">
-        <h2 className="mb-4 text-2xl font-semibold text-[#192a3a]">
+      <div className="rounded-md border border-gray-200 bg-white p-4 shadow-sm sm:p-6">
+        <h2 className="mb-3 text-2xl font-semibold text-[#192a3a]">
           Book this space
         </h2>
+
+        {spaceLocation ? (
+          <p className="mb-2 flex gap-2 text-sm text-gray-800">
+            <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-gray-500" aria-hidden />
+            <span>{spaceLocation}</span>
+          </p>
+        ) : null}
+
+        <p className="mb-4 rounded-md border border-sky-100 bg-sky-50/80 px-3 py-2 text-xs leading-relaxed text-sky-950">
+          Secure booking — no payment until the host approves your request. After approval,
+          you can pay to confirm your dates.
+        </p>
 
         <p className="mb-2 text-sm text-gray-600">
           Booking type: <span className="font-medium">{bookingUnit || "day"}</span>
@@ -923,6 +991,17 @@ export default function BookingRequestForm({
           <p className="mb-2 text-sm text-gray-600">
             Minimum booking:{" "}
             <span className="font-medium">{getMinimumLabel(getMinimumQuantity())}</span>
+          </p>
+        )}
+
+        {bookingSelectionComplete && (
+          <p className="mb-3 text-sm font-medium text-[#192a3a]">
+            {unitKind === "hour" && hourDate && `${hourDate} · ${hourStart}–${hourEnd}`}
+            {unitKind === "day" && dayStart && dayEnd && `${dayStart} → ${dayEnd}`}
+            {unitKind === "month" &&
+              monthStart &&
+              monthEnd &&
+              `${monthStart} → ${monthEnd}`}
           </p>
         )}
 
@@ -1160,7 +1239,7 @@ export default function BookingRequestForm({
               !acceptedTerms ||
               !bookingSelectionComplete
             }
-            className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-[#192a3a] px-4 py-3 text-sm font-medium text-white transition hover:opacity-[0.97] disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex w-full min-h-[48px] items-center justify-center gap-2 rounded-md bg-[#192a3a] px-4 py-3.5 text-sm font-semibold text-white transition hover:opacity-[0.97] disabled:cursor-not-allowed disabled:opacity-50"
           >
             {loading ? (
               <>
@@ -1171,35 +1250,60 @@ export default function BookingRequestForm({
               "Request booking"
             )}
           </button>
+          <p className="text-center text-xs text-gray-500">
+            After the host approves, you&apos;ll complete payment to lock in your booking.
+          </p>
         </form>
       </div>
 
       {requestSentModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
+          role="presentation"
+          onClick={handleCloseRequestSentModal}
+        >
           <div
-            className="w-full max-w-md rounded-2xl bg-white p-6 text-center shadow-xl"
+            className="relative w-full max-w-md rounded-2xl bg-white p-6 pt-12 text-left shadow-xl sm:p-8 sm:pt-14"
             role="dialog"
             aria-modal="true"
             aria-labelledby="booking-request-sent-title"
+            onClick={(e) => e.stopPropagation()}
           >
-            <h3
-              id="booking-request-sent-title"
-              className="text-2xl font-semibold text-[#192a3a]"
-            >
-              Booking request sent
-            </h3>
-            <p className="mt-3 text-sm leading-relaxed text-gray-600">
-              Your request has been sent to the host. They will review it and either
-              confirm or decline. No payment will be charged until they approve your
-              request.
-            </p>
             <button
               type="button"
               onClick={handleCloseRequestSentModal}
-              className="mt-6 w-full rounded-md bg-[#192a3a] px-4 py-3 text-white"
+              className="absolute right-3 top-3 rounded-md p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-800"
+              aria-label="Close"
             >
-              Close
+              <X className="h-5 w-5" aria-hidden />
             </button>
+            <h3
+              id="booking-request-sent-title"
+              className="text-xl font-semibold text-[#192a3a] sm:text-2xl"
+            >
+              Request sent
+            </h3>
+            <p className="mt-3 text-sm leading-relaxed text-gray-700">
+              The owner will review your request. You&apos;ll be notified as soon as they
+              respond.
+            </p>
+            <p className="mt-3 rounded-md border border-sky-100 bg-sky-50/80 px-3 py-2 text-xs leading-relaxed text-sky-950">
+              No payment is required until the booking is accepted.
+            </p>
+            <div className="mt-6 flex flex-col gap-3">
+              <Link
+                href="/dashboard/my-bookings"
+                className="flex w-full min-h-[48px] items-center justify-center rounded-md bg-[#192a3a] px-4 py-3 text-center text-sm font-semibold text-white hover:opacity-95"
+              >
+                View your bookings
+              </Link>
+              <Link
+                href="/spaces"
+                className="flex w-full min-h-[48px] items-center justify-center rounded-md border border-gray-300 bg-white px-4 py-3 text-center text-sm font-medium text-[#192a3a] hover:bg-gray-50"
+              >
+                Continue browsing
+              </Link>
+            </div>
           </div>
         </div>
       )}

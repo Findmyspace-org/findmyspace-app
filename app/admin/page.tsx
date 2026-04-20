@@ -15,6 +15,7 @@ import {
   Mail,
   Phone,
   Search,
+  Share2,
   ShieldCheck,
   Users,
 } from "lucide-react";
@@ -269,6 +270,13 @@ export default function AdminPage() {
             className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
           >
             Finance
+          </Link>
+          <Link
+            href="/admin/space-advisors"
+            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
+          >
+            <Share2 className="h-4 w-4" />
+            Space Advisors
           </Link>
         </div>
 

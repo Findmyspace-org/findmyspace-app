@@ -1,6 +1,8 @@
 import "./globals.css";
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import Header from "@/app/components/Header";
+import AdvisorParamCapture from "@/app/components/AdvisorParamCapture";
 import "leaflet/dist/leaflet.css";
 
 export const metadata: Metadata = {
@@ -16,6 +18,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="bg-white text-black">
+        <Suspense fallback={null}>
+          <AdvisorParamCapture />
+        </Suspense>
         <Header />
 
         <main>{children}</main>

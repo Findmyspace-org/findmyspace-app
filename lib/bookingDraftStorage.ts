@@ -1,9 +1,11 @@
 /**
- * Temporary client-side booking draft for auth handoff (sessionStorage).
+ * Booking draft for date/unit selections across auth redirect.
+ * sessionStorage: same tab; localStorage: survives refresh / some redirects.
  * Cleared after a successful booking request or when stale.
  */
 
 const BOOKING_DRAFT_STORAGE_KEY = "findmyspace_booking_draft_v1";
+const BOOKING_DRAFT_LOCAL_KEY = "findmyspace_booking_draft_v1_ls";
 
 const DRAFT_VERSION = 1 as const;
 const MAX_AGE_MS = 1000 * 60 * 60 * 48; // 48 hours
@@ -44,27 +46,40 @@ function isBookingDraftV1(value: unknown): value is BookingDraftV1 {
   );
 }
 
+function parseDraft(raw: string | null): BookingDraftV1 | null {
+  if (!raw) return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!isBookingDraftV1(parsed)) return null;
+    if (Date.now() - parsed.savedAt > MAX_AGE_MS) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
 export function readBookingDraft(): BookingDraftV1 | null {
   if (typeof window === "undefined") return null;
   try {
-    const raw = sessionStorage.getItem(BOOKING_DRAFT_STORAGE_KEY);
-    if (!raw) return null;
-    const parsed: unknown = JSON.parse(raw);
-    if (!isBookingDraftV1(parsed)) {
-      sessionStorage.removeItem(BOOKING_DRAFT_STORAGE_KEY);
-      return null;
+    const fromSession = parseDraft(
+      sessionStorage.getItem(BOOKING_DRAFT_STORAGE_KEY)
+    );
+    if (fromSession) return fromSession;
+
+    const fromLocal = parseDraft(localStorage.getItem(BOOKING_DRAFT_LOCAL_KEY));
+    if (fromLocal) {
+      try {
+        sessionStorage.setItem(
+          BOOKING_DRAFT_STORAGE_KEY,
+          JSON.stringify(fromLocal)
+        );
+      } catch {
+        /* ignore */
+      }
+      return fromLocal;
     }
-    if (Date.now() - parsed.savedAt > MAX_AGE_MS) {
-      sessionStorage.removeItem(BOOKING_DRAFT_STORAGE_KEY);
-      return null;
-    }
-    return parsed;
+    return null;
   } catch {
-    try {
-      sessionStorage.removeItem(BOOKING_DRAFT_STORAGE_KEY);
-    } catch {
-      /* ignore */
-    }
     return null;
   }
 }
@@ -95,7 +110,13 @@ export function writeBookingDraft(fields: {
       monthEnd: fields.monthEnd,
       savedAt: Date.now(),
     };
-    sessionStorage.setItem(BOOKING_DRAFT_STORAGE_KEY, JSON.stringify(draft));
+    const s = JSON.stringify(draft);
+    sessionStorage.setItem(BOOKING_DRAFT_STORAGE_KEY, s);
+    try {
+      localStorage.setItem(BOOKING_DRAFT_LOCAL_KEY, s);
+    } catch {
+      /* ignore */
+    }
   } catch {
     /* quota / private mode */
   }
@@ -105,6 +126,7 @@ export function clearBookingDraft(): void {
   if (typeof window === "undefined") return;
   try {
     sessionStorage.removeItem(BOOKING_DRAFT_STORAGE_KEY);
+    localStorage.removeItem(BOOKING_DRAFT_LOCAL_KEY);
   } catch {
     /* ignore */
   }

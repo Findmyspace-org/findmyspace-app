@@ -76,7 +76,8 @@ export function resolveRenterMyBookingsUi(booking: BookingLike): ResolvedRenterM
   if (isAwaitingGatewayPayment(booking)) {
     return {
       label: "Awaiting payment",
-      cardHint: "Payment required to confirm your booking.",
+      cardHint:
+        "Secure your booking by completing payment. Your dates are held while checkout is open.",
       lifecycle: "open",
       primary: { kind: "pay_now", actionLabel: "Pay now" },
       badgeClassName: BADGE.amber,
@@ -88,7 +89,8 @@ export function resolveRenterMyBookingsUi(booking: BookingLike): ResolvedRenterM
   if (st === "accepted_awaiting_payment") {
     return {
       label: "Awaiting payment",
-      cardHint: "Complete payment to secure your dates.",
+      cardHint:
+        "Secure your booking by completing payment — use Pay now or open your booking to try again.",
       lifecycle: "open",
       primary: {
         kind: "retry_payment",

@@ -312,6 +312,7 @@ export default async function Page({
                 minHours={space.min_booking_hours}
                 minDays={space.min_booking_days}
                 minMonths={space.min_booking_months}
+                spaceLocation={address}
               />
             </div>
 
