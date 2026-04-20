@@ -31,10 +31,8 @@ import {
 } from "lucide-react";
 import { downloadInvoicePdf } from "@/lib/invoice-download-client";
 import { isCommunicationAllowed } from "@/lib/booking-communication";
-import {
-  renterBookingStatusLabel,
-  renterPaymentStatusLabel,
-} from "@/lib/booking-ui-labels";
+import { renterPaymentStatusLabel } from "@/lib/booking-ui-labels";
+import { resolveRenterMyBookingsUi } from "@/lib/renter-my-bookings-status";
 import { shouldShowBookingRequestNotes } from "@/lib/booking-notes-visibility";
 import {
   aggregateRenterPageMetrics,
@@ -93,6 +91,93 @@ type EnrichedBooking = Booking & {
   space?: Space;
   owner?: Profile;
 };
+
+function bookingDetailHref(bookingId: string) {
+  return `/dashboard/my-bookings/${bookingId}/pay`;
+}
+
+function rebookListingHref(spaceId: string) {
+  return `/spaces/${spaceId}?book=1`;
+}
+
+type BookingCardPrimaryActionProps = {
+  booking: EnrichedBooking;
+  payingBookingId: string | null;
+  onPayClick: (e: React.MouseEvent) => void;
+};
+
+const primaryBtnClass =
+  "inline-flex min-h-[36px] shrink-0 items-center justify-center rounded-md bg-[#192a3a] px-3 py-2 text-xs font-semibold text-white shadow-sm hover:opacity-95";
+const secondaryOutlineBtnClass =
+  "inline-flex min-h-[36px] shrink-0 items-center justify-center rounded-md border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-[#192a3a] shadow-sm hover:bg-gray-50";
+
+function BookingCardPrimaryAction({
+  booking,
+  payingBookingId,
+  onPayClick,
+}: BookingCardPrimaryActionProps) {
+  const ui = resolveRenterMyBookingsUi(booking);
+  const { kind, actionLabel } = ui.primary;
+
+  if (kind === "pay_now") {
+    return (
+      <button
+        type="button"
+        onClick={onPayClick}
+        disabled={payingBookingId === booking.id}
+        className={`${primaryBtnClass} disabled:cursor-not-allowed disabled:opacity-50`}
+      >
+        {payingBookingId === booking.id ? "…" : actionLabel}
+      </button>
+    );
+  }
+
+  if (kind === "none") {
+    return (
+      <span
+        className="inline-flex min-h-[36px] shrink-0 cursor-default items-center justify-center rounded-md border border-gray-200 bg-gray-100 px-3 py-2 text-xs font-medium text-gray-600"
+        title={ui.helperText}
+      >
+        {actionLabel}
+      </span>
+    );
+  }
+
+  if (kind === "retry_payment" || kind === "view_booking") {
+    return (
+      <Link
+        href={bookingDetailHref(booking.id)}
+        onClick={(e) => e.stopPropagation()}
+        className={primaryBtnClass}
+      >
+        {actionLabel}
+      </Link>
+    );
+  }
+
+  if (kind === "book_again" || kind === "continue_booking") {
+    return (
+      <Link
+        href={rebookListingHref(booking.space_id)}
+        onClick={(e) => e.stopPropagation()}
+        className={primaryBtnClass}
+      >
+        {actionLabel}
+      </Link>
+    );
+  }
+
+  /* view_details and unknown fallbacks */
+  return (
+    <Link
+      href={bookingDetailHref(booking.id)}
+      onClick={(e) => e.stopPropagation()}
+      className={secondaryOutlineBtnClass}
+    >
+      {actionLabel}
+    </Link>
+  );
+}
 
 type BookingMessage = {
   id: string;
@@ -698,23 +783,6 @@ function MyBookingsPageContent({
     return `${start.toLocaleDateString()} - ${displayEnd.toLocaleDateString()}`;
   }
 
-  function getStatusBadgeClass(status: string | null) {
-    if (
-      status === "paid_confirmed" ||
-      status === "confirmed" ||
-      status === "completed"
-    ) {
-      return "bg-green-100 text-green-800";
-    }
-    if (status === "accepted_awaiting_payment") {
-      return "bg-amber-100 text-amber-900";
-    }
-    if (status === "pending_owner") return "bg-blue-100 text-blue-800";
-    if (status === "declined") return "bg-red-100 text-red-800";
-    if (status === "expired") return "bg-gray-200 text-gray-700";
-    return "bg-gray-100 text-gray-800";
-  }
-
   function formatBookingTypeLabel(unit: string | null | undefined) {
     const u = (unit || "day").toLowerCase();
     if (u === "month") return "Monthly";
@@ -937,6 +1005,7 @@ function MyBookingsPageContent({
 
                 const charges = chargesByBooking[booking.id] ?? [];
                 const fin = computeRenterBookingFinance(booking, charges);
+                const rowUi = resolveRenterMyBookingsUi(booking);
 
                 return (
                   <div
@@ -1002,22 +1071,37 @@ function MyBookingsPageContent({
                           </div>
                         </div>
 
-                        <div className="flex flex-row items-center justify-end gap-2 md:flex-col md:items-end md:justify-center">
-                          <span
-                            className={`inline-flex max-w-full truncate rounded-full px-2.5 py-0.5 text-xs font-medium ${getStatusBadgeClass(
-                              booking.status
-                            )}`}
-                          >
-                            {renterBookingStatusLabel(booking.status)}
-                          </span>
-                          <p className="text-xs font-medium tabular-nums text-gray-700">
-                            R{Number(booking.total_price || 0).toLocaleString("en-ZA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </p>
-                          {isOpen ? (
-                            <ChevronUp className="h-5 w-5 text-gray-500" aria-hidden />
-                          ) : (
-                            <ChevronDown className="h-5 w-5 text-gray-500" aria-hidden />
-                          )}
+                        <div className="flex min-w-0 flex-col items-stretch gap-2 sm:min-w-[11rem] sm:items-end">
+                          <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1">
+                            <span
+                              className={`inline-flex max-w-full truncate rounded-full px-2.5 py-0.5 text-xs font-medium ${rowUi.badgeClassName}`}
+                            >
+                              {rowUi.label}
+                            </span>
+                            <p className="text-xs font-medium tabular-nums text-gray-700">
+                              R{Number(booking.total_price || 0).toLocaleString("en-ZA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </p>
+                          </div>
+                          <div className="flex flex-wrap items-center justify-end gap-2">
+                            <BookingCardPrimaryAction
+                              booking={booking}
+                              payingBookingId={payingBookingId}
+                              onPayClick={(e) => {
+                                e.stopPropagation();
+                                setPaymentModalBookingId(booking.id);
+                              }}
+                            />
+                            <span
+                              className="inline-flex h-8 w-8 shrink-0 items-center justify-center text-gray-400"
+                              aria-hidden
+                            >
+                              {isOpen ? (
+                                <ChevronUp className="h-4 w-4" />
+                              ) : (
+                                <ChevronDown className="h-4 w-4" />
+                              )}
+                            </span>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -1110,48 +1194,24 @@ function MyBookingsPageContent({
                             </div>
                           </div>
 
-                          <div className="flex flex-wrap items-center gap-2">
-                            {showInvoice && (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  void openInvoiceModal(booking.id);
-                                }}
-                                className="inline-flex items-center gap-2 rounded-md bg-[#192a3a] px-4 py-2 text-sm font-medium text-white hover:opacity-90"
-                              >
-                                <FileText className="h-4 w-4" />
-                                View invoice
-                              </button>
-                            )}
-                            {showInvoiceHint && (
-                              <p className="w-full text-xs text-gray-500 sm:w-auto">
-                                Your invoice will be available here once payment is confirmed.
-                              </p>
-                            )}
-                            <Link
-                              href={`/spaces/${booking.space_id}`}
-                              onClick={(e) => e.stopPropagation()}
-                              className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-[#192a3a] hover:bg-gray-50"
+                          <div className="flex flex-wrap items-center gap-2 border-t border-gray-200 pt-4">
+                            <button
+                              type="button"
+                              onClick={(e) => void toggleCommunicationPanel(booking, e)}
+                              disabled={!isCommunicationAllowed(booking)}
+                              className="inline-flex items-center gap-1.5 rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-medium text-[#192a3a] hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
                             >
-                              <Eye className="h-4 w-4" />
-                              View space
+                              <MessageSquare className="h-3.5 w-3.5" />
+                              Message owner
+                            </button>
+                            <Link
+                              href={bookingDetailHref(booking.id)}
+                              onClick={(e) => e.stopPropagation()}
+                              className="inline-flex items-center gap-1.5 rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-medium text-[#192a3a] hover:bg-gray-50"
+                            >
+                              <Eye className="h-3.5 w-3.5" />
+                              View details
                             </Link>
-                            {booking.status === "accepted_awaiting_payment" &&
-                              (booking.payment_status || "unpaid") === "awaiting_payment" && (
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setPaymentModalBookingId(booking.id);
-                                  }}
-                                  disabled={payingBookingId === booking.id}
-                                  className="inline-flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-950 hover:bg-amber-100 disabled:opacity-60"
-                                >
-                                  <CreditCard className="h-4 w-4" />
-                                  {payingBookingId === booking.id ? "Redirecting..." : "Pay now"}
-                                </button>
-                              )}
                             {canCancelBooking(booking) && (
                               <button
                                 type="button"
@@ -1162,10 +1222,31 @@ function MyBookingsPageContent({
                                 disabled={
                                   cancellingBookingId === booking.id || payingBookingId === booking.id
                                 }
-                                className="rounded-md border border-red-300 px-4 py-2 text-sm text-red-700 hover:bg-red-50 disabled:opacity-60"
+                                className="inline-flex items-center gap-1.5 rounded-md border border-red-200 bg-white px-2.5 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-60"
                               >
-                                {cancellingBookingId === booking.id ? "Cancelling..." : "Cancel request"}
+                                {cancellingBookingId === booking.id ? "Cancelling…" : "Cancel booking"}
                               </button>
+                            )}
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-2">
+                            {showInvoice && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  void openInvoiceModal(booking.id);
+                                }}
+                                className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-medium text-[#192a3a] hover:bg-gray-50"
+                              >
+                                <FileText className="h-3.5 w-3.5" />
+                                View invoice
+                              </button>
+                            )}
+                            {showInvoiceHint && (
+                              <p className="w-full text-xs text-gray-500 sm:w-auto">
+                                Your invoice will be available here once payment is confirmed.
+                              </p>
                             )}
                           </div>
 
@@ -1203,32 +1284,16 @@ function MyBookingsPageContent({
                             </div>
                           )}
 
-                          <div className="rounded-md border border-gray-200 bg-white p-4 shadow-sm">
-                            <div className="flex flex-wrap items-center justify-between gap-3">
-                              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
-                                Owner communication
-                              </p>
-                              <button
-                                type="button"
-                                onClick={(e) => void toggleCommunicationPanel(booking, e)}
-                                disabled={!isCommunicationAllowed(booking)}
-                                className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-[#192a3a] shadow-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-55"
-                              >
-                                <MessageSquare className="h-4 w-4" />
-                                Message owner
-                              </button>
+                          {!isCommunicationAllowed(booking) && (
+                            <div className="rounded-md border border-gray-200 bg-white p-3 shadow-sm">
+                              <DecisionSuggestion
+                                variant="info"
+                                text="Messaging available after payment."
+                                size="sm"
+                                tooltip="Messaging unlocks once payment is confirmed."
+                              />
                             </div>
-                            {!isCommunicationAllowed(booking) && (
-                              <div className="mt-2">
-                                <DecisionSuggestion
-                                  variant="info"
-                                  text="Messaging available after payment."
-                                  size="sm"
-                                  tooltip="Messaging unlocks once payment is confirmed."
-                                />
-                              </div>
-                            )}
-                          </div>
+                          )}
                         </div>
                       </div>
                     )}

@@ -44,55 +44,58 @@ export default function AuthModal({
   if (!mounted || !open) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center px-4">
+    <div className="fixed inset-0 z-[9999] overflow-y-auto overscroll-contain">
       <div
-        className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+        className="fixed inset-0 bg-black/40 backdrop-blur-sm"
         onClick={onClose}
+        aria-hidden
       />
 
-      <div className="relative z-[10000] w-full max-w-md rounded-md bg-white shadow-xl">
-        <button
-          type="button"
-          onClick={onClose}
-          className="absolute right-4 top-4 text-lg text-gray-500 hover:text-black"
-          aria-label="Close"
-        >
-          ✕
-        </button>
+      <div className="relative z-[10000] mx-auto flex w-full max-w-md flex-col px-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-8 sm:min-h-[100dvh] sm:justify-center sm:py-10">
+        <div className="relative rounded-md bg-white shadow-xl">
+          <button
+            type="button"
+            onClick={onClose}
+            className="absolute right-4 top-4 z-10 text-lg text-gray-500 hover:text-black"
+            aria-label="Close"
+          >
+            ✕
+          </button>
 
-        <div className="p-6">
-          <AuthForm
-            mode={mode}
-            hideFooterLinks
-            nextPathOverride={nextPath}
-            isModal
-            onSignupSuccess={() => onSwitchMode("login")}
-          />
+          <div className="p-6 pt-14">
+            <AuthForm
+              mode={mode}
+              hideFooterLinks
+              nextPathOverride={nextPath}
+              isModal
+              onSignupSuccess={() => onSwitchMode("login")}
+            />
 
-          <div className="mt-4 text-center text-sm text-gray-600">
-            {mode === "signup" ? (
-              <>
-                Already have an account?{" "}
-                <button
-                  type="button"
-                  onClick={() => onSwitchMode("login")}
-                  className="font-medium text-[#192a3a] underline"
-                >
-                  Log in
-                </button>
-              </>
-            ) : (
-              <>
-                Need an account?{" "}
-                <button
-                  type="button"
-                  onClick={() => onSwitchMode("signup")}
-                  className="font-medium text-[#192a3a] underline"
-                >
-                  Sign up
-                </button>
-              </>
-            )}
+            <div className="mt-4 text-center text-sm text-gray-600">
+              {mode === "signup" ? (
+                <>
+                  Already have an account?{" "}
+                  <button
+                    type="button"
+                    onClick={() => onSwitchMode("login")}
+                    className="font-medium text-[#192a3a] underline"
+                  >
+                    Log in
+                  </button>
+                </>
+              ) : (
+                <>
+                  Need an account?{" "}
+                  <button
+                    type="button"
+                    onClick={() => onSwitchMode("signup")}
+                    className="font-medium text-[#192a3a] underline"
+                  >
+                    Sign up
+                  </button>
+                </>
+              )}
+            </div>
           </div>
         </div>
       </div>

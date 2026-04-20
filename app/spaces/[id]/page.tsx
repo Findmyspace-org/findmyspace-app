@@ -1,4 +1,6 @@
+import { Suspense } from "react";
 import { notFound } from "next/navigation";
+import BookingSheetBootstrap from "./booking-sheet-bootstrap";
 import { supabase } from "@/lib/supabase";
 import BookingRequestForm from "@/app/components/BookingRequestForm";
 import SpaceAttributesDisplay from "@/app/components/SpaceAttributesDisplay";
@@ -132,6 +134,10 @@ export default async function Page({
 
   return (
     <main className="min-h-screen bg-[#f8fafb] px-6 py-8 text-[#192a3a]">
+      <Suspense fallback={null}>
+        <BookingSheetBootstrap />
+      </Suspense>
+
       <div className="mx-auto max-w-7xl">
 
         {/* 🔹 TOP SECTION — map toggle is peer for modal; kept first so layout stays predictable */}

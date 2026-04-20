@@ -282,43 +282,49 @@ export default function HourAvailabilitySelector({
                     ) : null}
                 </div>
 
-                <div className="flex items-center gap-2">
-                    <button
-                        type="button"
-                        onClick={() =>
-                            canGoEarlier && setWindowStartHour((current) => Math.max(minHour, current - 6))
-                        }
-                        disabled={!canGoEarlier}
-                        className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-gray-300 bg-white text-[#192a3a] disabled:opacity-40"
-                    >
-                        ←
-                    </button>
+                <div className="flex w-full min-w-0 max-w-full flex-col gap-2 sm:items-end">
+                    <div className="flex min-w-0 items-center justify-center gap-2 sm:justify-end">
+                        <button
+                            type="button"
+                            onClick={() =>
+                                canGoEarlier && setWindowStartHour((current) => Math.max(minHour, current - 6))
+                            }
+                            disabled={!canGoEarlier}
+                            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-gray-300 bg-white text-[#192a3a] disabled:opacity-40"
+                            aria-label="Earlier hours"
+                        >
+                            ←
+                        </button>
 
-                    <div className="min-w-[190px] text-center text-sm font-medium text-[#192a3a]">
-                        {rangeLabel}
+                        <div className="min-w-0 max-w-[min(100%,11rem)] flex-1 text-center text-[11px] font-medium leading-snug text-[#192a3a] sm:max-w-none sm:min-w-[190px] sm:flex-none sm:text-sm">
+                            {rangeLabel}
+                        </div>
+
+                        <button
+                            type="button"
+                            onClick={() =>
+                                canGoLater &&
+                                setWindowStartHour((current) =>
+                                    Math.min(maxHour - visibleHourCount + 1, current + 6)
+                                )
+                            }
+                            disabled={!canGoLater}
+                            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-gray-300 bg-white text-[#192a3a] disabled:opacity-40"
+                            aria-label="Later hours"
+                        >
+                            →
+                        </button>
                     </div>
 
-                    <button
-                        type="button"
-                        onClick={() =>
-                            canGoLater &&
-                            setWindowStartHour((current) =>
-                                Math.min(maxHour - visibleHourCount + 1, current + 6)
-                            )
-                        }
-                        disabled={!canGoLater}
-                        className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-gray-300 bg-white text-[#192a3a] disabled:opacity-40"
-                    >
-                        →
-                    </button>
-
-                    <button
-                        type="button"
-                        onClick={() => setWindowStartHour(7)}
-                        className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-[#192a3a]"
-                    >
-                        Today
-                    </button>
+                    <div className="flex w-full justify-center sm:w-auto sm:justify-end">
+                        <button
+                            type="button"
+                            onClick={() => setWindowStartHour(7)}
+                            className="w-full max-w-[12rem] rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-[#192a3a] sm:w-auto sm:max-w-none"
+                        >
+                            Today
+                        </button>
+                    </div>
                 </div>
             </div>
 

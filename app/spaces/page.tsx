@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
@@ -40,6 +40,7 @@ function parseNumberParam(value: string | null, fallback: number) {
 
 function SpacesPageContent({ searchParamsString }: { searchParamsString: string }) {
   const params = useMemo(() => new URLSearchParams(searchParamsString), [searchParamsString]);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [spaces, setSpaces] = useState<Space[]>([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
@@ -73,6 +74,18 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
   );
 
   const [showMap, setShowMap] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (window.location.hash !== "#browse-search") return;
+    window.requestAnimationFrame(() => {
+      document.getElementById("browse-search")?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+      searchInputRef.current?.focus();
+    });
+  }, []);
 
   useEffect(() => {
     async function loadSpaces() {
@@ -256,14 +269,19 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
         </p>
       </div>
 
-      <div className="mb-6 grid gap-3 md:grid-cols-4">
+      <div
+        id="browse-search"
+        className="mb-6 grid scroll-mt-24 gap-3 md:grid-cols-4"
+      >
         <div className="relative">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
           <input
+            ref={searchInputRef}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search..."
             className="w-full rounded-md border border-gray-300 bg-white px-10 py-3 text-sm outline-none focus:border-[#192a3a]"
+            aria-label="Search spaces by keyword or area"
           />
         </div>
 

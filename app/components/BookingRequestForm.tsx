@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { buildInitialBookingCharges } from "@/lib/invoice";
 import DayAvailabilityCalendar from "@/app/components/DayAvailabilityCalendar";
@@ -9,6 +9,13 @@ import MonthAvailabilityCalendar from "@/app/components/MonthAvailabilityCalenda
 import HourAvailabilitySelector from "@/app/components/HourAvailabilitySelector";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
+import {
+  clearBookingDraft,
+  draftMatchesSpace,
+  normalizeBookingUnit,
+  readBookingDraft,
+  writeBookingDraft,
+} from "@/lib/bookingDraftStorage";
 
 type ExistingBooking = {
   id: string;
@@ -108,17 +115,60 @@ export default function BookingRequestForm({
   const router = useRouter();
   const [requestSentModalOpen, setRequestSentModalOpen] = useState(false);
 
+  const persistReadyRef = useRef(false);
+  const unitKind = normalizeBookingUnit(bookingUnit);
+
+  useLayoutEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const draft = readBookingDraft();
+    if (draft && draftMatchesSpace(draft, spaceId, bookingUnit)) {
+      setHourDate(draft.hourDate || "");
+      setHourStart(draft.hourStart || "");
+      setHourEnd(draft.hourEnd || "");
+      setDayStart(draft.dayStart || "");
+      setDayEnd(draft.dayEnd || "");
+      setMonthStart(draft.monthStart || "");
+      setMonthEnd(draft.monthEnd || "");
+    }
+
+    persistReadyRef.current = true;
+  }, [spaceId, bookingUnit]);
+
   useEffect(() => {
     loadAvailabilityData();
     loadSpacePaymentSettings();
   }, [spaceId]);
 
   useEffect(() => {
-    if (bookingUnit === "hour") {
-      setHourStart("");
-      setHourEnd("");
-    }
-  }, [hourDate, bookingUnit]);
+    if (!persistReadyRef.current) return;
+
+    const id = window.setTimeout(() => {
+      writeBookingDraft({
+        spaceId,
+        bookingUnit: unitKind,
+        hourDate,
+        hourStart,
+        hourEnd,
+        dayStart,
+        dayEnd,
+        monthStart,
+        monthEnd,
+      });
+    }, 400);
+
+    return () => window.clearTimeout(id);
+  }, [
+    spaceId,
+    unitKind,
+    hourDate,
+    hourStart,
+    hourEnd,
+    dayStart,
+    dayEnd,
+    monthStart,
+    monthEnd,
+  ]);
 
   async function loadAvailabilityData() {
     setAvailabilityLoading(true);
@@ -450,6 +500,56 @@ export default function BookingRequestForm({
     minMonths,
   ]);
 
+  const bookingSelectionComplete = useMemo(() => {
+    if (bookingUnit === "hour") {
+      return Boolean(hourDate && hourStart && hourEnd);
+    }
+    if (bookingUnit === "day") {
+      return Boolean(dayStart && dayEnd);
+    }
+    if (bookingUnit === "month") {
+      return Boolean(monthStart && monthEnd);
+    }
+    return false;
+  }, [
+    bookingUnit,
+    hourDate,
+    hourStart,
+    hourEnd,
+    dayStart,
+    dayEnd,
+    monthStart,
+    monthEnd,
+  ]);
+
+  const requestButtonTitle = useMemo(() => {
+    if (loading || availabilityLoading) return undefined;
+    if (liveConflictMessage || liveMinimumMessage) return undefined;
+    if (!acceptedTerms) {
+      return "Accept the terms and cancellation policy to continue";
+    }
+    if (!bookingSelectionComplete) {
+      if (bookingUnit === "hour") {
+        return "Select a date and start and end times to continue";
+      }
+      if (bookingUnit === "day") {
+        return "Select a start date and end date on the calendar to continue";
+      }
+      if (bookingUnit === "month") {
+        return "Select start and end months to continue";
+      }
+    }
+    return undefined;
+  }, [
+    loading,
+    availabilityLoading,
+    liveConflictMessage,
+    liveMinimumMessage,
+    acceptedTerms,
+    bookingSelectionComplete,
+    bookingUnit,
+  ]);
+
   const bookingSummary = useMemo(() => {
     const { startAt, endAt, error } = buildRequestedRange();
 
@@ -553,6 +653,17 @@ export default function BookingRequestForm({
       } = await supabase.auth.getUser();
 
       if (!user) {
+        writeBookingDraft({
+          spaceId,
+          bookingUnit: unitKind,
+          hourDate,
+          hourStart,
+          hourEnd,
+          dayStart,
+          dayEnd,
+          monthStart,
+          monthEnd,
+        });
         setAuthMode("signup");
         setAuthModalOpen(true);
         setLoading(false);
@@ -768,6 +879,7 @@ export default function BookingRequestForm({
       }
 
       // 🔥 CLEAN RESET
+      clearBookingDraft();
       setHourDate("");
       setHourStart("");
       setHourEnd("");
@@ -883,17 +995,61 @@ export default function BookingRequestForm({
             </div>
           )}
 
+          {(bookingUnit === "hour" || bookingUnit === "day") && (
+            <div className="rounded-md border border-gray-200 bg-[#f4f7f9] px-3 py-2.5 text-xs leading-relaxed text-gray-700">
+              <span className="font-semibold text-[#192a3a]">Booking steps:</span>{" "}
+              {bookingUnit === "hour" ? (
+                <>
+                  choose a date, pick start and end times, accept the terms, then tap Request booking.
+                </>
+              ) : (
+                <>
+                  pick a start date and an end date on the calendar, accept the terms, then tap Request
+                  booking.
+                </>
+              )}
+            </div>
+          )}
+
           {bookingUnit === "hour" && (
             <>
-              <div>
-                <label className="mb-2 block text-sm font-medium">Select day</label>
+              <div className="rounded-lg border-2 border-gray-300 bg-white p-4 shadow-sm">
+                <label
+                  htmlFor="booking-hour-date"
+                  className="mb-1 block text-sm font-semibold text-[#192a3a]"
+                >
+                  Date <span className="text-red-600">*</span>
+                </label>
+                <p className="mb-3 text-xs text-gray-600">
+                  Select a date to load available hours for that day.
+                </p>
                 <input
+                  id="booking-hour-date"
                   type="date"
                   value={hourDate}
                   min={new Date().toISOString().split("T")[0]}
-                  onChange={(e) => setHourDate(e.target.value)}
-                  className="w-full rounded-md border border-gray-300 px-4 py-3"
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    setHourDate((prev) => {
+                      if (prev !== next) {
+                        setHourStart("");
+                        setHourEnd("");
+                      }
+                      return next;
+                    });
+                  }}
+                  className="w-full rounded-md border-2 border-gray-300 bg-white px-3 py-3 text-base font-medium text-[#192a3a] shadow-inner focus:border-[#192a3a] focus:outline-none focus:ring-2 focus:ring-[#192a3a]/20"
+                  aria-required="true"
+                  aria-describedby={!hourDate ? "booking-hour-date-hint" : undefined}
                 />
+                {!hourDate && (
+                  <p
+                    id="booking-hour-date-hint"
+                    className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900"
+                  >
+                    Select a date — times appear below once a day is chosen.
+                  </p>
+                )}
               </div>
 
               {hourDate && (
@@ -914,16 +1070,25 @@ export default function BookingRequestForm({
           )}
 
           {bookingUnit === "day" && (
-            <DayAvailabilityCalendar
-              existingBookings={existingBookings}
-              blockedDates={blockedDates}
-              dayStart={dayStart}
-              dayEnd={dayEnd}
-              onChange={(start, end) => {
-                setDayStart(start);
-                setDayEnd(end);
-              }}
-            />
+            <div className="space-y-2">
+              <p className="text-sm font-semibold text-[#192a3a]">
+                Stay dates <span className="text-red-600">*</span>
+              </p>
+              <p className="text-xs text-gray-600">
+                Tap a start date on the calendar, then tap an end date. Both are required before you can
+                request a booking.
+              </p>
+              <DayAvailabilityCalendar
+                existingBookings={existingBookings}
+                blockedDates={blockedDates}
+                dayStart={dayStart}
+                dayEnd={dayEnd}
+                onChange={(start, end) => {
+                  setDayStart(start);
+                  setDayEnd(end);
+                }}
+              />
+            </div>
           )}
 
           {bookingUnit === "month" && (
@@ -986,12 +1151,14 @@ export default function BookingRequestForm({
 
           <button
             type="submit"
+            title={requestButtonTitle}
             disabled={
               loading ||
               availabilityLoading ||
               Boolean(liveConflictMessage) ||
               Boolean(liveMinimumMessage) ||
-              !acceptedTerms
+              !acceptedTerms ||
+              !bookingSelectionComplete
             }
             className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-[#192a3a] px-4 py-3 text-sm font-medium text-white transition hover:opacity-[0.97] disabled:cursor-not-allowed disabled:opacity-50"
           >
@@ -1040,7 +1207,7 @@ export default function BookingRequestForm({
       <AuthModal
         open={authModalOpen}
         mode={authMode}
-        nextPath={`/spaces/${spaceId}`}
+        nextPath={`/spaces/${spaceId}?book=1`}
         onClose={() => setAuthModalOpen(false)}
         onSwitchMode={(nextMode: "login" | "signup") =>
           setAuthMode(nextMode)

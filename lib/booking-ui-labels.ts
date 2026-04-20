@@ -16,7 +16,11 @@ export function ownerListingBookingStatusLabel(status: string | null | undefined
   return "Awaiting your response";
 }
 
-/** Renter-facing booking.status on My bookings. */
+/**
+ * Renter-facing booking.status (generic string).
+ * For the My Bookings list (label + action + badge), use `resolveRenterMyBookingsUi`
+ * in `renter-my-bookings-status.ts` — it also considers `payment_status`.
+ */
 export function renterBookingStatusLabel(status: string | null | undefined): string {
   const s = status || "";
   if (s === "pending_owner") return "Waiting for host";

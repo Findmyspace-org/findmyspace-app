@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   CarFront,
@@ -30,61 +31,16 @@ const CATEGORY_CHIPS = [
   { label: "Workspace", value: "workspace", icon: Briefcase },
 ];
 
-const SOUTH_AFRICAN_TOWNS = [
-  "Cape Town",
-  "Paarl",
-  "Stellenbosch",
-  "Somerset West",
-  "George",
-  "Durban",
-  "Johannesburg",
-  "Pretoria",
-  "Polokwane",
-  "Nelspruit",
-];
-
-/* ================= HELPERS ================= */
-
-function normalizeText(value: string) {
-  return value.trim().toLowerCase();
-}
+/** After login/signup, land on create listing (AuthForm reads `next` query). */
+const LIST_SPACE_LOGIN_HREF = `/login?next=${encodeURIComponent("/dashboard/new-space")}`;
+const BROWSE_SPACES_HREF = "/spaces#browse-search";
 
 /* ================= PAGE ================= */
 
 export default function HomePage() {
   const router = useRouter();
-  const suggestionBoxRef = useRef<HTMLDivElement | null>(null);
 
   const [spaceType, setSpaceType] = useState("all");
-  const [where, setWhere] = useState("");
-  const [showSuggestions, setShowSuggestions] = useState(false);
-
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (!suggestionBoxRef.current) return;
-      if (!suggestionBoxRef.current.contains(event.target as Node)) {
-        setShowSuggestions(false);
-      }
-    }
-
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  const filteredTowns = useMemo(() => {
-    const query = normalizeText(where);
-
-    if (!query) return SOUTH_AFRICAN_TOWNS;
-
-    return SOUTH_AFRICAN_TOWNS.filter((town) =>
-      normalizeText(town).includes(query)
-    );
-  }, [where]);
-
-  function selectTown(town: string) {
-    setWhere(town);
-    setShowSuggestions(false);
-  }
 
   function handleSearch(e: React.FormEvent) {
     e.preventDefault();
@@ -92,7 +48,6 @@ export default function HomePage() {
     const params = new URLSearchParams();
 
     if (spaceType !== "all") params.set("type", spaceType);
-    if (where.trim()) params.set("q", where.trim());
 
     const queryString = params.toString();
     router.push(queryString ? `/spaces?${queryString}` : "/spaces");
@@ -159,18 +114,17 @@ export default function HomePage() {
             <h2 className="mb-2 text-2xl font-semibold">Start your search</h2>
 
             <p className="mb-6 text-sm text-gray-600">
-              Choose the kind of space you need and where you need it.
+              Choose the kind of space you need.
             </p>
 
             <form onSubmit={handleSearch} className="space-y-5">
-              
-              {/* TYPE */}
               <div>
-                <label className="mb-2 block text-sm font-medium">
+                <label className="mb-2 block text-sm font-medium" htmlFor="home-space-type">
                   What type of space are you looking for?
                 </label>
 
                 <select
+                  id="home-space-type"
                   value={spaceType}
                   onChange={(e) => setSpaceType(e.target.value)}
                   className="w-full rounded-md border border-white/50 bg-white/70 px-4 py-3 text-sm backdrop-blur-md"
@@ -183,40 +137,6 @@ export default function HomePage() {
                 </select>
               </div>
 
-              {/* LOCATION */}
-              <div className="relative" ref={suggestionBoxRef}>
-                <label className="mb-2 block text-sm font-medium">
-                  Where?
-                </label>
-
-                <input
-                  value={where}
-                  onChange={(e) => {
-                    setWhere(e.target.value);
-                    setShowSuggestions(true);
-                  }}
-                  onFocus={() => setShowSuggestions(true)}
-                  placeholder="Enter town, city, or area"
-                  className="w-full rounded-md border border-white/50 bg-white/70 px-4 py-3 text-sm backdrop-blur-md"
-                />
-
-                {showSuggestions && (
-                  <div className="absolute left-0 right-0 top-[110%] z-20 overflow-hidden rounded-md border border-white/50 bg-white/85 shadow-xl backdrop-blur-xl">
-                    {filteredTowns.map((town) => (
-                      <button
-                        key={town}
-                        type="button"
-                        onClick={() => selectTown(town)}
-                        className="block w-full px-4 py-3 text-left text-sm hover:bg-gray-50"
-                      >
-                        {town}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* BUTTON */}
               <button
                 type="submit"
                 className="w-full rounded-md bg-[#192a3a] py-3 text-white shadow-lg hover:opacity-95"
@@ -231,34 +151,41 @@ export default function HomePage() {
       {/* LOWER CARDS */}
       <section className="relative z-20 mx-auto -mt-6 max-w-7xl px-6 pb-12 sm:-mt-16 lg:-mt-32">
         <div className="grid gap-4 md:grid-cols-3">
-          
-          <div className="rounded-md border border-white/30 bg-white/20 p-6 text-center shadow-[0_20px_60px_rgba(15,23,42,0.12)] backdrop-blur-2xl transition hover:bg-white/30">
+          <Link
+            href={LIST_SPACE_LOGIN_HREF}
+            className="block rounded-md border border-white/30 bg-white/20 p-6 text-center text-inherit no-underline shadow-[0_20px_60px_rgba(15,23,42,0.12)] backdrop-blur-2xl transition hover:bg-white/30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#192a3a]"
+          >
             <h3 className="mb-2 text-xl font-semibold">
               List unused space
             </h3>
             <p className="text-sm text-gray-700">
               Turn available space into income.
             </p>
-          </div>
+          </Link>
 
-          <div className="rounded-md border border-white/30 bg-white/20 p-6 text-center shadow-[0_20px_60px_rgba(15,23,42,0.12)] backdrop-blur-2xl transition hover:bg-white/30">
+          <Link
+            href={BROWSE_SPACES_HREF}
+            className="block rounded-md border border-white/30 bg-white/20 p-6 text-center text-inherit no-underline shadow-[0_20px_60px_rgba(15,23,42,0.12)] backdrop-blur-2xl transition hover:bg-white/30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#192a3a]"
+          >
             <h3 className="mb-2 text-xl font-semibold">
               Search by area
             </h3>
             <p className="text-sm text-gray-700">
               Find spaces near you quickly.
             </p>
-          </div>
+          </Link>
 
-          <div className="rounded-md border border-white/30 bg-white/20 p-6 text-center shadow-[0_20px_60px_rgba(15,23,42,0.12)] backdrop-blur-2xl transition hover:bg-white/30">
+          <Link
+            href={BROWSE_SPACES_HREF}
+            className="block rounded-md border border-white/30 bg-white/20 p-6 text-center text-inherit no-underline shadow-[0_20px_60px_rgba(15,23,42,0.12)] backdrop-blur-2xl transition hover:bg-white/30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#192a3a]"
+          >
             <h3 className="mb-2 text-xl font-semibold">
               Book the right fit
             </h3>
             <p className="text-sm text-gray-700">
               Compare and request easily.
             </p>
-          </div>
-
+          </Link>
         </div>
       </section>
     </main>
