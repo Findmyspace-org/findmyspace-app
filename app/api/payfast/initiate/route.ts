@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import crypto from "crypto";
 import { createClient } from "@supabase/supabase-js";
-import { isAwaitingGatewayPayment } from "@/lib/finance-status";
 import { getPublicSiteUrlFromEnv } from "@/lib/site-url";
+import {
+  buildSignedPayFastCheckoutPayload,
+  readPayFastMerchantSecrets,
+  validateBookingForPayFastInitiate,
+} from "@/lib/payfast-initiate-shared";
 
 type BookingRow = {
   id: string;
@@ -19,42 +22,6 @@ type SpaceRow = {
   title: string | null;
 };
 
-function generatePayFastSignature(
-  data: Record<string, string>,
-  passphrase?: string
-) {
-  const orderedKeys = [
-    "merchant_id",
-    "merchant_key",
-    "return_url",
-    "cancel_url",
-    "notify_url",
-    "name_first",
-    "name_last",
-    "email_address",
-    "m_payment_id",
-    "amount",
-    "item_name",
-    "custom_str1",
-    "custom_str2",
-  ];
-
-  const paramString = orderedKeys
-    .filter((key) => data[key] !== undefined && data[key] !== null && data[key] !== "")
-    .map((key) => {
-      const value = String(data[key]).trim();
-      return `${key}=${encodeURIComponent(value).replace(/%20/g, "+")}`;
-    })
-    .join("&");
-
-  const finalString =
-    passphrase && passphrase.trim() !== ""
-      ? `${paramString}&passphrase=${encodeURIComponent(passphrase.trim()).replace(/%20/g, "+")}`
-      : paramString;
-
-  return crypto.createHash("md5").update(finalString).digest("hex");
-}
-
 export async function POST(req: NextRequest) {
   try {
     const {
@@ -62,20 +29,16 @@ export async function POST(req: NextRequest) {
       SUPABASE_SERVICE_ROLE_KEY,
       NEXT_PUBLIC_SUPABASE_ANON_KEY,
       NEXT_PUBLIC_SITE_URL,
-      PAYFAST_MERCHANT_ID,
-      PAYFAST_MERCHANT_KEY,
-      PAYFAST_PASSPHRASE,
-      PAYFAST_PROCESS_URL,
     } = process.env;
+
+    const merchant = readPayFastMerchantSecrets();
 
     if (
       !NEXT_PUBLIC_SUPABASE_URL ||
       !SUPABASE_SERVICE_ROLE_KEY ||
       !NEXT_PUBLIC_SUPABASE_ANON_KEY ||
       !NEXT_PUBLIC_SITE_URL?.trim() ||
-      !PAYFAST_MERCHANT_ID ||
-      !PAYFAST_MERCHANT_KEY ||
-      !PAYFAST_PROCESS_URL
+      !merchant
     ) {
       return NextResponse.json(
         {
@@ -196,27 +159,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (booking.status === "expired") {
+    const eligibility = validateBookingForPayFastInitiate(booking);
+    if (!eligibility.ok) {
       return NextResponse.json(
-        {
-          error:
-            "This booking expired because payment was not completed in time. Please send a new booking request.",
-        },
-        { status: 400 }
-      );
-    }
-
-    if (!isAwaitingGatewayPayment(booking)) {
-      return NextResponse.json(
-        { error: "This booking is not ready for payment." },
-        { status: 400 }
-      );
-    }
-
-    if (!booking.total_price || booking.total_price <= 0) {
-      return NextResponse.json(
-        { error: "Invalid booking amount." },
-        { status: 400 }
+        { error: eligibility.error },
+        { status: eligibility.status }
       );
     }
 
@@ -228,37 +175,23 @@ export async function POST(req: NextRequest) {
 
     const space = (spaceData || null) as SpaceRow | null;
 
-    const amount = Number(booking.total_price).toFixed(2);
-
-    const paymentData: Record<string, string> = {
-      merchant_id: PAYFAST_MERCHANT_ID,
-      merchant_key: PAYFAST_MERCHANT_KEY,
-      return_url: `${appBaseUrl}/dashboard/my-bookings?payment=success&bookingId=${booking.id}`,
-      cancel_url: `${appBaseUrl}/dashboard/my-bookings?payment=cancelled&bookingId=${booking.id}`,
-      notify_url: `${appBaseUrl}/api/payfast/notify`,
-      name_first: String(user.user_metadata?.first_name || "FindMySpace"),
-      name_last: String(user.user_metadata?.last_name || "User"),
-      email_address: String(user.email || ""),
-      m_payment_id: String(booking.id),
-      amount,
-      item_name: space?.title
-        ? `FindMySpace - ${space.title}`
-        : `FindMySpace booking ${booking.id}`,
-      custom_str1: String(booking.id),
-      custom_str2: String(booking.space_id),
-    };
-
-    const signature = generatePayFastSignature(
-      paymentData,
-      PAYFAST_PASSPHRASE
-    );
+    const { processUrl, fields } = buildSignedPayFastCheckoutPayload({
+      appBaseUrl,
+      booking: {
+        id: booking.id,
+        space_id: booking.space_id,
+        total_price: booking.total_price as number,
+      },
+      spaceTitle: space?.title ?? null,
+      payerFirstName: String(user.user_metadata?.first_name || "FindMySpace"),
+      payerLastName: String(user.user_metadata?.last_name || "User"),
+      payerEmail: String(user.email || ""),
+      merchant,
+    });
 
     return NextResponse.json({
-      processUrl: PAYFAST_PROCESS_URL,
-      fields: {
-        ...paymentData,
-        signature,
-      },
+      processUrl,
+      fields,
     });
   } catch (error: any) {
     console.error("PayFast initiate error:", error);

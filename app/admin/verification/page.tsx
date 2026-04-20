@@ -7,8 +7,10 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronUp,
+  ClipboardList,
   Clock3,
   FileText,
+  History,
   Landmark,
   LayoutDashboard,
   List,
@@ -17,6 +19,7 @@ import {
   Phone,
   Users,
   UserSquare2,
+  Wallet,
   XCircle,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
@@ -541,11 +544,24 @@ export default function AdminVerificationPage() {
             Dashboard
           </Link>
           <Link
-            href="/admin#users-section"
+            href="/admin/activity"
+            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
+          >
+            <History className="h-4 w-4" />
+            Activity
+          </Link>
+          <Link
+            href="/admin/users"
             className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
           >
             <Users className="h-4 w-4" />
             Users
+          </Link>
+          <Link
+            href="/admin/bookings"
+            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
+          >
+            Bookings
           </Link>
           <Link
             href="/admin/spaces"
@@ -553,6 +569,13 @@ export default function AdminVerificationPage() {
           >
             <Building2 className="h-4 w-4" />
             Spaces
+          </Link>
+          <Link
+            href="/admin/listings"
+            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
+          >
+            <ClipboardList className="h-4 w-4" />
+            Listings
           </Link>
           <Link
             href="/admin/verification"
@@ -567,6 +590,13 @@ export default function AdminVerificationPage() {
           >
             <MessageSquare className="h-4 w-4" />
             Messages
+          </Link>
+          <Link
+            href="/admin/finance"
+            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
+          >
+            <Wallet className="h-4 w-4" />
+            Finance
           </Link>
         </div>
 

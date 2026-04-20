@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test:admin-patch": "node scripts/test-admin-user-patch.mjs"
   },
   "dependencies": {
     "@sparticuz/chromium": "^131.0.0",

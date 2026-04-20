@@ -8,6 +8,8 @@ import {
   ChevronDown,
   ChevronRight,
   ChevronUp,
+  ClipboardList,
+  History,
   LayoutDashboard,
   MessageSquare,
   Mail,
@@ -215,11 +217,24 @@ export default function AdminPage() {
             Dashboard
           </Link>
           <Link
-            href="/admin#users-section"
+            href="/admin/activity"
+            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
+          >
+            <History className="h-4 w-4" />
+            Activity
+          </Link>
+          <Link
+            href="/admin/users"
             className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
           >
             <Users className="h-4 w-4" />
             Users
+          </Link>
+          <Link
+            href="/admin/bookings"
+            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
+          >
+            Bookings
           </Link>
           <Link
             href="/admin/spaces"
@@ -227,6 +242,13 @@ export default function AdminPage() {
           >
             <Building2 className="h-4 w-4" />
             Spaces
+          </Link>
+          <Link
+            href="/admin/listings"
+            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
+          >
+            <ClipboardList className="h-4 w-4" />
+            Listings
           </Link>
           <Link
             href="/admin/verification"
@@ -265,9 +287,17 @@ export default function AdminPage() {
             />
           </div>
           <div className="mt-3 flex flex-wrap gap-2 text-xs text-gray-500">
-            <span className="rounded-full bg-gray-100 px-3 py-1">Users search works on this page</span>
+            <Link href="/admin/users" className="rounded-full bg-gray-100 px-3 py-1 hover:bg-gray-200">
+              Users directory
+            </Link>
+            <Link href="/admin/bookings" className="rounded-full bg-gray-100 px-3 py-1 hover:bg-gray-200">
+              Bookings list
+            </Link>
             <Link href="/admin/spaces" className="rounded-full bg-gray-100 px-3 py-1 hover:bg-gray-200">
               Go to Spaces
+            </Link>
+            <Link href="/admin/listings" className="rounded-full bg-gray-100 px-3 py-1 hover:bg-gray-200">
+              Listings admin
             </Link>
             <Link href="/admin/verification" className="rounded-full bg-gray-100 px-3 py-1 hover:bg-gray-200">
               Go to Verification

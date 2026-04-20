@@ -7,11 +7,12 @@ import { supabase } from "@/lib/supabase";
 import {
   Building2,
   CheckCircle2,
+  ClipboardList,
+  History,
   LayoutDashboard,
   MessageSquare,
   Search,
   Send,
-  ShieldCheck,
   Users,
 } from "lucide-react";
 
@@ -364,11 +365,24 @@ export default function AdminMessagesPage() {
             Dashboard
           </Link>
           <Link
-            href="/admin#users-section"
+            href="/admin/activity"
+            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
+          >
+            <History className="h-4 w-4" />
+            Activity
+          </Link>
+          <Link
+            href="/admin/users"
             className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
           >
             <Users className="h-4 w-4" />
             Users
+          </Link>
+          <Link
+            href="/admin/bookings"
+            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
+          >
+            Bookings
           </Link>
           <Link
             href="/admin/spaces"
@@ -376,6 +390,13 @@ export default function AdminMessagesPage() {
           >
             <Building2 className="h-4 w-4" />
             Spaces
+          </Link>
+          <Link
+            href="/admin/listings"
+            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
+          >
+            <ClipboardList className="h-4 w-4" />
+            Listings
           </Link>
           <Link
             href="/admin/verification"

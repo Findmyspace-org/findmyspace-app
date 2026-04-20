@@ -3,17 +3,24 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import {
+  Building2,
   CheckCircle2,
   ChevronDown,
   ChevronUp,
+  ClipboardList,
   Eye,
+  History,
+  LayoutDashboard,
+  MessageSquare,
   PauseCircle,
   Save,
   Search,
   ShieldCheck,
+  Users,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { getDisplayName } from "@/lib/utils";
+import { LISTING_SPACE_TYPE_OPTIONS } from "@/app/data/spaceFeatureConfig";
 
 type AdminProfileRow = {
   role: string | null;
@@ -25,11 +32,18 @@ type SpaceRow = {
   id: string;
   owner_id: string;
   title: string | null;
+  description: string | null;
   city: string | null;
   suburb: string | null;
   address_line_1: string | null;
   space_type: string | null;
   booking_unit: string | null;
+  price_per_hour: number | null;
+  price_per_day: number | null;
+  price_per_month: number | null;
+  min_booking_hours: number | null;
+  min_booking_days: number | null;
+  min_booking_months: number | null;
   status: string | null;
   ownership_proof_status: string | null;
   platform_fee_percent: number | null;
@@ -37,6 +51,23 @@ type SpaceRow = {
   deposit_months: number | null;
   monthly_payment_day: number | null;
   created_at?: string | null;
+};
+
+type SpaceContentDraft = {
+  title: string;
+  description: string;
+  city: string;
+  suburb: string;
+  address_line_1: string;
+  space_type: string;
+  booking_unit: string;
+  price_per_hour: string;
+  price_per_day: string;
+  price_per_month: string;
+  min_booking_hours: string;
+  min_booking_days: string;
+  min_booking_months: string;
+  reason: string;
 };
 
 type OwnerProfileRow = {
@@ -65,6 +96,14 @@ export default function AdminListingsPage() {
   const [feeInputs, setFeeInputs] = useState<Record<string, string>>({});
   const [searchQuery, setSearchQuery] = useState("");
   const [expandedListings, setExpandedListings] = useState<Record<string, boolean>>({});
+  const [contentDrafts, setContentDrafts] = useState<Record<string, SpaceContentDraft>>({});
+  const [savingContentId, setSavingContentId] = useState<string | null>(null);
+  /** Shown next to Save content so feedback is visible when the row is scrolled down. */
+  const [contentSaveFeedback, setContentSaveFeedback] = useState<{
+    spaceId: string;
+    text: string;
+    isError: boolean;
+  } | null>(null);
 
   useEffect(() => {
     loadListings();
@@ -109,7 +148,7 @@ export default function AdminListingsPage() {
     const { data: rawSpaces, error: spacesError } = await (supabase
       .from("spaces") as any)
       .select(
-        "id, owner_id, title, city, suburb, address_line_1, space_type, booking_unit, status, ownership_proof_status, platform_fee_percent, deposit_type, deposit_months, monthly_payment_day, created_at"
+        "id, owner_id, title, description, city, suburb, address_line_1, space_type, booking_unit, price_per_hour, price_per_day, price_per_month, min_booking_hours, min_booking_days, min_booking_months, status, ownership_proof_status, platform_fee_percent, deposit_type, deposit_months, monthly_payment_day, created_at"
       )
       .order("created_at", { ascending: false });
 
@@ -277,11 +316,149 @@ export default function AdminListingsPage() {
     setSavingFeeId(null);
   }
 
-  function toggleListing(spaceId: string) {
-    setExpandedListings((current) => ({
-      ...current,
-      [spaceId]: !current[spaceId],
-    }));
+  function draftFromSpace(s: SpaceRow): SpaceContentDraft {
+    return {
+      title: s.title ?? "",
+      description: s.description ?? "",
+      city: s.city ?? "",
+      suburb: s.suburb ?? "",
+      address_line_1: s.address_line_1 ?? "",
+      space_type: s.space_type ?? "storage",
+      booking_unit: s.booking_unit ?? "day",
+      price_per_hour:
+        typeof s.price_per_hour === "number" ? String(s.price_per_hour) : "",
+      price_per_day:
+        typeof s.price_per_day === "number" ? String(s.price_per_day) : "",
+      price_per_month:
+        typeof s.price_per_month === "number" ? String(s.price_per_month) : "",
+      min_booking_hours:
+        typeof s.min_booking_hours === "number"
+          ? String(s.min_booking_hours)
+          : "1",
+      min_booking_days:
+        typeof s.min_booking_days === "number"
+          ? String(s.min_booking_days)
+          : "1",
+      min_booking_months:
+        typeof s.min_booking_months === "number"
+          ? String(s.min_booking_months)
+          : "1",
+      reason: "",
+    };
+  }
+
+  function toggleListing(spaceId: string, space: SpaceRow) {
+    setExpandedListings((current) => {
+      const next = !current[spaceId];
+      if (next) {
+        setContentDrafts((d) =>
+          d[spaceId] ? d : { ...d, [spaceId]: draftFromSpace(space) }
+        );
+      }
+      return { ...current, [spaceId]: next };
+    });
+  }
+
+  async function saveListingContent(spaceId: string, space: SpaceRow) {
+    const draft = contentDrafts[spaceId] ?? draftFromSpace(space);
+    const reason = draft.reason.trim();
+    if (reason.length < 3) {
+      setContentSaveFeedback({
+        spaceId,
+        text: "Enter a short reason (at least 3 characters) for this edit.",
+        isError: true,
+      });
+      return;
+    }
+
+    setSavingContentId(spaceId);
+    setContentSaveFeedback(null);
+    setMessage("");
+
+    const parseOpt = (s: string) => {
+      const t = s.trim();
+      if (t === "") return null;
+      const n = Number(t);
+      return Number.isFinite(n) ? n : null;
+    };
+
+    const parseMin = (s: string) => {
+      const t = s.trim();
+      if (t === "") return null;
+      const n = parseInt(t, 10);
+      return Number.isFinite(n) ? n : null;
+    };
+
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        setContentSaveFeedback({
+          spaceId,
+          text: "Please sign in again.",
+          isError: true,
+        });
+        return;
+      }
+
+      const body: Record<string, unknown> = {
+        reason,
+        title: draft.title.trim(),
+        description: draft.description.trim() === "" ? null : draft.description.trim(),
+        city: draft.city.trim() === "" ? null : draft.city.trim(),
+        suburb: draft.suburb.trim() === "" ? null : draft.suburb.trim(),
+        address_line_1:
+          draft.address_line_1.trim() === "" ? null : draft.address_line_1.trim(),
+        space_type: draft.space_type,
+        booking_unit: draft.booking_unit,
+        price_per_hour: parseOpt(draft.price_per_hour),
+        price_per_day: parseOpt(draft.price_per_day),
+        price_per_month: parseOpt(draft.price_per_month),
+        min_booking_hours: parseMin(draft.min_booking_hours),
+        min_booking_days: parseMin(draft.min_booking_days),
+        min_booking_months: parseMin(draft.min_booking_months),
+      };
+
+      const res = await fetch(`/api/admin/spaces/${spaceId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify(body),
+      });
+
+      const json = await res.json().catch(() => null);
+      if (!res.ok) {
+        const apiErr =
+          json &&
+          typeof json === "object" &&
+          "error" in json &&
+          typeof (json as { error: unknown }).error === "string"
+            ? (json as { error: string }).error
+            : "Could not save listing content.";
+        setContentSaveFeedback({ spaceId, text: apiErr, isError: true });
+        return;
+      }
+
+      setContentSaveFeedback({
+        spaceId,
+        text: "Listing content updated.",
+        isError: false,
+      });
+      await loadListings();
+    } catch (e: unknown) {
+      console.error("saveListingContent:", e);
+      setContentSaveFeedback({
+        spaceId,
+        text:
+          e instanceof Error ? e.message : "Something went wrong while saving.",
+        isError: true,
+      });
+    } finally {
+      setSavingContentId(null);
+    }
   }
 
   function getBadgeClass(status: string | null | undefined) {
@@ -374,6 +551,70 @@ export default function AdminListingsPage() {
           listing.
         </p>
 
+        <div className="mb-5 flex flex-wrap gap-3">
+          <Link
+            href="/admin"
+            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
+          >
+            <LayoutDashboard className="h-4 w-4" />
+            Dashboard
+          </Link>
+          <Link
+            href="/admin/activity"
+            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
+          >
+            <History className="h-4 w-4" />
+            Activity
+          </Link>
+          <Link
+            href="/admin/users"
+            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
+          >
+            <Users className="h-4 w-4" />
+            Users
+          </Link>
+          <Link
+            href="/admin/bookings"
+            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
+          >
+            Bookings
+          </Link>
+          <Link
+            href="/admin/spaces"
+            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
+          >
+            <Building2 className="h-4 w-4" />
+            Spaces
+          </Link>
+          <Link
+            href="/admin/listings"
+            className="inline-flex items-center gap-2 rounded-md border border-[#192a3a] bg-[#192a3a] px-4 py-2 text-sm text-white"
+          >
+            <ClipboardList className="h-4 w-4" />
+            Listings
+          </Link>
+          <Link
+            href="/admin/verification"
+            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
+          >
+            <ShieldCheck className="h-4 w-4" />
+            Verification
+          </Link>
+          <Link
+            href="/admin/messages"
+            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
+          >
+            <MessageSquare className="h-4 w-4" />
+            Messages
+          </Link>
+          <Link
+            href="/admin/finance"
+            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
+          >
+            Finance
+          </Link>
+        </div>
+
         <div className="mb-4 flex flex-wrap gap-3">
           {["all", "pending", "active", "paused"].map((filter) => (
             <button
@@ -424,7 +665,7 @@ export default function AdminListingsPage() {
               >
                 <button
                   type="button"
-                  onClick={() => toggleListing(record.space.id)}
+                  onClick={() => toggleListing(record.space.id, record.space)}
                   className="flex w-full items-start justify-between gap-4 p-4 text-left"
                 >
                   <div className="min-w-0 flex-1">
@@ -533,6 +774,352 @@ export default function AdminListingsPage() {
                             </>
                           )}
                         </div>
+                      </div>
+
+                      <div className="rounded-sm border border-blue-200 bg-blue-50/50 p-4">
+                        <h3 className="mb-2 text-sm font-semibold text-[#192a3a]">
+                          Admin content edit
+                        </h3>
+                        <p className="mb-3 text-xs text-gray-600">
+                          Safe listing fields only (no status, fees, deposits, or ownership). Requires a short reason. Saves via admin API.
+                        </p>
+                        {(() => {
+                          const d =
+                            contentDrafts[record.space.id] ??
+                            draftFromSpace(record.space);
+                          return (
+                            <div className="space-y-3 text-sm">
+                              <div>
+                                <label className="mb-1 block text-xs font-medium text-gray-600">
+                                  Reason for change
+                                </label>
+                                <input
+                                  type="text"
+                                  value={d.reason}
+                                  onChange={(e) =>
+                                    setContentDrafts((prev) => ({
+                                      ...prev,
+                                      [record.space.id]: {
+                                        ...(prev[record.space.id] ??
+                                          draftFromSpace(record.space)),
+                                        reason: e.target.value,
+                                      },
+                                    }))
+                                  }
+                                  placeholder="e.g. Fix typo in title"
+                                  className="w-full rounded-md border border-gray-300 px-3 py-2"
+                                />
+                              </div>
+                              <div>
+                                <label className="mb-1 block text-xs font-medium text-gray-600">
+                                  Title
+                                </label>
+                                <input
+                                  type="text"
+                                  value={d.title}
+                                  onChange={(e) =>
+                                    setContentDrafts((prev) => ({
+                                      ...prev,
+                                      [record.space.id]: {
+                                        ...(prev[record.space.id] ??
+                                          draftFromSpace(record.space)),
+                                        title: e.target.value,
+                                      },
+                                    }))
+                                  }
+                                  className="w-full rounded-md border border-gray-300 px-3 py-2"
+                                />
+                              </div>
+                              <div>
+                                <label className="mb-1 block text-xs font-medium text-gray-600">
+                                  Description
+                                </label>
+                                <textarea
+                                  value={d.description}
+                                  onChange={(e) =>
+                                    setContentDrafts((prev) => ({
+                                      ...prev,
+                                      [record.space.id]: {
+                                        ...(prev[record.space.id] ??
+                                          draftFromSpace(record.space)),
+                                        description: e.target.value,
+                                      },
+                                    }))
+                                  }
+                                  rows={4}
+                                  className="w-full rounded-md border border-gray-300 px-3 py-2"
+                                />
+                              </div>
+                              <div className="grid gap-2 sm:grid-cols-3">
+                                <div>
+                                  <label className="mb-1 block text-xs font-medium text-gray-600">
+                                    Address
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={d.address_line_1}
+                                    onChange={(e) =>
+                                      setContentDrafts((prev) => ({
+                                        ...prev,
+                                        [record.space.id]: {
+                                          ...(prev[record.space.id] ??
+                                            draftFromSpace(record.space)),
+                                          address_line_1: e.target.value,
+                                        },
+                                      }))
+                                    }
+                                    className="w-full rounded-md border border-gray-300 px-3 py-2"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="mb-1 block text-xs font-medium text-gray-600">
+                                    Suburb
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={d.suburb}
+                                    onChange={(e) =>
+                                      setContentDrafts((prev) => ({
+                                        ...prev,
+                                        [record.space.id]: {
+                                          ...(prev[record.space.id] ??
+                                            draftFromSpace(record.space)),
+                                          suburb: e.target.value,
+                                        },
+                                      }))
+                                    }
+                                    className="w-full rounded-md border border-gray-300 px-3 py-2"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="mb-1 block text-xs font-medium text-gray-600">
+                                    City
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={d.city}
+                                    onChange={(e) =>
+                                      setContentDrafts((prev) => ({
+                                        ...prev,
+                                        [record.space.id]: {
+                                          ...(prev[record.space.id] ??
+                                            draftFromSpace(record.space)),
+                                          city: e.target.value,
+                                        },
+                                      }))
+                                    }
+                                    className="w-full rounded-md border border-gray-300 px-3 py-2"
+                                  />
+                                </div>
+                              </div>
+                              <div className="grid gap-2 sm:grid-cols-2">
+                                <div>
+                                  <label className="mb-1 block text-xs font-medium text-gray-600">
+                                    Category (space type)
+                                  </label>
+                                  <select
+                                    value={d.space_type}
+                                    onChange={(e) =>
+                                      setContentDrafts((prev) => ({
+                                        ...prev,
+                                        [record.space.id]: {
+                                          ...(prev[record.space.id] ??
+                                            draftFromSpace(record.space)),
+                                          space_type: e.target.value,
+                                        },
+                                      }))
+                                    }
+                                    className="w-full rounded-md border border-gray-300 px-3 py-2"
+                                  >
+                                    {LISTING_SPACE_TYPE_OPTIONS.map((opt) => (
+                                      <option key={opt.value} value={opt.value}>
+                                        {opt.label}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+                                <div>
+                                  <label className="mb-1 block text-xs font-medium text-gray-600">
+                                    Booking unit
+                                  </label>
+                                  <select
+                                    value={d.booking_unit}
+                                    onChange={(e) =>
+                                      setContentDrafts((prev) => ({
+                                        ...prev,
+                                        [record.space.id]: {
+                                          ...(prev[record.space.id] ??
+                                            draftFromSpace(record.space)),
+                                          booking_unit: e.target.value,
+                                        },
+                                      }))
+                                    }
+                                    className="w-full rounded-md border border-gray-300 px-3 py-2"
+                                  >
+                                    <option value="hour">Hour</option>
+                                    <option value="day">Day</option>
+                                    <option value="month">Month</option>
+                                  </select>
+                                </div>
+                              </div>
+                              <div className="grid gap-2 sm:grid-cols-3">
+                                <div>
+                                  <label className="mb-1 block text-xs font-medium text-gray-600">
+                                    Price / hour
+                                  </label>
+                                  <input
+                                    type="text"
+                                    inputMode="decimal"
+                                    value={d.price_per_hour}
+                                    onChange={(e) =>
+                                      setContentDrafts((prev) => ({
+                                        ...prev,
+                                        [record.space.id]: {
+                                          ...(prev[record.space.id] ??
+                                            draftFromSpace(record.space)),
+                                          price_per_hour: e.target.value,
+                                        },
+                                      }))
+                                    }
+                                    className="w-full rounded-md border border-gray-300 px-3 py-2"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="mb-1 block text-xs font-medium text-gray-600">
+                                    Price / day
+                                  </label>
+                                  <input
+                                    type="text"
+                                    inputMode="decimal"
+                                    value={d.price_per_day}
+                                    onChange={(e) =>
+                                      setContentDrafts((prev) => ({
+                                        ...prev,
+                                        [record.space.id]: {
+                                          ...(prev[record.space.id] ??
+                                            draftFromSpace(record.space)),
+                                          price_per_day: e.target.value,
+                                        },
+                                      }))
+                                    }
+                                    className="w-full rounded-md border border-gray-300 px-3 py-2"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="mb-1 block text-xs font-medium text-gray-600">
+                                    Price / month
+                                  </label>
+                                  <input
+                                    type="text"
+                                    inputMode="decimal"
+                                    value={d.price_per_month}
+                                    onChange={(e) =>
+                                      setContentDrafts((prev) => ({
+                                        ...prev,
+                                        [record.space.id]: {
+                                          ...(prev[record.space.id] ??
+                                            draftFromSpace(record.space)),
+                                          price_per_month: e.target.value,
+                                        },
+                                      }))
+                                    }
+                                    className="w-full rounded-md border border-gray-300 px-3 py-2"
+                                  />
+                                </div>
+                              </div>
+                              <div className="grid gap-2 sm:grid-cols-3">
+                                <div>
+                                  <label className="mb-1 block text-xs font-medium text-gray-600">
+                                    Min hours
+                                  </label>
+                                  <input
+                                    type="text"
+                                    inputMode="numeric"
+                                    value={d.min_booking_hours}
+                                    onChange={(e) =>
+                                      setContentDrafts((prev) => ({
+                                        ...prev,
+                                        [record.space.id]: {
+                                          ...(prev[record.space.id] ??
+                                            draftFromSpace(record.space)),
+                                          min_booking_hours: e.target.value,
+                                        },
+                                      }))
+                                    }
+                                    className="w-full rounded-md border border-gray-300 px-3 py-2"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="mb-1 block text-xs font-medium text-gray-600">
+                                    Min days
+                                  </label>
+                                  <input
+                                    type="text"
+                                    inputMode="numeric"
+                                    value={d.min_booking_days}
+                                    onChange={(e) =>
+                                      setContentDrafts((prev) => ({
+                                        ...prev,
+                                        [record.space.id]: {
+                                          ...(prev[record.space.id] ??
+                                            draftFromSpace(record.space)),
+                                          min_booking_days: e.target.value,
+                                        },
+                                      }))
+                                    }
+                                    className="w-full rounded-md border border-gray-300 px-3 py-2"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="mb-1 block text-xs font-medium text-gray-600">
+                                    Min months
+                                  </label>
+                                  <input
+                                    type="text"
+                                    inputMode="numeric"
+                                    value={d.min_booking_months}
+                                    onChange={(e) =>
+                                      setContentDrafts((prev) => ({
+                                        ...prev,
+                                        [record.space.id]: {
+                                          ...(prev[record.space.id] ??
+                                            draftFromSpace(record.space)),
+                                          min_booking_months: e.target.value,
+                                        },
+                                      }))
+                                    }
+                                    className="w-full rounded-md border border-gray-300 px-3 py-2"
+                                  />
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  saveListingContent(record.space.id, record.space)
+                                }
+                                disabled={savingContentId === record.space.id}
+                                className="inline-flex items-center gap-2 rounded-md border border-[#192a3a] bg-[#192a3a] px-4 py-2 text-sm text-white disabled:opacity-50"
+                              >
+                                <Save className="h-4 w-4" />
+                                {savingContentId === record.space.id
+                                  ? "Saving…"
+                                  : "Save content"}
+                              </button>
+                              {contentSaveFeedback?.spaceId === record.space.id && (
+                                <div
+                                  role="status"
+                                  className={`mt-3 rounded-md border px-3 py-2 text-sm ${
+                                    contentSaveFeedback.isError
+                                      ? "border-red-200 bg-red-50 text-red-800"
+                                      : "border-green-200 bg-green-50 text-green-800"
+                                  }`}
+                                >
+                                  {contentSaveFeedback.text}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </div>
 
                       <div className="rounded-sm border border-gray-200 bg-gray-50 p-4">
