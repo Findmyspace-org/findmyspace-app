@@ -31,6 +31,8 @@ export type ResolvedRenterMyBookingsUi = {
   label: string;
   /** Optional short hint (e.g. tooltips); keep sparse */
   helperText?: string;
+  /** Optional one-line hint in the card action column (waiting / payment-focused only) */
+  cardHint?: string;
   lifecycle: RenterBookingLifecyclePhase;
   primary: {
     kind: RenterMyBookingsPrimaryKind;
@@ -74,6 +76,7 @@ export function resolveRenterMyBookingsUi(booking: BookingLike): ResolvedRenterM
   if (isAwaitingGatewayPayment(booking)) {
     return {
       label: "Awaiting payment",
+      cardHint: "Payment required to confirm your booking.",
       lifecycle: "open",
       primary: { kind: "pay_now", actionLabel: "Pay now" },
       badgeClassName: BADGE.amber,
@@ -85,6 +88,7 @@ export function resolveRenterMyBookingsUi(booking: BookingLike): ResolvedRenterM
   if (st === "accepted_awaiting_payment") {
     return {
       label: "Awaiting payment",
+      cardHint: "Complete payment to secure your dates.",
       lifecycle: "open",
       primary: {
         kind: "retry_payment",
@@ -97,6 +101,7 @@ export function resolveRenterMyBookingsUi(booking: BookingLike): ResolvedRenterM
   if (st === "pending_owner" || st === "pending") {
     return {
       label: "Awaiting host",
+      cardHint: "No action needed until the host responds.",
       lifecycle: "waiting",
       primary: { kind: "none", actionLabel: "Waiting for approval" },
       badgeClassName: BADGE.blue,
@@ -159,7 +164,10 @@ export function resolveRenterMyBookingsUi(booking: BookingLike): ResolvedRenterM
 
   const extended: Record<
     string,
-    Pick<ResolvedRenterMyBookingsUi, "label" | "lifecycle" | "primary" | "badgeClassName">
+    Pick<
+      ResolvedRenterMyBookingsUi,
+      "label" | "lifecycle" | "primary" | "badgeClassName" | "cardHint"
+    >
   > = {
     cancelled: {
       label: "Cancelled",
@@ -196,6 +204,7 @@ export function resolveRenterMyBookingsUi(booking: BookingLike): ResolvedRenterM
       lifecycle: "open",
       primary: { kind: "retry_payment", actionLabel: "Retry payment" },
       badgeClassName: BADGE.amber,
+      cardHint: "Retry checkout from your booking page.",
     },
   };
 

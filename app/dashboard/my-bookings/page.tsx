@@ -104,20 +104,34 @@ type BookingCardPrimaryActionProps = {
   booking: EnrichedBooking;
   payingBookingId: string | null;
   onPayClick: (e: React.MouseEvent) => void;
+  /** When true, primary control does not stretch full width (pairs with chevron in a tight group). */
+  pairWithChevron?: boolean;
 };
 
+function applyPairedPrimaryLayout(className: string, paired: boolean) {
+  if (!paired) return className;
+  return className
+    .replace(/\bw-full\b/g, "w-auto")
+    .concat(" min-w-[8.75rem] max-w-full");
+}
+
+/** Primary CTA: full width on mobile, fixed min width on md+ */
 const primaryBtnClass =
-  "inline-flex min-h-[36px] shrink-0 items-center justify-center rounded-md bg-[#192a3a] px-3 py-2 text-xs font-semibold text-white shadow-sm hover:opacity-95";
+  "inline-flex w-full min-h-[40px] shrink-0 items-center justify-center rounded-md bg-[#192a3a] px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-95 md:h-9 md:min-h-0 md:w-auto md:min-w-[8.75rem] md:px-3 md:py-2 md:text-xs";
 const secondaryOutlineBtnClass =
-  "inline-flex min-h-[36px] shrink-0 items-center justify-center rounded-md border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-[#192a3a] shadow-sm hover:bg-gray-50";
+  "inline-flex w-full min-h-[40px] shrink-0 items-center justify-center rounded-md border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-[#192a3a] shadow-sm hover:bg-gray-50 md:h-9 md:min-h-0 md:w-auto md:min-w-[8.75rem] md:px-3 md:py-2 md:text-xs";
+const waitingStateClass =
+  "inline-flex w-full min-h-[40px] shrink-0 cursor-default items-center justify-center rounded-md border border-gray-200 bg-gray-100 px-4 py-2.5 text-sm font-medium text-gray-600 md:h-9 md:min-h-0 md:w-auto md:px-3 md:py-2 md:text-xs";
 
 function BookingCardPrimaryAction({
   booking,
   payingBookingId,
   onPayClick,
+  pairWithChevron = false,
 }: BookingCardPrimaryActionProps) {
   const ui = resolveRenterMyBookingsUi(booking);
   const { kind, actionLabel } = ui.primary;
+  const pc = pairWithChevron;
 
   if (kind === "pay_now") {
     return (
@@ -125,7 +139,7 @@ function BookingCardPrimaryAction({
         type="button"
         onClick={onPayClick}
         disabled={payingBookingId === booking.id}
-        className={`${primaryBtnClass} disabled:cursor-not-allowed disabled:opacity-50`}
+        className={`${applyPairedPrimaryLayout(primaryBtnClass, pc)} disabled:cursor-not-allowed disabled:opacity-50`}
       >
         {payingBookingId === booking.id ? "…" : actionLabel}
       </button>
@@ -135,7 +149,7 @@ function BookingCardPrimaryAction({
   if (kind === "none") {
     return (
       <span
-        className="inline-flex min-h-[36px] shrink-0 cursor-default items-center justify-center rounded-md border border-gray-200 bg-gray-100 px-3 py-2 text-xs font-medium text-gray-600"
+        className={applyPairedPrimaryLayout(waitingStateClass, pc)}
         title={ui.helperText}
       >
         {actionLabel}
@@ -148,7 +162,7 @@ function BookingCardPrimaryAction({
       <Link
         href={bookingDetailHref(booking.id)}
         onClick={(e) => e.stopPropagation()}
-        className={primaryBtnClass}
+        className={applyPairedPrimaryLayout(primaryBtnClass, pc)}
       >
         {actionLabel}
       </Link>
@@ -160,7 +174,7 @@ function BookingCardPrimaryAction({
       <Link
         href={rebookListingHref(booking.space_id)}
         onClick={(e) => e.stopPropagation()}
-        className={primaryBtnClass}
+        className={applyPairedPrimaryLayout(primaryBtnClass, pc)}
       >
         {actionLabel}
       </Link>
@@ -172,7 +186,7 @@ function BookingCardPrimaryAction({
     <Link
       href={bookingDetailHref(booking.id)}
       onClick={(e) => e.stopPropagation()}
-      className={secondaryOutlineBtnClass}
+      className={applyPairedPrimaryLayout(secondaryOutlineBtnClass, pc)}
     >
       {actionLabel}
     </Link>
@@ -1007,100 +1021,147 @@ function MyBookingsPageContent({
                 const fin = computeRenterBookingFinance(booking, charges);
                 const rowUi = resolveRenterMyBookingsUi(booking);
 
+                const amountDisplay = `R${Number(booking.total_price || 0).toLocaleString("en-ZA", {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })}`;
+
                 return (
                   <div
                     key={booking.id}
                     className="overflow-hidden rounded-md border border-gray-200 bg-white text-left shadow-sm transition hover:border-gray-300 hover:bg-[#fbfcfd]"
                   >
-                    <div
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => void toggleBookingExpanded(booking)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault();
-                          void toggleBookingExpanded(booking);
-                        }
-                      }}
-                      className="w-full cursor-pointer text-left focus:outline-none focus:ring-2 focus:ring-[#192a3a]/20"
-                    >
-                      <div className="grid items-center gap-3 p-3 md:grid-cols-[92px_1fr_auto]">
-                        <div className="relative h-[72px] w-full overflow-hidden rounded-md bg-gray-100 md:w-[92px]">
-                          {booking.space?.cover_image_url ? (
-                            <Image
-                              src={booking.space.cover_image_url}
-                              alt={booking.space?.title || "Listing image"}
-                              fill
-                              className="object-cover"
-                              unoptimized
-                            />
-                          ) : (
-                            <div className="flex h-full items-center justify-center text-xs text-gray-500">
-                              No image
-                            </div>
-                          )}
-                        </div>
-
-                        <div className="min-w-0">
-                          <h2 className="truncate text-base font-semibold text-[#192a3a]">
-                            {booking.space?.title || "Untitled space"}
-                          </h2>
-                          <div className="mt-1 flex items-start gap-2 text-sm text-gray-600">
-                            <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-gray-500" />
-                            <p className="truncate">{locationLabel}</p>
-                          </div>
-                          <div className="mt-2 flex flex-col gap-1 text-xs text-gray-600">
-                            <span className="inline-flex items-center gap-1.5">
-                              <CalendarDays className="h-3.5 w-3.5 shrink-0 text-gray-500" />
-                              <span className="text-gray-700">
-                                {formatBookingRange(booking)}
-                              </span>
-                            </span>
-                            <span className="inline-flex min-w-0 items-center gap-3">
-                              <span className="inline-flex min-w-0 items-center gap-1.5">
-                                <User className="h-3.5 w-3.5 shrink-0 text-gray-500" />
-                                <span className="truncate">
-                                  {getDisplayName(booking.owner) || "Owner"}
-                                </span>
-                              </span>
-                              <span className="inline-flex shrink-0 items-center gap-1 text-gray-500">
-                                <Tag className="h-3.5 w-3.5" />
-                                {formatBookingTypeLabel(booking.booking_unit)}
-                              </span>
-                            </span>
-                          </div>
-                        </div>
-
-                        <div className="flex min-w-0 flex-col items-stretch gap-2 sm:min-w-[11rem] sm:items-end">
-                          <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1">
+                    <div className="flex flex-col md:flex-row md:items-stretch">
+                      <div
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => void toggleBookingExpanded(booking)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            void toggleBookingExpanded(booking);
+                          }
+                        }}
+                        className="min-w-0 flex-1 cursor-pointer text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#192a3a]/25"
+                      >
+                        <div className="p-3 pb-2 md:p-4 md:pr-3">
+                          <div className="mb-3 flex items-start justify-between gap-2 md:hidden">
+                            <h2 className="min-w-0 flex-1 text-base font-semibold leading-snug text-[#192a3a]">
+                              {booking.space?.title || "Untitled space"}
+                            </h2>
                             <span
-                              className={`inline-flex max-w-full truncate rounded-full px-2.5 py-0.5 text-xs font-medium ${rowUi.badgeClassName}`}
+                              className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium ${rowUi.badgeClassName}`}
                             >
                               {rowUi.label}
                             </span>
-                            <p className="text-xs font-medium tabular-nums text-gray-700">
-                              R{Number(booking.total_price || 0).toLocaleString("en-ZA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                            </p>
                           </div>
-                          <div className="flex flex-wrap items-center justify-end gap-2">
+
+                          <div className="flex gap-3">
+                            <div className="relative h-[72px] w-[92px] shrink-0 overflow-hidden rounded-md bg-gray-100">
+                              {booking.space?.cover_image_url ? (
+                                <Image
+                                  src={booking.space.cover_image_url}
+                                  alt={booking.space?.title || "Listing image"}
+                                  fill
+                                  className="object-cover"
+                                  unoptimized
+                                />
+                              ) : (
+                                <div className="flex h-full items-center justify-center text-xs text-gray-500">
+                                  No image
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="min-w-0 flex-1 space-y-1.5">
+                              <h2 className="hidden truncate text-base font-semibold text-[#192a3a] md:block">
+                                {booking.space?.title || "Untitled space"}
+                              </h2>
+                              <div className="flex items-start gap-2 text-sm text-gray-600">
+                                <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-gray-500" />
+                                <p className="min-w-0 leading-snug">{locationLabel}</p>
+                              </div>
+                              <div className="flex flex-col gap-1 text-xs text-gray-600">
+                                <span className="inline-flex items-start gap-1.5">
+                                  <CalendarDays className="mt-0.5 h-3.5 w-3.5 shrink-0 text-gray-500" />
+                                  <span className="text-gray-700">
+                                    {formatBookingRange(booking)}
+                                  </span>
+                                </span>
+                                <span className="inline-flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5">
+                                  <span className="inline-flex min-w-0 items-center gap-1.5">
+                                    <User className="h-3.5 w-3.5 shrink-0 text-gray-500" />
+                                    <span className="truncate">
+                                      {getDisplayName(booking.owner) || "Owner"}
+                                    </span>
+                                  </span>
+                                  <span className="inline-flex shrink-0 items-center gap-1 text-gray-500">
+                                    <Tag className="h-3.5 w-3.5" />
+                                    {formatBookingTypeLabel(booking.booking_unit)}
+                                  </span>
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col justify-center gap-2 border-t border-gray-100 px-3 pb-3 pt-2 md:w-[min(100%,15.5rem)] md:shrink-0 md:border-l md:border-t-0 md:p-4 md:pl-4">
+                        <div className="hidden items-center justify-end gap-2 md:flex">
+                          <span
+                            className={`inline-flex max-w-full truncate rounded-full px-2.5 py-0.5 text-xs font-medium ${rowUi.badgeClassName}`}
+                          >
+                            {rowUi.label}
+                          </span>
+                          <p className="text-sm font-semibold tabular-nums text-[#192a3a]">
+                            {amountDisplay}
+                          </p>
+                        </div>
+
+                        <div className="flex items-baseline justify-between gap-2 md:hidden">
+                          <span className="text-xs font-medium uppercase tracking-wide text-gray-500">
+                            Total
+                          </span>
+                          <p className="text-base font-semibold tabular-nums text-[#192a3a]">
+                            {amountDisplay}
+                          </p>
+                        </div>
+
+                        {rowUi.cardHint ? (
+                          <p className="text-[11px] leading-snug text-gray-500 md:text-right">
+                            {rowUi.cardHint}
+                          </p>
+                        ) : null}
+
+                        <div className="flex w-full justify-end">
+                          <div className="flex items-center gap-0.5 sm:gap-1">
                             <BookingCardPrimaryAction
                               booking={booking}
                               payingBookingId={payingBookingId}
+                              pairWithChevron
                               onPayClick={(e) => {
                                 e.stopPropagation();
                                 setPaymentModalBookingId(booking.id);
                               }}
                             />
-                            <span
-                              className="inline-flex h-8 w-8 shrink-0 items-center justify-center text-gray-400"
-                              aria-hidden
+                            <button
+                              type="button"
+                              aria-expanded={isOpen}
+                              aria-label={
+                                isOpen ? "Collapse booking details" : "Expand booking details"
+                              }
+                              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-gray-400 hover:bg-gray-100/80 hover:text-gray-600"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                void toggleBookingExpanded(booking);
+                              }}
                             >
                               {isOpen ? (
-                                <ChevronUp className="h-4 w-4" />
+                                <ChevronUp className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
                               ) : (
-                                <ChevronDown className="h-4 w-4" />
+                                <ChevronDown className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
                               )}
-                            </span>
+                            </button>
                           </div>
                         </div>
                       </div>
@@ -1108,192 +1169,208 @@ function MyBookingsPageContent({
 
                     {isOpen && (
                       <div
-                        className="border-t border-gray-200 bg-[#fafbfc] px-4 py-5"
+                        className="border-t border-gray-200 bg-[#fafbfc] px-4 py-5 sm:px-5"
                         onClick={(e) => e.stopPropagation()}
                         onKeyDown={(e) => e.stopPropagation()}
                       >
                         <div className="space-y-6">
-                          <div>
-                            <p className="mb-3 text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
-                              Booking details
-                            </p>
-                            <div className="grid gap-3 rounded-md border border-gray-200 bg-white p-4 text-sm text-gray-700 shadow-sm sm:grid-cols-2">
-                              <div className="flex items-start gap-2">
-                                <User className="mt-0.5 h-4 w-4 shrink-0 text-gray-500" />
-                                <div>
-                                  <p className="text-xs font-medium text-gray-500">Owner</p>
-                                  <p className="font-medium text-[#192a3a]">
-                                    {getDisplayName(booking.owner)}
-                                  </p>
-                                </div>
-                              </div>
-                              <div className="flex items-start gap-2">
-                                <CalendarDays className="mt-0.5 h-4 w-4 shrink-0 text-gray-500" />
-                                <div>
-                                  <p className="text-xs font-medium text-gray-500">Full period</p>
-                                  <p className="text-[#192a3a]">{formatBookingRange(booking)}</p>
-                                </div>
-                              </div>
-                              <div className="flex items-start gap-2">
-                                <CreditCard className="mt-0.5 h-4 w-4 shrink-0 text-gray-500" />
-                                <div>
-                                  <p className="text-xs font-medium text-gray-500">Payment status</p>
-                                  <span
-                                    className={`mt-0.5 inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${getPaymentStatusBadgeClass(
-                                      booking.payment_status
-                                    )}`}
-                                  >
-                                    {renterPaymentStatusLabel(booking.payment_status)}
-                                  </span>
-                                </div>
-                              </div>
-                              <div className="flex items-start gap-2">
-                                <Wallet className="mt-0.5 h-4 w-4 shrink-0 text-gray-500" />
-                                <div>
-                                  <p className="text-xs font-medium text-gray-500">Total amount</p>
-                                  <p className="font-semibold tabular-nums text-[#192a3a]">
-                                    R{Number(booking.total_price || 0).toLocaleString("en-ZA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                  </p>
-                                </div>
-                              </div>
-                            </div>
-
-                            <div className="mt-3 rounded-md border border-dashed border-gray-200 bg-gray-50/80 p-3 sm:p-4">
-                              <p className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
-                                Finance
-                              </p>
-                              <div className="grid gap-3 sm:grid-cols-3">
-                                <div>
-                                  <p className="mb-0.5 flex items-center gap-1.5 text-xs font-medium text-gray-500">
-                                    <Wallet className="h-3.5 w-3.5 shrink-0" />
-                                    Amount paid
-                                  </p>
-                                  <p className="text-sm font-semibold tabular-nums text-[#192a3a]">
-                                    {formatZarCompact(fin.amountPaid)}
-                                  </p>
-                                </div>
-                                <div>
-                                  <p className="mb-0.5 flex items-center gap-1.5 text-xs font-medium text-gray-500">
-                                    <CircleDollarSign className="h-3.5 w-3.5 shrink-0" />
-                                    Amount outstanding
-                                  </p>
-                                  <p className="text-sm font-semibold tabular-nums text-[#192a3a]">
-                                    {formatZarCompact(fin.amountOutstanding)}
-                                  </p>
-                                </div>
-                                <div>
-                                  <p className="mb-0.5 flex items-center gap-1.5 text-xs font-medium text-gray-500">
-                                    <CalendarClock className="h-3.5 w-3.5 shrink-0" />
-                                    Next payment due
-                                  </p>
-                                  <p className="text-sm font-semibold leading-snug text-[#192a3a]">
-                                    {formatRenterNextPaymentSummary(fin)}
-                                  </p>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="flex flex-wrap items-center gap-2 border-t border-gray-200 pt-4">
-                            <button
-                              type="button"
-                              onClick={(e) => void toggleCommunicationPanel(booking, e)}
-                              disabled={!isCommunicationAllowed(booking)}
-                              className="inline-flex items-center gap-1.5 rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-medium text-[#192a3a] hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              <MessageSquare className="h-3.5 w-3.5" />
-                              Message owner
-                            </button>
-                            <Link
-                              href={bookingDetailHref(booking.id)}
-                              onClick={(e) => e.stopPropagation()}
-                              className="inline-flex items-center gap-1.5 rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-medium text-[#192a3a] hover:bg-gray-50"
-                            >
-                              <Eye className="h-3.5 w-3.5" />
-                              View details
-                            </Link>
-                            {canCancelBooking(booking) && (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  void handleCancelBooking(booking);
-                                }}
-                                disabled={
-                                  cancellingBookingId === booking.id || payingBookingId === booking.id
-                                }
-                                className="inline-flex items-center gap-1.5 rounded-md border border-red-200 bg-white px-2.5 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-60"
-                              >
-                                {cancellingBookingId === booking.id ? "Cancelling…" : "Cancel booking"}
-                              </button>
-                            )}
-                          </div>
-
-                          <div className="flex flex-wrap items-center gap-2">
-                            {showInvoice && (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  void openInvoiceModal(booking.id);
-                                }}
-                                className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-medium text-[#192a3a] hover:bg-gray-50"
-                              >
-                                <FileText className="h-3.5 w-3.5" />
-                                View invoice
-                              </button>
-                            )}
-                            {showInvoiceHint && (
-                              <p className="w-full text-xs text-gray-500 sm:w-auto">
-                                Your invoice will be available here once payment is confirmed.
-                              </p>
-                            )}
-                          </div>
-
-                          {((shouldShowBookingRequestNotes(booking.status, booking.payment_status) &&
-                            (booking.notes || "").trim() !== "") ||
-                            booking.owner_response_message) && (
-                            <div className="rounded-md border border-gray-200 bg-white p-4 shadow-sm">
+                            <section>
                               <p className="mb-3 text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
-                                Booking request
+                                Booking details
                               </p>
-                              <div className="space-y-3">
-                                {shouldShowBookingRequestNotes(
-                                  booking.status,
-                                  booking.payment_status
-                                ) &&
-                                  (booking.notes || "").trim() !== "" && (
+                              <div className="grid gap-3 rounded-md border border-gray-200 bg-white p-4 text-sm text-gray-700 shadow-sm sm:grid-cols-2">
+                                <div className="flex items-start gap-2">
+                                  <User className="mt-0.5 h-4 w-4 shrink-0 text-gray-500" />
+                                  <div>
+                                    <p className="text-xs font-medium text-gray-500">Owner</p>
+                                    <p className="font-medium text-[#192a3a]">
+                                      {getDisplayName(booking.owner)}
+                                    </p>
+                                  </div>
+                                </div>
+                                <div className="flex items-start gap-2">
+                                  <CalendarDays className="mt-0.5 h-4 w-4 shrink-0 text-gray-500" />
+                                  <div>
+                                    <p className="text-xs font-medium text-gray-500">Full period</p>
+                                    <p className="text-[#192a3a]">{formatBookingRange(booking)}</p>
+                                  </div>
+                                </div>
+                                <div className="flex items-start gap-2">
+                                  <CreditCard className="mt-0.5 h-4 w-4 shrink-0 text-gray-500" />
+                                  <div>
+                                    <p className="text-xs font-medium text-gray-500">Payment status</p>
+                                    <span
+                                      className={`mt-0.5 inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${getPaymentStatusBadgeClass(
+                                        booking.payment_status
+                                      )}`}
+                                    >
+                                      {renterPaymentStatusLabel(booking.payment_status)}
+                                    </span>
+                                  </div>
+                                </div>
+                                <div className="flex items-start gap-2">
+                                  <Wallet className="mt-0.5 h-4 w-4 shrink-0 text-gray-500" />
+                                  <div>
+                                    <p className="text-xs font-medium text-gray-500">Total amount</p>
+                                    <p className="font-semibold tabular-nums text-[#192a3a]">
+                                      R{Number(booking.total_price || 0).toLocaleString("en-ZA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    </p>
+                                  </div>
+                                </div>
+                              </div>
+                            </section>
+
+                            <section>
+                              <div className="rounded-md border border-dashed border-gray-200 bg-gray-50/80 p-3 sm:p-4">
+                                <p className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
+                                  Finance
+                                </p>
+                                <div className="grid gap-3 sm:grid-cols-3">
+                                  <div>
+                                    <p className="mb-0.5 flex items-center gap-1.5 text-xs font-medium text-gray-500">
+                                      <Wallet className="h-3.5 w-3.5 shrink-0" />
+                                      Amount paid
+                                    </p>
+                                    <p className="text-sm font-semibold tabular-nums text-[#192a3a]">
+                                      {formatZarCompact(fin.amountPaid)}
+                                    </p>
+                                  </div>
+                                  <div>
+                                    <p className="mb-0.5 flex items-center gap-1.5 text-xs font-medium text-gray-500">
+                                      <CircleDollarSign className="h-3.5 w-3.5 shrink-0" />
+                                      Amount outstanding
+                                    </p>
+                                    <p className="text-sm font-semibold tabular-nums text-[#192a3a]">
+                                      {formatZarCompact(fin.amountOutstanding)}
+                                    </p>
+                                  </div>
+                                  <div>
+                                    <p className="mb-0.5 flex items-center gap-1.5 text-xs font-medium text-gray-500">
+                                      <CalendarClock className="h-3.5 w-3.5 shrink-0" />
+                                      Next payment due
+                                    </p>
+                                    <p className="text-sm font-semibold leading-snug text-[#192a3a]">
+                                      {formatRenterNextPaymentSummary(fin)}
+                                    </p>
+                                  </div>
+                                </div>
+                              </div>
+                            </section>
+
+                            {(showInvoice || showInvoiceHint) && (
+                              <section className="rounded-md border border-gray-200 bg-white p-3 shadow-sm sm:p-4">
+                                <p className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
+                                  Invoice
+                                </p>
+                                <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+                                  {showInvoice && (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        void openInvoiceModal(booking.id);
+                                      }}
+                                      className="inline-flex w-full items-center justify-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-xs font-medium text-[#192a3a] hover:bg-gray-50 sm:w-auto"
+                                    >
+                                      <FileText className="h-3.5 w-3.5 shrink-0" />
+                                      View invoice
+                                    </button>
+                                  )}
+                                  {showInvoiceHint && (
+                                    <p className="text-xs text-gray-500">
+                                      Your invoice will be available here once payment is confirmed.
+                                    </p>
+                                  )}
+                                </div>
+                              </section>
+                            )}
+
+                            {((shouldShowBookingRequestNotes(booking.status, booking.payment_status) &&
+                              (booking.notes || "").trim() !== "") ||
+                              booking.owner_response_message) && (
+                              <section className="rounded-md border border-gray-200 bg-white p-4 shadow-sm">
+                                <p className="mb-3 text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
+                                  Booking request
+                                </p>
+                                <div className="space-y-3">
+                                  {shouldShowBookingRequestNotes(
+                                    booking.status,
+                                    booking.payment_status
+                                  ) &&
+                                    (booking.notes || "").trim() !== "" && (
+                                      <div>
+                                        <p className="mb-1 text-xs font-medium text-gray-500">
+                                          Notes with your request
+                                        </p>
+                                        <div className="min-h-[56px] rounded-md bg-gray-50 p-3 text-sm text-gray-700">
+                                          {booking.notes}
+                                        </div>
+                                      </div>
+                                    )}
+                                  {booking.owner_response_message && (
                                     <div>
-                                      <p className="mb-1 text-xs font-medium text-gray-500">
-                                        Notes with your request
-                                      </p>
-                                      <div className="min-h-[56px] rounded-md bg-gray-50 p-3 text-sm text-gray-700">
-                                        {booking.notes}
+                                      <p className="mb-1 text-xs font-medium text-gray-500">Owner reply</p>
+                                      <div className="min-h-[48px] rounded-md bg-blue-50 p-3 text-sm text-blue-900">
+                                        {booking.owner_response_message}
                                       </div>
                                     </div>
                                   )}
-                                {booking.owner_response_message && (
-                                  <div>
-                                    <p className="mb-1 text-xs font-medium text-gray-500">Owner reply</p>
-                                    <div className="min-h-[48px] rounded-md bg-blue-50 p-3 text-sm text-blue-900">
-                                      {booking.owner_response_message}
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          )}
+                                </div>
+                              </section>
+                            )}
 
-                          {!isCommunicationAllowed(booking) && (
-                            <div className="rounded-md border border-gray-200 bg-white p-3 shadow-sm">
-                              <DecisionSuggestion
-                                variant="info"
-                                text="Messaging available after payment."
-                                size="sm"
-                                tooltip="Messaging unlocks once payment is confirmed."
-                              />
+                            {!isCommunicationAllowed(booking) && (
+                              <section className="rounded-md border border-gray-200 bg-white p-3 shadow-sm">
+                                <p className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
+                                  Messages
+                                </p>
+                                <DecisionSuggestion
+                                  variant="info"
+                                  text="Messaging available after payment."
+                                  size="sm"
+                                  tooltip="Messaging unlocks once payment is confirmed."
+                                />
+                              </section>
+                            )}
+
+                            <div
+                              className="flex flex-col gap-2 border-t border-gray-200 pt-4 sm:flex-row sm:flex-wrap sm:justify-end sm:gap-2"
+                              role="group"
+                              aria-label="Booking actions"
+                            >
+                              <button
+                                type="button"
+                                onClick={(e) => void toggleCommunicationPanel(booking, e)}
+                                disabled={!isCommunicationAllowed(booking)}
+                                className="inline-flex w-full items-center justify-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-[#192a3a] shadow-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+                              >
+                                <MessageSquare className="h-3.5 w-3.5 shrink-0" />
+                                Message owner
+                              </button>
+                              <Link
+                                href={bookingDetailHref(booking.id)}
+                                onClick={(e) => e.stopPropagation()}
+                                className="inline-flex w-full items-center justify-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-center text-xs font-medium text-[#192a3a] shadow-sm hover:bg-gray-50 sm:w-auto"
+                              >
+                                <Eye className="h-3.5 w-3.5 shrink-0" />
+                                View details
+                              </Link>
+                              {canCancelBooking(booking) && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    void handleCancelBooking(booking);
+                                  }}
+                                  disabled={
+                                    cancellingBookingId === booking.id || payingBookingId === booking.id
+                                  }
+                                  className="inline-flex w-full items-center justify-center gap-2 rounded-md border border-red-200/90 bg-white px-3 py-2 text-xs font-medium text-red-700 shadow-sm hover:bg-red-50/80 disabled:opacity-60 sm:w-auto"
+                                >
+                                  {cancellingBookingId === booking.id ? "Cancelling…" : "Cancel booking"}
+                                </button>
+                              )}
                             </div>
-                          )}
                         </div>
                       </div>
                     )}
