@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
@@ -38,22 +38,21 @@ function parseNumberParam(value: string | null, fallback: number) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-export default function SpacesPage() {
-  const searchParams = useSearchParams();
-
+function SpacesPageContent({ searchParamsString }: { searchParamsString: string }) {
+  const params = useMemo(() => new URLSearchParams(searchParamsString), [searchParamsString]);
   const [spaces, setSpaces] = useState<Space[]>([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
 
-  const [search, setSearch] = useState(searchParams.get("q") || "");
-  const [typeFilter, setTypeFilter] = useState(searchParams.get("type") || "all");
-  const [cityFilter, setCityFilter] = useState(searchParams.get("city") || "all");
+  const [search, setSearch] = useState(params.get("q") || "");
+  const [typeFilter, setTypeFilter] = useState(params.get("type") || "all");
+  const [cityFilter, setCityFilter] = useState(params.get("city") || "all");
   const [sortBy, setSortBy] = useState(
-    searchParams.get("sort") || "price_high_low"
+    params.get("sort") || "price_high_low"
   );
 
   const [bookingUnitFilter, setBookingUnitFilter] = useState(
-    searchParams.get("bookingUnit") || "all"
+    params.get("bookingUnit") || "all"
   );
 
   function getDefaultMax(unit: string) {
@@ -63,13 +62,13 @@ export default function SpacesPage() {
   }
 
   const [minPrice, setMinPrice] = useState(
-    parseNumberParam(searchParams.get("min"), 0)
+    parseNumberParam(params.get("min"), 0)
   );
 
   const [maxPrice, setMaxPrice] = useState(
     parseNumberParam(
-      searchParams.get("max"),
-      getDefaultMax(searchParams.get("bookingUnit") || "all")
+      params.get("max"),
+      getDefaultMax(params.get("bookingUnit") || "all")
     )
   );
 
@@ -407,5 +406,18 @@ export default function SpacesPage() {
         </div>
       )}
     </main >
+  );
+}
+
+function SpacesSearchParamsClient() {
+  const searchParams = useSearchParams();
+  return <SpacesPageContent searchParamsString={searchParams.toString()} />;
+}
+
+export default function SpacesPage() {
+  return (
+    <Suspense fallback={<main className="mx-auto max-w-7xl px-6 py-10 text-sm text-gray-600">Loading...</main>}>
+      <SpacesSearchParamsClient />
+    </Suspense>
   );
 }

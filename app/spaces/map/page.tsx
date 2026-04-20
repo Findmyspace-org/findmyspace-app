@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
@@ -64,16 +64,15 @@ function normalize(value: string | null | undefined) {
   return (value || "").trim().toLowerCase();
 }
 
-export default function SpacesMapPage() {
-  const searchParams = useSearchParams();
-
+function SpacesMapPageContent({ searchParamsString }: { searchParamsString: string }) {
   const [spaces, setSpaces] = useState<Space[]>([]);
   const [message, setMessage] = useState("");
+  const params = useMemo(() => new URLSearchParams(searchParamsString), [searchParamsString]);
 
-  const search = normalize(searchParams.get("q") || "");
-  const typeFilter = normalize(searchParams.get("type") || "all");
-  const cityFilter = normalize(searchParams.get("city") || "all");
-  const suburbFilter = normalize(searchParams.get("suburb") || "all");
+  const search = normalize(params.get("q") || "");
+  const typeFilter = normalize(params.get("type") || "all");
+  const cityFilter = normalize(params.get("city") || "all");
+  const suburbFilter = normalize(params.get("suburb") || "all");
 
   useEffect(() => {
     fetchSpaces();
@@ -178,9 +177,8 @@ export default function SpacesMapPage() {
   );
 
   const backQueryString = useMemo(() => {
-    const params = new URLSearchParams(searchParams.toString());
     return params.toString();
-  }, [searchParams]);
+  }, [params]);
 
   return (
     <main className="min-h-screen bg-white px-6 py-10 text-black">
@@ -227,5 +225,18 @@ export default function SpacesMapPage() {
         </div>
       </div>
     </main>
+  );
+}
+
+function SpacesMapSearchParamsClient() {
+  const searchParams = useSearchParams();
+  return <SpacesMapPageContent searchParamsString={searchParams.toString()} />;
+}
+
+export default function SpacesMapPage() {
+  return (
+    <Suspense fallback={<main className="min-h-screen px-6 py-10 text-sm text-gray-600">Loading...</main>}>
+      <SpacesMapSearchParamsClient />
+    </Suspense>
   );
 }

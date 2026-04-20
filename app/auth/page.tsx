@@ -1,4 +1,5 @@
-import AuthForm from "@/app/components/AuthForm";
+import { Suspense } from "react";
+import AuthClient from "./AuthClient";
 
 export default function AuthPage() {
   return (
@@ -10,7 +11,9 @@ export default function AuthPage() {
         </p>
 
         <div className="rounded-2xl border border-gray-300 p-8 shadow-sm">
-          <AuthForm mode="login" />
+          <Suspense fallback={<div className="text-sm text-gray-600">Loading...</div>}>
+            <AuthClient />
+          </Suspense>
         </div>
       </div>
     </main>

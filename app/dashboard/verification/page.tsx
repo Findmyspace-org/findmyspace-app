@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
 import { Check, ClipboardList, Home, Landmark, User } from "lucide-react";
@@ -178,9 +178,7 @@ function mapStatus(
   return "Uploaded";
 }
 
-export default function VerificationPage() {
-  const searchParams = useSearchParams();
-  const step = searchParams.get("step") || "identity";
+function VerificationPageContent({ step }: { step: string }) {
   const currentStep: VerificationStepKey =
     step === "bank" ? "bank" : step === "overview" ? "overview" : "identity";
 
@@ -1299,5 +1297,20 @@ export default function VerificationPage() {
         </div>
       </main>
     </RequireAuth>
+  );
+}
+
+function VerificationSearchParamsClient() {
+  const searchParams = useSearchParams();
+  const step = searchParams.get("step") || "identity";
+
+  return <VerificationPageContent step={step} />;
+}
+
+export default function VerificationPage() {
+  return (
+    <Suspense fallback={<div className="px-6 py-10 text-sm text-gray-600">Loading...</div>}>
+      <VerificationSearchParamsClient />
+    </Suspense>
   );
 }

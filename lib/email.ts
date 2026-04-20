@@ -1,6 +1,15 @@
 import { Resend } from "resend";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+function getResendClient() {
+  const apiKey = process.env.RESEND_API_KEY?.trim();
+
+  if (!apiKey) {
+    console.error("Missing email config: RESEND_API_KEY is not set");
+    return null;
+  }
+
+  return new Resend(apiKey);
+}
 
 type SendEmailInput = {
   to: string | string[];
@@ -10,8 +19,9 @@ type SendEmailInput = {
 
 export async function sendEmail({ to, subject, html }: SendEmailInput) {
   const from = process.env.EMAIL_FROM;
+  const resend = getResendClient();
 
-  if (!process.env.RESEND_API_KEY || !from) {
+  if (!resend || !from) {
     console.error("Missing email config", {
       hasApiKey: !!process.env.RESEND_API_KEY,
       from,

@@ -69,7 +69,6 @@ export async function POST(req: Request) {
     }
 
     const rawBody = await req.text();
-    console.log("PayFast notify raw body:", rawBody);
 
     const params = new URLSearchParams(rawBody);
     const data: Record<string, string> = {};
@@ -78,18 +77,11 @@ export async function POST(req: Request) {
       data[key] = value;
     });
 
-    console.log("PayFast notify parsed data:", data);
-
     const receivedSignature = data.signature || "";
     const calculatedSignature = generateNotifySignatureFromRawBody(
       rawBody,
       PAYFAST_PASSPHRASE
     );
-
-    console.log("PayFast notify signatures:", {
-      receivedSignature,
-      calculatedSignature,
-    });
 
     if (receivedSignature !== calculatedSignature) {
       console.error("Notify error: invalid signature");
@@ -101,10 +93,11 @@ export async function POST(req: Request) {
     const amountGross = Number(data.amount_gross || data.amount || 0);
     const pfPaymentId = data.pf_payment_id || "";
 
-    console.log("PayFast notify booking info:", {
+    console.log("PayFast notify received:", {
       bookingId,
       paymentStatus,
       amountGross,
+      hasPfPaymentId: !!pfPaymentId,
     });
 
     if (!bookingId) {

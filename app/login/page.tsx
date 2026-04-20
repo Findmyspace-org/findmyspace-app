@@ -1,10 +1,13 @@
+import { Suspense } from "react";
 import AuthForm from "@/app/components/AuthForm";
 
 export default function LoginPage() {
   return (
     <main className="min-h-screen bg-white px-6 py-10 text-black">
       <div className="mx-auto max-w-xl">
-        <AuthForm mode="login" />
+        <Suspense fallback={<div className="text-sm text-gray-600">Loading...</div>}>
+          <AuthForm mode="login" />
+        </Suspense>
       </div>
     </main>
   );

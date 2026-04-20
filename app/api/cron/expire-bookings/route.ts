@@ -27,9 +27,20 @@ function bookingIdsFromExpireRpcResult(data: unknown): string[] {
 
 export async function GET(request: Request) {
   try {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (!supabaseUrl || !serviceRoleKey) {
+      console.error("Cron error: missing Supabase server configuration");
+      return NextResponse.json(
+        { error: "Missing server configuration" },
+        { status: 500 }
+      );
+    }
+
     const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
+      supabaseUrl,
+      serviceRoleKey
     );
 
     const { data, error } = await supabase.rpc("expire_unpaid_bookings");

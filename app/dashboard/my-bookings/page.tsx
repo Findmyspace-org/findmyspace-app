@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import RequireAuth from "@/app/components/RequireAuth";
@@ -103,8 +103,13 @@ type BookingMessage = {
   created_at: string | null;
 };
 
-export default function MyBookingsPage() {
-  const searchParams = useSearchParams();
+function MyBookingsPageContent({
+  payment,
+  bookingId,
+}: {
+  payment: string | null;
+  bookingId: string | null;
+}) {
   const [sessionEmail, setSessionEmail] = useState<string | null>(null);
   const [sessionUserId, setSessionUserId] = useState<string | null>(null);
   const [bookings, setBookings] = useState<EnrichedBooking[]>([]);
@@ -143,9 +148,7 @@ export default function MyBookingsPage() {
   }, []);
 
   useEffect(() => {
-    const payment = searchParams.get("payment");
     if (payment === "success") {
-      const bookingId = searchParams.get("bookingId");
       setMessage("Payment received. Your booking is confirmed.");
       if (bookingId) {
         setSuccessModalBookingId(bookingId);
@@ -157,7 +160,7 @@ export default function MyBookingsPage() {
         "Payment was cancelled or not completed. You can try again from this page when you are ready."
       );
     }
-  }, [searchParams]);
+  }, [bookingId, payment]);
 
   useEffect(() => {
     if (!communicationOpenBookingId) return;
@@ -1480,5 +1483,21 @@ export default function MyBookingsPage() {
         )}
       </main>
     </RequireAuth>
+  );
+}
+
+function MyBookingsSearchParamsClient() {
+  const searchParams = useSearchParams();
+  const payment = searchParams.get("payment");
+  const bookingId = searchParams.get("bookingId");
+
+  return <MyBookingsPageContent payment={payment} bookingId={bookingId} />;
+}
+
+export default function MyBookingsPage() {
+  return (
+    <Suspense fallback={<div className="px-6 py-10 text-sm text-gray-600">Loading...</div>}>
+      <MyBookingsSearchParamsClient />
+    </Suspense>
   );
 }
