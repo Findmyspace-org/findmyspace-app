@@ -11,6 +11,7 @@ import {
   getDisplayName,
 } from "@/lib/bookingEmailHelpers";
 import { isCommunicationAllowed } from "@/lib/booking-communication";
+import { getPublicSiteUrlFromEnv } from "@/lib/site-url";
 
 const MESSAGING_FORBIDDEN_MSG =
   "Messaging is only available after payment confirmation.";
@@ -45,9 +46,16 @@ export async function POST(req: NextRequest) {
       NEXT_PUBLIC_SITE_URL,
     } = process.env;
 
-    if (!NEXT_PUBLIC_SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+    if (
+      !NEXT_PUBLIC_SUPABASE_URL ||
+      !SUPABASE_SERVICE_ROLE_KEY ||
+      !NEXT_PUBLIC_SITE_URL?.trim()
+    ) {
       return NextResponse.json(
-        { error: "Missing server config" },
+        {
+          error:
+            "Missing server config. Ensure NEXT_PUBLIC_SITE_URL is set for absolute links in emails.",
+        },
         { status: 500 }
       );
     }
@@ -64,16 +72,7 @@ export async function POST(req: NextRequest) {
       }
     );
 
-    const requestOrigin = (() => {
-      try {
-        return new URL(req.url).origin;
-      } catch {
-        return null;
-      }
-    })();
-
-    const appBaseUrl =
-      process.env.NEXT_PUBLIC_SITE_URL?.trim() || requestOrigin || "";
+    const appBaseUrl = getPublicSiteUrlFromEnv() ?? "";
 
     async function createNotification(row: NotificationInsertRow) {
       const fullPayload = {

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { createClient } from "@supabase/supabase-js";
 import { isAwaitingGatewayPayment } from "@/lib/finance-status";
+import { getPublicSiteUrlFromEnv } from "@/lib/site-url";
 
 type BookingRow = {
   id: string;
@@ -71,12 +72,16 @@ export async function POST(req: NextRequest) {
       !NEXT_PUBLIC_SUPABASE_URL ||
       !SUPABASE_SERVICE_ROLE_KEY ||
       !NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+      !NEXT_PUBLIC_SITE_URL?.trim() ||
       !PAYFAST_MERCHANT_ID ||
       !PAYFAST_MERCHANT_KEY ||
       !PAYFAST_PROCESS_URL
     ) {
       return NextResponse.json(
-        { error: "Missing required environment variables." },
+        {
+          error:
+            "Missing required environment variables. Ensure NEXT_PUBLIC_SITE_URL is set to your public app URL (e.g. https://findmyspace-alpha.vercel.app).",
+        },
         { status: 500 }
       );
     }
@@ -144,20 +149,14 @@ export async function POST(req: NextRequest) {
       }
     );
 
-    const requestOrigin = (() => {
-      try {
-        return new URL(req.url).origin;
-      } catch {
-        return null;
-      }
-    })();
-
-    const appBaseUrl =
-      process.env.NEXT_PUBLIC_SITE_URL?.trim() || requestOrigin || null;
+    const appBaseUrl = getPublicSiteUrlFromEnv();
 
     if (!appBaseUrl) {
       return NextResponse.json(
-        { error: "Could not determine application base URL." },
+        {
+          error:
+            "Could not determine application base URL. Set NEXT_PUBLIC_SITE_URL to your public origin.",
+        },
         { status: 500 }
       );
     }

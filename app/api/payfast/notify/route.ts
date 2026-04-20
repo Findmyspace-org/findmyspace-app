@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { markBookingChargesPaid } from "@/lib/invoice-payments";
+import { getPublicSiteUrlFromEnv } from "@/lib/site-url";
 import { isAwaitingGatewayPayment } from "@/lib/finance-status";
 
 /** Revert booking to payable state if charge lines could not be marked paid (keeps row + charges in sync). */
@@ -117,16 +118,7 @@ export async function POST(req: Request) {
       }
     );
 
-    const requestOrigin = (() => {
-      try {
-        return new URL(req.url).origin;
-      } catch {
-        return null;
-      }
-    })();
-
-    const appBaseUrl =
-      process.env.NEXT_PUBLIC_SITE_URL?.trim() || requestOrigin || null;
+    const appBaseUrl = getPublicSiteUrlFromEnv();
 
     const { data: bookingRows, error: bookingError } = await (supabaseAdmin
       .from("bookings") as any)

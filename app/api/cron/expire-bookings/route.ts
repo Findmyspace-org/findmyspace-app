@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { getPublicSiteUrlFromEnv } from "@/lib/site-url";
 
 const RENTER_EXPIRY_MESSAGE =
   "Your booking expired because payment was not completed within 24 hours. Thank you for your interest. Please try again if you would still like to book this space.";
@@ -54,16 +55,7 @@ export async function GET(request: Request) {
     console.log("RPC result:", data);
     console.log("Expired booking IDs:", bookingIds);
 
-    const requestOrigin = (() => {
-      try {
-        return new URL(request.url).origin;
-      } catch {
-        return null;
-      }
-    })();
-
-    const appBaseUrl =
-      process.env.NEXT_PUBLIC_SITE_URL?.trim() || requestOrigin || "";
+    const appBaseUrl = getPublicSiteUrlFromEnv() ?? "";
 
     if (bookingIds.length > 0) {
       const { data: expiredBookings, error: fetchError } = await (supabase

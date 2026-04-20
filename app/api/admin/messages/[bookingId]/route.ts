@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { getPublicSiteUrlFromEnv } from "@/lib/site-url";
 
 type BookingRow = {
   id: string;
@@ -284,15 +285,7 @@ export async function POST(
     role?: string | null;
   } | null;
 
-  const origin =
-    process.env.NEXT_PUBLIC_SITE_URL?.trim() ||
-    (() => {
-      try {
-        return new URL(req.url).origin;
-      } catch {
-        return "";
-      }
-    })();
+  const origin = getPublicSiteUrlFromEnv() ?? "";
 
   if (origin) {
     try {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { isCommunicationAllowed } from "@/lib/booking-communication";
+import { getPublicSiteUrlFromEnv } from "@/lib/site-url";
 
 const FORBIDDEN_MSG = "Messaging is only available after payment confirmation.";
 
@@ -209,15 +210,7 @@ export async function POST(
     );
   }
 
-  const origin =
-    process.env.NEXT_PUBLIC_SITE_URL?.trim() ||
-    (() => {
-      try {
-        return new URL(req.url).origin;
-      } catch {
-        return "";
-      }
-    })();
+  const origin = getPublicSiteUrlFromEnv() ?? "";
 
   if (origin) {
     try {
