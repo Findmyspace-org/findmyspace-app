@@ -76,7 +76,8 @@ export default function SpaceCard({ space, availabilityHint }: Props) {
   return (
     <Link
       href={`/spaces/${space.id}`}
-      className="block overflow-hidden rounded-md border border-gray-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+      aria-label={`View listing: ${space.title}`}
+      className="group block cursor-pointer overflow-hidden rounded-md border border-gray-200 bg-white shadow-sm transition-all duration-200 ease-out hover:-translate-y-0.5 hover:border-gray-300 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#192a3a]/35 focus-visible:ring-offset-2"
     >
       <div className="grid md:grid-cols-[380px_1fr]">
         <div className="relative min-h-[260px] bg-gray-100">
@@ -156,9 +157,9 @@ export default function SpaceCard({ space, availabilityHint }: Props) {
               View details and request booking
             </span>
 
-            <span className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-[#192a3a]">
+            <span className="relative z-10 inline-flex items-center justify-center rounded-lg border border-transparent bg-[#192a3a] px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all duration-200 ease-out hover:-translate-y-[1px] hover:bg-[#0a1726] hover:shadow-md">
               Open listing
-              <ArrowRight className="h-4 w-4" />
+              <ArrowRight className="ml-2 h-4 w-4 shrink-0 text-white" aria-hidden />
             </span>
           </div>
         </div>

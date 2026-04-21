@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   BadgeCheck,
@@ -39,7 +39,20 @@ export default function HomePage() {
   const router = useRouter();
 
   const [intent, setIntent] = useState<SpaceIntentKey | typeof VIEW_ALL_KEY>(VIEW_ALL_KEY);
+  const [trustStripEntered, setTrustStripEntered] = useState(false);
   const orderedIntentKeys: SpaceIntentKey[] = ["store", "park", "work", "do", "host"];
+
+  useEffect(() => {
+    const prefersReduced =
+      typeof window !== "undefined" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (prefersReduced) {
+      setTrustStripEntered(true);
+      return;
+    }
+    const id = window.setTimeout(() => setTrustStripEntered(true), 160);
+    return () => window.clearTimeout(id);
+  }, []);
 
   function goToBrowse(nextIntent: SpaceIntentKey | typeof VIEW_ALL_KEY) {
     const params = new URLSearchParams();
@@ -204,38 +217,48 @@ export default function HomePage() {
           </div>
         </div>
 
-        <div className="pointer-events-none absolute inset-x-0 bottom-[-20px] z-20 px-6 sm:bottom-[-36px]">
-          <div className="mx-auto max-w-4xl">
-            <div className="pointer-events-auto rounded-2xl border border-gray-200/90 bg-white/85 p-4 shadow-md backdrop-blur sm:p-5">
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 md:gap-0">
-            <div className="group rounded-xl border border-transparent px-3 py-3 transition-all duration-200 ease-out hover:-translate-y-0.5 hover:border-gray-200 hover:bg-gray-50/60 hover:shadow-sm">
-              <div className="flex items-start gap-3">
-                <span className="rounded-lg border border-gray-200 bg-white p-2 text-[#192a3a]">
-                  <BadgeCheck className="h-4 w-4" />
-                </span>
-                <div>
-                  <p className="text-sm font-semibold text-[#192a3a]">Verified listings</p>
-                  <p className="mt-1 text-xs text-gray-600">
-                    Quality and trust you can rely on.
-                  </p>
+        <div className="pointer-events-none absolute inset-x-0 bottom-[-20px] z-20 -mt-10 px-6 sm:bottom-[-36px]">
+          <div className="relative mx-auto max-w-4xl">
+            <div
+              className="pointer-events-none absolute inset-x-0 -top-8 bottom-0 -z-10 rounded-2xl bg-gradient-to-t from-white/70 to-transparent"
+              aria-hidden
+            />
+            <div
+              className={`pointer-events-none cursor-default rounded-2xl border border-white/30 bg-white/55 p-4 shadow-[0_8px_30px_rgba(0,0,0,0.08),inset_0_1px_0_rgba(255,255,255,0.6)] backdrop-blur-md transition-[opacity,transform,filter,box-shadow] duration-[520ms] ease-out sm:p-5 ${
+                trustStripEntered
+                  ? "translate-y-0 opacity-100 blur-0 shadow-[0_8px_30px_rgba(0,0,0,0.08),inset_0_1px_0_rgba(255,255,255,0.6)]"
+                  : "translate-y-3 opacity-0 blur-[1.5px] shadow-[0_4px_18px_rgba(0,0,0,0.05),inset_0_1px_0_rgba(255,255,255,0.45)]"
+              }`}
+            >
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 md:gap-6">
+                <div className="cursor-default rounded-xl border border-transparent px-3 py-3">
+                  <div className="flex items-start gap-3">
+                    <span className="rounded-lg border border-white/40 bg-white/40 p-2 text-red-500">
+                      <BadgeCheck className="h-4 w-4" />
+                    </span>
+                    <div>
+                      <p className="text-sm font-semibold text-[#192a3a]">Verified listings</p>
+                      <p className="mt-1 text-xs text-gray-600">
+                        Quality and trust you can rely on.
+                      </p>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </div>
 
-            <div className="group rounded-xl border border-transparent px-3 py-3 transition-all duration-200 ease-out hover:-translate-y-0.5 hover:border-gray-200 hover:bg-gray-50/60 hover:shadow-sm md:border-l md:border-gray-200/70 md:pl-5">
-              <div className="flex items-start gap-3">
-                <span className="rounded-lg border border-gray-200 bg-white p-2 text-[#192a3a]">
-                  <ShieldCheck className="h-4 w-4" />
-                </span>
-                <div>
-                  <p className="text-sm font-semibold text-[#192a3a]">Secure payments</p>
-                  <p className="mt-1 text-xs text-gray-600">
-                    Safe, simple and protected.
-                  </p>
+                <div className="cursor-default rounded-xl border border-transparent px-3 py-3 md:border-l md:border-white/40 md:pl-6">
+                  <div className="flex items-start gap-3">
+                    <span className="rounded-lg border border-white/40 bg-white/40 p-2 text-red-500">
+                      <ShieldCheck className="h-4 w-4" />
+                    </span>
+                    <div>
+                      <p className="text-sm font-semibold text-[#192a3a]">Secure payments</p>
+                      <p className="mt-1 text-xs text-gray-600">
+                        Safe, simple and protected.
+                      </p>
+                    </div>
+                  </div>
                 </div>
               </div>
-            </div>
-          </div>
             </div>
           </div>
         </div>
