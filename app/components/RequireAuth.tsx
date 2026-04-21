@@ -17,20 +17,43 @@ export default function RequireAuth({ children }: RequireAuthProps) {
 
   useEffect(() => {
     let mounted = true;
+    let redirected = false;
+    const currentPath =
+      typeof window !== "undefined"
+        ? `${window.location.pathname}${window.location.search}`
+        : pathname;
+    const goLogin = () => {
+      if (redirected) return;
+      redirected = true;
+      router.replace(`/login?next=${encodeURIComponent(currentPath)}`);
+    };
 
     async function checkAccess() {
       try {
         const {
-          data: { user },
-          error,
-        } = await supabase.auth.getUser();
+          data: { session },
+          error: sessionError,
+        } = await supabase.auth.getSession();
 
         if (!mounted) return;
 
-        if (error || !user) {
+        if (sessionError) {
           setAllowed(false);
-          router.replace(`/login?next=${encodeURIComponent(pathname)}`);
+          goLogin();
           return;
+        }
+
+        if (!session?.user) {
+          const {
+            data: { user },
+            error: userError,
+          } = await supabase.auth.getUser();
+          if (!mounted) return;
+          if (userError || !user) {
+            setAllowed(false);
+            goLogin();
+            return;
+          }
         }
 
         setAllowed(true);
@@ -38,7 +61,7 @@ export default function RequireAuth({ children }: RequireAuthProps) {
         console.error("RequireAuth check failed:", error);
         if (!mounted) return;
         setAllowed(false);
-        router.replace(`/login?next=${encodeURIComponent(pathname)}`);
+        goLogin();
       } finally {
         if (mounted) {
           setChecking(false);
@@ -59,7 +82,7 @@ export default function RequireAuth({ children }: RequireAuthProps) {
       } else {
         setAllowed(false);
         setChecking(false);
-        router.replace(`/login?next=${encodeURIComponent(pathname)}`);
+        goLogin();
       }
     });
 

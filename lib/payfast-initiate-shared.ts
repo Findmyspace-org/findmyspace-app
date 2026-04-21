@@ -90,6 +90,14 @@ export function readPayFastMerchantSecrets(): PayFastMerchantSecrets | null {
   ) {
     return null;
   }
+
+  if (process.env.NODE_ENV === "production") {
+    const processUrl = PAYFAST_PROCESS_URL.toLowerCase();
+    if (processUrl.includes("sandbox.payfast")) {
+      return null;
+    }
+  }
+
   return {
     merchantId: PAYFAST_MERCHANT_ID,
     merchantKey: PAYFAST_MERCHANT_KEY,

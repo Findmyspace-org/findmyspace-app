@@ -22,6 +22,52 @@ type SpaceRow = {
   title: string | null;
 };
 
+function resolveAppBaseUrl(req: NextRequest): string | null {
+  const envBase = getPublicSiteUrlFromEnv();
+  const forwardedProto = req.headers.get("x-forwarded-proto")?.trim();
+  const forwardedHost = req.headers.get("x-forwarded-host")?.trim();
+  const origin = req.headers.get("origin")?.trim();
+
+  const isSafe = (url: string) => {
+    try {
+      const u = new URL(url);
+      const host = u.hostname.toLowerCase();
+      if (process.env.NODE_ENV === "production") {
+        if (
+          host.includes("localhost") ||
+          host.includes("127.0.0.1") ||
+          host.includes("ngrok") ||
+          host.includes(".vercel.app")
+        ) {
+          return false;
+        }
+      }
+      return u.protocol === "https:" || process.env.NODE_ENV !== "production";
+    } catch {
+      return false;
+    }
+  };
+
+  if (forwardedHost) {
+    const proto =
+      forwardedProto === "http" || forwardedProto === "https"
+        ? forwardedProto
+        : process.env.NODE_ENV === "production"
+          ? "https"
+          : "http";
+    const candidate = `${proto}://${forwardedHost}`;
+    if (isSafe(candidate)) {
+      return candidate.replace(/\/+$/, "");
+    }
+  }
+
+  if (origin && isSafe(origin)) {
+    return origin.replace(/\/+$/, "");
+  }
+
+  return envBase;
+}
+
 export async function POST(req: NextRequest) {
   try {
     const {
@@ -43,7 +89,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         {
           error:
-            "Missing required environment variables. Ensure NEXT_PUBLIC_SITE_URL is set to your public app URL (e.g. https://findmyspace-alpha.vercel.app).",
+            "Missing required environment variables. Ensure NEXT_PUBLIC_SITE_URL is set to your canonical public app URL.",
         },
         { status: 500 }
       );
@@ -52,8 +98,6 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const bookingId =
       typeof body.bookingId === "string" ? body.bookingId.trim() : "";
-
-    console.log("PayFast initiate bookingId:", bookingId);
 
     if (!bookingId) {
       return NextResponse.json(
@@ -112,7 +156,7 @@ export async function POST(req: NextRequest) {
       }
     );
 
-    const appBaseUrl = getPublicSiteUrlFromEnv();
+    const appBaseUrl = resolveAppBaseUrl(req);
 
     if (!appBaseUrl) {
       return NextResponse.json(

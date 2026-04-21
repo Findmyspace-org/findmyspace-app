@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server";
 import { sendEmail } from "@/lib/email";
 
-export async function GET(req: Request) {
+export async function GET() {
   try {
     const configuredTestRecipient = process.env.TEST_EMAIL_RECIPIENT?.trim();
-    const headerToken = process.env.TEST_EMAIL_ROUTE_TOKEN?.trim();
     const nodeEnv = process.env.NODE_ENV;
 
     if (!configuredTestRecipient) {
@@ -14,22 +13,12 @@ export async function GET(req: Request) {
       );
     }
 
-    // Keep this endpoint disabled-by-default in production unless an explicit token is configured.
+    // Always disable this endpoint in production.
     if (nodeEnv === "production") {
-      if (!headerToken) {
-        return NextResponse.json(
-          { success: false, error: "Test email route is disabled in production." },
-          { status: 403 }
-        );
-      }
-
-      const requestToken = req.headers.get("x-test-email-token")?.trim();
-      if (requestToken !== headerToken) {
-        return NextResponse.json(
-          { success: false, error: "Unauthorized." },
-          { status: 401 }
-        );
-      }
+      return NextResponse.json(
+        { success: false, error: "Test email route is disabled in production." },
+        { status: 403 }
+      );
     }
 
     await sendEmail({
