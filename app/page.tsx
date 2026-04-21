@@ -38,7 +38,8 @@ const BROWSE_SPACES_HREF = "/spaces#browse-search";
 export default function HomePage() {
   const router = useRouter();
 
-  const [intent, setIntent] = useState<SpaceIntentKey | typeof VIEW_ALL_KEY>("store");
+  const [intent, setIntent] = useState<SpaceIntentKey | typeof VIEW_ALL_KEY>(VIEW_ALL_KEY);
+  const orderedIntentKeys: SpaceIntentKey[] = ["store", "park", "work", "do", "host"];
 
   function goToBrowse(nextIntent: SpaceIntentKey | typeof VIEW_ALL_KEY) {
     const params = new URLSearchParams();
@@ -108,7 +109,47 @@ export default function HomePage() {
                   role="radiogroup"
                   aria-label="Choose your intent"
                 >
-                  {SPACE_INTENTS.map((option) => {
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={intent === VIEW_ALL_KEY}
+                    onClick={() => {
+                      setIntent(VIEW_ALL_KEY);
+                      goToBrowse(VIEW_ALL_KEY);
+                    }}
+                    className={`group w-full cursor-pointer rounded-xl border px-3 py-3 text-left shadow-sm transition-all duration-200 ease-out active:translate-y-0 ${
+                      intent === VIEW_ALL_KEY
+                        ? "border-[#192a3a]/35 bg-white text-[#192a3a] ring-2 ring-[#192a3a]/10 hover:-translate-y-0.5 hover:shadow-md hover:border-[#192a3a]/45"
+                        : "border-white/60 bg-white/75 text-gray-700 hover:-translate-y-0.5 hover:bg-white hover:border-gray-300 hover:shadow-md"
+                    }`}
+                  >
+                    <div className="flex items-start gap-2.5">
+                      <span
+                        className={`rounded-lg border p-1.5 ${
+                          intent === VIEW_ALL_KEY
+                            ? "border-[#192a3a]/20 bg-[#192a3a]/5 text-[#192a3a]"
+                            : "border-gray-200 bg-white text-gray-500"
+                        }`}
+                      >
+                        <LayoutGrid className="h-4 w-4 transition-all duration-200 ease-out group-hover:scale-[1.04] group-hover:text-[#192a3a]" />
+                      </span>
+                      <span className="min-w-0">
+                        <span
+                          className={`block text-sm font-semibold ${
+                            intent === VIEW_ALL_KEY ? "text-[#192a3a]" : "text-gray-700"
+                          }`}
+                        >
+                          View all spaces
+                        </span>
+                        <span className="mt-0.5 block text-xs text-gray-600">
+                          Browse all categories without pre-filtering
+                        </span>
+                      </span>
+                    </div>
+                  </button>
+                  {orderedIntentKeys.map((intentKey) => {
+                    const option = SPACE_INTENTS.find((item) => item.key === intentKey);
+                    if (!option) return null;
                     const Icon = INTENT_ICONS[option.key];
                     const selected = intent === option.key;
                     return (
@@ -150,38 +191,6 @@ export default function HomePage() {
                       </button>
                     );
                   })}
-                  <button
-                    type="button"
-                    role="radio"
-                    aria-checked={intent === VIEW_ALL_KEY}
-                    onClick={() => {
-                      setIntent(VIEW_ALL_KEY);
-                      goToBrowse(VIEW_ALL_KEY);
-                    }}
-                    className={`group w-full cursor-pointer rounded-xl border px-3 py-3 text-left shadow-sm transition-all duration-200 ease-out active:translate-y-0 ${
-                      intent === VIEW_ALL_KEY
-                        ? "border-[#192a3a]/35 bg-white text-[#192a3a] ring-2 ring-[#192a3a]/10 hover:-translate-y-0.5 hover:shadow-md hover:border-[#192a3a]/45"
-                        : "border-white/60 bg-white/75 text-gray-700 hover:-translate-y-0.5 hover:bg-white hover:border-gray-300 hover:shadow-md"
-                    }`}
-                  >
-                    <div className="flex items-start gap-2.5">
-                      <span
-                        className={`rounded-lg border p-1.5 ${
-                          intent === VIEW_ALL_KEY
-                            ? "border-[#192a3a]/20 bg-[#192a3a]/5 text-[#192a3a]"
-                            : "border-gray-200 bg-white text-gray-500"
-                        }`}
-                      >
-                        <LayoutGrid className="h-4 w-4 transition-all duration-200 ease-out group-hover:scale-[1.04] group-hover:text-[#192a3a]" />
-                      </span>
-                      <span className="min-w-0">
-                        <span className="block text-sm font-semibold text-gray-700">View all spaces</span>
-                        <span className="mt-0.5 block text-xs text-gray-600">
-                          Browse all categories without pre-filtering
-                        </span>
-                      </span>
-                    </div>
-                  </button>
                 </div>
               </div>
 
