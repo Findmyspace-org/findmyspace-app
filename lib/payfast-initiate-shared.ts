@@ -111,18 +111,8 @@ export function readPayFastMerchantSecrets(): PayFastMerchantSecrets | null {
       return null;
     }
 
-    if (process.env.NODE_ENV === "production" && isSandboxHost) {
-      return null;
-    }
   } catch {
     return null;
-  }
-
-  if (process.env.NODE_ENV === "production") {
-    const processUrlLower = processUrl.toLowerCase();
-    if (processUrlLower.includes("sandbox.payfast")) {
-      return null;
-    }
   }
 
   return {
