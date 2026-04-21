@@ -1,22 +1,36 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
+import {
+  BadgeCheck,
+  Briefcase,
+  Car,
+  CircleEllipsis,
+  LayoutGrid,
+  PartyPopper,
+  Package,
+  ShieldCheck,
+} from "lucide-react";
+import { SPACE_INTENTS, type SpaceIntentKey } from "@/lib/space-intents";
 /* ================= DATA ================= */
+const INTENT_ICONS: Record<SpaceIntentKey, React.ComponentType<{ className?: string }>> = {
+  store: Package,
+  park: Car,
+  work: Briefcase,
+  do: CircleEllipsis,
+  host: PartyPopper,
+};
+const VIEW_ALL_KEY = "__all__";
 
-const SPACE_TYPES = [
-  { label: "Any space", value: "all" },
-  { label: "Storage", value: "storage" },
-  { label: "Parking", value: "parking" },
-  { label: "Office", value: "office" },
-  { label: "Garage", value: "garage" },
-  { label: "Workspace", value: "workspace" },
-  { label: "Other", value: "other" },
-];
+const INTENT_SUPPORT_TEXT: Record<SpaceIntentKey, string> = {
+  store: "Storage, garage and practical options",
+  park: "Safe parking and vehicle-friendly spaces",
+  work: "Offices, desks and focused work settings",
+  do: "Studios and flexible spaces for activities",
+  host: "Spaces suited for events and gatherings",
+};
 
-/** After login/signup, land on create listing (AuthForm reads `next` query). */
-const LIST_SPACE_LOGIN_HREF = `/login?next=${encodeURIComponent("/dashboard/new-space")}`;
 const BROWSE_SPACES_HREF = "/spaces#browse-search";
 
 /* ================= PAGE ================= */
@@ -24,23 +38,26 @@ const BROWSE_SPACES_HREF = "/spaces#browse-search";
 export default function HomePage() {
   const router = useRouter();
 
-  const [spaceType, setSpaceType] = useState("all");
+  const [intent, setIntent] = useState<SpaceIntentKey | typeof VIEW_ALL_KEY>("store");
+
+  function goToBrowse(nextIntent: SpaceIntentKey | typeof VIEW_ALL_KEY) {
+    const params = new URLSearchParams();
+    if (nextIntent !== VIEW_ALL_KEY) {
+      params.set("intent", nextIntent);
+    }
+    const queryString = params.toString();
+    router.push(queryString ? `/spaces?${queryString}` : "/spaces");
+  }
 
   function handleSearch(e: React.FormEvent) {
     e.preventDefault();
-
-    const params = new URLSearchParams();
-
-    if (spaceType !== "all") params.set("type", spaceType);
-
-    const queryString = params.toString();
-    router.push(queryString ? `/spaces?${queryString}` : "/spaces");
+    goToBrowse(intent);
   }
 
   return (
     <main className="min-h-screen text-[#192a3a]">
       {/* HERO */}
-      <section className="relative min-h-[700px] overflow-hidden">
+      <section className="relative min-h-[700px] overflow-visible pb-24 sm:pb-28">
         {/* Background */}
         <div
           className="absolute inset-0 bg-cover bg-center"
@@ -68,9 +85,6 @@ export default function HomePage() {
             <p className="mt-6 max-w-xl text-lg text-gray-700">
               Discover useful spaces to rent across South Africa.
             </p>
-            <p className="mt-4 max-w-xl text-sm text-gray-600">
-              Start below: pick the kind of space you need, then browse listings.
-            </p>
           </div>
 
           {/* SEARCH CARD */}
@@ -78,63 +92,143 @@ export default function HomePage() {
             <h2 className="mb-2 text-2xl font-semibold">Find a space</h2>
 
             <p className="mb-6 text-sm text-gray-600">
-              What type of space are you looking for? We&apos;ll take you to matching
+              Tell us what you want to do and we&apos;ll show you matching
               listings.
             </p>
 
             <form onSubmit={handleSearch} className="space-y-5">
               <div>
                 <label className="mb-2 block text-sm font-medium" htmlFor="home-space-type">
-                  Space type
+                  What do you want to do?
                 </label>
 
-                <select
+                <div
                   id="home-space-type"
-                  value={spaceType}
-                  onChange={(e) => setSpaceType(e.target.value)}
-                  className="w-full min-h-[48px] rounded-md border border-white/50 bg-white/80 px-4 py-3 text-base text-[#192a3a] backdrop-blur-md"
+                  className="grid grid-cols-1 gap-2 sm:grid-cols-2"
+                  role="radiogroup"
+                  aria-label="Choose your intent"
                 >
-                  {SPACE_TYPES.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
+                  {SPACE_INTENTS.map((option) => {
+                    const Icon = INTENT_ICONS[option.key];
+                    const selected = intent === option.key;
+                    return (
+                      <button
+                        key={option.key}
+                        type="button"
+                        role="radio"
+                        aria-checked={selected}
+                        onClick={() => {
+                          if (intent === option.key) {
+                            goToBrowse(option.key);
+                            return;
+                          }
+                          setIntent(option.key);
+                        }}
+                        className={`group w-full cursor-pointer rounded-xl border px-3 py-3 text-left shadow-sm transition-all duration-200 ease-out active:translate-y-0 ${
+                          selected
+                            ? "border-[#192a3a]/35 bg-white text-[#192a3a] ring-2 ring-[#192a3a]/10 hover:-translate-y-0.5 hover:shadow-md hover:border-[#192a3a]/45"
+                            : "border-white/60 bg-white/75 text-gray-700 hover:-translate-y-0.5 hover:bg-white hover:border-gray-300 hover:shadow-md"
+                        }`}
+                      >
+                        <div className="flex items-start gap-2.5">
+                          <span
+                            className={`rounded-lg border p-1.5 ${
+                              selected
+                                ? "border-[#192a3a]/20 bg-[#192a3a]/5 text-[#192a3a]"
+                                : "border-gray-200 bg-white text-gray-500"
+                            }`}
+                          >
+                            <Icon className="h-4 w-4 transition-all duration-200 ease-out group-hover:scale-[1.04] group-hover:text-[#192a3a]" />
+                          </span>
+                          <span className="min-w-0">
+                            <span className="block text-sm font-semibold">{option.label}</span>
+                            <span className="mt-0.5 block text-xs text-gray-600">
+                              {INTENT_SUPPORT_TEXT[option.key]}
+                            </span>
+                          </span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={intent === VIEW_ALL_KEY}
+                    onClick={() => {
+                      setIntent(VIEW_ALL_KEY);
+                      goToBrowse(VIEW_ALL_KEY);
+                    }}
+                    className={`group w-full cursor-pointer rounded-xl border px-3 py-3 text-left shadow-sm transition-all duration-200 ease-out active:translate-y-0 ${
+                      intent === VIEW_ALL_KEY
+                        ? "border-[#192a3a]/35 bg-white text-[#192a3a] ring-2 ring-[#192a3a]/10 hover:-translate-y-0.5 hover:shadow-md hover:border-[#192a3a]/45"
+                        : "border-white/60 bg-white/75 text-gray-700 hover:-translate-y-0.5 hover:bg-white hover:border-gray-300 hover:shadow-md"
+                    }`}
+                  >
+                    <div className="flex items-start gap-2.5">
+                      <span
+                        className={`rounded-lg border p-1.5 ${
+                          intent === VIEW_ALL_KEY
+                            ? "border-[#192a3a]/20 bg-[#192a3a]/5 text-[#192a3a]"
+                            : "border-gray-200 bg-white text-gray-500"
+                        }`}
+                      >
+                        <LayoutGrid className="h-4 w-4 transition-all duration-200 ease-out group-hover:scale-[1.04] group-hover:text-[#192a3a]" />
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block text-sm font-semibold text-gray-700">View all spaces</span>
+                        <span className="mt-0.5 block text-xs text-gray-600">
+                          Browse all categories without pre-filtering
+                        </span>
+                      </span>
+                    </div>
+                  </button>
+                </div>
               </div>
 
               <button
                 type="submit"
                 className="w-full min-h-[48px] rounded-md bg-[#192a3a] py-3.5 text-base font-semibold text-white shadow-lg hover:opacity-95"
               >
-                Browse listings
+                Show matching spaces
               </button>
             </form>
           </div>
         </div>
-      </section>
 
-      {/* LOWER CARDS */}
-      <section className="relative z-20 mx-auto -mt-6 max-w-7xl px-6 pb-12 sm:-mt-16 lg:-mt-32">
-        <div className="grid gap-4 md:grid-cols-2">
-          <Link
-            href={LIST_SPACE_LOGIN_HREF}
-            className="block rounded-md border border-white/30 bg-white/20 p-6 text-center text-inherit no-underline shadow-[0_20px_60px_rgba(15,23,42,0.12)] backdrop-blur-2xl transition hover:bg-white/30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#192a3a]"
-          >
-            <h3 className="mb-2 text-xl font-semibold">List your space</h3>
-            <p className="text-sm text-gray-700">
-              Sign in to create a listing — earn from unused parking, storage, or more.
-            </p>
-          </Link>
+        <div className="pointer-events-none absolute inset-x-0 bottom-[-20px] z-20 px-6 sm:bottom-[-36px]">
+          <div className="mx-auto max-w-4xl">
+            <div className="pointer-events-auto rounded-2xl border border-gray-200/90 bg-white/85 p-4 shadow-md backdrop-blur sm:p-5">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 md:gap-0">
+            <div className="group rounded-xl border border-transparent px-3 py-3 transition-all duration-200 ease-out hover:-translate-y-0.5 hover:border-gray-200 hover:bg-gray-50/60 hover:shadow-sm">
+              <div className="flex items-start gap-3">
+                <span className="rounded-lg border border-gray-200 bg-white p-2 text-[#192a3a]">
+                  <BadgeCheck className="h-4 w-4" />
+                </span>
+                <div>
+                  <p className="text-sm font-semibold text-[#192a3a]">Verified listings</p>
+                  <p className="mt-1 text-xs text-gray-600">
+                    Quality and trust you can rely on.
+                  </p>
+                </div>
+              </div>
+            </div>
 
-          <Link
-            href={BROWSE_SPACES_HREF}
-            className="block rounded-md border border-white/30 bg-white/20 p-6 text-center text-inherit no-underline shadow-[0_20px_60px_rgba(15,23,42,0.12)] backdrop-blur-2xl transition hover:bg-white/30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#192a3a]"
-          >
-            <h3 className="mb-2 text-xl font-semibold">Browse all spaces</h3>
-            <p className="text-sm text-gray-700">
-              Explore listings and refine by area on the map or filters.
-            </p>
-          </Link>
+            <div className="group rounded-xl border border-transparent px-3 py-3 transition-all duration-200 ease-out hover:-translate-y-0.5 hover:border-gray-200 hover:bg-gray-50/60 hover:shadow-sm md:border-l md:border-gray-200/70 md:pl-5">
+              <div className="flex items-start gap-3">
+                <span className="rounded-lg border border-gray-200 bg-white p-2 text-[#192a3a]">
+                  <ShieldCheck className="h-4 w-4" />
+                </span>
+                <div>
+                  <p className="text-sm font-semibold text-[#192a3a]">Secure payments</p>
+                  <p className="mt-1 text-xs text-gray-600">
+                    Safe, simple and protected.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+            </div>
+          </div>
         </div>
       </section>
     </main>

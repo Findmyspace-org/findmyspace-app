@@ -22,6 +22,12 @@ import {
   getPanelAvailabilitySignal,
   type SpaceAvailabilityInput,
 } from "@/lib/browse-availability-signals";
+import {
+  getIntentDefinition,
+  getSuggestedUnitForIntent,
+  parseIntent,
+  type SpaceIntentKey,
+} from "@/lib/space-intents";
 
 type Space = {
   id: string;
@@ -63,6 +69,9 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
   const [message, setMessage] = useState("");
 
   const [search, setSearch] = useState(params.get("q") || "");
+  const [intentFilter, setIntentFilter] = useState<SpaceIntentKey | null>(() =>
+    parseIntent(params.get("intent"))
+  );
   const [typeFilter, setTypeFilter] = useState(params.get("type") || "all");
   const [cityFilter, setCityFilter] = useState(params.get("city") || "all");
   const [sortBy, setSortBy] = useState(
@@ -104,6 +113,7 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
 
   useEffect(() => {
     const p = new URLSearchParams(searchParamsString);
+    setIntentFilter(parseIntent(p.get("intent")));
     const when = parseAppliedWhenFromParams(p);
     setAppliedWhen(when);
     const wu = p.get("whenUnit");
@@ -118,6 +128,10 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
   }, [searchParamsString]);
 
   const suggestedWhenUnit = useMemo((): WhenDurationUnit | null => {
+    if (typeFilter === "all") {
+      const suggested = getSuggestedUnitForIntent(intentFilter);
+      if (suggested) return suggested;
+    }
     if (typeFilter === "parking") return "month";
     if (typeFilter === "event_space") return "hour";
     if (
@@ -129,16 +143,44 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
       return "day";
     }
     return null;
-  }, [typeFilter]);
+  }, [typeFilter, intentFilter]);
+
+  const typeOptions = useMemo(() => {
+    if (!intentFilter) {
+      return {
+        allLabel: "All types",
+        options: LISTING_SPACE_TYPE_OPTIONS,
+      };
+    }
+    const def = getIntentDefinition(intentFilter);
+    if (!def) {
+      return {
+        allLabel: "All types",
+        options: LISTING_SPACE_TYPE_OPTIONS,
+      };
+    }
+    const mapped = new Set(def.mappedSpaceTypes);
+    const filtered = LISTING_SPACE_TYPE_OPTIONS.filter((opt) =>
+      mapped.has(opt.value)
+    );
+    return {
+      allLabel: def.allTypesLabel,
+      options: filtered.length > 0 ? filtered : LISTING_SPACE_TYPE_OPTIONS,
+    };
+  }, [intentFilter]);
 
   const pushBrowseUrl = useCallback(
     (
       nextAppliedWhen: AppliedWhen | null,
-      bookingUnitOverride?: "all" | "hour" | "day" | "month"
+      bookingUnitOverride?: "all" | "hour" | "day" | "month",
+      intentOverride?: SpaceIntentKey | null
     ) => {
       const p = new URLSearchParams();
       const q = search.trim();
       if (q) p.set("q", q);
+      const resolvedIntent =
+        intentOverride !== undefined ? intentOverride : intentFilter;
+      if (resolvedIntent) p.set("intent", resolvedIntent);
       if (typeFilter !== "all") p.set("type", typeFilter);
       if (cityFilter !== "all") p.set("city", cityFilter);
       if (sortBy !== "price_high_low") p.set("sort", sortBy);
@@ -165,6 +207,7 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
     [
       search,
       typeFilter,
+      intentFilter,
       cityFilter,
       sortBy,
       bookingUnitFilter,
@@ -289,6 +332,14 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
 
     if (typeFilter !== "all") {
       result = result.filter((space) => space.space_type === typeFilter);
+    } else if (intentFilter) {
+      const def = getIntentDefinition(intentFilter);
+      if (def) {
+        const mapped = new Set(def.mappedSpaceTypes);
+        result = result.filter((space) =>
+          mapped.has((space.space_type || "").toLowerCase())
+        );
+      }
     }
 
     if (cityFilter !== "all") {
@@ -347,6 +398,7 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
     spaces,
     search,
     typeFilter,
+    intentFilter,
     cityFilter,
     bookingUnitFilter,
     appliedWhen,
@@ -368,13 +420,14 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
   function clearAllFilters() {
     setSearch("");
     setTypeFilter("all");
+    setIntentFilter(null);
     setCityFilter("all");
     setSortBy("price_high_low");
     setAppliedWhen(null);
     setBookingUnitFilter("all");
     setMinPrice(0);
     setMaxPrice(getDefaultMax("all"));
-    pushBrowseUrl(null, "all");
+    pushBrowseUrl(null, "all", null);
   }
 
   return (
@@ -405,11 +458,19 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
 
           <select
             value={typeFilter}
-            onChange={(e) => setTypeFilter(e.target.value)}
+            onChange={(e) => {
+              if (e.target.value === "__all_types") {
+                setTypeFilter("all");
+                setIntentFilter(null);
+                return;
+              }
+              setTypeFilter(e.target.value);
+            }}
             className="min-h-[42px] rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm shadow-sm outline-none ring-emerald-500/20 transition focus:border-emerald-500 focus:ring-2"
           >
-            <option value="all">All types</option>
-            {LISTING_SPACE_TYPE_OPTIONS.map((opt) => (
+            <option value="all">{typeOptions.allLabel}</option>
+            {intentFilter ? <option value="__all_types">All space types</option> : null}
+            {typeOptions.options.map((opt) => (
               <option key={opt.value} value={opt.value}>
                 {opt.label}
               </option>

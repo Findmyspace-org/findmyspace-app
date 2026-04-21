@@ -494,8 +494,8 @@ export const LISTING_SPACE_TYPE_OPTIONS: { value: string; label: string }[] = [
   { value: "event_space", label: "Event space" },
   { value: "workshop_studio", label: "Workshop / studio" },
   { value: "other", label: "Other" },
-  { value: "garage", label: "Garage (legacy)" },
-  { value: "workspace", label: "Workspace (legacy)" },
+  { value: "garage", label: "Garage" },
+  { value: "workspace", label: "Workspace / coworking" },
 ];
 
 export function formatSpaceTypeLabel(spaceType: string | null | undefined): string {
