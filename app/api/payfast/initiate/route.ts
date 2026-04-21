@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { getPublicSiteUrlFromEnv } from "@/lib/site-url";
+import {
+  getCanonicalPublicSiteUrl,
+  getPublicSiteUrlFromEnv,
+} from "@/lib/site-url";
 import {
   buildSignedPayFastCheckoutPayload,
   readPayFastMerchantSecrets,
@@ -24,6 +27,7 @@ type SpaceRow = {
 
 function resolveAppBaseUrl(req: NextRequest): string | null {
   const envBase = getPublicSiteUrlFromEnv();
+  const canonicalBase = getCanonicalPublicSiteUrl();
   const forwardedProto = req.headers.get("x-forwarded-proto")?.trim();
   const forwardedHost = req.headers.get("x-forwarded-host")?.trim();
   const origin = req.headers.get("origin")?.trim();
@@ -65,7 +69,7 @@ function resolveAppBaseUrl(req: NextRequest): string | null {
     return origin.replace(/\/+$/, "");
   }
 
-  return envBase;
+  return envBase || canonicalBase || null;
 }
 
 export async function POST(req: NextRequest) {
@@ -74,7 +78,6 @@ export async function POST(req: NextRequest) {
       NEXT_PUBLIC_SUPABASE_URL,
       SUPABASE_SERVICE_ROLE_KEY,
       NEXT_PUBLIC_SUPABASE_ANON_KEY,
-      NEXT_PUBLIC_SITE_URL,
     } = process.env;
 
     const merchant = readPayFastMerchantSecrets();
@@ -83,13 +86,12 @@ export async function POST(req: NextRequest) {
       !NEXT_PUBLIC_SUPABASE_URL ||
       !SUPABASE_SERVICE_ROLE_KEY ||
       !NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-      !NEXT_PUBLIC_SITE_URL?.trim() ||
       !merchant
     ) {
       return NextResponse.json(
         {
           error:
-            "Missing required environment variables. Ensure NEXT_PUBLIC_SITE_URL is set to your canonical public app URL.",
+            "Missing required environment variables for payment initiation.",
         },
         { status: 500 }
       );

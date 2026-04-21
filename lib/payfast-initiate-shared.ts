@@ -83,26 +83,53 @@ export function readPayFastMerchantSecrets(): PayFastMerchantSecrets | null {
     PAYFAST_PASSPHRASE,
     PAYFAST_PROCESS_URL,
   } = process.env;
+  const merchantId = PAYFAST_MERCHANT_ID?.trim();
+  const merchantKey = PAYFAST_MERCHANT_KEY?.trim();
+  const passphrase = PAYFAST_PASSPHRASE?.trim();
+  const processUrlRaw = PAYFAST_PROCESS_URL?.trim();
+
   if (
-    !PAYFAST_MERCHANT_ID ||
-    !PAYFAST_MERCHANT_KEY ||
-    !PAYFAST_PROCESS_URL
+    !merchantId ||
+    !merchantKey ||
+    !processUrlRaw
   ) {
     return null;
   }
 
+  let processUrl: string;
+  try {
+    const parsed = new URL(processUrlRaw);
+    processUrl = parsed.toString().replace(/\/+$/, "");
+
+    const host = parsed.hostname.toLowerCase();
+    const pathname = parsed.pathname.toLowerCase();
+    const isSandboxHost = host === "sandbox.payfast.co.za";
+    const isLiveHost = host === "www.payfast.co.za" || host === "payfast.co.za";
+    const isProcessPath = pathname === "/eng/process";
+
+    if (!isProcessPath || (!isSandboxHost && !isLiveHost)) {
+      return null;
+    }
+
+    if (process.env.NODE_ENV === "production" && isSandboxHost) {
+      return null;
+    }
+  } catch {
+    return null;
+  }
+
   if (process.env.NODE_ENV === "production") {
-    const processUrl = PAYFAST_PROCESS_URL.toLowerCase();
-    if (processUrl.includes("sandbox.payfast")) {
+    const processUrlLower = processUrl.toLowerCase();
+    if (processUrlLower.includes("sandbox.payfast")) {
       return null;
     }
   }
 
   return {
-    merchantId: PAYFAST_MERCHANT_ID,
-    merchantKey: PAYFAST_MERCHANT_KEY,
-    passphrase: PAYFAST_PASSPHRASE,
-    processUrl: PAYFAST_PROCESS_URL,
+    merchantId,
+    merchantKey,
+    passphrase: passphrase || undefined,
+    processUrl,
   };
 }
 
