@@ -10,6 +10,7 @@ import {
   ArrowRight,
 } from "lucide-react";
 import { formatSpaceTypeLabel } from "@/app/data/spaceFeatureConfig";
+import type { CardAvailabilityHint } from "@/lib/browse-availability-signals";
 
 type Space = {
   id: string;
@@ -29,9 +30,10 @@ type Space = {
 
 type Props = {
   space: Space;
+  availabilityHint?: CardAvailabilityHint | null;
 };
 
-export default function SpaceCard({ space }: Props) {
+export default function SpaceCard({ space, availabilityHint }: Props) {
   function getPriceValue() {
     if (space.booking_unit === "hour") return space.price_per_hour;
     if (space.booking_unit === "month") return space.price_per_month;
@@ -136,6 +138,12 @@ export default function SpaceCard({ space }: Props) {
                 <CalendarDays className="h-3.5 w-3.5 text-gray-500" />
                 {formatBookingUnit(space.booking_unit)}
               </span>
+
+              {availabilityHint ? (
+                <span className="inline-flex items-center rounded-md border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700">
+                  {availabilityHint.text}
+                </span>
+              ) : null}
             </div>
 
             <p className="text-sm leading-7 text-gray-700">

@@ -180,31 +180,28 @@ export function formatWhenFilterLabel(applied: AppliedWhen | null): string {
     nextweek: "Next week",
   };
 
-  if (applied.datePreset && !applied.preset && dateLabels[applied.datePreset]) {
+  if (applied.datePreset && dateLabels[applied.datePreset]) {
     return `When: ${dateLabels[applied.datePreset]}`;
   }
 
-  const parts: string[] = [];
+  if (applied.startDate && applied.endDate) {
+    return `When: ${shortDate(applied.startDate)} – ${shortDate(applied.endDate)}`;
+  }
+
+  if (applied.unit === "month" && applied.preset && presetLabels[applied.preset]) {
+    const start = applied.startDate
+      ? new Date(applied.startDate + "T12:00:00")
+      : null;
+    if (start && !Number.isNaN(start.getTime())) {
+      const month = start.toLocaleDateString("en-ZA", { month: "short" });
+      return `When: ${presetLabels[applied.preset]} from ${month}`;
+    }
+    return `When: ${presetLabels[applied.preset]}`;
+  }
 
   if (applied.preset && presetLabels[applied.preset]) {
-    parts.push(presetLabels[applied.preset]);
-  } else if (!applied.datePreset) {
-    parts.push(
-      applied.unit === "hour"
-        ? "Hourly"
-        : applied.unit === "day"
-          ? "Daily"
-          : "Monthly"
-    );
+    return `When: ${presetLabels[applied.preset]}`;
   }
 
-  if (applied.datePreset && dateLabels[applied.datePreset]) {
-    parts.push(dateLabels[applied.datePreset]);
-  } else if (applied.startDate && applied.endDate) {
-    parts.push(`${shortDate(applied.startDate)} – ${shortDate(applied.endDate)}`);
-  } else if (applied.startDate) {
-    parts.push(`from ${shortDate(applied.startDate)}`);
-  }
-
-  return `When: ${parts.join(" · ")}`;
+  return "When";
 }

@@ -17,6 +17,11 @@ import {
   type AppliedWhen,
   type WhenDurationUnit,
 } from "@/lib/browse-when-filter";
+import {
+  getCardAvailabilityHint,
+  getPanelAvailabilitySignal,
+  type SpaceAvailabilityInput,
+} from "@/lib/browse-availability-signals";
 
 type Space = {
   id: string;
@@ -350,6 +355,16 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
     sortBy,
   ]);
 
+  const panelAvailabilitySignal = useMemo(
+    () =>
+      getPanelAvailabilitySignal({
+        allSpaces: spaces as SpaceAvailabilityInput[],
+        filteredSpaces: filteredSpaces as SpaceAvailabilityInput[],
+        when: appliedWhen,
+      }),
+    [spaces, filteredSpaces, appliedWhen]
+  );
+
   function clearAllFilters() {
     setSearch("");
     setTypeFilter("all");
@@ -428,6 +443,7 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
 
           <BrowseWhenFilter
             applied={appliedWhen}
+            availabilitySignal={panelAvailabilitySignal}
             suggestedUnit={suggestedWhenUnit}
             onApply={(w) => {
               setAppliedWhen(w);
@@ -503,7 +519,14 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
             <p className="text-sm text-gray-600">No spaces found.</p>
           ) : (
             filteredSpaces.map((space) => (
-              <SpaceCard key={space.id} space={space} />
+              <SpaceCard
+                key={space.id}
+                space={space}
+                availabilityHint={getCardAvailabilityHint({
+                  space,
+                  when: appliedWhen,
+                })}
+              />
             ))
           )}
         </div>

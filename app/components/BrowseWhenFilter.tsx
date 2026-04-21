@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { Info } from "lucide-react";
 import type {
   AppliedWhen,
   WhenDatePresetId,
@@ -8,11 +9,13 @@ import type {
   WhenPresetId,
 } from "@/lib/browse-when-filter";
 import { formatWhenFilterLabel } from "@/lib/browse-when-filter";
+import type { BrowsePanelSignal } from "@/lib/browse-availability-signals";
 
 type Props = {
   applied: AppliedWhen | null;
   onApply: (value: AppliedWhen) => void;
   onClear: () => void;
+  availabilitySignal?: BrowsePanelSignal | null;
   /** Optional: suggest duration unit when user picks a space type (does not auto-apply). */
   suggestedUnit?: WhenDurationUnit | null;
 };
@@ -122,7 +125,13 @@ function getQuickWindow(preset: WhenDatePresetId): { startDate: string; endDate:
   return { startDate: toIsoDate(monday), endDate: toIsoDate(sunday) };
 }
 
-export function BrowseWhenFilter({ applied, onApply, onClear, suggestedUnit }: Props) {
+export function BrowseWhenFilter({
+  applied,
+  onApply,
+  onClear,
+  availabilitySignal,
+  suggestedUnit,
+}: Props) {
   const panelId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
@@ -165,18 +174,41 @@ export function BrowseWhenFilter({ applied, onApply, onClear, suggestedUnit }: P
 
   const triggerLabel = formatWhenFilterLabel(applied);
   const hasApplied = applied !== null;
-  const isUsingQuickWindow = Boolean(draft.datePreset);
-  const isUsingCustomDates =
-    !draft.datePreset && Boolean(draft.startDate || draft.endDate);
+  const applyButtonLabel = useMemo(() => {
+    if (draft.datePreset === "today") return "Apply (Today)";
+    if (draft.datePreset === "tomorrow") return "Apply (Tomorrow)";
+    if (draft.datePreset === "weekend") return "Apply (This weekend)";
+    if (draft.datePreset === "nextweek") return "Apply (Next week)";
 
-  const activeWindowLabel = useMemo(() => {
-    if (draft.datePreset === "today") return "Using: Today";
-    if (draft.datePreset === "tomorrow") return "Using: Tomorrow";
-    if (draft.datePreset === "weekend") return "Using: This weekend";
-    if (draft.datePreset === "nextweek") return "Using: Next week";
-    if (isUsingCustomDates) return "Using: Custom dates";
-    return "Use a quick option or choose exact dates";
-  }, [draft.datePreset, isUsingCustomDates]);
+    if (draft.startDate && draft.endDate) {
+      const start = new Date(draft.startDate + "T12:00:00");
+      const end = new Date(draft.endDate + "T12:00:00");
+      if (!Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime())) {
+        const s = start.toLocaleDateString("en-ZA", { day: "numeric", month: "short" });
+        const e = end.toLocaleDateString("en-ZA", { day: "numeric", month: "short" });
+        return `Apply (${s} – ${e})`;
+      }
+    }
+
+    if (draft.unit === "month" && draft.preset) {
+      const map: Record<WhenPresetId, string> = {
+        "1h": "1 hour",
+        "2h": "2 hours",
+        halfday: "Half day",
+        fullday: "Full day",
+        "1d": "1 day",
+        "3d": "3 days",
+        "1w": "1 week",
+        "1m": "1 month",
+        "3m": "3 months",
+        "6m": "6 months",
+        "1y": "1 year",
+      };
+      if (map[draft.preset]) return `Apply (${map[draft.preset]})`;
+    }
+
+    return "Apply filters";
+  }, [draft.datePreset, draft.endDate, draft.preset, draft.startDate, draft.unit]);
 
   return (
     <div ref={rootRef} className="relative min-w-0">
@@ -211,163 +243,165 @@ export function BrowseWhenFilter({ applied, onApply, onClear, suggestedUnit }: P
           id={panelId}
           role="dialog"
           aria-label="When do you need the space?"
-          className="absolute right-0 z-50 mt-2 w-[min(100vw-1.5rem,22rem)] rounded-xl border border-gray-200/90 bg-white p-4 shadow-lg ring-1 ring-black/5"
+          className="absolute right-0 z-50 mt-2 flex max-h-[80vh] w-[min(100vw-1.5rem,22rem)] flex-col overflow-hidden rounded-xl border border-gray-200/90 bg-white shadow-lg ring-1 ring-black/5"
         >
-          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-            How do you need it?
-          </p>
-          <div className="mt-2 flex rounded-lg border border-gray-200 bg-gray-50 p-0.5">
-            {(["hour", "day", "month"] as const).map((u) => (
-              <button
-                key={u}
-                type="button"
-                onClick={() => setUnit(u)}
-                className={`flex-1 rounded-md px-2 py-2 text-xs font-semibold transition sm:text-sm ${
-                  draft.unit === u
-                    ? "bg-white text-emerald-800 shadow-sm"
-                    : "text-gray-600 hover:text-gray-900"
-                }`}
-              >
-                {u === "hour" ? "Hourly" : u === "day" ? "Daily" : "Monthly"}
-              </button>
-            ))}
-          </div>
-
-          <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-gray-500">
-            How long do you need it?
-          </p>
-          <div className="mt-2 flex flex-wrap gap-2">
-            {presetsForUnit(draft.unit).map(({ id, label }) => (
-              <button
-                key={id}
-                type="button"
-                onClick={() =>
-                  setDraft((d) => ({
-                    ...d,
-                    preset: d.preset === id ? null : id,
-                  }))
-                }
-                className={`rounded-full border px-3 py-1.5 text-xs font-medium transition sm:text-sm ${
-                  draft.preset === id
-                    ? "border-emerald-500 bg-emerald-50 text-emerald-900"
-                    : "border-gray-200 bg-white text-gray-700 hover:border-gray-300"
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-
-          <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-gray-500">
-            When do you need it?
-          </p>
-          <p className="mt-1 text-xs text-gray-500">Quick options</p>
-          <div className="mt-2 flex flex-wrap gap-2">
-            {DATE_CHIPS.map(({ id, label }) => (
-              <button
-                key={id}
-                type="button"
-                onClick={() =>
-                  setDraft((d) => {
-                    if (d.datePreset === id) {
-                      return { ...d, datePreset: null, startDate: null, endDate: null };
-                    }
-                    const range = getQuickWindow(id);
-                    return {
-                      ...d,
-                      datePreset: id,
-                      startDate: range.startDate,
-                      endDate: range.endDate,
-                    };
-                  })
-                }
-                className={`rounded-full border px-3 py-1.5 text-xs font-medium transition sm:text-sm ${
-                  draft.datePreset === id
-                    ? "border-emerald-500 bg-emerald-50 text-emerald-900"
-                    : "border-gray-200 bg-white text-gray-700 hover:border-gray-300"
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-
-          <p className="mt-3 text-xs text-gray-500">Or choose exact dates</p>
-          <p className="mt-0.5 text-xs text-gray-500">
-            We&apos;ll use this as your booking window
-          </p>
-
-          <div
-            className={`mt-2 rounded-lg p-2 transition ${
-              isUsingCustomDates ? "bg-emerald-50/50 ring-1 ring-emerald-200" : "bg-gray-50/40"
-            }`}
-          >
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            <label className="flex flex-col gap-1 text-xs text-gray-600">
-              <span className="font-medium text-gray-700">Start date</span>
-              <input
-                type="date"
-                value={draft.startDate ?? ""}
-                onChange={(e) =>
-                  setDraft((d) => ({
-                    ...d,
-                    datePreset: null,
-                    startDate: e.target.value || null,
-                  }))
-                }
-                className="rounded-lg border border-gray-200 px-2 py-2 text-sm shadow-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-xs text-gray-600">
-              <span className="font-medium text-gray-700">End date</span>
-              <input
-                type="date"
-                value={draft.endDate ?? ""}
-                onChange={(e) =>
-                  setDraft((d) => ({
-                    ...d,
-                    datePreset: null,
-                    endDate: e.target.value || null,
-                  }))
-                }
-                className="rounded-lg border border-gray-200 px-2 py-2 text-sm shadow-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-              />
-            </label>
+          <div className="overflow-y-auto p-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+              How do you need it?
+            </p>
+            <div className="mt-2 flex rounded-lg border border-gray-200 bg-gray-50 p-0.5">
+              {(["hour", "day", "month"] as const).map((u) => (
+                <button
+                  key={u}
+                  type="button"
+                  onClick={() => setUnit(u)}
+                  className={`flex-1 rounded-md px-2 py-2 text-xs font-semibold transition sm:text-sm ${
+                    draft.unit === u
+                      ? "bg-white text-emerald-800 shadow-sm"
+                      : "text-gray-600 hover:text-gray-900"
+                  }`}
+                >
+                  {u === "hour" ? "Hourly" : u === "day" ? "Daily" : "Monthly"}
+                </button>
+              ))}
             </div>
+
+            <p className="mt-5 text-xs font-semibold uppercase tracking-wide text-gray-500">
+              How long do you need it?
+            </p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {presetsForUnit(draft.unit).map(({ id, label }) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() =>
+                    setDraft((d) => ({
+                      ...d,
+                      preset: d.preset === id ? null : id,
+                    }))
+                  }
+                  className={`rounded-full border px-3 py-1.5 text-xs font-medium transition sm:text-sm ${
+                    draft.preset === id
+                      ? "border-gray-400 bg-gray-100 text-gray-900 shadow-sm"
+                      : "border-gray-200 bg-white text-gray-700 hover:border-gray-300"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <p className="mt-5 text-xs font-semibold uppercase tracking-wide text-gray-500">
+              When do you need it?
+            </p>
+            <p className="mt-1 text-xs text-gray-500">Quick options</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {DATE_CHIPS.map(({ id, label }) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() =>
+                    setDraft((d) => {
+                      if (d.datePreset === id) {
+                        return { ...d, datePreset: null, startDate: null, endDate: null };
+                      }
+                      const range = getQuickWindow(id);
+                      return {
+                        ...d,
+                        datePreset: id,
+                        startDate: range.startDate,
+                        endDate: range.endDate,
+                      };
+                    })
+                  }
+                  className={`rounded-full border px-3 py-1.5 text-xs font-medium transition sm:text-sm ${
+                    draft.datePreset === id
+                      ? "border-gray-400 bg-gray-100 text-gray-900 shadow-sm"
+                      : "border-gray-200 bg-white text-gray-700 hover:border-gray-300"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <div className="mt-5 border-t border-gray-200/70 pt-4">
+              <p className="text-xs text-gray-600">Dates</p>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <label className="flex flex-col gap-1 text-xs text-gray-600">
+                <span className="font-medium text-gray-700">Start date</span>
+                <input
+                  type="date"
+                  value={draft.startDate ?? ""}
+                  onChange={(e) =>
+                    setDraft((d) => ({
+                      ...d,
+                      datePreset: null,
+                      startDate: e.target.value || null,
+                    }))
+                  }
+                  className="rounded-lg border border-gray-200 px-2 py-2 text-sm shadow-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-xs text-gray-600">
+                <span className="font-medium text-gray-700">End date</span>
+                <input
+                  type="date"
+                  value={draft.endDate ?? ""}
+                  onChange={(e) =>
+                    setDraft((d) => ({
+                      ...d,
+                      datePreset: null,
+                      endDate: e.target.value || null,
+                    }))
+                  }
+                  className="rounded-lg border border-gray-200 px-2 py-2 text-sm shadow-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                />
+              </label>
+            </div>
+            </div>
+
+            {availabilitySignal ? (
+              <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2">
+                <div className="flex items-start gap-2">
+                  <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-500" />
+                  <div>
+                    <p className="text-xs text-slate-700">{availabilitySignal.text}</p>
+                    {availabilitySignal.suggestion ? (
+                      <p className="mt-1 text-xs text-slate-600">{availabilitySignal.suggestion}</p>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            ) : null}
           </div>
 
-          <p
-            className={`mt-2 text-xs ${
-              isUsingQuickWindow || isUsingCustomDates ? "text-emerald-700" : "text-gray-500"
-            }`}
-          >
-            {activeWindowLabel}
-          </p>
-
-          <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            {hasApplied ? (
-              <button
-                type="button"
-                onClick={() => {
-                  onClear();
-                  setOpen(false);
-                }}
-                className="order-2 text-center text-sm font-medium text-gray-600 underline-offset-2 hover:text-gray-900 hover:underline sm:order-1"
-              >
-                Clear
-              </button>
-            ) : (
-              <span className="hidden sm:block sm:w-16" />
-            )}
+          <div className="sticky bottom-0 z-10 mt-1 flex items-center justify-between gap-3 border-t border-gray-200/80 bg-white px-4 py-3">
+            <button
+              type="button"
+              onClick={() => {
+                onClear();
+                setDraft({
+                  unit: suggestedUnit ?? "day",
+                  preset: null,
+                  datePreset: null,
+                  startDate: null,
+                  endDate: null,
+                });
+              }}
+              className="text-center text-sm font-medium text-gray-600 underline-offset-2 hover:text-gray-900 hover:underline"
+            >
+              Clear
+            </button>
             <button
               type="button"
               onClick={() => {
                 onApply({ ...draft });
                 setOpen(false);
               }}
-              className="order-1 w-full rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 shadow-sm transition hover:border-gray-300 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 sm:order-2 sm:w-auto"
+              className="w-full rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 shadow-sm transition hover:border-gray-300 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 sm:w-auto"
             >
-              Apply filters
+              {applyButtonLabel}
             </button>
           </div>
         </div>
