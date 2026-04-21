@@ -81,21 +81,32 @@ export async function POST(req: NextRequest) {
     } = process.env;
 
     const merchant = readPayFastMerchantSecrets();
+    const missingVars: string[] = [];
+    if (!NEXT_PUBLIC_SUPABASE_URL?.trim()) missingVars.push("NEXT_PUBLIC_SUPABASE_URL");
+    if (!SUPABASE_SERVICE_ROLE_KEY?.trim()) missingVars.push("SUPABASE_SERVICE_ROLE_KEY");
+    if (!NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim()) {
+      missingVars.push("NEXT_PUBLIC_SUPABASE_ANON_KEY");
+    }
 
     if (
-      !NEXT_PUBLIC_SUPABASE_URL ||
-      !SUPABASE_SERVICE_ROLE_KEY ||
-      !NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+      missingVars.length > 0 ||
       !merchant
     ) {
+      const message =
+        missingVars.length > 0
+          ? `Missing required environment variables for payment initiation: ${missingVars.join(", ")}`
+          : "Invalid PayFast configuration. Check PAYFAST_MERCHANT_ID, PAYFAST_MERCHANT_KEY, and PAYFAST_PROCESS_URL.";
       return NextResponse.json(
         {
-          error:
-            "Missing required environment variables for payment initiation.",
+          error: message,
         },
         { status: 500 }
       );
     }
+
+    const supabaseUrl = NEXT_PUBLIC_SUPABASE_URL as string;
+    const supabaseAnonKey = NEXT_PUBLIC_SUPABASE_ANON_KEY as string;
+    const supabaseServiceRoleKey = SUPABASE_SERVICE_ROLE_KEY as string;
 
     const body = await req.json();
     const bookingId =
@@ -120,8 +131,8 @@ export async function POST(req: NextRequest) {
     const accessToken = authHeader.replace("Bearer ", "");
 
     const supabaseUserClient = createClient(
-      NEXT_PUBLIC_SUPABASE_URL,
-      NEXT_PUBLIC_SUPABASE_ANON_KEY,
+      supabaseUrl,
+      supabaseAnonKey,
       {
         global: {
           headers: {
@@ -147,8 +158,8 @@ export async function POST(req: NextRequest) {
     }
 
     const supabaseAdmin = createClient(
-      NEXT_PUBLIC_SUPABASE_URL,
-      SUPABASE_SERVICE_ROLE_KEY,
+      supabaseUrl,
+      supabaseServiceRoleKey,
       {
         auth: {
           persistSession: false,

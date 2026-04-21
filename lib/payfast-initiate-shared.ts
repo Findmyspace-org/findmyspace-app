@@ -102,7 +102,7 @@ export function readPayFastMerchantSecrets(): PayFastMerchantSecrets | null {
     processUrl = parsed.toString().replace(/\/+$/, "");
 
     const host = parsed.hostname.toLowerCase();
-    const pathname = parsed.pathname.toLowerCase();
+    const pathname = parsed.pathname.toLowerCase().replace(/\/+$/, "");
     const isSandboxHost = host === "sandbox.payfast.co.za";
     const isLiveHost = host === "www.payfast.co.za" || host === "payfast.co.za";
     const isProcessPath = pathname === "/eng/process";
