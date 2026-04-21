@@ -25,3 +25,16 @@ export function getPublicSiteUrlFromEnv(): string | null {
 
   return normalized;
 }
+
+/**
+ * Canonical URL used for outbound links (emails, payment redirects).
+ * In production, always falls back to live domain if env is missing/unsafe.
+ */
+export function getCanonicalPublicSiteUrl(): string {
+  const envUrl = getPublicSiteUrlFromEnv();
+  if (envUrl) return envUrl;
+  if (process.env.NODE_ENV === "production") {
+    return "https://findmyspace.co.za";
+  }
+  return "http://localhost:3000";
+}

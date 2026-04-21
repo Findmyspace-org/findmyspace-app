@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { sendEmail } from "@/lib/email";
+import { getCanonicalPublicSiteUrl } from "@/lib/site-url";
 
 type BasicProfile = {
   first_name?: string | null;
@@ -253,14 +254,12 @@ export async function POST(req: NextRequest) {
     const {
       NEXT_PUBLIC_SUPABASE_URL,
       SUPABASE_SERVICE_ROLE_KEY,
-      NEXT_PUBLIC_SITE_URL,
       ADMIN_NOTIFICATION_EMAIL,
     } = process.env;
 
     if (
       !NEXT_PUBLIC_SUPABASE_URL ||
-      !SUPABASE_SERVICE_ROLE_KEY ||
-      !NEXT_PUBLIC_SITE_URL
+      !SUPABASE_SERVICE_ROLE_KEY
     ) {
       return NextResponse.json(
         { error: "Missing server config" },
@@ -297,9 +296,10 @@ export async function POST(req: NextRequest) {
 
     const ownerName = getDisplayName(owner);
     const spaceTitle = space.title || "Untitled listing";
-    const listingsUrl = `${NEXT_PUBLIC_SITE_URL}/dashboard/listings`;
-    const publicListingUrl = `${NEXT_PUBLIC_SITE_URL}/spaces/${space.id}`;
-    const adminListingsUrl = `${NEXT_PUBLIC_SITE_URL}/admin/listings`;
+    const appBaseUrl = getCanonicalPublicSiteUrl();
+    const listingsUrl = `${appBaseUrl}/dashboard/listings`;
+    const publicListingUrl = `${appBaseUrl}/spaces/${space.id}`;
+    const adminListingsUrl = `${appBaseUrl}/admin/listings`;
     const resolvedComment = (adminComment || space.listing_admin_comment || "").trim() || null;
 
     if (eventType === "listing_submitted") {

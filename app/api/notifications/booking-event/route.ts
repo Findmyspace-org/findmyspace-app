@@ -11,7 +11,7 @@ import {
   getDisplayName,
 } from "@/lib/bookingEmailHelpers";
 import { isCommunicationAllowed } from "@/lib/booking-communication";
-import { getPublicSiteUrlFromEnv } from "@/lib/site-url";
+import { getCanonicalPublicSiteUrl } from "@/lib/site-url";
 
 const MESSAGING_FORBIDDEN_MSG =
   "Messaging is only available after payment confirmation.";
@@ -72,7 +72,10 @@ export async function POST(req: NextRequest) {
       }
     );
 
-    const appBaseUrl = getPublicSiteUrlFromEnv() ?? "";
+    const appBaseUrl = getCanonicalPublicSiteUrl();
+
+    const authNextUrl = (path: string) =>
+      `${appBaseUrl}/login?next=${encodeURIComponent(path)}`;
 
     async function createNotification(row: NotificationInsertRow) {
       const fullPayload = {
@@ -172,7 +175,7 @@ export async function POST(req: NextRequest) {
             spaceTitle: space?.title,
             bookingType: booking.booking_unit,
             periodLabel,
-            dashboardUrl: `${appBaseUrl}/dashboard/requests`,
+            dashboardUrl: authNextUrl("/dashboard/requests"),
             renterMessage: booking.notes || null,
           }),
         });
@@ -202,7 +205,7 @@ export async function POST(req: NextRequest) {
             spaceTitle: space?.title,
             periodLabel,
             totalPrice: booking.total_price,
-            payUrl: `${appBaseUrl}/dashboard/my-bookings`,
+            payUrl: authNextUrl("/dashboard/my-bookings"),
             ownerMessage: booking.owner_response_message || null,
           }),
         });
@@ -276,7 +279,7 @@ export async function POST(req: NextRequest) {
             spaceTitle: space?.title,
             periodLabel,
             totalPrice: booking.total_price,
-            bookingsUrl: `${appBaseUrl}/dashboard/my-bookings`,
+            bookingsUrl: authNextUrl("/dashboard/my-bookings"),
             ownerMessage: null,
           }),
         });
@@ -291,7 +294,7 @@ export async function POST(req: NextRequest) {
             spaceTitle: space?.title,
             periodLabel,
             totalPrice: booking.total_price,
-            bookingsUrl: `${appBaseUrl}/dashboard/requests`,
+            bookingsUrl: authNextUrl("/dashboard/requests"),
             ownerMessage: null,
           }),
         });
