@@ -114,6 +114,22 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
 
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
+  const [searchingAddress, setSearchingAddress] = useState(false);
+  const [usingDeviceLocation, setUsingDeviceLocation] = useState(false);
+  const [reverseGeocoding, setReverseGeocoding] = useState(false);
+  const [addressSuggestions, setAddressSuggestions] = useState<
+    Array<{
+      label: string;
+      addressLine1: string;
+      suburb: string;
+      city: string;
+      latitude: number;
+      longitude: number;
+    }>
+  >([]);
+  const [addressSuggestionsOpen, setAddressSuggestionsOpen] = useState(false);
+  const [suburbTouched, setSuburbTouched] = useState(false);
+  const [cityTouched, setCityTouched] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const [draftRestored, setDraftRestored] = useState(false);
@@ -133,6 +149,7 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
     advisor_code: string | null;
     advisor_source: string | null;
   } | null>(null);
+  const suggestionAbortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -277,7 +294,7 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
   function getCommissionRate(unit: string) {
     if (unit === "hour") return 0.20;
     if (unit === "day") return 0.15;
-    if (unit === "month") return 0.10;
+    if (unit === "month") return 0.15;
     return 0.15;
   }
 
@@ -328,59 +345,217 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
     };
   }
 
-  async function reverseGeocode(lat: number, lng: number) {
+  function pickReverseAddressFields(
+    addr: Record<string, string | undefined>,
+    displayName?: string
+  ) {
+    /**
+     * Address line 1 should stay street-level.
+     * Avoid locality-like components (e.g. suburb/city_district) here.
+     */
+    const streetName =
+      addr.road || addr.pedestrian || addr.footway || addr.path || "";
+    const addressLine = [addr.house_number, streetName].filter(Boolean).join(" ").trim();
+    const fallbackStreetLine = (displayName || "").split(",")[0]?.trim() || "";
+
+    /**
+     * Suburb should prefer locality/neighbourhood style values.
+     * Use district-like values only as lower-priority fallbacks.
+     */
+    const suburbValue =
+      addr.suburb ||
+      addr.neighbourhood ||
+      addr.neighborhood ||
+      addr.quarter ||
+      addr.district ||
+      addr.locality ||
+      addr.borough ||
+      addr.hamlet ||
+      addr.residential ||
+      "";
+
+    /**
+     * City should be municipality/city-level value.
+     */
+    const cityValue =
+      addr.city ||
+      addr.town ||
+      addr.village ||
+      addr.municipality ||
+      addr.county ||
+      addr.state_district ||
+      "";
+
+    /**
+     * If street-level data is missing, keep line1 blank and let caller
+     * decide whether to preserve existing user-entered line1.
+     */
+    return {
+      addressLine: addressLine || streetName || fallbackStreetLine,
+      suburbValue,
+      cityValue,
+    };
+  }
+
+  function shouldOverwriteWithReverse(
+    current: string,
+    next: string,
+    touched: boolean,
+    forcePopulate: boolean
+  ) {
+    if (!next) return false;
+    if (forcePopulate) return true;
+    if (!current) return true;
+    if (!touched) return true;
+    return false;
+  }
+
+  async function reverseGeocode(
+    lat: number,
+    lng: number,
+    options?: { forcePopulate?: boolean }
+  ) {
+    setReverseGeocoding(true);
     try {
       const res = await fetch(
         `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}`
       );
+      if (!res.ok) {
+        throw new Error("Reverse geocoding failed.");
+      }
 
       const data = await res.json();
       const addr = data.address || {};
-
-      const roadName = addr.road || addr.residential || addr.pedestrian || "";
-      const line1 = [addr.house_number, roadName].filter(Boolean).join(" ");
+      const { addressLine, suburbValue, cityValue } = pickReverseAddressFields(
+        addr as Record<string, string | undefined>,
+        (data.display_name as string | undefined) || ""
+      );
+      const forcePopulate = Boolean(options?.forcePopulate);
 
       setAddressLine1((current) => {
-        if (!current) return line1;
+        if (forcePopulate && addressLine) return addressLine;
+        if (!current) return addressLine;
 
         const hasNumber = /\d/.test(current);
 
-        if (hasNumber && roadName) {
+        if (!forcePopulate && hasNumber && addressLine) {
           const number = current.match(/\d+[A-Za-z-]*/)?.[0] || "";
-          return `${number} ${roadName}`.trim();
+          const roadOnly =
+            addressLine
+              .replace(/^(\d+[A-Za-z-]*\s*)/, "")
+              .trim() || addressLine;
+          return `${number} ${roadOnly}`.trim();
         }
 
         return current;
       });
 
-      setSuburb(
-        addr.suburb ||
-        addr.neighbourhood ||
-        addr.city_district ||
-        addr.township ||
-        ""
+      setSuburb((current) =>
+        shouldOverwriteWithReverse(current, suburbValue, suburbTouched, forcePopulate)
+          ? suburbValue
+          : current
       );
 
-      setCity(addr.city || addr.town || addr.village || "");
+      setCity((current) =>
+        shouldOverwriteWithReverse(current, cityValue, cityTouched, forcePopulate)
+          ? cityValue
+          : current
+      );
     } catch (error) {
       console.error("Reverse geocoding failed", error);
+    } finally {
+      setReverseGeocoding(false);
     }
   }
 
+  useEffect(() => {
+    const query = [addressLine1.trim(), suburb.trim(), city.trim()]
+      .filter(Boolean)
+      .join(", ");
+
+    if (addressLine1.trim().length < 3) {
+      setAddressSuggestions([]);
+      setAddressSuggestionsOpen(false);
+      return;
+    }
+
+    const timer = window.setTimeout(async () => {
+      try {
+        suggestionAbortRef.current?.abort();
+        const controller = new AbortController();
+        suggestionAbortRef.current = controller;
+
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&q=${encodeURIComponent(
+            query
+          )}&limit=5`,
+          { signal: controller.signal }
+        );
+        if (!res.ok) return;
+        const data = (await res.json()) as Array<{
+          display_name?: string;
+          lat?: string;
+          lon?: string;
+          address?: Record<string, string | undefined>;
+        }>;
+
+        const next = (data || [])
+          .map((item) => {
+            const lat = Number(item.lat);
+            const lng = Number(item.lon);
+            if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+            const fields = pickReverseAddressFields(item.address || {});
+            return {
+              label: item.display_name || `${fields.addressLine}, ${fields.cityValue}`,
+              addressLine1: fields.addressLine,
+              suburb: fields.suburbValue,
+              city: fields.cityValue,
+              latitude: lat,
+              longitude: lng,
+            };
+          })
+          .filter(Boolean) as Array<{
+          label: string;
+          addressLine1: string;
+          suburb: string;
+          city: string;
+          latitude: number;
+          longitude: number;
+        }>;
+
+        setAddressSuggestions(next);
+        setAddressSuggestionsOpen(next.length > 0);
+      } catch (error) {
+        if ((error as Error).name !== "AbortError") {
+          console.error("Address autocomplete lookup failed", error);
+        }
+      }
+    }, 280);
+
+    return () => window.clearTimeout(timer);
+  }, [addressLine1, suburb, city]);
+
   async function searchAddressOnMap() {
+    setSearchingAddress(true);
     try {
       const query = [addressLine1, suburb, city].filter(Boolean).join(", ");
 
       if (!query) {
         setMessage("Please enter an address, suburb, or city first.");
+        setSearchingAddress(false);
         return;
       }
+
+      setMessage("Searching address on map...");
 
       const res = await fetch(
         `https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encodeURIComponent(
           query
         )}&limit=1`
       );
+      if (!res.ok) {
+        throw new Error("Address search failed.");
+      }
 
       const data = await res.json();
 
@@ -395,11 +570,13 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
 
       setLatitude(lat);
       setLongitude(lng);
-      await reverseGeocode(lat, lng);
+      await reverseGeocode(lat, lng, { forcePopulate: true });
       setMessage("Address found on map.");
     } catch (error) {
       console.error("Address search failed", error);
       setMessage("Could not search for the address.");
+    } finally {
+      setSearchingAddress(false);
     }
   }
 
@@ -409,6 +586,7 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
       return;
     }
 
+    setUsingDeviceLocation(true);
     navigator.geolocation.getCurrentPosition(
       async (position) => {
         const lat = position.coords.latitude;
@@ -416,11 +594,13 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
 
         setLatitude(lat);
         setLongitude(lng);
-        await reverseGeocode(lat, lng);
+        await reverseGeocode(lat, lng, { forcePopulate: true });
         setMessage("Location found.");
+        setUsingDeviceLocation(false);
       },
       () => {
         setMessage("Location access was denied or unavailable.");
+        setUsingDeviceLocation(false);
       },
       {
         enableHighAccuracy: true,
@@ -1222,13 +1402,51 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
         <div className="space-y-6">
           <div>
             <label className="mb-2 block text-sm font-medium">Address line 1</label>
-            <input
-              type="text"
-              value={addressLine1}
-              onChange={(e) => setAddressLine1(e.target.value)}
-              placeholder="7 Eerste Laan"
-              className="w-full rounded-md border border-gray-300 px-4 py-3 outline-none"
-            />
+            <div className="relative">
+              <input
+                type="text"
+                value={addressLine1}
+                onChange={(e) => {
+                  setAddressLine1(e.target.value);
+                  setAddressSuggestionsOpen(true);
+                }}
+                onBlur={() => {
+                  window.setTimeout(() => setAddressSuggestionsOpen(false), 140);
+                }}
+                onFocus={() => {
+                  if (addressSuggestions.length > 0) setAddressSuggestionsOpen(true);
+                }}
+                placeholder="Enter street address (e.g. 42 Alma Road)"
+                className="w-full rounded-md border border-gray-300 px-4 py-3 outline-none"
+                autoComplete="street-address"
+              />
+              {addressSuggestionsOpen && addressSuggestions.length > 0 ? (
+                <div className="absolute z-20 mt-1 max-h-56 w-full overflow-auto rounded-md border border-gray-200 bg-white shadow-lg">
+                  {addressSuggestions.map((suggestion, idx) => (
+                    <button
+                      key={`${suggestion.latitude}-${suggestion.longitude}-${idx}`}
+                      type="button"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        setAddressLine1(suggestion.addressLine1 || addressLine1);
+                        if (!suburbTouched) setSuburb(suggestion.suburb || suburb);
+                        if (!cityTouched) setCity(suggestion.city || city);
+                        setLatitude(suggestion.latitude);
+                        setLongitude(suggestion.longitude);
+                        setAddressSuggestionsOpen(false);
+                        setMessage("Address selected from suggestions.");
+                      }}
+                      className="block w-full border-b border-gray-100 px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 last:border-b-0"
+                    >
+                      {suggestion.label}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+            <p className="mt-2 text-xs text-gray-600">
+              Start typing to see address suggestions or use the map.
+            </p>
           </div>
 
           <div>
@@ -1236,9 +1454,13 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
             <input
               type="text"
               value={suburb}
-              onChange={(e) => setSuburb(e.target.value)}
-              placeholder="Hoog en Droog"
+              onChange={(e) => {
+                setSuburb(e.target.value);
+                setSuburbTouched(true);
+              }}
+              placeholder="Enter suburb (e.g. Rosebank)"
               className="w-full rounded-md border border-gray-300 px-4 py-3 outline-none"
+              autoComplete="address-level2"
             />
           </div>
 
@@ -1247,9 +1469,13 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
             <input
               type="text"
               value={city}
-              onChange={(e) => setCity(e.target.value)}
-              placeholder="Paarl"
+              onChange={(e) => {
+                setCity(e.target.value);
+                setCityTouched(true);
+              }}
+              placeholder="Enter city (e.g. Cape Town)"
               className="w-full rounded-md border border-gray-300 px-4 py-3 outline-none"
+              autoComplete="address-level1"
             />
           </div>
 
@@ -1257,17 +1483,19 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
             <button
               type="button"
               onClick={searchAddressOnMap}
-              className="rounded-md border border-gray-300 px-4 py-3 text-sm"
+              disabled={searchingAddress || reverseGeocoding}
+              className="rounded-md border border-gray-300 px-4 py-3 text-sm disabled:opacity-60"
             >
-              Find address on map
+              {searchingAddress ? "Finding..." : "Find address on map"}
             </button>
 
             <button
               type="button"
               onClick={useMyLocation}
-              className="rounded-md border border-gray-300 px-4 py-3 text-sm"
+              disabled={usingDeviceLocation || reverseGeocoding}
+              className="rounded-md border border-gray-300 px-4 py-3 text-sm disabled:opacity-60"
             >
-              Use current location
+              {usingDeviceLocation ? "Locating..." : "Use current location"}
             </button>
           </div>
 
@@ -1281,12 +1509,15 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
               onChange={async (lat, lng) => {
                 setLatitude(lat);
                 setLongitude(lng);
-                await reverseGeocode(lat, lng);
+                await reverseGeocode(lat, lng, { forcePopulate: true });
               }}
             />
             <p className="mt-2 text-sm text-gray-600">
               Selected position: {latitude.toFixed(6)}, {longitude.toFixed(6)}
             </p>
+            {reverseGeocoding ? (
+              <p className="mt-1 text-xs text-gray-500">Updating address from map pin...</p>
+            ) : null}
           </div>
         </div>
       </section>

@@ -3,9 +3,10 @@
 import Link from "next/link";
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import AuthModal from "@/app/components/AuthModal";
+import { sanitizeNextPath } from "@/lib/auth-redirect";
 import {
   Home,
   Search,
@@ -57,6 +58,8 @@ type ActionNotification = {
 
 export default function Header() {
   const pathname = usePathname();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const menuRef = useRef<HTMLDivElement | null>(null);
   const bellRef = useRef<HTMLDivElement | null>(null);
 
@@ -70,6 +73,7 @@ export default function Header() {
 
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [authMode, setAuthMode] = useState<"login" | "signup">("login");
+  const [authNextPath, setAuthNextPath] = useState("/");
 
   const [myBookingActionCount, setMyBookingActionCount] = useState(0);
   const [bookingRequestActionCount, setBookingRequestActionCount] = useState(0);
@@ -406,6 +410,30 @@ export default function Header() {
   }, [userId, isHost, isAdmin]);
 
   useEffect(() => {
+    if (loading) return;
+
+    const shouldOpenLogin = searchParams.get("login") === "1";
+    if (!shouldOpenLogin) return;
+
+    const safeNext = sanitizeNextPath(searchParams.get("next"), pathname || "/");
+
+    const currentUrl = new URL(window.location.href);
+    currentUrl.searchParams.delete("login");
+    currentUrl.searchParams.delete("next");
+    const cleanUrl = `${currentUrl.pathname}${currentUrl.search}${currentUrl.hash}`;
+
+    if (sessionEmail) {
+      window.location.replace(safeNext);
+      return;
+    }
+
+    setAuthMode("login");
+    setAuthNextPath(safeNext);
+    setAuthModalOpen(true);
+    router.replace(cleanUrl);
+  }, [loading, pathname, router, searchParams, sessionEmail]);
+
+  useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
         setMenuOpen(false);
@@ -458,6 +486,7 @@ export default function Header() {
     setMenuOpen(false);
     setBellOpen(false);
     setAuthMode("login");
+    setAuthNextPath(pathname || "/");
     setAuthModalOpen(true);
   }
 
@@ -465,6 +494,7 @@ export default function Header() {
     setMenuOpen(false);
     setBellOpen(false);
     setAuthMode("signup");
+    setAuthNextPath(pathname || "/");
     setAuthModalOpen(true);
   }
 
@@ -473,6 +503,7 @@ export default function Header() {
 
     if (!sessionEmail) {
       setAuthMode("signup");
+      setAuthNextPath("/dashboard/become-host");
       setAuthModalOpen(true);
       return;
     }
@@ -842,7 +873,7 @@ export default function Header() {
       <AuthModal
         open={authModalOpen}
         mode={authMode}
-        nextPath={pathname || "/"}
+        nextPath={authNextPath || pathname || "/"}
         onClose={() => setAuthModalOpen(false)}
         onSwitchMode={(mode) => setAuthMode(mode)}
       />

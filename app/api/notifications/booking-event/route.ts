@@ -12,6 +12,7 @@ import {
 } from "@/lib/bookingEmailHelpers";
 import { isCommunicationAllowed } from "@/lib/booking-communication";
 import { getCanonicalPublicSiteUrl } from "@/lib/site-url";
+import { buildModalLoginUrl } from "@/lib/auth-redirect";
 
 const MESSAGING_FORBIDDEN_MSG =
   "Messaging is only available after payment confirmation.";
@@ -74,8 +75,7 @@ export async function POST(req: NextRequest) {
 
     const appBaseUrl = getCanonicalPublicSiteUrl();
 
-    const authNextUrl = (path: string) =>
-      `${appBaseUrl}/login?next=${encodeURIComponent(path)}`;
+    const authNextUrl = (path: string) => buildModalLoginUrl(appBaseUrl, path);
 
     async function createNotification(row: NotificationInsertRow) {
       const fullPayload = {

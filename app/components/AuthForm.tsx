@@ -5,6 +5,7 @@ import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { getPendingAdvisorCode, setPendingAdvisorCode } from "@/lib/advisor-code";
+import { sanitizeNextPath } from "@/lib/auth-redirect";
 
 type AuthFormProps = {
   mode: "login" | "signup";
@@ -34,7 +35,10 @@ export default function AuthForm({
 
   const isSignup = mode === "signup";
 
-  const nextPath = nextPathOverride || searchParams.get("next") || "/dashboard";
+  const nextPath = sanitizeNextPath(
+    nextPathOverride || searchParams.get("next"),
+    "/dashboard"
+  );
 
   const loginHref = `/login?next=${encodeURIComponent(nextPath)}`;
   const signupHref = `/signup?next=${encodeURIComponent(nextPath)}`;

@@ -21,7 +21,9 @@ export default function RootLayout({
         <Suspense fallback={null}>
           <AdvisorParamCapture />
         </Suspense>
-        <Header />
+        <Suspense fallback={null}>
+          <Header />
+        </Suspense>
 
         <main>{children}</main>
 
