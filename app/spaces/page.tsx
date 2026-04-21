@@ -1,15 +1,22 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
-import { useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import SpaceCard from "@/app/components/SpaceCard";
 import PriceRangeFilter from "@/app/components/PriceRangeFilter";
-import MapPicker from "@/app/components/MapView";
 import { Search, MapPinned, MapPin, ArrowUpDown, X } from "lucide-react";
 import MapView from "@/app/components/MapView";
 import { LISTING_SPACE_TYPE_OPTIONS } from "@/app/data/spaceFeatureConfig";
+import { BrowseWhenFilter } from "@/app/components/BrowseWhenFilter";
+import {
+  parseAppliedWhenFromParams,
+  spaceMatchesWhenMinBooking,
+  writeAppliedWhenToParams,
+  type AppliedWhen,
+  type WhenDurationUnit,
+} from "@/lib/browse-when-filter";
 
 type Space = {
   id: string;
@@ -23,6 +30,9 @@ type Space = {
   price_per_hour: number | null;
   price_per_day: number | null;
   price_per_month: number | null;
+  min_booking_hours: number | null;
+  min_booking_days: number | null;
+  min_booking_months: number | null;
   image_urls?: string[];
   status?: string | null;
 };
@@ -40,6 +50,8 @@ function parseNumberParam(value: string | null, fallback: number) {
 
 function SpacesPageContent({ searchParamsString }: { searchParamsString: string }) {
   const params = useMemo(() => new URLSearchParams(searchParamsString), [searchParamsString]);
+  const pathname = usePathname();
+  const router = useRouter();
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [spaces, setSpaces] = useState<Space[]>([]);
   const [loading, setLoading] = useState(true);
@@ -52,9 +64,17 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
     params.get("sort") || "price_high_low"
   );
 
-  const [bookingUnitFilter, setBookingUnitFilter] = useState(
-    params.get("bookingUnit") || "all"
+  const [appliedWhen, setAppliedWhen] = useState<AppliedWhen | null>(() =>
+    parseAppliedWhenFromParams(params)
   );
+
+  const [bookingUnitFilter, setBookingUnitFilter] = useState(() => {
+    const wu = params.get("whenUnit");
+    if (wu === "hour" || wu === "day" || wu === "month") return wu;
+    const bu = params.get("bookingUnit");
+    if (bu === "hour" || bu === "day" || bu === "month") return bu;
+    return "all";
+  });
 
   function getDefaultMax(unit: string) {
     if (unit === "hour") return 5000;
@@ -69,11 +89,86 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
   const [maxPrice, setMaxPrice] = useState(
     parseNumberParam(
       params.get("max"),
-      getDefaultMax(params.get("bookingUnit") || "all")
+      getDefaultMax(
+        params.get("whenUnit") || params.get("bookingUnit") || "all"
+      )
     )
   );
 
   const [showMap, setShowMap] = useState(false);
+
+  useEffect(() => {
+    const p = new URLSearchParams(searchParamsString);
+    const when = parseAppliedWhenFromParams(p);
+    setAppliedWhen(when);
+    const wu = p.get("whenUnit");
+    if (wu === "hour" || wu === "day" || wu === "month") {
+      setBookingUnitFilter(wu);
+      return;
+    }
+    const bu = p.get("bookingUnit");
+    setBookingUnitFilter(
+      bu === "hour" || bu === "day" || bu === "month" ? bu : "all"
+    );
+  }, [searchParamsString]);
+
+  const suggestedWhenUnit = useMemo((): WhenDurationUnit | null => {
+    if (typeFilter === "parking") return "month";
+    if (typeFilter === "event_space") return "hour";
+    if (
+      typeFilter === "office" ||
+      typeFilter === "meeting_room" ||
+      typeFilter === "boardroom" ||
+      typeFilter === "desk_coworking"
+    ) {
+      return "day";
+    }
+    return null;
+  }, [typeFilter]);
+
+  const pushBrowseUrl = useCallback(
+    (
+      nextAppliedWhen: AppliedWhen | null,
+      bookingUnitOverride?: "all" | "hour" | "day" | "month"
+    ) => {
+      const p = new URLSearchParams();
+      const q = search.trim();
+      if (q) p.set("q", q);
+      if (typeFilter !== "all") p.set("type", typeFilter);
+      if (cityFilter !== "all") p.set("city", cityFilter);
+      if (sortBy !== "price_high_low") p.set("sort", sortBy);
+
+      const buResolved =
+        nextAppliedWhen != null
+          ? nextAppliedWhen.unit
+          : bookingUnitOverride !== undefined
+            ? bookingUnitOverride
+            : bookingUnitFilter;
+
+      if (buResolved !== "all") p.set("bookingUnit", buResolved);
+      if (minPrice !== 0) p.set("min", String(minPrice));
+      const defMax = getDefaultMax(
+        buResolved === "hour" || buResolved === "day" || buResolved === "month"
+          ? buResolved
+          : "all"
+      );
+      if (maxPrice !== defMax) p.set("max", String(maxPrice));
+      writeAppliedWhenToParams(p, nextAppliedWhen);
+      const qs = p.toString();
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    },
+    [
+      search,
+      typeFilter,
+      cityFilter,
+      sortBy,
+      bookingUnitFilter,
+      minPrice,
+      maxPrice,
+      pathname,
+      router,
+    ]
+  );
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -203,6 +298,10 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
         return false;
       }
 
+      if (appliedWhen && !spaceMatchesWhenMinBooking(space, appliedWhen)) {
+        return false;
+      }
+
       const price =
         bookingUnitFilter === "hour"
           ? space.price_per_hour
@@ -245,6 +344,7 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
     typeFilter,
     cityFilter,
     bookingUnitFilter,
+    appliedWhen,
     minPrice,
     maxPrice,
     sortBy,
@@ -255,9 +355,11 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
     setTypeFilter("all");
     setCityFilter("all");
     setSortBy("price_high_low");
+    setAppliedWhen(null);
     setBookingUnitFilter("all");
     setMinPrice(0);
     setMaxPrice(getDefaultMax("all"));
+    pushBrowseUrl(null, "all");
   }
 
   return (
@@ -271,56 +373,73 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
 
       <div
         id="browse-search"
-        className="mb-6 grid scroll-mt-24 gap-3 md:grid-cols-4"
+        className="mb-6 scroll-mt-24 rounded-xl border border-gray-200/90 bg-white p-4 shadow-sm ring-1 ring-black/[0.03]"
       >
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-          <input
-            ref={searchInputRef}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search..."
-            className="w-full rounded-md border border-gray-300 bg-white px-10 py-3 text-sm outline-none focus:border-[#192a3a]"
-            aria-label="Search spaces by keyword or area"
-          />
-        </div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+          <div className="relative min-w-0 sm:col-span-2 xl:col-span-1">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+            <input
+              ref={searchInputRef}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search..."
+              className="w-full rounded-lg border border-gray-200 bg-white px-10 py-2.5 text-sm shadow-sm outline-none ring-emerald-500/20 transition focus:border-emerald-500 focus:ring-2"
+              aria-label="Search spaces by keyword or area"
+            />
+          </div>
 
-        <select
-          value={typeFilter}
-          onChange={(e) => setTypeFilter(e.target.value)}
-          className="rounded-md border border-gray-300 bg-white px-4 py-3 text-sm outline-none focus:border-[#192a3a]"
-        >
-          <option value="all">All types</option>
-          {LISTING_SPACE_TYPE_OPTIONS.map((opt) => (
-            <option key={opt.value} value={opt.value}>
-              {opt.label}
-            </option>
-          ))}
-        </select>
-
-        <select
-          value={cityFilter}
-          onChange={(e) => setCityFilter(e.target.value)}
-          className="rounded-md border border-gray-300 bg-white px-4 py-3 text-sm outline-none focus:border-[#192a3a]"
-        >
-          <option value="all">All cities</option>
-          {cityOptions.map((city) => (
-            <option key={city} value={city}>
-              {city}
-            </option>
-          ))}
-        </select>
-
-        <div className="relative">
-          <ArrowUpDown className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
           <select
-            value={sortBy}
-            onChange={(e) => setSortBy(e.target.value)}
-            className="w-full rounded-md border border-gray-300 bg-white px-10 py-3 text-sm outline-none focus:border-[#192a3a]"
+            value={typeFilter}
+            onChange={(e) => setTypeFilter(e.target.value)}
+            className="min-h-[42px] rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm shadow-sm outline-none ring-emerald-500/20 transition focus:border-emerald-500 focus:ring-2"
           >
-            <option value="price_high_low">Price high → low</option>
-            <option value="price_low_high">Price low → high</option>
+            <option value="all">All types</option>
+            {LISTING_SPACE_TYPE_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
           </select>
+
+          <select
+            value={cityFilter}
+            onChange={(e) => setCityFilter(e.target.value)}
+            className="min-h-[42px] rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm shadow-sm outline-none ring-emerald-500/20 transition focus:border-emerald-500 focus:ring-2"
+          >
+            <option value="all">All cities</option>
+            {cityOptions.map((city) => (
+              <option key={city} value={city}>
+                {city}
+              </option>
+            ))}
+          </select>
+
+          <div className="relative min-w-0">
+            <ArrowUpDown className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+              className="min-h-[42px] w-full rounded-lg border border-gray-200 bg-white px-10 py-2.5 text-sm shadow-sm outline-none ring-emerald-500/20 transition focus:border-emerald-500 focus:ring-2"
+            >
+              <option value="price_high_low">Price high → low</option>
+              <option value="price_low_high">Price low → high</option>
+            </select>
+          </div>
+
+          <BrowseWhenFilter
+            applied={appliedWhen}
+            suggestedUnit={suggestedWhenUnit}
+            onApply={(w) => {
+              setAppliedWhen(w);
+              setBookingUnitFilter(w.unit);
+              pushBrowseUrl(w);
+            }}
+            onClear={() => {
+              setAppliedWhen(null);
+              setBookingUnitFilter("all");
+              pushBrowseUrl(null, "all");
+            }}
+          />
         </div>
       </div>
 
@@ -423,7 +542,7 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
           </div>
         </div>
       )}
-    </main >
+    </main>
   );
 }
 
