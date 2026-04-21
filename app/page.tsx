@@ -72,7 +72,7 @@ export default function HomePage() {
   return (
     <main className="min-h-screen text-[#192a3a]">
       {/* HERO */}
-      <section className="relative min-h-[700px] overflow-visible pb-24 sm:pb-28">
+      <section className="relative min-h-[700px] overflow-visible pb-10 lg:pb-24 xl:pb-28">
         {/* Background */}
         <div
           className="absolute inset-0 bg-cover bg-center"
@@ -218,10 +218,10 @@ export default function HomePage() {
           </div>
         </div>
 
-        <div className="pointer-events-none absolute inset-x-0 bottom-[-20px] z-20 -mt-10 px-6 sm:bottom-[-36px]">
+        <div className="pointer-events-none relative z-20 mt-10 w-full px-6 lg:absolute lg:inset-x-0 lg:bottom-[-36px] lg:mt-0 lg:-mt-10">
           <div className="relative mx-auto max-w-4xl">
             <div
-              className="pointer-events-none absolute inset-x-0 -top-8 bottom-0 -z-10 rounded-2xl bg-gradient-to-t from-white/70 to-transparent"
+              className="pointer-events-none absolute inset-x-0 -top-8 bottom-0 -z-10 hidden rounded-2xl bg-gradient-to-t from-white/70 to-transparent lg:block"
               aria-hidden
             />
             <div
