@@ -11,6 +11,7 @@ import {
   PartyPopper,
   Package,
   ShieldCheck,
+  UserCheck,
 } from "lucide-react";
 import { SPACE_INTENTS, type SpaceIntentKey } from "@/lib/space-intents";
 /* ================= DATA ================= */
@@ -230,30 +231,44 @@ export default function HomePage() {
                   : "translate-y-3 opacity-0 blur-[1.5px] shadow-[0_4px_18px_rgba(0,0,0,0.05),inset_0_1px_0_rgba(255,255,255,0.45)]"
               }`}
             >
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 md:gap-6">
-                <div className="cursor-default rounded-xl border border-transparent px-3 py-3">
-                  <div className="flex items-start gap-3">
-                    <span className="rounded-lg border border-white/40 bg-white/40 p-2 text-red-500">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 lg:gap-4">
+                <div className="min-w-0 cursor-default rounded-xl border border-transparent px-2.5 py-2.5 sm:px-3 sm:py-3">
+                  <div className="flex items-start gap-2.5 sm:gap-3">
+                    <span className="shrink-0 rounded-lg border border-white/40 bg-white/40 p-2 text-red-500">
                       <BadgeCheck className="h-4 w-4" />
                     </span>
-                    <div>
-                      <p className="text-sm font-semibold text-[#192a3a]">Verified listings</p>
-                      <p className="mt-1 text-xs text-gray-600">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold leading-snug text-[#192a3a]">Verified listings</p>
+                      <p className="mt-1 text-xs leading-snug text-gray-600">
                         Quality and trust you can rely on.
                       </p>
                     </div>
                   </div>
                 </div>
 
-                <div className="cursor-default rounded-xl border border-transparent px-3 py-3 md:border-l md:border-white/40 md:pl-6">
-                  <div className="flex items-start gap-3">
-                    <span className="rounded-lg border border-white/40 bg-white/40 p-2 text-red-500">
+                <div className="min-w-0 cursor-default rounded-xl border border-transparent px-2.5 py-2.5 sm:px-3 sm:py-3">
+                  <div className="flex items-start gap-2.5 sm:gap-3">
+                    <span className="shrink-0 rounded-lg border border-white/40 bg-white/40 p-2 text-red-500">
                       <ShieldCheck className="h-4 w-4" />
                     </span>
-                    <div>
-                      <p className="text-sm font-semibold text-[#192a3a]">Secure payments</p>
-                      <p className="mt-1 text-xs text-gray-600">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold leading-snug text-[#192a3a]">Secure payments</p>
+                      <p className="mt-1 text-xs leading-snug text-gray-600">
                         Safe, simple and protected.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="min-w-0 cursor-default rounded-xl border border-transparent px-2.5 py-2.5 sm:px-3 sm:py-3">
+                  <div className="flex items-start gap-2.5 sm:gap-3">
+                    <span className="shrink-0 rounded-lg border border-white/40 bg-white/40 p-2 text-red-500">
+                      <UserCheck className="h-4 w-4" />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold leading-snug text-[#192a3a]">Verified owners</p>
+                      <p className="mt-1 text-xs leading-snug text-gray-600">
+                        Trusted hosts with verified details.
                       </p>
                     </div>
                   </div>
