@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Fragment, Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
-import { Check, ClipboardList, Home, Landmark, User } from "lucide-react";
+import { Check, ClipboardList, Home, Landmark, User, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import RequireAuth from "@/app/components/RequireAuth";
 import DecisionSuggestion from "@/app/components/DecisionSuggestion";
@@ -101,6 +101,11 @@ type WorkflowRow = {
 };
 
 type VerificationStepKey = "identity" | "bank" | "overview" | "list-space";
+type AuthUserLite = {
+  id: string;
+  email?: string | null;
+  user_metadata?: Record<string, any> | null;
+};
 
 const STEP_ICONS: Record<VerificationStepKey, LucideIcon> = {
   identity: User,
@@ -208,6 +213,44 @@ function VerificationPageContent({ step }: { step: string }) {
   const [accountNumber, setAccountNumber] = useState("");
   const [accountType, setAccountType] = useState("");
   const [branchCode, setBranchCode] = useState("");
+  const [identityUploadSuccessOpen, setIdentityUploadSuccessOpen] = useState(false);
+  const [identityUploadPreviews, setIdentityUploadPreviews] = useState<string[]>([]);
+  const [redirectToBankTimer, setRedirectToBankTimer] = useState<number | null>(null);
+  const [bankUploadSuccessOpen, setBankUploadSuccessOpen] = useState(false);
+  const [bankUploadPreview, setBankUploadPreview] = useState<string | null>(null);
+  const [redirectToOverviewTimer, setRedirectToOverviewTimer] = useState<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (redirectToBankTimer) {
+        window.clearTimeout(redirectToBankTimer);
+      }
+      if (redirectToOverviewTimer) {
+        window.clearTimeout(redirectToOverviewTimer);
+      }
+      identityUploadPreviews.forEach((url) => URL.revokeObjectURL(url));
+      if (bankUploadPreview) {
+        URL.revokeObjectURL(bankUploadPreview);
+      }
+    };
+  }, [
+    bankUploadPreview,
+    identityUploadPreviews,
+    redirectToBankTimer,
+    redirectToOverviewTimer,
+  ]);
+
+  function normalizeRequestError(error: unknown, fallback: string) {
+    if (error instanceof Error) {
+      const msg = error.message.trim();
+      if (!msg) return fallback;
+      if (msg.toLowerCase() === "failed to fetch") {
+        return "Network issue while uploading. Check your connection and try again.";
+      }
+      return msg;
+    }
+    return fallback;
+  }
 
   useEffect(() => {
     loadVerificationData();
@@ -237,6 +280,18 @@ function VerificationPageContent({ step }: { step: string }) {
 
     if (!user) {
       setMessage("Please log in first.");
+      setLoading(false);
+      return;
+    }
+
+    try {
+      await ensureProfileRow(user as AuthUserLite);
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "Could not prepare your host profile."
+      );
       setLoading(false);
       return;
     }
@@ -413,6 +468,39 @@ function VerificationPageContent({ step }: { step: string }) {
     };
   }
 
+  async function ensureProfileRow(user: AuthUserLite) {
+    const { data: existingProfile, error: existingError } = await (supabase
+      .from("profiles") as any)
+      .select("id")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    if (!existingError && existingProfile?.id) {
+      return;
+    }
+
+    const firstName = String(user.user_metadata?.first_name || "").trim() || null;
+    const lastName = String(user.user_metadata?.last_name || "").trim() || null;
+    const fullName =
+      [firstName, lastName].filter(Boolean).join(" ").trim() || null;
+    const email = user.email?.trim() || null;
+
+    const { error } = await (supabase.from("profiles") as any).upsert(
+      {
+        id: user.id,
+        first_name: firstName,
+        last_name: lastName,
+        full_name: fullName,
+        email,
+      },
+      { onConflict: "id" }
+    );
+
+    if (error) {
+      throw new Error(`Could not initialize profile: ${error.message}`);
+    }
+  }
+
   async function handleSaveIdentity(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
@@ -428,6 +516,7 @@ function VerificationPageContent({ step }: { step: string }) {
         setSaving(false);
         return;
       }
+      await ensureProfileRow(user as AuthUserLite);
 
       const docsToInsert: OwnerVerificationInsertRow[] = [];
 
@@ -486,17 +575,52 @@ function VerificationPageContent({ step }: { step: string }) {
         throw new Error(profileUpdateError.message);
       }
 
-      setMessage("Identity documents saved. Continue to bank details.");
+      const shouldNotifyAdmin = docsToInsert.length > 0;
+      if (shouldNotifyAdmin) {
+        try {
+          await fetch("/api/notifications/verification-event", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              userId: user.id,
+              eventType: "identity_submitted",
+            }),
+          });
+        } catch (notificationError) {
+          console.error(
+            "Failed to trigger admin identity verification notification:",
+            notificationError
+          );
+        }
+      }
+
+      setMessage("");
+      const previews: string[] = [];
+      if (idFrontFile && idFrontFile.type.startsWith("image/")) {
+        previews.push(URL.createObjectURL(idFrontFile));
+      }
+      if (idBackFile && idBackFile.type.startsWith("image/")) {
+        previews.push(URL.createObjectURL(idBackFile));
+      }
+      setIdentityUploadPreviews(previews);
+      setIdentityUploadSuccessOpen(true);
       setIdFrontFile(null);
       setIdBackFile(null);
       await loadVerificationData();
-      window.location.href = "/dashboard/verification?step=bank";
+      const timer = window.setTimeout(() => {
+        setIdentityUploadSuccessOpen(false);
+        previews.forEach((url) => URL.revokeObjectURL(url));
+        setIdentityUploadPreviews([]);
+        window.location.href = "/dashboard/verification?step=bank";
+      }, 1500);
+      setRedirectToBankTimer(timer);
     } catch (error) {
       console.error(error);
       setMessage(
-        error instanceof Error
-          ? error.message
-          : "Something went wrong while saving identity documents."
+        normalizeRequestError(
+          error,
+          "Something went wrong while saving identity documents."
+        )
       );
     } finally {
       setSaving(false);
@@ -518,6 +642,7 @@ function VerificationPageContent({ step }: { step: string }) {
         setSaving(false);
         return;
       }
+      await ensureProfileRow(user as AuthUserLite);
 
       let uploadedBankProofUrl =
         existingBankDetails?.proof_of_bank_url || null;
@@ -561,6 +686,15 @@ function VerificationPageContent({ step }: { step: string }) {
       }
 
       const finalBankName = bankName === "Other" ? customBankName.trim() : bankName;
+      const existingFinalBankName = existingBankDetails?.bank_name || "";
+      const bankDetailsChanged =
+        !existingBankDetails ||
+        existingBankDetails.account_holder_name !== accountHolderName ||
+        existingFinalBankName !== finalBankName ||
+        existingBankDetails.account_number !== accountNumber ||
+        existingBankDetails.account_type !== accountType ||
+        existingBankDetails.branch_code !== branchCode;
+      const bankProofChanged = Boolean(bankProofFile);
 
       if (existingBankDetails?.id) {
         const updateRow: OwnerBankDetailsUpdateRow = {
@@ -617,16 +751,47 @@ function VerificationPageContent({ step }: { step: string }) {
         throw new Error(profileUpdateError.message);
       }
 
-      setMessage("Bank details saved. Go to your host dashboard.");
+      const shouldNotifyAdmin = bankDetailsChanged || bankProofChanged;
+      if (shouldNotifyAdmin) {
+        try {
+          await fetch("/api/notifications/verification-event", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              userId: user.id,
+              eventType: "bank_submitted",
+            }),
+          });
+        } catch (notificationError) {
+          console.error(
+            "Failed to trigger admin bank verification notification:",
+            notificationError
+          );
+        }
+      }
+
+      setMessage("");
+      let previewUrl: string | null = null;
+      if (bankProofFile && bankProofFile.type.startsWith("image/")) {
+        previewUrl = URL.createObjectURL(bankProofFile);
+      }
+      setBankUploadPreview(previewUrl);
+      setBankUploadSuccessOpen(true);
       setBankProofFile(null);
       await loadVerificationData();
-      window.location.href = "/dashboard/verification?step=overview";
+      const timer = window.setTimeout(() => {
+        setBankUploadSuccessOpen(false);
+        if (previewUrl) {
+          URL.revokeObjectURL(previewUrl);
+          setBankUploadPreview(null);
+        }
+        window.location.href = "/dashboard/verification?step=overview";
+      }, 1500);
+      setRedirectToOverviewTimer(timer);
     } catch (error) {
       console.error(error);
       setMessage(
-        error instanceof Error
-          ? error.message
-          : "Something went wrong while saving bank details."
+        normalizeRequestError(error, "Something went wrong while saving bank details.")
       );
     } finally {
       setSaving(false);
@@ -1015,6 +1180,14 @@ function VerificationPageContent({ step }: { step: string }) {
                       <FileUploadField
                         label="ID document front"
                         selectedFile={idFrontFile}
+                        hasUploaded={Boolean(
+                          existingDocs.find((doc) => doc.document_type === "id_front")
+                        )}
+                        previewUrl={
+                          existingDocs.find((doc) => doc.document_type === "id_front")
+                            ?.file_url || null
+                        }
+                        uploadedLabel="Front uploaded"
                         statusHint={
                           idFrontFile
                             ? "Save below to upload"
@@ -1029,6 +1202,14 @@ function VerificationPageContent({ step }: { step: string }) {
                       <FileUploadField
                         label="ID document back"
                         selectedFile={idBackFile}
+                        hasUploaded={Boolean(
+                          existingDocs.find((doc) => doc.document_type === "id_back")
+                        )}
+                        previewUrl={
+                          existingDocs.find((doc) => doc.document_type === "id_back")
+                            ?.file_url || null
+                        }
+                        uploadedLabel="Back uploaded"
                         statusHint={
                           idBackFile
                             ? "Save below to upload"
@@ -1156,6 +1337,12 @@ function VerificationPageContent({ step }: { step: string }) {
                         <FileUploadField
                           label="Proof of bank account"
                           selectedFile={bankProofFile}
+                          hasUploaded={Boolean(
+                            existingBankDetails?.proof_of_bank_url ||
+                              existingBankDetails?.proof_of_bank_path
+                          )}
+                          previewUrl={existingBankDetails?.proof_of_bank_url || null}
+                          uploadedLabel="Proof uploaded"
                           statusHint={
                             bankProofFile
                               ? "Save below to upload"
@@ -1296,6 +1483,131 @@ function VerificationPageContent({ step }: { step: string }) {
           )}
         </div>
       </main>
+      {identityUploadSuccessOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 px-4"
+          onClick={() => {
+            setIdentityUploadSuccessOpen(false);
+            if (redirectToBankTimer) {
+              window.clearTimeout(redirectToBankTimer);
+              setRedirectToBankTimer(null);
+            }
+            identityUploadPreviews.forEach((url) => URL.revokeObjectURL(url));
+            setIdentityUploadPreviews([]);
+          }}
+          role="presentation"
+        >
+          <div
+            className="w-full max-w-sm rounded-md border border-gray-200 bg-white p-5 shadow-xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="id-upload-success-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => {
+                setIdentityUploadSuccessOpen(false);
+                if (redirectToBankTimer) {
+                  window.clearTimeout(redirectToBankTimer);
+                  setRedirectToBankTimer(null);
+                }
+                identityUploadPreviews.forEach((url) => URL.revokeObjectURL(url));
+                setIdentityUploadPreviews([]);
+              }}
+              className="ml-auto flex rounded-md p-1 text-gray-500 hover:bg-gray-100"
+              aria-label="Close upload confirmation"
+            >
+              <X className="h-4 w-4" />
+            </button>
+            <h3
+              id="id-upload-success-title"
+              className="mt-1 text-lg font-semibold text-[#192a3a]"
+            >
+              Upload successful
+            </h3>
+            <p className="mt-2 text-sm text-gray-600">
+              Your ID documents have been uploaded.
+            </p>
+            {identityUploadPreviews.length > 0 ? (
+              <div className="mt-4 flex gap-2">
+                {identityUploadPreviews.slice(0, 2).map((url) => (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    key={url}
+                    src={url}
+                    alt="Uploaded ID preview"
+                    className="h-14 w-14 rounded-md border border-gray-200 object-cover"
+                  />
+                ))}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      )}
+      {bankUploadSuccessOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 px-4"
+          onClick={() => {
+            setBankUploadSuccessOpen(false);
+            if (redirectToOverviewTimer) {
+              window.clearTimeout(redirectToOverviewTimer);
+              setRedirectToOverviewTimer(null);
+            }
+            if (bankUploadPreview) {
+              URL.revokeObjectURL(bankUploadPreview);
+              setBankUploadPreview(null);
+            }
+          }}
+          role="presentation"
+        >
+          <div
+            className="w-full max-w-sm rounded-md border border-gray-200 bg-white p-5 shadow-xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="bank-upload-success-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => {
+                setBankUploadSuccessOpen(false);
+                if (redirectToOverviewTimer) {
+                  window.clearTimeout(redirectToOverviewTimer);
+                  setRedirectToOverviewTimer(null);
+                }
+                if (bankUploadPreview) {
+                  URL.revokeObjectURL(bankUploadPreview);
+                  setBankUploadPreview(null);
+                }
+              }}
+              className="ml-auto flex rounded-md p-1 text-gray-500 hover:bg-gray-100"
+              aria-label="Close upload confirmation"
+            >
+              <X className="h-4 w-4" />
+            </button>
+            <h3
+              id="bank-upload-success-title"
+              className="mt-1 text-lg font-semibold text-[#192a3a]"
+            >
+              Upload successful
+            </h3>
+            <p className="mt-2 text-sm text-gray-600">
+              Proof of bank account uploaded
+            </p>
+            {bankUploadPreview ? (
+              <div className="mt-4 flex gap-2">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={bankUploadPreview}
+                  alt="Uploaded bank proof preview"
+                  className="h-14 w-14 rounded-md border border-gray-200 object-cover"
+                />
+              </div>
+            ) : null}
+          </div>
+        </div>
+      )}
     </RequireAuth>
   );
 }
