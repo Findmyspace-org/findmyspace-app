@@ -53,7 +53,10 @@ type ActionNotification = {
     | "admin"
     | "booking_confirmed"
     | "booking_paid"
-    | "booking_message";
+    | "booking_message"
+    | "notice";
+  /** When set, row comes from `notifications` table and can be marked read. */
+  tableRowId?: string;
 };
 
 export default function Header() {
@@ -79,6 +82,8 @@ export default function Header() {
   const [bookingRequestActionCount, setBookingRequestActionCount] = useState(0);
   const [adminActionCount, setAdminActionCount] = useState(0);
   const [notifications, setNotifications] = useState<ActionNotification[]>([]);
+  const [bellRefresh, setBellRefresh] = useState(0);
+  const [messageUnreadCount, setMessageUnreadCount] = useState(0);
 
   const hideHeader = pathname === "/login" || pathname === "/signup";
 
@@ -136,6 +141,7 @@ export default function Header() {
         setMyBookingActionCount(0);
         setBookingRequestActionCount(0);
         setAdminActionCount(0);
+        setMessageUnreadCount(0);
         setNotifications([]);
       }
 
@@ -197,6 +203,7 @@ export default function Header() {
         setMyBookingActionCount(0);
         setBookingRequestActionCount(0);
         setAdminActionCount(0);
+        setMessageUnreadCount(0);
         setNotifications([]);
         return;
       }
@@ -317,79 +324,143 @@ export default function Header() {
           nextAdminCount = pendingSpacesCount + pendingOwnerCount + pendingBankCount;
         }
 
-        // Notification table unread notifications
+        // Notification table unread rows (badge uses actionable types only)
+        const DROPDOWN_NOTIFICATION_TYPES = new Set([
+          "payment_needed",
+          "booking_request",
+          "booking_declined",
+          "booking_expired",
+          "booking_confirmed",
+          "booking_paid",
+          "payment_received",
+          "booking_message",
+          "identity_submitted",
+          "bank_submitted",
+        ]);
+
+        const RENTER_BADGE_NOTIFICATION_TYPES = new Set([
+          "payment_needed",
+          "booking_message",
+        ]);
+        const OWNER_BADGE_NOTIFICATION_TYPES = new Set([
+          "booking_request",
+          "booking_message",
+        ]);
+        const ADMIN_BADGE_NOTIFICATION_TYPES = new Set([
+          "payment_received",
+          "identity_submitted",
+          "bank_submitted",
+        ]);
+
+        const { count: messageUnreadExact, error: messageCountError } = await supabase
+          .from("notifications")
+          .select("id", { count: "exact", head: true })
+          .eq("user_id", userId)
+          .eq("type", "booking_message")
+          .eq("is_read", false);
+
+        if (mounted) {
+          if (!messageCountError && messageUnreadExact !== null) {
+            setMessageUnreadCount(messageUnreadExact);
+          } else if (messageCountError) {
+            setMessageUnreadCount(0);
+          }
+        }
+
         const { data: notificationRows, error: notificationsError } = await supabase
           .from("notifications")
-          .select("id, user_id, role, type, title, href, is_read, created_at")
+          .select(
+            "id, user_id, role, type, title, href, is_read, created_at, related_entity_type, related_entity_id"
+          )
           .eq("user_id", userId)
           .eq("is_read", false)
           .order("created_at", { ascending: false })
-          .limit(10);
+          .limit(25);
+
+        let renterDbBadge = 0;
+        let ownerDbBadge = 0;
+        let adminDbBadge = 0;
 
         if (!notificationsError) {
-          ((notificationRows || []) as {
+          const rows = (notificationRows || []) as {
             id: string;
             type: string | null;
             title: string | null;
             href: string | null;
-          }[]).forEach((row) => {
-            if (
-              row.type !== "booking_confirmed" &&
-              row.type !== "booking_paid" &&
-              row.type !== "payment_received" &&
-              row.type !== "booking_message"
+            related_entity_type?: string | null;
+            related_entity_id?: string | null;
+          }[];
+
+          renterDbBadge = rows.filter((row) =>
+            RENTER_BADGE_NOTIFICATION_TYPES.has(row.type || "")
+          ).length;
+          ownerDbBadge = rows.filter((row) =>
+            OWNER_BADGE_NOTIFICATION_TYPES.has(row.type || "")
+          ).length;
+          adminDbBadge = rows.filter((row) =>
+            ADMIN_BADGE_NOTIFICATION_TYPES.has(row.type || "")
+          ).length;
+
+          rows.forEach((row) => {
+            const t = row.type || "";
+            if (!DROPDOWN_NOTIFICATION_TYPES.has(t)) return;
+
+            let mappedType: ActionNotification["type"];
+            if (t === "payment_needed") mappedType = "payment";
+            else if (t === "booking_request") mappedType = "request";
+            else if (t === "booking_declined" || t === "booking_expired") mappedType = "notice";
+            else if (t === "booking_confirmed") mappedType = "booking_confirmed";
+            else if (t === "booking_paid") mappedType = "booking_paid";
+            else if (t === "booking_message") mappedType = "booking_message";
+            else if (
+              t === "payment_received" ||
+              t === "identity_submitted" ||
+              t === "bank_submitted"
             ) {
+              mappedType = "admin";
+            } else {
               return;
             }
 
-            const mappedType: ActionNotification["type"] =
-              row.type === "booking_confirmed"
-                ? "booking_confirmed"
-                : row.type === "booking_paid"
-                ? "booking_paid"
-                : row.type === "booking_message"
-                ? "booking_message"
-                : "admin";
+            const bookingThreadId =
+              t === "booking_message" &&
+              row.related_entity_type === "booking" &&
+              row.related_entity_id
+                ? row.related_entity_id
+                : null;
+
+            const href =
+              bookingThreadId
+                ? `/dashboard/messages/${bookingThreadId}`
+                : row.href ||
+                  (mappedType === "payment" || mappedType === "notice"
+                    ? "/dashboard/my-bookings"
+                    : mappedType === "request"
+                      ? "/dashboard/requests"
+                      : mappedType === "booking_paid"
+                        ? "/dashboard/requests"
+                        : mappedType === "booking_message"
+                          ? "/dashboard/messages"
+                          : mappedType === "admin"
+                            ? t === "identity_submitted" || t === "bank_submitted"
+                              ? "/admin/verification"
+                              : "/admin/bookings"
+                            : "/dashboard");
 
             pushUniqueNotification({
               id: `notif-${row.id}`,
               title: row.title || "Notification",
-              href:
-                row.href ||
-                (mappedType === "booking_confirmed"
-                  ? "/dashboard/my-bookings"
-                  : mappedType === "booking_paid"
-                  ? "/dashboard/requests"
-                  : mappedType === "booking_message"
-                  ? "/dashboard/my-bookings"
-                  : "/dashboard"),
+              href,
               type: mappedType,
+              tableRowId: row.id,
             });
           });
         }
 
-        const renterNotificationCount = nextNotifications.filter(
-          (item) =>
-            item.type === "payment" ||
-            item.type === "booking_confirmed" ||
-            item.type === "booking_message"
-        ).length;
-
-        const ownerNotificationCount = nextNotifications.filter(
-          (item) =>
-            item.type === "request" ||
-            item.type === "booking_paid" ||
-            item.type === "booking_message"
-        ).length;
-
-        const adminNotificationCount = nextNotifications.filter(
-          (item) => item.type === "admin"
-        ).length;
-
         if (mounted) {
-          setMyBookingActionCount(Math.max(renterCount, renterNotificationCount));
-          setBookingRequestActionCount(Math.max(hostCount, ownerNotificationCount));
-          setAdminActionCount(Math.max(nextAdminCount, adminNotificationCount));
+          setMyBookingActionCount(Math.max(renterCount, renterDbBadge));
+          setBookingRequestActionCount(Math.max(hostCount, ownerDbBadge));
+          setAdminActionCount(Math.max(nextAdminCount, adminDbBadge));
           setNotifications(nextNotifications);
         }
       } catch (error) {
@@ -398,6 +469,7 @@ export default function Header() {
         setMyBookingActionCount(0);
         setBookingRequestActionCount(0);
         setAdminActionCount(0);
+        setMessageUnreadCount(0);
         setNotifications([]);
       }
     }
@@ -407,7 +479,39 @@ export default function Header() {
     return () => {
       mounted = false;
     };
-  }, [userId, isHost, isAdmin]);
+  }, [userId, isHost, isAdmin, bellRefresh]);
+
+  useEffect(() => {
+    const bump = () => setBellRefresh((v) => v + 1);
+    window.addEventListener("fms-inbox-refresh", bump);
+    return () => window.removeEventListener("fms-inbox-refresh", bump);
+  }, []);
+
+  useEffect(() => {
+    if (!userId) return;
+    const channel = supabase
+      .channel(`notifications-${userId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "notifications",
+          filter: `user_id=eq.${userId}`,
+        },
+        () => setBellRefresh((v) => v + 1)
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [userId]);
+
+  useEffect(() => {
+    if (!pathname?.startsWith("/dashboard/messages")) return;
+    setBellRefresh((v) => v + 1);
+  }, [pathname]);
 
   useEffect(() => {
     if (loading) return;
@@ -477,6 +581,7 @@ export default function Header() {
     setMyBookingActionCount(0);
     setBookingRequestActionCount(0);
     setAdminActionCount(0);
+    setMessageUnreadCount(0);
     setNotifications([]);
 
     window.location.replace("/");
@@ -546,6 +651,12 @@ export default function Header() {
           icon: CalendarCheck,
           badgeCount: myBookingActionCount,
         },
+        {
+          label: "Messages",
+          href: "/dashboard/messages",
+          icon: MessageSquare,
+          badgeCount: messageUnreadCount,
+        },
       ],
     });
 
@@ -569,8 +680,9 @@ export default function Header() {
           },
           {
             label: "Messages",
-            href: "/dashboard/requests",
+            href: "/dashboard/messages",
             icon: MessageSquare,
+            badgeCount: messageUnreadCount,
           },
           {
             label: "Finance",
@@ -679,6 +791,25 @@ export default function Header() {
             </div>
 
             {!loading && isLoggedIn && (
+              <Link
+                href="/dashboard/messages"
+                className="relative flex h-10 w-10 items-center justify-center rounded-md border border-gray-300 bg-white text-[#192a3a] hover:bg-gray-50 sm:h-11 sm:w-11"
+                aria-label={
+                  messageUnreadCount > 0
+                    ? `Messages, ${messageUnreadCount} unread`
+                    : "Messages"
+                }
+              >
+                <MessageSquare className="h-5 w-5" aria-hidden />
+                {messageUnreadCount > 0 ? (
+                  <span className="absolute -right-1 -top-1 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-[#192a3a] px-1 text-[10px] font-semibold text-white">
+                    {messageUnreadCount > 99 ? "99+" : messageUnreadCount}
+                  </span>
+                ) : null}
+              </Link>
+            )}
+
+            {!loading && isLoggedIn && (
               <div className="relative" ref={bellRef}>
                 <button
                   type="button"
@@ -712,7 +843,32 @@ export default function Header() {
                             <Link
                               key={notification.id}
                               href={notification.href}
-                              onClick={() => setBellOpen(false)}
+                              onClick={async (e) => {
+                                setBellOpen(false);
+                                if (!notification.tableRowId) return;
+                                e.preventDefault();
+                                try {
+                                  const {
+                                    data: { session },
+                                  } = await supabase.auth.getSession();
+                                  if (session?.access_token) {
+                                    await fetch("/api/notifications/read", {
+                                      method: "POST",
+                                      headers: {
+                                        "Content-Type": "application/json",
+                                        Authorization: `Bearer ${session.access_token}`,
+                                      },
+                                      body: JSON.stringify({
+                                        notificationId: notification.tableRowId,
+                                      }),
+                                    });
+                                    setBellRefresh((v) => v + 1);
+                                  }
+                                } catch {
+                                  /* non-fatal */
+                                }
+                                router.push(notification.href);
+                              }}
                               className="flex items-start gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-[#192a3a] hover:bg-gray-100"
                             >
                               {notification.type === "payment" ? (
@@ -725,6 +881,8 @@ export default function Header() {
                                 <Landmark className="mt-0.5 h-4 w-4 shrink-0 text-green-700" />
                               ) : notification.type === "booking_message" ? (
                                 <MessageSquare className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
+                              ) : notification.type === "notice" ? (
+                                <Bell className="mt-0.5 h-4 w-4 shrink-0 text-gray-600" />
                               ) : (
                                 <Bell className="mt-0.5 h-4 w-4 shrink-0 text-[#192a3a]" />
                               )}

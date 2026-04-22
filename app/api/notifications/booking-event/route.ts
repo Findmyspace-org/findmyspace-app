@@ -13,6 +13,7 @@ import {
 import { isCommunicationAllowed } from "@/lib/booking-communication";
 import { getCanonicalPublicSiteUrl } from "@/lib/site-url";
 import { buildModalLoginUrl } from "@/lib/auth-redirect";
+import { markNotificationsReadByBooking } from "@/lib/notification-lifecycle";
 
 const MESSAGING_FORBIDDEN_MSG =
   "Messaging is only available after payment confirmation.";
@@ -196,6 +197,12 @@ export async function POST(req: NextRequest) {
     }
 
     if (eventType === "booking_approved_payment_needed") {
+      await markNotificationsReadByBooking(supabaseAdmin, {
+        bookingId,
+        types: ["booking_request"],
+        userIds: booking.owner_id ? [booking.owner_id] : undefined,
+      });
+
       if (renter?.email) {
         await sendEmail({
           to: renter.email,
@@ -226,6 +233,11 @@ export async function POST(req: NextRequest) {
     }
 
     if (eventType === "booking_declined") {
+      await markNotificationsReadByBooking(supabaseAdmin, {
+        bookingId,
+        types: ["booking_request", "payment_needed"],
+      });
+
       if (renter?.email) {
         await sendEmail({
           to: renter.email,
@@ -270,6 +282,11 @@ export async function POST(req: NextRequest) {
     }
 
     if (eventType === "payment_confirmed") {
+      await markNotificationsReadByBooking(supabaseAdmin, {
+        bookingId,
+        types: ["payment_needed", "booking_request"],
+      });
+
       if (renter?.email) {
         await sendEmail({
           to: renter.email,
@@ -343,6 +360,11 @@ export async function POST(req: NextRequest) {
     }
 
     if (eventType === "booking_expired") {
+      await markNotificationsReadByBooking(supabaseAdmin, {
+        bookingId,
+        types: ["payment_needed", "booking_request"],
+      });
+
       if (renter?.email) {
         await sendEmail({
           to: renter.email,
@@ -442,7 +464,6 @@ export async function POST(req: NextRequest) {
 
       let recipientProfile = null as any;
       let senderProfile = null as any;
-      let actionUrl = "/dashboard";
 
       if (resolvedRecipientId) {
         const { data } = await (supabaseAdmin.from("profiles") as any)
@@ -460,11 +481,7 @@ export async function POST(req: NextRequest) {
         senderProfile = data;
       }
 
-      if (resolvedRecipientId === booking.owner_id) {
-        actionUrl = "/dashboard/requests";
-      } else if (resolvedRecipientId === booking.renter_id) {
-        actionUrl = "/dashboard/my-bookings";
-      }
+      const actionUrl = `/dashboard/messages/${booking.id}`;
 
       const senderName = getDisplayName(senderProfile);
       const resolvedSpaceTitle = space?.title || "your booking";
@@ -506,8 +523,8 @@ export async function POST(req: NextRequest) {
                 </div>
                 ` : ""}
                 <p style="margin:0 0 28px;">
-                  <a href="${appBaseUrl}${actionUrl}" style="display:inline-block;padding:14px 20px;background:#192a3a;color:#ffffff;text-decoration:none;border-radius:10px;font-size:15px;font-weight:600;">
-                    Open booking messages
+                  <a href="${appBaseUrl}/dashboard/messages/${booking.id}" style="display:inline-block;padding:14px 20px;background:#192a3a;color:#ffffff;text-decoration:none;border-radius:10px;font-size:15px;font-weight:600;">
+                    Open conversation
                   </a>
                 </p>
                 <p style="margin:0;font-size:13px;color:#64748b;">FindMySpace</p>

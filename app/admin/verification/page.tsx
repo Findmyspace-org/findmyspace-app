@@ -325,6 +325,24 @@ export default function AdminVerificationPage() {
     await checkAndActivateListings(ownerId);
 
     setMessage(`Owner verification updated to ${nextStatus}.`);
+    if (nextStatus === "verified" || nextStatus === "rejected") {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
+      if (token) {
+        await fetch("/api/admin/notifications/mark-related-read", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            relatedEntityType: "profile",
+            relatedEntityId: ownerId,
+            types: ["identity_submitted"],
+          }),
+        });
+      }
+    }
     await loadVerificationRecords();
   }
 
@@ -360,6 +378,24 @@ export default function AdminVerificationPage() {
     await checkAndActivateListings(ownerId);
 
     setMessage(`Bank verification updated to ${nextStatus}.`);
+    if (nextStatus === "verified" || nextStatus === "rejected") {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
+      if (token) {
+        await fetch("/api/admin/notifications/mark-related-read", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            relatedEntityType: "profile",
+            relatedEntityId: ownerId,
+            types: ["bank_submitted"],
+          }),
+        });
+      }
+    }
     await loadVerificationRecords();
   }
 

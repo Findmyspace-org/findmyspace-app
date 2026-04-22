@@ -26,6 +26,7 @@ import { getDisplayName } from "@/lib/utils";
 import { isCommunicationAllowed } from "@/lib/booking-communication";
 import { OWNER_BOOKING_STAGE_LABELS } from "@/lib/booking-ui-labels";
 import { shouldShowBookingRequestNotes } from "@/lib/booking-notes-visibility";
+import { broadcastInboxRefresh } from "@/lib/inbox-refresh";
 
 
 import OwnerCalendarLegend from "@/app/dashboard/_components/calendar/OwnerCalendarLegend";
@@ -645,6 +646,16 @@ function BookingConversationPanel({
         {isOpen && (
           <div className="mt-4 border-t border-gray-100 pt-4">
             <div className="space-y-4">
+              {isCommunicationAllowed(booking) && (
+                <p className="text-right text-xs text-gray-600">
+                  <Link
+                    href={`/dashboard/messages/${booking.id}`}
+                    className="font-medium text-[#192a3a] underline hover:no-underline"
+                  >
+                    Open full conversation page
+                  </Link>
+                </p>
+              )}
               {messagesLoadingBookingId === booking.id ? (
                 <p className="text-sm text-gray-500">Loading messages…</p>
               ) : (
@@ -909,14 +920,13 @@ function ExpandedBookingPanel({
                 View listing
               </Link>
               {canMessageRenter && (
-                <button
-                  type="button"
-                  onClick={() => void onToggleCommunication(booking)}
+                <Link
+                  href={`/dashboard/messages/${booking.id}`}
                   className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-[#192a3a] shadow-sm transition hover:bg-gray-50 active:scale-[0.99]"
                 >
-                  <MessageSquare className="h-4 w-4" />
+                  <MessageSquare className="h-4 w-4" aria-hidden />
                   Open messages
-                </button>
+                </Link>
               )}
             </div>
           </div>
@@ -1559,6 +1569,7 @@ export default function OwnerBookingRequestsPage() {
         ...current,
         [booking.id]: "",
       }));
+      broadcastInboxRefresh();
     } catch {
       setMessage("Could not send message.");
     } finally {

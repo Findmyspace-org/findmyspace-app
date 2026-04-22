@@ -3,9 +3,12 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
 import { getPendingAdvisorCode, setPendingAdvisorCode } from "@/lib/advisor-code";
 import { sanitizeNextPath } from "@/lib/auth-redirect";
+import { logAuthDiagnostic } from "@/lib/supabase-diagnostics";
+import PasswordField from "@/app/components/PasswordField";
 
 type AuthFormProps = {
   mode: "login" | "signup";
@@ -43,6 +46,68 @@ export default function AuthForm({
   const loginHref = `/login?next=${encodeURIComponent(nextPath)}`;
   const signupHref = `/signup?next=${encodeURIComponent(nextPath)}`;
 
+  async function ensureProfileRow(
+    user: User,
+    overrides?: {
+      first_name?: string | null;
+      last_name?: string | null;
+      phone?: string | null;
+      email?: string | null;
+    }
+  ) {
+    logAuthDiagnostic("profile-backstop-attempt", { user_id: user.id });
+
+    const { data: existingProfile, error: existingError } = await (supabase
+      .from("profiles")
+      .select("id")
+      .eq("id", user.id)
+      .maybeSingle()) as { data: { id: string } | null; error: any };
+
+    if (!existingError && existingProfile?.id) {
+      logAuthDiagnostic("profile-backstop-skip-existing", { user_id: user.id });
+      return;
+    }
+
+    const firstName =
+      overrides?.first_name ??
+      (typeof user.user_metadata?.first_name === "string"
+        ? user.user_metadata.first_name.trim() || null
+        : null);
+    const lastName =
+      overrides?.last_name ??
+      (typeof user.user_metadata?.last_name === "string"
+        ? user.user_metadata.last_name.trim() || null
+        : null);
+    const phone =
+      overrides?.phone ??
+      (typeof user.user_metadata?.phone === "string"
+        ? user.user_metadata.phone.trim() || null
+        : null);
+    const email = overrides?.email ?? (user.email?.trim() || null);
+    const fullName = [firstName, lastName].filter(Boolean).join(" ").trim() || null;
+
+    const { error } = await supabase.from("profiles").upsert(
+      {
+        id: user.id,
+        first_name: firstName,
+        last_name: lastName,
+        full_name: fullName,
+        email,
+        phone,
+      } as any,
+      { onConflict: "id" }
+    );
+
+    if (error) {
+      logAuthDiagnostic("profile-backstop-failed", {
+        user_id: user.id,
+        error: error.message,
+      });
+      throw new Error(error.message);
+    }
+    logAuthDiagnostic("profile-backstop-success", { user_id: user.id });
+  }
+
   async function claimPendingAdvisor(accessToken: string) {
     const code = getPendingAdvisorCode();
     if (!code) return;
@@ -70,6 +135,7 @@ export default function AuthForm({
 
     try {
       if (isSignup) {
+        logAuthDiagnostic("signup-attempt");
         const cleanFirstName = firstName.trim() || null;
         const cleanLastName = lastName.trim() || null;
         const cleanPhone = phone.trim() || null;
@@ -87,6 +153,7 @@ export default function AuthForm({
         });
 
         if (error) {
+          logAuthDiagnostic("signup-failed", { error: error.message });
           setMessage(error.message);
           setLoading(false);
           return;
@@ -95,26 +162,26 @@ export default function AuthForm({
         const signedUpUser = signUpData?.user ?? null;
 
         if (signedUpUser?.id) {
+          logAuthDiagnostic("signup-success", { user_id: signedUpUser.id });
           const cleanEmail = email.trim() || null;
           const cleanFullName = [cleanFirstName, cleanLastName]
             .filter(Boolean)
             .join(" ")
             .trim() || null;
 
-          const { error: profileError } = await supabase.from("profiles").upsert(
-            {
-              id: signedUpUser.id,
+          try {
+            await ensureProfileRow(signedUpUser as User, {
               first_name: cleanFirstName,
               last_name: cleanLastName,
-              full_name: cleanFullName,
-              email: cleanEmail,
               phone: cleanPhone,
-            } as any,
-            { onConflict: "id" }
-          );
-
-          if (profileError) {
-            setMessage(profileError.message);
+              email: cleanEmail,
+            });
+          } catch (profileError) {
+            setMessage(
+              profileError instanceof Error
+                ? profileError.message
+                : "Could not initialize your profile."
+            );
             setLoading(false);
             return;
           }
@@ -154,12 +221,24 @@ export default function AuthForm({
       });
 
       if (error) {
+        logAuthDiagnostic("login-failed", { error: error.message });
         setMessage(error.message);
         setLoading(false);
         return;
       }
 
       const { data: sessAfter } = await supabase.auth.getSession();
+      logAuthDiagnostic("login-success", {
+        user_id: sessAfter?.session?.user?.id || null,
+      });
+      if (sessAfter?.session?.user) {
+        try {
+          await ensureProfileRow(sessAfter.session.user);
+        } catch (profileError) {
+          // Non-fatal: user can still proceed, and later flows also self-heal profile rows.
+          console.error("Profile upsert after login failed:", profileError);
+        }
+      }
       if (sessAfter?.session?.access_token) {
         await claimPendingAdvisor(sessAfter.session.access_token);
       }
@@ -237,17 +316,16 @@ export default function AuthForm({
           />
         </div>
 
-        <div>
-          <label className="mb-2 block text-sm font-medium">Password</label>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="w-full rounded-md border border-gray-300 px-4 py-3 outline-none focus:border-[#192a3a]"
-            placeholder="Enter password"
-            required
-          />
-        </div>
+        <PasswordField
+          label="Password"
+          id={`auth-password-${isSignup ? "signup" : "login"}-${isModal ? "modal" : "page"}`}
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          placeholder="Enter password"
+          required
+          autoComplete={isSignup ? "new-password" : "current-password"}
+          name="password"
+        />
 
         <button
           type="submit"

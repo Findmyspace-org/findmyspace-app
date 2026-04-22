@@ -34,6 +34,7 @@ import { isCommunicationAllowed } from "@/lib/booking-communication";
 import { renterPaymentStatusLabel } from "@/lib/booking-ui-labels";
 import { resolveRenterMyBookingsUi } from "@/lib/renter-my-bookings-status";
 import { shouldShowBookingRequestNotes } from "@/lib/booking-notes-visibility";
+import { broadcastInboxRefresh } from "@/lib/inbox-refresh";
 import {
   aggregateRenterPageMetrics,
   computeRenterBookingFinance,
@@ -618,6 +619,7 @@ function MyBookingsPageContent({
         ...current,
         [booking.id]: "",
       }));
+      broadcastInboxRefresh();
     } catch {
       setMessage("Could not send message.");
     } finally {
@@ -1409,6 +1411,14 @@ function MyBookingsPageContent({
                       {booking.space?.title || "Booking conversation"}
                     </h2>
                     <p className="text-xs text-gray-600">{formatBookingRange(booking)}</p>
+                    <p className="mt-2 text-xs">
+                      <Link
+                        href={`/dashboard/messages/${booking.id}`}
+                        className="font-medium text-[#192a3a] underline hover:no-underline"
+                      >
+                        Open full conversation page
+                      </Link>
+                    </p>
                   </div>
                   <button
                     type="button"

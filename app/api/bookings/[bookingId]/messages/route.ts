@@ -49,7 +49,9 @@ export async function GET(
 
   const { data: booking, error: bookingError } = await admin
     .from("bookings")
-    .select("id, renter_id, owner_id, status, payment_status")
+    .select(
+      "id, space_id, renter_id, owner_id, status, payment_status, start_at, end_at, booking_unit"
+    )
     .eq("id", bookingId)
     .single();
 
@@ -59,10 +61,14 @@ export async function GET(
 
   const row = booking as {
     id: string;
+    space_id: string;
     renter_id: string;
     owner_id: string;
     status: string | null;
     payment_status: string | null;
+    start_at: string | null;
+    end_at: string | null;
+    booking_unit: string | null;
   };
 
   const isRenter = row.renter_id === user.id;
@@ -74,6 +80,14 @@ export async function GET(
   if (!isCommunicationAllowed(row)) {
     return NextResponse.json({ error: FORBIDDEN_MSG }, { status: 403 });
   }
+
+  const { data: spaceRow } = await admin
+    .from("spaces")
+    .select("id, title")
+    .eq("id", row.space_id)
+    .maybeSingle();
+
+  const space = spaceRow as { id: string; title: string | null } | null;
 
   const { data: messages, error: msgError } = await (admin.from("booking_messages") as any)
     .select("id, booking_id, sender_id, recipient_id, message, created_at")
@@ -106,6 +120,18 @@ export async function GET(
     viewerRole: isRenter ? "renter" : "owner",
     ownerContact: isRenter ? counterpartyContact : null,
     renterContact: isOwner ? counterpartyContact : null,
+    booking: {
+      id: row.id,
+      space_id: row.space_id,
+      renter_id: row.renter_id,
+      owner_id: row.owner_id,
+      status: row.status,
+      payment_status: row.payment_status,
+      start_at: row.start_at,
+      end_at: row.end_at,
+      booking_unit: row.booking_unit,
+    },
+    space: space ? { id: space.id, title: space.title } : null,
   });
 }
 

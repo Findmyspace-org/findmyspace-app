@@ -32,8 +32,46 @@ function toMonthValue(date: Date) {
   return `${year}-${month}`;
 }
 
+const MONTH_SHORT_LABELS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+] as const;
+
+const MONTH_LONG_LABELS = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+] as const;
+
+function monthShortLabel(date: Date) {
+  return MONTH_SHORT_LABELS[date.getUTCMonth()] || "";
+}
+
+function monthLongLabel(date: Date) {
+  return MONTH_LONG_LABELS[date.getUTCMonth()] || "";
+}
+
 function monthLabel(date: Date) {
-  const month = date.toLocaleDateString([], { month: "short", timeZone: "UTC" });
+  const month = monthShortLabel(date);
   const shortYear = String(date.getUTCFullYear()).slice(2);
   return `${month} '${shortYear}`;
 }
@@ -41,17 +79,9 @@ function monthLabel(date: Date) {
 function formatRangeLabel(start: Date, months: Date[]) {
   const end = months[months.length - 1] || start;
 
-  const startLabel = start.toLocaleDateString([], {
-    month: "long",
-    year: "numeric",
-    timeZone: "UTC",
-  });
+  const startLabel = `${monthLongLabel(start)} ${start.getUTCFullYear()}`;
 
-  const endLabel = end.toLocaleDateString([], {
-    month: "long",
-    year: "numeric",
-    timeZone: "UTC",
-  });
+  const endLabel = `${monthLongLabel(end)} ${end.getUTCFullYear()}`;
 
   return startLabel === endLabel ? startLabel : `${startLabel} - ${endLabel}`;
 }
@@ -366,7 +396,7 @@ export default function MonthAvailabilityCalendar({
                 aria-label={`Select ${monthLabel(month)}`}
               >
                 <div className="font-medium">
-                  {month.toLocaleDateString([], { month: "short", timeZone: "UTC" })}
+                  {monthShortLabel(month)}
                 </div>
                 <div className="mt-1 text-sm font-semibold">
                   {month.getUTCFullYear()}
