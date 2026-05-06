@@ -8,6 +8,11 @@
  * for host/renter copilots and automated matching signals.
  */
 
+import {
+  getSpaceFeatureLayout,
+  normalizeFeatureAttributes,
+} from "@/app/data/spaceFeatureConfig";
+
 export type ListingIntelCategory = "storage" | "parking" | "office_event";
 
 export type ListingBookingRequirements = {
@@ -18,6 +23,53 @@ export type ListingBookingRequirements = {
   require_access_frequency: boolean;
   require_estimated_value: boolean;
   require_notes: boolean;
+};
+
+/** Which renter requirement toggles to show per listing category (listing form). */
+export type RenterRequirementFieldKey = keyof ListingBookingRequirements;
+
+export function renterRequirementKeysForCategory(
+  category: ListingIntelCategory
+): RenterRequirementFieldKey[] {
+  if (category === "parking") {
+    return [
+      "require_item_type",
+      "require_dimensions",
+      "require_photos",
+      "require_vehicle_details",
+      "require_estimated_value",
+      "require_access_frequency",
+      "require_notes",
+    ];
+  }
+  if (category === "storage") {
+    return [
+      "require_item_type",
+      "require_dimensions",
+      "require_photos",
+      "require_estimated_value",
+      "require_access_frequency",
+      "require_notes",
+    ];
+  }
+  return [
+    "require_item_type",
+    "require_dimensions",
+    "require_photos",
+    "require_estimated_value",
+    "require_access_frequency",
+    "require_notes",
+  ];
+}
+
+export const RENTER_REQUIREMENT_LABELS: Record<RenterRequirementFieldKey, string> = {
+  require_item_type: "What they want to store, park, or use",
+  require_dimensions: "Dimensions",
+  require_photos: "Photos",
+  require_vehicle_details: "Vehicle details",
+  require_estimated_value: "Estimated value",
+  require_access_frequency: "Access frequency",
+  require_notes: "Additional notes",
 };
 
 export const DEFAULT_LISTING_BOOKING_REQUIREMENTS: ListingBookingRequirements = {
@@ -120,7 +172,7 @@ export function mapSpaceTypeToIntelCategory(
   spaceType: string | null | undefined
 ): ListingIntelCategory {
   const t = (spaceType || "").toLowerCase();
-  if (t === "parking") return "parking";
+  if (t === "parking" || t === "garage") return "parking";
   if (
     [
       "office",
@@ -150,84 +202,196 @@ function isMeaningfulValue(v: unknown): boolean {
   return false;
 }
 
-/** Completion score for host “Listing quality” indicator (0–100). */
+/** Options for listing quality — combines questionnaire, amenities, renter requirements row. */
+export type ListingQualityOptions = {
+  /** `true` when `listing_booking_requirements` exists for the space (loaded or saved). */
+  renterRequirementsCommitted: boolean;
+  /** `spaces.space_type` — used with `featureAttributes` for the amenities signal. */
+  spaceType?: string | null;
+  /** Grouped `space_attributes` (same shape as listing form state). */
+  featureAttributes?: Record<string, string[]> | null;
+};
+
+/** True when the host selected at least one Features & amenities field (any space type). */
+export function amenitiesQualitySignal(
+  spaceType: string | null | undefined,
+  attributes: Record<string, string[]> | null | undefined
+): boolean {
+  const norm = normalizeFeatureAttributes(attributes || {});
+  const layout = getSpaceFeatureLayout(spaceType);
+  for (const sec of layout.sections) {
+    for (const f of sec.fields) {
+      if (f.kind === "checkbox") {
+        if ((norm[f.key] || []).includes("yes")) return true;
+      } else if ((norm[f.key] || []).length > 0) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function checkboxSubgroupAnswered(obj: unknown): boolean {
+  return typeof obj === "object" && obj !== null && Object.keys(obj as object).length > 0;
+}
+
+function storageDimensionsSectionAnswered(obj: unknown): boolean {
+  if (typeof obj !== "object" || obj === null) return false;
+  const o = obj as Record<string, unknown>;
+  for (const k of ["width_cm", "length_cm", "height_cm"]) {
+    const n = Number(o[k]);
+    if (Number.isFinite(n) && n > 0) return true;
+  }
+  return false;
+}
+
+function featureStorageSizeBandAnswered(attrs: Record<string, string[]> | null | undefined): boolean {
+  const norm = normalizeFeatureAttributes(attrs || {});
+  return (norm.sf_storage_size_band || []).length > 0;
+}
+
+function parkingLimitsOrBaysAnswered(data: Record<string, unknown>): boolean {
+  if (typeof data.parking_bays === "number" && Number.isFinite(data.parking_bays)) return true;
+  return checkboxSubgroupAnswered(data.limits_m);
+}
+
+function parkingOperationalAnswered(data: Record<string, unknown>): boolean {
+  const s = data.operational_notes;
+  return typeof s === "string" && s.trim().length > 0;
+}
+
+function storageOperationalAnswered(data: Record<string, unknown>): boolean {
+  const s = data.operational_notes;
+  return typeof s === "string" && s.trim().length > 0;
+}
+
+function storageSizeSectionAnswered(
+  data: Record<string, unknown>,
+  attrs: Record<string, string[]> | null | undefined
+): boolean {
+  return storageDimensionsSectionAnswered(data.dimensions_cm) || featureStorageSizeBandAnswered(attrs);
+}
+
+function officeCapacityAccessSectionAnswered(data: Record<string, unknown>): boolean {
+  const cap = data.capacity_people;
+  if (typeof cap === "number" && Number.isFinite(cap) && cap > 0) return true;
+  const ca = data.capacity_access as Record<string, unknown> | undefined;
+  if (!ca || typeof ca !== "object") return false;
+  const bays = ca.parking_bays;
+  if (typeof bays === "number" && Number.isFinite(bays)) return true;
+  const ah = ca.after_hours_access;
+  if (ah === true || ah === false) return true;
+  return false;
+}
+
+function officeOperationsSectionAnswered(data: Record<string, unknown>): boolean {
+  const op = data.operations_notes;
+  if (op && typeof op === "object") {
+    for (const v of Object.values(op as Record<string, unknown>)) {
+      if (typeof v === "string" && v.trim().length > 0) return true;
+    }
+  }
+  const legacy = data.setup_teardown_notes;
+  if (typeof legacy === "string" && legacy.trim().length > 0) return true;
+  return false;
+}
+
+/**
+ * Completion score for host “Listing quality” (0–100).
+ * Sections only (not per checkbox). Combines Features & amenities + booking questionnaire + renter row.
+ */
 export function computeListingQualityPercent(
   category: ListingIntelCategory,
-  data: Record<string, unknown>
+  data: Record<string, unknown>,
+  options: ListingQualityOptions
 ): { percent: number; answered: number; total: number } {
   let total = 0;
   let answered = 0;
+  const attrs = options.featureAttributes ?? null;
 
-  const countGroup = (obj: unknown, keys: string[]) => {
-    for (const k of keys) {
-      total += 1;
-      if (typeof obj === "object" && obj !== null && k in (obj as object)) {
-        if (isMeaningfulValue((obj as Record<string, unknown>)[k])) answered += 1;
-      }
-    }
+  const bump = (complete: boolean) => {
+    total += 1;
+    if (complete) answered += 1;
   };
 
+  bump(amenitiesQualitySignal(options.spaceType ?? null, attrs));
+
   if (category === "storage") {
-    const access = data.access as Record<string, unknown> | undefined;
-    const security = data.security as Record<string, unknown> | undefined;
-    const environment = data.environment as Record<string, unknown> | undefined;
-    const restrictions = data.restrictions as Record<string, unknown> | undefined;
-    const dimensions = data.dimensions_cm as Record<string, unknown> | undefined;
-
-    countGroup(access, [
-      "full_247",
-      "appointment_required",
-      "vehicle_access",
-      "loading_access",
-    ]);
-    countGroup(security, ["cctv", "guarded", "alarm", "lockable"]);
-    countGroup(environment, [
-      "indoor_outdoor",
-      "covered",
-      "ventilated",
-      "dry_storage",
-      "climate_controlled",
-    ]);
-    countGroup(dimensions, ["width_cm", "length_cm", "height_cm"]);
-    countGroup(restrictions, [
-      "no_chemicals",
-      "no_perishables",
-      "no_flammables",
-      "no_vehicles",
-    ]);
+    bump(checkboxSubgroupAnswered(data.storage_suitability));
+    bump(
+      checkboxSubgroupAnswered(data.access) ||
+        checkboxSubgroupAnswered(data.restrictions)
+    );
+    bump(storageSizeSectionAnswered(data, attrs));
+    bump(storageOperationalAnswered(data));
   } else if (category === "parking") {
-    const vehicleTypes = data.vehicle_types as Record<string, unknown> | undefined;
-    const limits = data.limits_m as Record<string, unknown> | undefined;
-    const access = data.access as Record<string, unknown> | undefined;
-
-    countGroup(vehicleTypes, [
-      "car",
-      "suv",
-      "boat",
-      "trailer",
-      "caravan",
-      "motorcycle",
-    ]);
-    countGroup(limits, ["height_limit_m", "length_limit_m"]);
-    countGroup(access, ["covered", "remote_gate", "full_247"]);
+    bump(parkingLimitsOrBaysAnswered(data));
+    bump(parkingOperationalAnswered(data));
   } else {
-    const layout = data.layout_styles as Record<string, unknown> | undefined;
-    const amenities = data.amenities as Record<string, unknown> | undefined;
-    countGroup(data, ["capacity_people", "noise_level", "parking_available", "alcohol_allowed"]);
-    countGroup(layout, ["theatre", "classroom", "boardroom", "banquet", "open_plan"]);
-    countGroup(amenities, [
-      "wifi",
-      "av_equipment",
-      "kitchen",
-      "restrooms",
-      "wheelchair_access",
-    ]);
-    countGroup(data, ["setup_teardown_notes"]);
+    bump(officeCapacityAccessSectionAnswered(data));
+    bump(checkboxSubgroupAnswered(data.use_suitability));
+    bump(officeOperationsSectionAnswered(data));
   }
+
+  bump(options.renterRequirementsCommitted);
 
   if (total === 0) return { percent: 0, answered: 0, total: 0 };
   const percent = Math.round((answered / total) * 100);
   return { percent, answered, total };
+}
+
+/**
+ * Section-level labels for incomplete quality areas (same rules as the score).
+ */
+export function getMissingListingQualitySignalLabels(
+  category: ListingIntelCategory,
+  data: Record<string, unknown>,
+  options: ListingQualityOptions
+): string[] {
+  const missing: string[] = [];
+  const attrs = options.featureAttributes ?? null;
+
+  if (!amenitiesQualitySignal(options.spaceType ?? null, attrs)) {
+    missing.push("Features & amenities");
+  }
+
+  if (category === "storage") {
+    if (!checkboxSubgroupAnswered(data.storage_suitability)) {
+      missing.push("Storage suitability");
+    }
+    if (!checkboxSubgroupAnswered(data.access) && !checkboxSubgroupAnswered(data.restrictions)) {
+      missing.push("Access & restrictions");
+    }
+    if (!storageSizeSectionAnswered(data, attrs)) {
+      missing.push("Size details (dimensions or amenity size band)");
+    }
+    if (!storageOperationalAnswered(data)) {
+      missing.push("Operational notes");
+    }
+  } else if (category === "parking") {
+    if (!parkingLimitsOrBaysAnswered(data)) {
+      missing.push("Bay count & size limits");
+    }
+    if (!parkingOperationalAnswered(data)) {
+      missing.push("Operational notes");
+    }
+  } else {
+    if (!officeCapacityAccessSectionAnswered(data)) {
+      missing.push("Capacity & access");
+    }
+    if (!checkboxSubgroupAnswered(data.use_suitability)) {
+      missing.push("Use & suitability");
+    }
+    if (!officeOperationsSectionAnswered(data)) {
+      missing.push("Setup & operational notes");
+    }
+  }
+
+  if (!options.renterRequirementsCommitted) {
+    missing.push("Renter booking requirements");
+  }
+
+  return missing;
 }
 
 export function emptyQuestionnaireDataForCategory(
@@ -236,27 +400,32 @@ export function emptyQuestionnaireDataForCategory(
   if (category === "storage") {
     return {
       access: {},
-      security: {},
-      environment: {},
+      storage_suitability: {},
       dimensions_cm: {},
       restrictions: {},
+      operational_notes: "",
     };
   }
   if (category === "parking") {
     return {
-      vehicle_types: {},
       limits_m: {},
-      access: {},
+      parking_bays: null as number | null,
+      operational_notes: "",
     };
   }
   return {
-    capacity_people: null,
-    noise_level: "",
-    parking_available: null,
-    alcohol_allowed: null,
-    layout_styles: {},
-    amenities: {},
-    setup_teardown_notes: "",
+    capacity_people: null as number | null,
+    capacity_access: {
+      parking_bays: null as number | null,
+      after_hours_access: null as boolean | null,
+    },
+    use_suitability: {},
+    operations_notes: {
+      load_in: "",
+      setup: "",
+      cleanup: "",
+      house_rules: "",
+    },
   };
 }
 
@@ -268,31 +437,134 @@ export function mergeQuestionnaireData(
   if (!raw || typeof raw !== "object") return base;
 
   if (category === "storage") {
-    return {
+    const op =
+      typeof raw.operational_notes === "string"
+        ? raw.operational_notes
+        : (base.operational_notes as string);
+    const merged = {
       access: { ...(base.access as object), ...(raw.access as object) },
-      security: { ...(base.security as object), ...(raw.security as object) },
-      environment: { ...(base.environment as object), ...(raw.environment as object) },
+      storage_suitability: {
+        ...(base.storage_suitability as object),
+        ...((raw.storage_suitability as object) || {}),
+      },
       dimensions_cm: { ...(base.dimensions_cm as object), ...(raw.dimensions_cm as object) },
       restrictions: { ...(base.restrictions as object), ...(raw.restrictions as object) },
+      operational_notes: op,
     };
+    const legacy: Record<string, unknown> = {};
+    if (raw.security !== undefined) legacy.security = raw.security;
+    if (raw.environment !== undefined) legacy.environment = raw.environment;
+    return { ...legacy, ...merged };
   }
   if (category === "parking") {
-    return {
-      vehicle_types: { ...(base.vehicle_types as object), ...(raw.vehicle_types as object) },
+    const rawBays = raw.parking_bays;
+    const parking_bays =
+      "parking_bays" in raw
+        ? typeof rawBays === "number" && Number.isFinite(rawBays)
+          ? rawBays
+          : rawBays === null
+            ? null
+            : (base.parking_bays as number | null)
+        : (base.parking_bays as number | null);
+    const merged = {
       limits_m: { ...(base.limits_m as object), ...(raw.limits_m as object) },
-      access: { ...(base.access as object), ...(raw.access as object) },
+      parking_bays,
+      operational_notes:
+        typeof raw.operational_notes === "string"
+          ? raw.operational_notes
+          : (base.operational_notes as string),
+    };
+    const legacy: Record<string, unknown> = {};
+    if (raw.vehicle_types !== undefined) legacy.vehicle_types = raw.vehicle_types;
+    if (raw.access !== undefined) legacy.access = raw.access;
+    return { ...legacy, ...merged };
+  }
+
+  const baseOps = base.operations_notes as Record<string, string>;
+  const rawOps = (raw.operations_notes as Record<string, string>) || {};
+  const legacySetup =
+    typeof raw.setup_teardown_notes === "string" ? raw.setup_teardown_notes.trim() : "";
+
+  const mergedOffice = {
+    capacity_people:
+      typeof raw.capacity_people === "number"
+        ? raw.capacity_people
+        : raw.capacity_people === null
+          ? null
+          : (base.capacity_people as number | null),
+    capacity_access: {
+      ...(base.capacity_access as object),
+      ...((raw.capacity_access as object) || {}),
+    },
+    use_suitability: {
+      ...(base.use_suitability as object),
+      ...((raw.use_suitability as object) || {}),
+    },
+    operations_notes: {
+      load_in: rawOps.load_in ?? baseOps.load_in ?? "",
+      setup: rawOps.setup ?? baseOps.setup ?? legacySetup,
+      cleanup: rawOps.cleanup ?? baseOps.cleanup ?? "",
+      house_rules: rawOps.house_rules ?? baseOps.house_rules ?? "",
+    },
+  };
+
+  const legacyOffice: Record<string, unknown> = {};
+  if (raw.layout_styles !== undefined) legacyOffice.layout_styles = raw.layout_styles;
+  if (raw.amenities !== undefined) legacyOffice.amenities = raw.amenities;
+  if (raw.noise_level !== undefined) legacyOffice.noise_level = raw.noise_level;
+  if (raw.parking_available !== undefined) legacyOffice.parking_available = raw.parking_available;
+  if (raw.alcohol_allowed !== undefined) legacyOffice.alcohol_allowed = raw.alcohol_allowed;
+  if (raw.setup_teardown_notes !== undefined) legacyOffice.setup_teardown_notes = raw.setup_teardown_notes;
+
+  return { ...legacyOffice, ...mergedOffice };
+}
+
+type SupabaseLike = {
+  from: (table: string) => {
+    upsert: (
+      row: Record<string, unknown>,
+      opts?: { onConflict?: string }
+    ) => Promise<{ error: { message?: string } | null }>;
+  };
+};
+
+/**
+ * Upsert `listing_questionnaires` and `listing_booking_requirements` for a space.
+ * Call after the `spaces` row exists and the caller owns the listing.
+ */
+export async function upsertListingBookingIntelTables(
+  supabase: SupabaseLike,
+  params: {
+    spaceId: string;
+    spaceType: string | null | undefined;
+    questionnaireData: Record<string, unknown>;
+    requirements: ListingBookingRequirements;
+  }
+): Promise<{ questionnaireError: string | null; requirementsError: string | null }> {
+  const intelCategory = mapSpaceTypeToIntelCategory(params.spaceType);
+  const { error: qErr } = await (supabase.from("listing_questionnaires" as never) as any).upsert(
+    {
+      space_id: params.spaceId,
+      category: intelCategory,
+      data: params.questionnaireData,
+    },
+    { onConflict: "space_id" }
+  );
+  if (qErr) {
+    return {
+      questionnaireError: qErr.message || "Could not save booking questionnaire.",
+      requirementsError: null,
     };
   }
+  const { error: rErr } = await (supabase.from("listing_booking_requirements" as never) as any).upsert(
+    {
+      space_id: params.spaceId,
+      ...params.requirements,
+    },
+    { onConflict: "space_id" }
+  );
   return {
-    ...base,
-    ...raw,
-    layout_styles: {
-      ...((base.layout_styles as object) || {}),
-      ...((raw.layout_styles as object) || {}),
-    },
-    amenities: {
-      ...((base.amenities as object) || {}),
-      ...((raw.amenities as object) || {}),
-    },
+    questionnaireError: null,
+    requirementsError: rErr ? rErr.message || "Could not save renter requirements." : null,
   };
 }

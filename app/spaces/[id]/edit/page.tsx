@@ -2,13 +2,25 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import SpaceCategoryFields from "@/app/components/SpaceCategoryFields";
 import { LISTING_SPACE_TYPE_OPTIONS } from "@/app/data/spaceFeatureConfig";
 import RequireAuth from "@/app/components/RequireAuth";
 import OwnerVerificationAlerts from "@/app/components/OwnerVerificationAlerts";
+import {
+  DEFAULT_LISTING_BOOKING_REQUIREMENTS,
+  emptyQuestionnaireDataForCategory,
+  ListingBookingRequirements,
+  mapSpaceTypeToIntelCategory,
+  mergeQuestionnaireData,
+  upsertListingBookingIntelTables,
+} from "@/lib/booking-intelligence";
+import {
+  ListingBookingQualityFormFields,
+  ListingQualityScoreSummary,
+} from "@/app/components/listing-booking-quality-ui";
 
 type PageProps = {
   params: Promise<{ id: string }>;
@@ -133,6 +145,38 @@ export default function EditListingPage({ params }: PageProps) {
     useState<File | null>(null);
   const [uploadingOwnershipProof, setUploadingOwnershipProof] = useState(false);
 
+  const [bookingIntelData, setBookingIntelData] = useState<Record<string, unknown>>(() =>
+    emptyQuestionnaireDataForCategory("storage")
+  );
+  const [bookingRequirements, setBookingRequirements] = useState<ListingBookingRequirements>({
+    ...DEFAULT_LISTING_BOOKING_REQUIREMENTS,
+  });
+  const [renterRequirementsCommitted, setRenterRequirementsCommitted] = useState(false);
+
+  const intelCategory = useMemo(() => mapSpaceTypeToIntelCategory(spaceType), [spaceType]);
+  const listingQualityOptionsEdit = useMemo(
+    () => ({
+      renterRequirementsCommitted,
+      spaceType,
+      featureAttributes: attributes,
+    }),
+    [renterRequirementsCommitted, spaceType, attributes]
+  );
+
+  function patchBookingIntelSection(section: string, patch: Record<string, unknown>) {
+    setBookingIntelData((prev) => ({
+      ...prev,
+      [section]: {
+        ...((prev[section] as Record<string, unknown>) || {}),
+        ...patch,
+      },
+    }));
+  }
+
+  function patchBookingIntelRoot(patch: Record<string, unknown>) {
+    setBookingIntelData((prev) => ({ ...prev, ...patch }));
+  }
+
   useEffect(() => {
     async function resolveParamsAndLoad() {
       const { id } = await params;
@@ -142,6 +186,14 @@ export default function EditListingPage({ params }: PageProps) {
 
     resolveParamsAndLoad();
   }, [params]);
+
+  useEffect(() => {
+    if (loading || typeof window === "undefined") return;
+    if (window.location.hash !== "#booking-quality") return;
+    window.requestAnimationFrame(() => {
+      document.getElementById("booking-quality")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }, [loading, listingId]);
 
   async function loadListing(id: string) {
     setLoading(true);
@@ -262,6 +314,37 @@ export default function EditListingPage({ params }: PageProps) {
     }
 
     setOwnershipProof((ownershipData as OwnershipDocumentRow | null) || null);
+
+    const intelCat = mapSpaceTypeToIntelCategory(data.space_type);
+    const [{ data: qRow }, { data: reqRow }] = await Promise.all([
+      (supabase.from("listing_questionnaires" as never) as any)
+        .select("data, category")
+        .eq("space_id", id)
+        .maybeSingle(),
+      (supabase.from("listing_booking_requirements" as never) as any)
+        .select("*")
+        .eq("space_id", id)
+        .maybeSingle(),
+    ]);
+
+    setBookingIntelData(mergeQuestionnaireData(intelCat, (qRow?.data as Record<string, unknown>) || {}));
+
+    if (reqRow) {
+      setRenterRequirementsCommitted(true);
+      setBookingRequirements({
+        require_item_type: Boolean(reqRow.require_item_type),
+        require_dimensions: Boolean(reqRow.require_dimensions),
+        require_photos: Boolean(reqRow.require_photos),
+        require_vehicle_details: Boolean(reqRow.require_vehicle_details),
+        require_access_frequency: Boolean(reqRow.require_access_frequency),
+        require_estimated_value: Boolean(reqRow.require_estimated_value),
+        require_notes: Boolean(reqRow.require_notes),
+      });
+    } else {
+      setRenterRequirementsCommitted(false);
+      setBookingRequirements({ ...DEFAULT_LISTING_BOOKING_REQUIREMENTS });
+    }
+
     setLoading(false);
   }
 
@@ -702,6 +785,23 @@ export default function EditListingPage({ params }: PageProps) {
       }
     }
 
+    const intelSave = await upsertListingBookingIntelTables(supabase as any, {
+      spaceId: listingId,
+      spaceType,
+      questionnaireData: bookingIntelData,
+      requirements: bookingRequirements,
+    });
+    if (intelSave.questionnaireError || intelSave.requirementsError) {
+      setMessage(
+        intelSave.questionnaireError ||
+          intelSave.requirementsError ||
+          "Could not save booking quality details."
+      );
+      setSaving(false);
+      return;
+    }
+    setRenterRequirementsCommitted(true);
+
     setSaving(false);
     router.push("/dashboard/listings");
   }
@@ -750,19 +850,16 @@ export default function EditListingPage({ params }: PageProps) {
             </div>
 
             {listingId ? (
-              <div className="mb-6 rounded-2xl border border-[#e2e8f0] bg-gradient-to-b from-white to-[#f8fafb] p-5 shadow-sm">
-                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
-                  Structured booking intelligence
-                </p>
-                <h2 className="mt-1 text-lg font-semibold text-[#192a3a]">Improve your booking quality</h2>
-                <p className="mt-1 text-sm text-gray-600">Better information = better bookings.</p>
+              <p className="mb-6 text-sm text-gray-600">
+                Booking quality is included in this form. For a larger layout, open the{" "}
                 <Link
                   href={`/spaces/${listingId}/booking-quality`}
-                  className="mt-4 inline-flex w-full min-h-[44px] items-center justify-center rounded-xl bg-[#0f2740] px-4 py-2.5 text-center text-sm font-semibold text-white shadow-sm transition hover:opacity-95 sm:w-auto"
+                  className="font-medium text-[#192a3a] underline underline-offset-2"
                 >
-                  Open advanced questionnaire
+                  full-page questionnaire
                 </Link>
-              </div>
+                .
+              </p>
             ) : null}
 
             <div className="mb-6 rounded-md border border-gray-300 bg-white p-4 shadow-sm">
@@ -844,8 +941,12 @@ export default function EditListingPage({ params }: PageProps) {
                   <select
                     value={spaceType}
                     onChange={(e) => {
-                      setSpaceType(e.target.value);
+                      const next = e.target.value;
+                      setSpaceType(next);
                       setAttributes({});
+                      setBookingIntelData(
+                        emptyQuestionnaireDataForCategory(mapSpaceTypeToIntelCategory(next))
+                      );
                     }}
                     className="w-full rounded-sm border border-gray-400 px-4 py-3 outline-none"
                   >
@@ -1051,6 +1152,43 @@ export default function EditListingPage({ params }: PageProps) {
                   className="w-full rounded-sm border border-gray-400 px-4 py-3 outline-none"
                 />
               </div>
+
+              <section
+                id="booking-quality"
+                className="scroll-mt-24 rounded-xl border border-[#e2e8f0] bg-gradient-to-b from-[#fbfcfd] to-white p-5 shadow-sm"
+              >
+                <details open className="group">
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-3 [&::-webkit-details-marker]:hidden">
+                    <div>
+                      <h2 className="text-lg font-semibold text-[#192a3a]">Booking quality details</h2>
+                      <p className="mt-1 text-sm text-gray-600">
+                        Better information = better bookings. You can update this later.
+                      </p>
+                    </div>
+                    <span className="text-gray-500 transition group-open:rotate-180" aria-hidden>
+                      ▼
+                    </span>
+                  </summary>
+                  <div className="mt-5 space-y-5 border-t border-[#eef2f6] pt-5">
+                    <ListingQualityScoreSummary
+                      intelCategory={intelCategory}
+                      data={bookingIntelData}
+                      listingQualityOptions={listingQualityOptionsEdit}
+                      spaceTypeLabel={spaceType ? `Category: ${spaceType}` : undefined}
+                      compact
+                      footerHint="Saves when you click Save changes."
+                    />
+                    <ListingBookingQualityFormFields
+                      intelCategory={intelCategory}
+                      questionnaireData={bookingIntelData}
+                      onPatchSection={patchBookingIntelSection}
+                      onPatchRoot={patchBookingIntelRoot}
+                      requirements={bookingRequirements}
+                      onRequirementsChange={setBookingRequirements}
+                    />
+                  </div>
+                </details>
+              </section>
 
               <div className="rounded-sm border border-gray-200 bg-gray-50 p-4">
                 <div className="mb-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">

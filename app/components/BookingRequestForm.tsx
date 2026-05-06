@@ -24,6 +24,9 @@ import {
   RENTER_ITEM_TYPE_OPTIONS,
 } from "@/lib/booking-intelligence";
 
+const STRUCTURED_BOOKING_VALIDATION_MESSAGE =
+  "Please complete the required booking details before sending your request.";
+
 type ExistingBooking = {
   id: string;
   booking_unit: string | null;
@@ -197,19 +200,41 @@ export default function BookingRequestForm({
 
       if (cancelled) return;
 
-      if (error || !data) {
+      if (error) {
+        console.warn(
+          "[FindMySpace] listing_booking_requirements load failed — check GRANT/RLS. Renter requirements may be hidden.",
+          { spaceId, message: error.message, code: error.code }
+        );
         setHostRequirements({ ...DEFAULT_LISTING_BOOKING_REQUIREMENTS });
-      } else {
-        setHostRequirements({
-          require_item_type: Boolean(data.require_item_type),
-          require_dimensions: Boolean(data.require_dimensions),
-          require_photos: Boolean(data.require_photos),
-          require_vehicle_details: Boolean(data.require_vehicle_details),
-          require_access_frequency: Boolean(data.require_access_frequency),
-          require_estimated_value: Boolean(data.require_estimated_value),
-          require_notes: Boolean(data.require_notes),
-        });
+        setHostRequirementsLoading(false);
+        return;
       }
+
+      if (data == null) {
+        console.info(
+          "[FindMySpace] No host booking requirements found for this listing.",
+          { spaceId }
+        );
+        setHostRequirements({ ...DEFAULT_LISTING_BOOKING_REQUIREMENTS });
+        setHostRequirementsLoading(false);
+        return;
+      }
+
+      const next: ListingBookingRequirements = {
+        require_item_type: Boolean(data.require_item_type),
+        require_dimensions: Boolean(data.require_dimensions),
+        require_photos: Boolean(data.require_photos),
+        require_vehicle_details: Boolean(data.require_vehicle_details),
+        require_access_frequency: Boolean(data.require_access_frequency),
+        require_estimated_value: Boolean(data.require_estimated_value),
+        require_notes: Boolean(data.require_notes),
+      };
+
+      if (process.env.NODE_ENV === "development" && Object.values(next).some(Boolean)) {
+        console.debug("[FindMySpace] Host booking requirements loaded.", { spaceId, next });
+      }
+
+      setHostRequirements(next);
       setHostRequirementsLoading(false);
     }
 
@@ -758,7 +783,7 @@ export default function BookingRequestForm({
     const req = hostRequirements;
     if (!req) return null;
     if (req.require_item_type && !itemType) {
-      return "Please select what you are storing, parking, or using.";
+      return STRUCTURED_BOOKING_VALIDATION_MESSAGE;
     }
     if (req.require_dimensions) {
       const l = Number(dimLength);
@@ -772,26 +797,26 @@ export default function BookingRequestForm({
         w <= 0 ||
         h <= 0
       ) {
-        return "Please enter length, width, and height (cm), all greater than zero.";
+        return STRUCTURED_BOOKING_VALIDATION_MESSAGE;
       }
     }
     if (req.require_photos && detailPhotoFiles.length === 0) {
-      return "Please add at least one photo.";
+      return STRUCTURED_BOOKING_VALIDATION_MESSAGE;
     }
     if (req.require_vehicle_details && !vehicleType.trim()) {
-      return "Please enter the vehicle type.";
+      return STRUCTURED_BOOKING_VALIDATION_MESSAGE;
     }
     if (req.require_access_frequency && !accessFrequency) {
-      return "Please select how often you need access.";
+      return STRUCTURED_BOOKING_VALIDATION_MESSAGE;
     }
     if (req.require_estimated_value) {
       const v = Number(estimatedValueZar);
       if (!Number.isFinite(v) || v <= 0) {
-        return "Please enter a realistic estimated value (ZAR).";
+        return STRUCTURED_BOOKING_VALIDATION_MESSAGE;
       }
     }
     if (req.require_notes && !structuredNotes.trim()) {
-      return "Please add notes for the host.";
+      return STRUCTURED_BOOKING_VALIDATION_MESSAGE;
     }
     return null;
   }
@@ -1401,19 +1426,40 @@ export default function BookingRequestForm({
             </div>
           )}
 
+          <div className="rounded-md border border-gray-200 bg-[#f8fafb] p-3 text-xs text-gray-600">
+            <label className="flex items-start gap-2">
+              <input
+                type="checkbox"
+                checked={acceptedTerms}
+                onChange={(e) => setAcceptedTerms(e.target.checked)}
+                disabled={loading}
+                className="mt-0.5"
+              />
+              <span>
+                I agree to the{" "}
+                <a href="/terms" className="underline text-[#192a3a]">
+                  Terms & Conditions
+                </a>{" "}
+                and the cancellation policy.
+              </span>
+            </label>
+          </div>
+
           {hostRequirementsLoading && (
             <div className="flex items-center gap-2 text-xs text-gray-600" role="status">
               <Loader2 className="h-3.5 w-3.5 animate-spin text-[#192a3a]" aria-hidden />
-              Loading host preferences…
+              Loading host requirements…
             </div>
           )}
 
           {hostRequiresStructuredInfo && !hostRequirementsLoading && (
-            <div className="space-y-4 rounded-xl border border-[#e2e8f0] bg-[#fbfcfd] p-4 shadow-sm">
+            <div className="space-y-4 rounded-2xl border border-[#e2e8f0] bg-white p-4 shadow-[0_8px_30px_rgba(15,23,42,0.06)] ring-1 ring-black/[0.03] sm:p-5">
               <div>
-                <h3 className="text-sm font-semibold text-[#192a3a]">Before you request</h3>
-                <p className="mt-1 text-xs leading-relaxed text-gray-600">
-                  This host requires the following information before booking.
+                <h3 className="text-base font-semibold text-[#192a3a]">
+                  This host needs a few details before approving
+                </h3>
+                <p className="mt-1 text-sm leading-relaxed text-gray-600">
+                  Better details help the host approve your request faster.
                 </p>
               </div>
 
@@ -1511,7 +1557,8 @@ export default function BookingRequestForm({
               {hostRequirements?.require_photos && (
                 <div>
                   <p className="mb-2 text-xs font-medium text-gray-700">
-                    Photos of items, vehicles, or equipment <span className="text-red-600">*</span>
+                    Upload photos of what you want to store, park or use{" "}
+                    <span className="text-red-600">*</span>
                   </p>
                   <input
                     type="file"
@@ -1524,7 +1571,8 @@ export default function BookingRequestForm({
                   />
                   {detailPhotoFiles.length > 0 && (
                     <p className="mt-1 text-xs text-gray-500">
-                      {detailPhotoFiles.length} file{detailPhotoFiles.length === 1 ? "" : "s"} selected
+                      {detailPhotoFiles.length} file{detailPhotoFiles.length === 1 ? "" : "s"}{" "}
+                      selected
                     </p>
                   )}
                 </div>
@@ -1587,25 +1635,6 @@ export default function BookingRequestForm({
               </p>
             </div>
           )}
-
-          <div className="rounded-md border border-gray-200 bg-[#f8fafb] p-3 text-xs text-gray-600">
-            <label className="flex items-start gap-2">
-              <input
-                type="checkbox"
-                checked={acceptedTerms}
-                onChange={(e) => setAcceptedTerms(e.target.checked)}
-                disabled={loading}
-                className="mt-0.5"
-              />
-              <span>
-                I agree to the{" "}
-                <a href="/terms" className="underline text-[#192a3a]">
-                  Terms & Conditions
-                </a>{" "}
-                and the cancellation policy.
-              </span>
-            </label>
-          </div>
 
           {statusMessage && (
             <div

@@ -4,8 +4,25 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import Image from "next/image";
 import Link from "next/link";
-import { CheckCircle2, Share2, X } from "lucide-react";
+import { Check, CheckCircle2, Share2, X } from "lucide-react";
+import ListingFormStepNav, {
+  type ListingFormStepMeta,
+} from "@/app/components/ListingFormStepNav";
 import { supabase } from "@/lib/supabase";
+import {
+  DEFAULT_LISTING_BOOKING_REQUIREMENTS,
+  emptyQuestionnaireDataForCategory,
+  ListingBookingRequirements,
+  mapSpaceTypeToIntelCategory,
+  mergeQuestionnaireData,
+  renterRequirementKeysForCategory,
+  RENTER_REQUIREMENT_LABELS,
+  upsertListingBookingIntelTables,
+} from "@/lib/booking-intelligence";
+import {
+  ListingBookingQualityFormFields,
+  ListingQualityScoreSummary,
+} from "@/app/components/listing-booking-quality-ui";
 import {
   getPendingAdvisorCode,
   normalizeAdvisorCode,
@@ -24,6 +41,13 @@ const MapPicker = dynamic(() => import("@/app/components/MapPicker"), {
 });
 
 const DRAFT_BANNER_DISMISSED_KEY = "findmyspace_listing_draft_banner_dismissed";
+
+const LISTING_CREATE_STEPS: ListingFormStepMeta[] = [
+  { id: "basics", label: "Basics & pricing", shortLabel: "Basics" },
+  { id: "location", label: "Location & photos", shortLabel: "Place" },
+  { id: "features", label: "Features & booking", shortLabel: "Details" },
+  { id: "review", label: "Review & submit", shortLabel: "Review" },
+];
 
 type SpaceFormProps = {
   onCreated?: () => void | Promise<void>;
@@ -112,6 +136,19 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
   const [imageFiles, setImageFiles] = useState<File[]>([]);
   const [attributes, setAttributes] = useState<Record<string, string[]>>({});
 
+  const [bookingIntelData, setBookingIntelData] = useState<Record<string, unknown>>(() =>
+    emptyQuestionnaireDataForCategory(mapSpaceTypeToIntelCategory("storage"))
+  );
+  const [bookingRequirements, setBookingRequirements] = useState<ListingBookingRequirements>({
+    ...DEFAULT_LISTING_BOOKING_REQUIREMENTS,
+  });
+
+  const [currentStep, setCurrentStep] = useState(0);
+  const [maxUnlockedStep, setMaxUnlockedStep] = useState(0);
+  const [stepFieldError, setStepFieldError] = useState<string | null>(null);
+  const [draftSavedAt, setDraftSavedAt] = useState<number | null>(null);
+  const stepContentAnchorRef = useRef<HTMLDivElement | null>(null);
+
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [searchingAddress, setSearchingAddress] = useState(false);
@@ -150,6 +187,31 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
     advisor_source: string | null;
   } | null>(null);
   const suggestionAbortRef = useRef<AbortController | null>(null);
+
+  const intelCategory = useMemo(() => mapSpaceTypeToIntelCategory(spaceType), [spaceType]);
+
+  const listingQualityOptionsCreate = useMemo(
+    () => ({
+      renterRequirementsCommitted: true,
+      spaceType,
+      featureAttributes: attributes,
+    }),
+    [spaceType, attributes]
+  );
+
+  function patchBookingIntelSection(section: string, patch: Record<string, unknown>) {
+    setBookingIntelData((prev) => ({
+      ...prev,
+      [section]: {
+        ...((prev[section] as Record<string, unknown>) || {}),
+        ...patch,
+      },
+    }));
+  }
+
+  function patchBookingIntelRoot(patch: Record<string, unknown>) {
+    setBookingIntelData((prev) => ({ ...prev, ...patch }));
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -212,6 +274,23 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
     setLongitude(d.longitude);
     setManualAdvisorCode(d.manualAdvisorCode);
     setAttributes(d.attributes || {});
+    const step = typeof d.currentStep === "number" && d.currentStep >= 0 && d.currentStep < 4 ? d.currentStep : 0;
+    const maxU =
+      typeof d.maxUnlockedStep === "number" && d.maxUnlockedStep >= 0 && d.maxUnlockedStep < 4
+        ? d.maxUnlockedStep
+        : step;
+    setCurrentStep(step);
+    setMaxUnlockedStep(Math.max(step, maxU));
+    if (d.bookingIntelData && typeof d.bookingIntelData === "object") {
+      const cat = mapSpaceTypeToIntelCategory(d.spaceType);
+      setBookingIntelData(mergeQuestionnaireData(cat, d.bookingIntelData));
+    }
+    if (d.bookingRequirements && typeof d.bookingRequirements === "object") {
+      setBookingRequirements({
+        ...DEFAULT_LISTING_BOOKING_REQUIREMENTS,
+        ...d.bookingRequirements,
+      } as ListingBookingRequirements);
+    }
     setDraftRestored(true);
     setTimeout(() => {
       draftSaveSkipRef.current = false;
@@ -249,7 +328,12 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
         longitude,
         manualAdvisorCode,
         attributes,
+        currentStep,
+        maxUnlockedStep,
+        bookingIntelData,
+        bookingRequirements: { ...bookingRequirements },
       });
+      setDraftSavedAt(Date.now());
     }, 500);
     return () => window.clearTimeout(t);
   }, [
@@ -272,6 +356,10 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
     manualAdvisorCode,
     attributes,
     submitted,
+    currentStep,
+    maxUnlockedStep,
+    bookingIntelData,
+    bookingRequirements,
   ]);
 
   const priceMissing = useMemo(() => {
@@ -283,6 +371,89 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
     }
     return !pricePerDay || Number(pricePerDay) <= 0;
   }, [bookingUnit, pricePerHour, pricePerDay, pricePerMonth]);
+
+  function validateListingStep(stepIndex: number): string | null {
+    if (stepIndex === 0) {
+      if (!title.trim()) return "Please add a title for your listing.";
+      if (!spaceType) return "Select a space type.";
+      if (priceMissing) return "Please enter a valid price for your booking unit.";
+      if (bookingUnit === "hour" && Number(minBookingHours || 0) < 1) {
+        return "Minimum booking hours must be at least 1.";
+      }
+      if (bookingUnit === "day" && Number(minBookingDays || 0) < 1) {
+        return "Minimum booking days must be at least 1.";
+      }
+      if (bookingUnit === "month" && Number(minBookingMonths || 0) < 1) {
+        return "Minimum booking months must be at least 1.";
+      }
+      return null;
+    }
+    if (stepIndex === 1) {
+      if (!addressLine1.trim()) return "Please enter a street address.";
+      if (!suburb.trim()) return "Please enter a suburb.";
+      if (!city.trim()) return "Please enter a city.";
+      if (imageFiles.length < 1) return "Add at least one photo of your space.";
+      return null;
+    }
+    if (stepIndex === 2) {
+      return null;
+    }
+    return null;
+  }
+
+  function goToListingStep(next: number) {
+    setStepFieldError(null);
+    setCurrentStep(next);
+    window.requestAnimationFrame(() => {
+      stepContentAnchorRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }
+
+  function handleStepNavClick(index: number) {
+    if (index > maxUnlockedStep) return;
+    goToListingStep(index);
+  }
+
+  function goNextStep() {
+    const err = validateListingStep(currentStep);
+    if (err) {
+      setStepFieldError(err);
+      return;
+    }
+    setStepFieldError(null);
+    const next = Math.min(currentStep + 1, LISTING_CREATE_STEPS.length - 1);
+    setMaxUnlockedStep((m) => Math.max(m, next));
+    goToListingStep(next);
+  }
+
+  function goPrevStep() {
+    if (currentStep <= 0) return;
+    goToListingStep(currentStep - 1);
+  }
+
+  const reviewPriceLabel = useMemo(() => {
+    if (bookingUnit === "hour" && pricePerHour && Number(pricePerHour) > 0) {
+      return `R${Number(pricePerHour).toFixed(2)} / hour`;
+    }
+    if (bookingUnit === "month" && pricePerMonth && Number(pricePerMonth) > 0) {
+      return `R${Number(pricePerMonth).toFixed(2)} / month`;
+    }
+    if (pricePerDay && Number(pricePerDay) > 0) {
+      return `R${Number(pricePerDay).toFixed(2)} / day`;
+    }
+    return "—";
+  }, [bookingUnit, pricePerHour, pricePerDay, pricePerMonth]);
+
+  const renterRequirementsSummary = useMemo(() => {
+    const keys = renterRequirementKeysForCategory(intelCategory);
+    return keys
+      .filter((k) => bookingRequirements[k])
+      .map((k) => RENTER_REQUIREMENT_LABELS[k]);
+  }, [intelCategory, bookingRequirements]);
+
+  const featureSelectionCount = useMemo(() => {
+    return Object.values(attributes).reduce((n, arr) => n + (arr?.length || 0), 0);
+  }, [attributes]);
 
   const imagePreviews = useMemo(() => {
     return imageFiles.map((file) => ({
@@ -653,17 +824,25 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
 
   async function handleCreateSpace(e: React.FormEvent) {
     e.preventDefault();
+    if (currentStep !== LISTING_CREATE_STEPS.length - 1) {
+      return;
+    }
     setMessage("");
+    setStepFieldError(null);
     setLoading(true);
 
     if (!ownershipProofFile) {
-      setMessage("Please upload proof of ownership for this space.");
+      const msg = "Please upload proof of ownership for this space.";
+      setStepFieldError(msg);
+      setMessage(msg);
       setLoading(false);
       return;
     }
 
     if (imageFiles.length < 1) {
-      setMessage("Add at least one image so renters can see your space.");
+      const msg = "Add at least one image so renters can see your space.";
+      setStepFieldError(msg);
+      setMessage(msg);
       setLoading(false);
       return;
     }
@@ -933,6 +1112,23 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
         setLoading(false);
         return;
       }
+
+      const intelSave = await upsertListingBookingIntelTables(supabase as any, {
+        spaceId: insertedSpace.id,
+        spaceType,
+        questionnaireData: bookingIntelData,
+        requirements: bookingRequirements,
+      });
+      if (intelSave.questionnaireError || intelSave.requirementsError) {
+        setMessage(
+          `Listing created, but booking quality could not be saved: ${
+            intelSave.questionnaireError || intelSave.requirementsError
+          }. Open Edit listing to try again.`
+        );
+        setLoading(false);
+        return;
+      }
+
       await fetch("/api/notifications/listing-event", {
         method: "POST",
         headers: {
@@ -979,31 +1175,31 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
 
   if (createdListingId) {
     return (
-      <div className="overflow-x-hidden rounded-md border border-emerald-200 bg-gradient-to-b from-emerald-50/90 to-white p-6 shadow-sm sm:p-8">
+      <div className="overflow-x-hidden rounded-3xl border border-emerald-200/90 bg-gradient-to-b from-emerald-50/95 to-white p-6 shadow-[0_28px_65px_rgba(15,23,42,0.1)] sm:p-8">
         <div className="mb-6 flex items-start gap-3">
-          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200">
+          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200/80">
             <CheckCircle2 className="h-7 w-7" strokeWidth={2} aria-hidden />
           </span>
           <div className="min-w-0 flex-1">
-            <h2 className="text-2xl font-semibold text-[#192a3a]">
+            <h2 className="text-2xl font-semibold text-[#0f172a] sm:text-3xl">
               Your listing has been submitted
             </h2>
-            <p className="mt-1 text-sm text-gray-600">
+            <p className="mt-1 text-sm leading-relaxed text-[#64748b]">
               It will appear to renters after review. What would you like to do next?
             </p>
           </div>
         </div>
 
         {momentumAdvisorNote ? (
-          <p className="mb-5 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+          <p className="mb-5 rounded-2xl border border-amber-200/90 bg-amber-50/90 px-4 py-3 text-sm text-amber-950">
             {momentumAdvisorNote}
           </p>
         ) : null}
 
         {submittedPhotoCount <= 2 && (
-          <p className="mb-5 text-sm text-gray-600">
-            <span className="font-medium text-[#192a3a]">Tip:</span> listings with more
-            photos tend to get more booking requests.
+          <p className="mb-5 text-sm leading-relaxed text-[#64748b]">
+            <span className="font-medium text-[#0f172a]">Tip:</span> listings with more photos tend
+            to get more booking requests.
           </p>
         )}
 
@@ -1011,24 +1207,26 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
           <Link
             href={`/spaces/${createdListingId}`}
             onClick={fireOnCreated}
-            className="flex w-full min-h-[48px] items-center justify-center rounded-md bg-[#192a3a] px-4 py-3 text-center text-sm font-semibold text-white shadow-sm hover:opacity-95"
+            className="flex w-full min-h-[48px] items-center justify-center rounded-xl bg-[#c1121f] px-4 py-3 text-center text-sm font-semibold text-white shadow-[0_1px_2px_rgba(15,23,42,0.12)] transition hover:opacity-95"
           >
             View your listing
           </Link>
 
           <Link
-            href={`/spaces/${createdListingId}/booking-quality`}
+            href={`/spaces/${createdListingId}/edit#booking-quality`}
             onClick={fireOnCreated}
-            className="flex w-full min-h-[48px] items-center justify-center rounded-md border border-[#0f2740]/25 bg-[#f4f7f9] px-4 py-3 text-center text-sm font-semibold text-[#0f2740] shadow-sm hover:bg-[#e8eef3]"
+            className="flex w-full min-h-[48px] items-center justify-center rounded-xl border border-[#d7dde3] bg-white px-4 py-3 text-center text-sm font-semibold text-[#334155] shadow-sm transition hover:border-[#b8c2cc]"
           >
-            Improve your booking quality
+            Refine booking quality in listing editor
           </Link>
-          <p className="-mt-1 text-center text-xs text-gray-600">Better information = better bookings.</p>
+          <p className="-mt-1 text-center text-xs text-[#64748b]">
+            Or use the full-page questionnaire from your dashboard.
+          </p>
 
           <Link
             href={`/spaces/${createdListingId}/edit`}
             onClick={fireOnCreated}
-            className="flex w-full min-h-[48px] items-center justify-center rounded-md border-2 border-[#192a3a] bg-white px-4 py-3 text-center text-sm font-semibold text-[#192a3a] hover:bg-gray-50"
+            className="flex w-full min-h-[48px] items-center justify-center rounded-xl border-2 border-[#0f172a] bg-white px-4 py-3 text-center text-sm font-semibold text-[#0f172a] transition hover:bg-[#f8fafc]"
           >
             Add more photos
           </Link>
@@ -1036,7 +1234,7 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
           <button
             type="button"
             onClick={() => void copyListingShareLink()}
-            className="inline-flex w-full min-h-[48px] items-center justify-center gap-2 rounded-md border border-gray-300 bg-white px-4 py-3 text-sm font-medium text-[#192a3a] hover:bg-gray-50"
+            className="inline-flex w-full min-h-[48px] items-center justify-center gap-2 rounded-xl border border-[#d7dde3] bg-white px-4 py-3 text-sm font-medium text-[#334155] shadow-sm transition hover:border-[#b8c2cc]"
           >
             <Share2 className="h-4 w-4 shrink-0" aria-hidden />
             {shareCopied ? "Link copied" : "Share listing link"}
@@ -1045,7 +1243,7 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
           <Link
             href="/dashboard/listings?created=pending"
             onClick={fireOnCreated}
-            className="pt-1 text-center text-sm text-gray-600 underline underline-offset-2 hover:text-[#192a3a]"
+            className="pt-1 text-center text-sm text-[#64748b] underline underline-offset-2 hover:text-[#0f172a]"
           >
             Manage in dashboard
           </Link>
@@ -1055,13 +1253,19 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
   }
 
   return (
-    <form
-      onSubmit={handleCreateSpace}
-      className="space-y-8 overflow-x-hidden rounded-md border border-gray-200 bg-white p-6 shadow-sm sm:p-8"
-    >
+    <div className="overflow-x-hidden rounded-3xl border border-[#e5e7eb] bg-white shadow-[0_28px_65px_rgba(15,23,42,0.12)]">
+      <ListingFormStepNav
+        steps={LISTING_CREATE_STEPS}
+        currentStep={currentStep}
+        maxUnlockedStep={maxUnlockedStep}
+        onStepChange={handleStepNavClick}
+      />
+      <form onSubmit={handleCreateSpace} className="block">
+        <div ref={stepContentAnchorRef} className="h-0 scroll-mt-[108px]" aria-hidden />
+        <div className="mx-auto max-w-6xl space-y-4 px-4 py-4 sm:px-6 sm:py-6">
       {draftRestored && !draftBannerDismissed && (
         <div
-          className="flex items-start gap-3 rounded-md border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-950"
+          className="flex items-start gap-2 rounded-xl border border-sky-200/90 bg-sky-50/90 px-3 py-2.5 text-xs leading-snug text-sky-950 shadow-sm sm:text-sm"
           role="status"
         >
           <p className="min-w-0 flex-1">
@@ -1079,45 +1283,51 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
         </div>
       )}
 
-      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-xs text-gray-600">
-        <span className="font-semibold text-[#192a3a]">Step 1 of 3</span>
-        <span className="hidden sm:inline">·</span>
-        <span>Details &amp; pricing</span>
-        <span className="text-gray-400">→</span>
-        <span>Step 2 — Location &amp; photos</span>
-        <span className="text-gray-400">→</span>
-        <span>Step 3 — Proof &amp; submit</span>
-      </div>
+      {draftSavedAt && !submitted ? (
+        <p className="flex items-center justify-end gap-1.5 text-xs text-[#64748b]">
+          <Check className="h-3.5 w-3.5 shrink-0 text-emerald-600" strokeWidth={2.5} aria-hidden />
+          <span>
+            Saved{" "}
+            {Date.now() - draftSavedAt < 60_000
+              ? "just now"
+              : `${Math.round((Date.now() - draftSavedAt) / 60_000)} min ago`}
+          </span>
+        </p>
+      ) : null}
 
-      <div className="rounded-md border border-gray-200 bg-gray-50 p-5">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <h2 className="mb-2 text-2xl font-semibold text-[#192a3a]">
-              Create your listing
-            </h2>
-            <p className="text-sm text-gray-600">
-              You can create your listing now. It will stay pending until identity,
-              bank, and ownership proof are approved.
-            </p>
-          </div>
-
-          <Link
-            href="/dashboard/verification?step=overview"
-            className="rounded-md border border-gray-300 px-4 py-2 text-sm"
-          >
-            Back to host dashboard
-          </Link>
+      {stepFieldError ? (
+        <div
+          className="rounded-xl border border-red-200/90 bg-red-50/80 px-3 py-2 text-sm leading-snug text-red-900 shadow-sm"
+          role="alert"
+        >
+          {stepFieldError}
         </div>
+      ) : null}
+
+      <div
+        className={currentStep === 0 ? "listing-step-panel space-y-4" : "hidden"}
+        aria-hidden={currentStep !== 0}
+      >
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#e5e7eb] bg-[#f8fafc] px-3 py-2.5 sm:px-4">
+        <p className="text-xs leading-snug text-[#64748b] sm:text-sm">
+          Listings stay pending until identity, bank, and ownership proof are approved.
+        </p>
+        <Link
+          href="/dashboard/verification?step=overview"
+          className="shrink-0 text-sm font-medium text-[#c1121f] underline-offset-4 hover:underline"
+        >
+          Host dashboard
+        </Link>
       </div>
 
-      <section className="rounded-md border border-sky-200 bg-sky-50/80 p-5">
-        <h3 className="mb-1 text-lg font-semibold text-[#192a3a]">
+      <section className="rounded-2xl border border-sky-200/80 bg-sky-50/70 p-4 shadow-sm sm:p-5">
+        <h3 className="mb-0.5 text-sm font-semibold text-[#0f172a] sm:text-base">
           Space Advisor (optional)
         </h3>
-        <p className="mb-3 text-sm text-gray-700">
+        <p className="mb-2 text-xs leading-relaxed text-[#64748b] sm:text-sm">
           If a Space Advisor helped you set up this listing, enter their code here.
         </p>
-        <label className="mb-1 block text-xs font-medium text-gray-600">
+        <label className="mb-1 block text-xs font-medium leading-5 text-[#475569]">
           Advisor code
         </label>
         <input
@@ -1125,10 +1335,10 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
           value={manualAdvisorCode}
           onChange={(e) => setManualAdvisorCode(e.target.value.toUpperCase())}
           placeholder="e.g. SPACER1"
-          className="w-full max-w-md rounded-md border border-gray-300 px-3 py-2 text-sm uppercase outline-none"
+          className="w-full max-w-md rounded-lg border border-[#d4dbe2] bg-white px-3 py-2 text-sm uppercase shadow-sm outline-none transition-all duration-200 focus:border-[#c1121f] focus:ring-2 focus:ring-[#c1121f]/20"
           autoComplete="off"
         />
-        <p className="mt-2 text-xs text-gray-600">
+        <p className="mt-2 text-xs leading-relaxed text-[#64748b]">
           This helps us track who assisted you. It does not give them access to your
           account or payments.
         </p>
@@ -1148,47 +1358,67 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
           )}
       </section>
 
-      <section className="rounded-md border border-gray-200 p-6">
-        <h3 className="mb-2 text-xl font-semibold text-[#192a3a]">
-          1. Listing details
+      <section className="rounded-2xl border border-[#e5e7eb] bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-5">
+        <h3 className="mb-1 text-base font-semibold text-[#0f172a] sm:text-lg">
+          Space basics
         </h3>
-        <p className="mb-6 text-sm text-gray-600">
-          Add the main information people need to understand your space.
+        <p className="mb-4 text-xs leading-relaxed text-[#64748b] sm:text-sm">
+          Name and describe your space. Type and pricing are set in the next section.
         </p>
 
-        <div className="space-y-6">
+        <div className="space-y-4">
           <div>
-            <label className="mb-2 block text-sm font-medium">Title</label>
+            <label className="mb-1 block text-xs font-medium leading-5 text-[#475569]">Title</label>
             <input
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="Secure parking bay in Paarl"
-              required
-              className="w-full rounded-md border border-gray-300 px-4 py-3 outline-none"
+              className="w-full min-h-[44px] rounded-lg border border-[#d4dbe2] bg-white px-3 py-2.5 text-sm text-[#334155] shadow-sm outline-none transition-all duration-200 focus:border-[#c1121f] focus:ring-2 focus:ring-[#c1121f]/20"
             />
           </div>
 
           <div>
-            <label className="mb-2 block text-sm font-medium">Description</label>
+            <label className="mb-1 block text-xs font-medium leading-5 text-[#475569]">Description</label>
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Covered parking with remote access"
-              rows={4}
-              className="w-full rounded-md border border-gray-300 px-4 py-3 outline-none"
+              rows={3}
+              className="w-full rounded-lg border border-[#d4dbe2] bg-white px-3 py-2.5 text-sm text-[#334155] shadow-sm outline-none transition-all duration-200 focus:border-[#c1121f] focus:ring-2 focus:ring-[#c1121f]/20"
             />
           </div>
+        </div>
+      </section>
 
-          <div>
-            <label className="mb-2 block text-sm font-medium">Space type</label>
+      <section className="rounded-2xl border border-[#e5e7eb] bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-5">
+        <h3 className="mb-1 text-base font-semibold text-[#0f172a] sm:text-lg">
+          Pricing &amp; booking rules
+        </h3>
+        <p className="mb-3 text-xs leading-relaxed text-[#64748b] sm:text-sm">
+          Space type, how renters book, your price, and minimum duration — one glance on larger screens.
+        </p>
+
+        {priceMissing ? (
+          <p className="mb-3 rounded-lg border border-amber-200/90 bg-amber-50/90 px-3 py-2 text-xs leading-snug text-amber-950 sm:text-sm">
+            Enter a valid price for the booking unit you selected.
+          </p>
+        ) : null}
+
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-x-4 sm:gap-y-3 xl:grid-cols-4">
+          <div className="min-w-0">
+            <label className="mb-1 block text-xs font-medium leading-5 text-[#475569]">Space type</label>
             <select
               value={spaceType}
               onChange={(e) => {
-                setSpaceType(e.target.value);
+                const next = e.target.value;
+                setSpaceType(next);
                 setAttributes({});
+                setBookingIntelData(
+                  emptyQuestionnaireDataForCategory(mapSpaceTypeToIntelCategory(next))
+                );
               }}
-              className="w-full rounded-md border border-gray-300 px-4 py-3 outline-none"
+              className="w-full min-h-[44px] rounded-lg border border-[#d4dbe2] bg-white px-3 py-2 text-sm font-medium text-[#334155] shadow-sm outline-none transition-all duration-200 focus:border-[#c1121f] focus:ring-2 focus:ring-[#c1121f]/20"
             >
               {!LISTING_SPACE_TYPE_OPTIONS.some((o) => o.value === spaceType) &&
                 spaceType && (
@@ -1201,216 +1431,198 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
               ))}
             </select>
           </div>
-
-          <SpaceCategoryFields
-            spaceType={spaceType}
-            attributes={attributes}
-            setAttributes={setAttributes}
-          />
-        </div>
-      </section>
-
-      <section className="rounded-md border border-gray-200 p-6">
-        <h3 className="mb-2 text-xl font-semibold text-[#192a3a]">
-          2. Pricing
-        </h3>
-        <p className="mb-6 text-sm text-gray-600">
-          Set how people can book your space and what they will pay.
-        </p>
-
-        {priceMissing && (
-          <p className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-            Enter a valid price for the booking unit you selected.
-          </p>
-        )}
-
-        <div className="space-y-6">
-          <div>
-            <label className="mb-2 block text-sm font-medium">Booking unit</label>
+          <div className="min-w-0">
+            <label className="mb-1 block text-xs font-medium leading-5 text-[#475569]">Booking unit</label>
             <select
               value={bookingUnit}
               onChange={(e) => setBookingUnit(e.target.value)}
-              className="w-full min-h-[48px] rounded-md border border-gray-300 px-4 py-3 outline-none"
+              className="w-full min-h-[44px] rounded-lg border border-[#d4dbe2] bg-white px-3 py-2 text-sm font-medium text-[#334155] shadow-sm outline-none transition-all duration-200 focus:border-[#c1121f] focus:ring-2 focus:ring-[#c1121f]/20"
             >
               <option value="hour">By hour</option>
               <option value="day">By day</option>
               <option value="month">By month</option>
             </select>
           </div>
-
-          {bookingUnit === "hour" && (
-            <div>
-              <label className="mb-2 block text-sm font-medium">Price per hour</label>
-              <input
-                type="number"
-                value={pricePerHour}
-                onChange={(e) => setPricePerHour(e.target.value)}
-                placeholder="50"
-                className={`w-full min-h-[48px] rounded-md border px-4 py-3 outline-none ${
-                  priceMissing ? "border-amber-400 bg-amber-50/50" : "border-gray-300"
-                }`}
-              />
-
-              {pricePerHour && Number(pricePerHour) > 0 && (() => {
-                const breakdown = calculatePayoutBreakdown(Number(pricePerHour));
-
-                return (
-                  <div className="mt-3 rounded-md border border-gray-200 bg-[#f8fafb] p-4 text-sm text-gray-700">
-                    <p className="font-semibold text-[#192a3a]">Estimated payout breakdown</p>
-                    <div className="mt-2 space-y-1 text-sm">
-                      <p>Customer price: R{Number(pricePerHour).toFixed(2)}</p>
-                      <p>Payment fee (3.5%): -R{breakdown.paymentFee.toFixed(2)}</p>
-                      <p>Platform commission ({(getCommissionRate(bookingUnit) * 100).toFixed(0)}%): -R{breakdown.commission.toFixed(2)}</p>
-                      <p>VAT on commission (16%): -R{breakdown.vatOnCommission.toFixed(2)}</p>
-                      <p className="pt-2 font-semibold text-[#192a3a]">
-                        You will receive approximately R{breakdown.payout.toFixed(2)}
-                      </p>
-                    </div>
-                  </div>
-                );
-              })()}
-              <div className="mt-4">
-                <label className="mb-2 block text-sm font-medium">Minimum booking hours</label>
+          {bookingUnit === "hour" ? (
+            <>
+              <div className="min-w-0">
+                <label className="mb-1 block text-xs font-medium leading-5 text-[#475569]">Price per hour</label>
+                <input
+                  type="number"
+                  value={pricePerHour}
+                  onChange={(e) => setPricePerHour(e.target.value)}
+                  placeholder="50"
+                  className={`w-full min-h-[44px] rounded-lg border px-3 py-2 text-sm text-[#334155] shadow-sm outline-none transition-all duration-200 focus:ring-2 focus:ring-[#c1121f]/20 ${
+                    priceMissing
+                      ? "border-amber-400 bg-amber-50/50 focus:border-amber-500"
+                      : "border-[#d4dbe2] bg-white focus:border-[#c1121f]"
+                  }`}
+                />
+              </div>
+              <div className="min-w-0">
+                <label className="mb-1 block text-xs font-medium leading-5 text-[#475569]">Minimum booking hours</label>
                 <input
                   type="number"
                   min="1"
                   value={minBookingHours}
                   onChange={(e) => setMinBookingHours(e.target.value)}
                   placeholder="1"
-                  className="w-full rounded-md border border-gray-300 px-4 py-3 outline-none"
+                  className="w-full min-h-[44px] rounded-lg border border-[#d4dbe2] bg-white px-3 py-2 text-sm text-[#334155] shadow-sm outline-none transition-all duration-200 focus:border-[#c1121f] focus:ring-2 focus:ring-[#c1121f]/20"
                 />
-                <p className="mt-2 text-sm text-gray-600">
-                  Renters must book at least this many hours.
-                </p>
+                <p className="mt-1 text-xs leading-snug text-[#64748b]">Minimum hours per booking.</p>
               </div>
-            </div>
-          )}
-
-          {bookingUnit === "day" && (
-            <div>
-              <label className="mb-2 block text-sm font-medium">Price per day</label>
-              <input
-                type="number"
-                value={pricePerDay}
-                onChange={(e) => setPricePerDay(e.target.value)}
-                placeholder="150"
-                className={`w-full min-h-[48px] rounded-md border px-4 py-3 outline-none ${
-                  priceMissing ? "border-amber-400 bg-amber-50/50" : "border-gray-300"
-                }`}
-              />
-
-              {pricePerDay && Number(pricePerDay) > 0 && (() => {
-                const breakdown = calculatePayoutBreakdown(Number(pricePerDay));
-
-                return (
-                  <div className="mt-3 rounded-md border border-gray-200 bg-[#f8fafb] p-4 text-sm text-gray-700">
-                    <p className="font-semibold text-[#192a3a]">Estimated payout breakdown</p>
-                    <div className="mt-2 space-y-1 text-sm">
-                      <p>Customer price: R{Number(pricePerDay).toFixed(2)}</p>
-                      <p>Payment fee (3.5%): -R{breakdown.paymentFee.toFixed(2)}</p>
-                      <p>Platform commission ({(getCommissionRate(bookingUnit) * 100).toFixed(0)}%): -R{breakdown.commission.toFixed(2)}</p>
-                      <p>VAT on commission (16%): -R{breakdown.vatOnCommission.toFixed(2)}</p>
-                      <p className="pt-2 font-semibold text-[#192a3a]">
-                        You will receive approximately R{breakdown.payout.toFixed(2)}
-                      </p>
-                    </div>
-                  </div>
-                );
-              })()}
-              <div className="mt-4">
-                <label className="mb-2 block text-sm font-medium">Minimum booking days</label>
+            </>
+          ) : null}
+          {bookingUnit === "day" ? (
+            <>
+              <div className="min-w-0">
+                <label className="mb-1 block text-xs font-medium leading-5 text-[#475569]">Price per day</label>
+                <input
+                  type="number"
+                  value={pricePerDay}
+                  onChange={(e) => setPricePerDay(e.target.value)}
+                  placeholder="150"
+                  className={`w-full min-h-[44px] rounded-lg border px-3 py-2 text-sm text-[#334155] shadow-sm outline-none transition-all duration-200 focus:ring-2 focus:ring-[#c1121f]/20 ${
+                    priceMissing
+                      ? "border-amber-400 bg-amber-50/50 focus:border-amber-500"
+                      : "border-[#d4dbe2] bg-white focus:border-[#c1121f]"
+                  }`}
+                />
+              </div>
+              <div className="min-w-0">
+                <label className="mb-1 block text-xs font-medium leading-5 text-[#475569]">Minimum booking days</label>
                 <input
                   type="number"
                   min="1"
                   value={minBookingDays}
                   onChange={(e) => setMinBookingDays(e.target.value)}
                   placeholder="1"
-                  className="w-full rounded-md border border-gray-300 px-4 py-3 outline-none"
+                  className="w-full min-h-[44px] rounded-lg border border-[#d4dbe2] bg-white px-3 py-2 text-sm text-[#334155] shadow-sm outline-none transition-all duration-200 focus:border-[#c1121f] focus:ring-2 focus:ring-[#c1121f]/20"
                 />
-                <p className="mt-2 text-sm text-gray-600">
-                  Renters must book at least this many days.
-                </p>
+                <p className="mt-1 text-xs leading-snug text-[#64748b]">Minimum days per booking.</p>
               </div>
-            </div>
-          )}
-
-          {bookingUnit === "month" && (
+            </>
+          ) : null}
+          {bookingUnit === "month" ? (
             <>
-              <div>
-                <label className="mb-2 block text-sm font-medium">Price per month</label>
+              <div className="min-w-0">
+                <label className="mb-1 block text-xs font-medium leading-5 text-[#475569]">Price per month</label>
                 <input
                   type="number"
                   value={pricePerMonth}
                   onChange={(e) => setPricePerMonth(e.target.value)}
                   placeholder="2500"
-                  className={`w-full min-h-[48px] rounded-md border px-4 py-3 outline-none ${
-                    priceMissing ? "border-amber-400 bg-amber-50/50" : "border-gray-300"
+                  className={`w-full min-h-[44px] rounded-lg border px-3 py-2 text-sm text-[#334155] shadow-sm outline-none transition-all duration-200 focus:ring-2 focus:ring-[#c1121f]/20 ${
+                    priceMissing
+                      ? "border-amber-400 bg-amber-50/50 focus:border-amber-500"
+                      : "border-[#d4dbe2] bg-white focus:border-[#c1121f]"
                   }`}
                 />
-
-                {pricePerMonth && Number(pricePerMonth) > 0 && (() => {
-                  const breakdown = calculatePayoutBreakdown(Number(pricePerMonth));
-
-                  return (
-                    <div className="mt-3 rounded-md border border-gray-200 bg-[#f8fafb] p-4 text-sm text-gray-700">
-                      <p className="font-semibold text-[#192a3a]">Estimated payout breakdown</p>
-                      <div className="mt-2 space-y-1 text-sm">
-                        <p>Customer price: R{Number(pricePerMonth).toFixed(2)}</p>
-                        <p>Payment fee (3.5%): -R{breakdown.paymentFee.toFixed(2)}</p>
-                        <p>Platform commission ({(getCommissionRate(bookingUnit) * 100).toFixed(0)}%): -R{breakdown.commission.toFixed(2)}</p>
-                        <p>VAT on commission (16%): -R{breakdown.vatOnCommission.toFixed(2)}</p>
-                        <p className="pt-2 font-semibold text-[#192a3a]">
-                          You will receive approximately R{breakdown.payout.toFixed(2)} per month
-                        </p>
-                      </div>
-                    </div>
-                  );
-                })()}
               </div>
-              <div>
-                <label className="mb-2 block text-sm font-medium">Minimum booking months</label>
+              <div className="min-w-0">
+                <label className="mb-1 block text-xs font-medium leading-5 text-[#475569]">Minimum booking months</label>
                 <input
                   type="number"
                   min="1"
                   value={minBookingMonths}
                   onChange={(e) => setMinBookingMonths(e.target.value)}
                   placeholder="1"
-                  className="w-full rounded-md border border-gray-300 px-4 py-3 outline-none"
+                  className="w-full min-h-[44px] rounded-lg border border-[#d4dbe2] bg-white px-3 py-2 text-sm text-[#334155] shadow-sm outline-none transition-all duration-200 focus:border-[#c1121f] focus:ring-2 focus:ring-[#c1121f]/20"
                 />
-                <p className="mt-2 text-sm text-gray-600">
-                  Renters must book at least this many months.
-                </p>
-              </div>
-              <div>
-                <label className="mb-2 block text-sm font-medium">Deposit type</label>
-                <select
-                  value={depositType}
-                  onChange={(e) =>
-                    setDepositType(e.target.value as DepositType)
-                  }
-                  className="w-full rounded-md border border-gray-300 px-4 py-3 outline-none"
-                >
-                  <option value="none">No deposit</option>
-                  <option value="one_month">1 month deposit</option>
-                  <option value="two_months">2 months deposit</option>
-                </select>
+                <p className="mt-1 text-xs leading-snug text-[#64748b]">Minimum months per booking.</p>
               </div>
             </>
-          )}
+          ) : null}
         </div>
-      </section>
 
-      <section className="rounded-md border border-gray-200 p-6">
-        <h3 className="mb-2 text-xl font-semibold text-[#192a3a]">
-          3. Location
+        {bookingUnit === "hour" && pricePerHour && Number(pricePerHour) > 0 ? (() => {
+          const breakdown = calculatePayoutBreakdown(Number(pricePerHour));
+          return (
+            <div className="mt-3 rounded-xl border border-[#e5e7eb] bg-[#f8fafc] p-3 text-sm text-[#334155] sm:p-4">
+              <p className="font-semibold text-[#0f172a]">Estimated payout breakdown</p>
+              <div className="mt-2 space-y-0.5 text-sm">
+                <p>Customer price: R{Number(pricePerHour).toFixed(2)}</p>
+                <p>Payment fee (3.5%): -R{breakdown.paymentFee.toFixed(2)}</p>
+                <p>Platform commission ({(getCommissionRate(bookingUnit) * 100).toFixed(0)}%): -R{breakdown.commission.toFixed(2)}</p>
+                <p>VAT on commission (16%): -R{breakdown.vatOnCommission.toFixed(2)}</p>
+                <p className="pt-1.5 font-semibold text-[#0f172a]">
+                  You will receive approximately R{breakdown.payout.toFixed(2)}
+                </p>
+              </div>
+            </div>
+          );
+        })() : null}
+
+        {bookingUnit === "day" && pricePerDay && Number(pricePerDay) > 0 ? (() => {
+          const breakdown = calculatePayoutBreakdown(Number(pricePerDay));
+          return (
+            <div className="mt-3 rounded-xl border border-[#e5e7eb] bg-[#f8fafc] p-3 text-sm text-[#334155] sm:p-4">
+              <p className="font-semibold text-[#0f172a]">Estimated payout breakdown</p>
+              <div className="mt-2 space-y-0.5 text-sm">
+                <p>Customer price: R{Number(pricePerDay).toFixed(2)}</p>
+                <p>Payment fee (3.5%): -R{breakdown.paymentFee.toFixed(2)}</p>
+                <p>Platform commission ({(getCommissionRate(bookingUnit) * 100).toFixed(0)}%): -R{breakdown.commission.toFixed(2)}</p>
+                <p>VAT on commission (16%): -R{breakdown.vatOnCommission.toFixed(2)}</p>
+                <p className="pt-1.5 font-semibold text-[#0f172a]">
+                  You will receive approximately R{breakdown.payout.toFixed(2)}
+                </p>
+              </div>
+            </div>
+          );
+        })() : null}
+
+        {bookingUnit === "month" && pricePerMonth && Number(pricePerMonth) > 0 ? (() => {
+          const breakdown = calculatePayoutBreakdown(Number(pricePerMonth));
+          return (
+            <div className="mt-3 rounded-xl border border-[#e5e7eb] bg-[#f8fafc] p-3 text-sm text-[#334155] sm:p-4">
+              <p className="font-semibold text-[#0f172a]">Estimated payout breakdown</p>
+              <div className="mt-2 space-y-0.5 text-sm">
+                <p>Customer price: R{Number(pricePerMonth).toFixed(2)}</p>
+                <p>Payment fee (3.5%): -R{breakdown.paymentFee.toFixed(2)}</p>
+                <p>Platform commission ({(getCommissionRate(bookingUnit) * 100).toFixed(0)}%): -R{breakdown.commission.toFixed(2)}</p>
+                <p>VAT on commission (16%): -R{breakdown.vatOnCommission.toFixed(2)}</p>
+                <p className="pt-1.5 font-semibold text-[#0f172a]">
+                  You will receive approximately R{breakdown.payout.toFixed(2)} per month
+                </p>
+              </div>
+            </div>
+          );
+        })() : null}
+
+        {bookingUnit === "month" ? (
+          <div className="mt-3 sm:mt-4 sm:max-w-md">
+            <label className="mb-1 block text-xs font-medium leading-5 text-[#475569]">Deposit type</label>
+            <select
+              value={depositType}
+              onChange={(e) =>
+                setDepositType(e.target.value as DepositType)
+              }
+              className="w-full min-h-[44px] rounded-lg border border-[#d4dbe2] bg-white px-3 py-2 text-sm text-[#334155] shadow-sm outline-none transition-all duration-200 focus:border-[#c1121f] focus:ring-2 focus:ring-[#c1121f]/20"
+            >
+              <option value="none">No deposit</option>
+              <option value="one_month">1 month deposit</option>
+              <option value="two_months">2 months deposit</option>
+            </select>
+          </div>
+        ) : null}
+      </section>
+      </div>
+
+      <div
+        className={currentStep === 1 ? "listing-step-panel space-y-4" : "hidden"}
+        aria-hidden={currentStep !== 1}
+      >
+      <section className="rounded-2xl border border-[#e5e7eb] bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-5">
+        <h3 className="mb-1 text-base font-semibold text-[#0f172a] sm:text-lg">
+          Location
         </h3>
-        <p className="mb-6 text-sm text-gray-600">
+        <p className="mb-4 text-xs leading-relaxed text-[#64748b] sm:text-sm">
           Add the address and pin the exact location on the map.
         </p>
 
-        <div className="space-y-6">
+        <div className="space-y-4">
           <div>
-            <label className="mb-2 block text-sm font-medium">Address line 1</label>
+            <label className="mb-1 block text-xs font-medium leading-5 text-[#475569]">Address line 1</label>
             <div className="relative">
               <input
                 type="text"
@@ -1426,11 +1638,11 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
                   if (addressSuggestions.length > 0) setAddressSuggestionsOpen(true);
                 }}
                 placeholder="Enter street address (e.g. 42 Alma Road)"
-                className="w-full rounded-md border border-gray-300 px-4 py-3 outline-none"
+                className="w-full min-h-[44px] rounded-lg border border-[#d4dbe2] bg-white px-3 py-2 text-sm text-[#334155] shadow-sm outline-none transition-all duration-200 focus:border-[#c1121f] focus:ring-2 focus:ring-[#c1121f]/20"
                 autoComplete="street-address"
               />
               {addressSuggestionsOpen && addressSuggestions.length > 0 ? (
-                <div className="absolute z-20 mt-1 max-h-56 w-full overflow-auto rounded-md border border-gray-200 bg-white shadow-lg">
+                <div className="absolute z-20 mt-1 max-h-56 w-full overflow-auto rounded-xl border border-[#e5e7eb] bg-white shadow-[0_16px_40px_rgba(15,23,42,0.14)]">
                   {addressSuggestions.map((suggestion, idx) => (
                     <button
                       key={`${suggestion.latitude}-${suggestion.longitude}-${idx}`}
@@ -1458,34 +1670,35 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
             </p>
           </div>
 
-          <div>
-            <label className="mb-2 block text-sm font-medium">Suburb</label>
-            <input
-              type="text"
-              value={suburb}
-              onChange={(e) => {
-                setSuburb(e.target.value);
-                setSuburbTouched(true);
-              }}
-              placeholder="Enter suburb (e.g. Rosebank)"
-              className="w-full rounded-md border border-gray-300 px-4 py-3 outline-none"
-              autoComplete="address-level2"
-            />
-          </div>
-
-          <div>
-            <label className="mb-2 block text-sm font-medium">City</label>
-            <input
-              type="text"
-              value={city}
-              onChange={(e) => {
-                setCity(e.target.value);
-                setCityTouched(true);
-              }}
-              placeholder="Enter city (e.g. Cape Town)"
-              className="w-full rounded-md border border-gray-300 px-4 py-3 outline-none"
-              autoComplete="address-level1"
-            />
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-x-4">
+            <div className="min-w-0">
+              <label className="mb-1 block text-xs font-medium leading-5 text-[#475569]">Suburb</label>
+              <input
+                type="text"
+                value={suburb}
+                onChange={(e) => {
+                  setSuburb(e.target.value);
+                  setSuburbTouched(true);
+                }}
+                placeholder="e.g. Rosebank"
+                className="w-full min-h-[44px] rounded-lg border border-[#d4dbe2] bg-white px-3 py-2 text-sm text-[#334155] shadow-sm outline-none transition-all duration-200 focus:border-[#c1121f] focus:ring-2 focus:ring-[#c1121f]/20"
+                autoComplete="address-level2"
+              />
+            </div>
+            <div className="min-w-0">
+              <label className="mb-1 block text-xs font-medium leading-5 text-[#475569]">City</label>
+              <input
+                type="text"
+                value={city}
+                onChange={(e) => {
+                  setCity(e.target.value);
+                  setCityTouched(true);
+                }}
+                placeholder="e.g. Cape Town"
+                className="w-full min-h-[44px] rounded-lg border border-[#d4dbe2] bg-white px-3 py-2 text-sm text-[#334155] shadow-sm outline-none transition-all duration-200 focus:border-[#c1121f] focus:ring-2 focus:ring-[#c1121f]/20"
+                autoComplete="address-level1"
+              />
+            </div>
           </div>
 
           <div className="flex flex-wrap gap-3">
@@ -1493,7 +1706,7 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
               type="button"
               onClick={searchAddressOnMap}
               disabled={searchingAddress || reverseGeocoding}
-              className="rounded-md border border-gray-300 px-4 py-3 text-sm disabled:opacity-60"
+              className="rounded-full border border-[#d7dde3] bg-white px-4 py-2.5 text-sm font-medium text-[#334155] shadow-sm transition hover:border-[#b8c2cc] disabled:opacity-60"
             >
               {searchingAddress ? "Finding..." : "Find address on map"}
             </button>
@@ -1502,14 +1715,14 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
               type="button"
               onClick={useMyLocation}
               disabled={usingDeviceLocation || reverseGeocoding}
-              className="rounded-md border border-gray-300 px-4 py-3 text-sm disabled:opacity-60"
+              className="rounded-full border border-[#d7dde3] bg-white px-4 py-2.5 text-sm font-medium text-[#334155] shadow-sm transition hover:border-[#b8c2cc] disabled:opacity-60"
             >
               {usingDeviceLocation ? "Locating..." : "Use current location"}
             </button>
           </div>
 
           <div>
-            <label className="mb-2 block text-sm font-medium">
+            <label className="mb-1.5 block text-xs font-medium leading-5 text-[#475569]">
               Pin your space on the map
             </label>
             <MapPicker
@@ -1531,40 +1744,40 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
         </div>
       </section>
 
-      <section className="rounded-md border border-gray-200 p-6">
-        <h3 className="mb-2 text-xl font-semibold text-[#192a3a]">
-          4. Images
+      <section className="rounded-2xl border border-[#e5e7eb] bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-5">
+        <h3 className="mb-1 text-base font-semibold text-[#0f172a] sm:text-lg">
+          Photos
         </h3>
-        <p className="mb-6 text-sm text-gray-600">
+        <p className="mb-3 text-xs leading-relaxed text-[#64748b] sm:text-sm">
           Upload clear images so renters can understand the space properly.
         </p>
 
         {imageFiles.length === 0 && (
-          <p className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          <p className="mb-3 rounded-lg border border-amber-200/90 bg-amber-50/90 px-3 py-2 text-xs leading-snug text-amber-950 sm:text-sm">
             Add at least 1 image — your listing needs photos to go live after approval.
           </p>
         )}
 
         <div className="space-y-4">
           <div>
-            <label className="mb-2 block text-sm font-medium">Upload images</label>
+            <label className="mb-1.5 block text-xs font-medium leading-5 text-[#475569]">Upload images</label>
             <input
               type="file"
               accept="image/*"
               multiple
               onChange={(e) => addImageFiles(e.target.files)}
-              className="w-full rounded-md border border-gray-300 px-4 py-3 outline-none"
+              className="w-full min-h-[44px] rounded-lg border border-[#d4dbe2] bg-white px-3 py-2 text-sm text-[#334155] shadow-sm outline-none transition-all duration-200 focus:border-[#c1121f] focus:ring-2 focus:ring-[#c1121f]/20"
             />
-            <p className="mt-2 text-sm text-gray-600">
+            <p className="mt-1.5 text-xs text-[#64748b] sm:text-sm">
               {imageFiles.length} image{imageFiles.length === 1 ? "" : "s"} selected
             </p>
           </div>
 
           {imagePreviews.length > 0 && (
-            <div className="space-y-3 rounded-md border border-gray-200 bg-[#f8fafb] p-4">
+            <div className="space-y-3 rounded-2xl border border-[#e5e7eb] bg-[#f8fafc] p-4 sm:p-5">
               <div className="flex items-center justify-between gap-3">
-                <p className="text-sm font-medium text-[#192a3a]">Manage uploaded images</p>
-                <label className="rounded-md border border-gray-300 px-3 py-2 text-sm text-[#192a3a] cursor-pointer hover:bg-white">
+                <p className="text-sm font-medium text-[#0f172a]">Manage uploaded images</p>
+                <label className="cursor-pointer rounded-full border border-[#d7dde3] bg-white px-3 py-2 text-sm font-medium text-[#334155] shadow-sm transition hover:border-[#b8c2cc]">
                   Add another picture
                   <input
                     type="file"
@@ -1580,7 +1793,7 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
                 {imagePreviews.map((item, index) => (
                   <div
                     key={`${item.file.name}-${index}`}
-                    className="overflow-hidden rounded-md border border-gray-200 bg-white shadow-sm"
+                    className="overflow-hidden rounded-2xl border border-[#e5e7eb] bg-white shadow-sm"
                   >
                     <button
                       type="button"
@@ -1605,7 +1818,7 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
                           type="button"
                           onClick={() => moveImage(index, -1)}
                           disabled={index === 0}
-                          className="rounded-md border border-gray-300 px-3 py-1.5 text-xs text-[#192a3a] disabled:opacity-40"
+                          className="rounded-full border border-[#d7dde3] bg-white px-3 py-1.5 text-xs font-medium text-[#334155] transition hover:border-[#b8c2cc] disabled:opacity-40"
                         >
                           Move left
                         </button>
@@ -1614,7 +1827,7 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
                           type="button"
                           onClick={() => moveImage(index, 1)}
                           disabled={index === imagePreviews.length - 1}
-                          className="rounded-md border border-gray-300 px-3 py-1.5 text-xs text-[#192a3a] disabled:opacity-40"
+                          className="rounded-full border border-[#d7dde3] bg-white px-3 py-1.5 text-xs font-medium text-[#334155] transition hover:border-[#b8c2cc] disabled:opacity-40"
                         >
                           Move right
                         </button>
@@ -1635,57 +1848,289 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
           )}
         </div>
       </section>
-
-      <section className="rounded-md border border-gray-200 p-6">
-        <h3 className="mb-2 text-xl font-semibold text-[#192a3a]">
-          5. Proof you own or control this space
-        </h3>
-        <p className="mb-6 text-sm text-gray-600">
-          This is specific to this listing. Your space will only go live once this
-          ownership proof has been reviewed.
-        </p>
-
-        <div>
-          <label className="mb-2 block text-sm font-medium">
-            Proof of ownership for this space
-          </label>
-          <input
-            type="file"
-            accept="image/*,.pdf"
-            onChange={(e) => setOwnershipProofFile(e.target.files?.[0] || null)}
-            className="w-full rounded-md border border-gray-300 px-4 py-3 outline-none"
-          />
-          <p className="mt-2 text-sm text-gray-600">
-            {ownershipProofFile
-              ? ownershipProofFile.name
-              : "Upload a document proving ownership of this specific space."}
-          </p>
-        </div>
-      </section>
-
-      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-        <button
-          type="submit"
-          disabled={loading}
-          className="w-full min-h-[48px] rounded-md bg-[#192a3a] px-6 py-3 text-sm font-medium text-white disabled:opacity-60 sm:w-auto"
-        >
-          {loading ? "Submitting listing..." : "Submit listing for review"}
-        </button>
-
-        <Link
-          href="/dashboard/verification?step=overview"
-          className="rounded-md border border-gray-300 px-6 py-3 text-sm"
-        >
-          Back to host dashboard
-        </Link>
       </div>
 
-      {message && (
-        <div className="rounded-md border border-gray-200 bg-gray-50 p-3 text-sm text-gray-800">
+      <div
+        className={currentStep === 2 ? "listing-step-panel space-y-4" : "hidden"}
+        aria-hidden={currentStep !== 2}
+      >
+        <div className="overflow-hidden rounded-2xl border border-[#e5e7eb] bg-white shadow-[0_1px_3px_rgba(15,23,42,0.06)]">
+          <div className="border-b border-[#e5e7eb] bg-gradient-to-b from-[#fafbfc] to-white px-4 py-4 sm:px-6 sm:py-5">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#64748b] sm:text-xs">
+              Smart listing enhancement
+            </p>
+            <h2 className="mt-0.5 text-lg font-semibold text-[#0f172a] sm:text-xl">
+              Features &amp; booking fit
+            </h2>
+            <p className="mt-1.5 max-w-2xl text-xs leading-relaxed text-[#64748b] sm:text-sm">
+              Help renters choose with confidence. These details feed the same quality score you&apos;ll see across
+              FindMySpace — refine anytime from your dashboard.
+            </p>
+          </div>
+          <div className="space-y-5 bg-[#fafbfc] px-4 py-4 sm:px-6 sm:py-5">
+            <div className="rounded-2xl border border-[#e5e7eb] bg-white p-4 shadow-sm sm:p-5">
+              <SpaceCategoryFields
+                embedded
+                spaceType={spaceType}
+                attributes={attributes}
+                setAttributes={setAttributes}
+              />
+            </div>
+            <div id="booking-quality" className="scroll-mt-24 space-y-4">
+              <ListingQualityScoreSummary
+                intelCategory={intelCategory}
+                data={bookingIntelData}
+                listingQualityOptions={listingQualityOptionsCreate}
+                spaceTypeLabel={spaceType ? `Category: ${spaceType}` : undefined}
+                compact
+                footerHint="Saves automatically when you submit this listing."
+              />
+              <ListingBookingQualityFormFields
+                embedded
+                intelCategory={intelCategory}
+                questionnaireData={bookingIntelData}
+                onPatchSection={patchBookingIntelSection}
+                onPatchRoot={patchBookingIntelRoot}
+                requirements={bookingRequirements}
+                onRequirementsChange={setBookingRequirements}
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div
+        className={currentStep === 3 ? "listing-step-panel space-y-4" : "hidden"}
+        aria-hidden={currentStep !== 3}
+      >
+        <section className="rounded-2xl border border-[#e5e7eb] bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-5">
+          <h3 className="mb-1 text-base font-semibold text-[#0f172a] sm:text-lg">Review your listing</h3>
+          <p className="mb-4 text-xs leading-relaxed text-[#64748b] sm:text-sm">
+            Almost there — confirm the headline details, then publish for review when you&apos;re happy.
+          </p>
+
+          <div className="overflow-hidden rounded-2xl border border-[#e5e7eb] bg-[#f8fafc] shadow-[0_8px_28px_rgba(15,23,42,0.07)]">
+            <div className="grid gap-0 md:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
+              <div className="relative aspect-[4/3] w-full min-h-[200px] overflow-hidden bg-gray-200">
+                {imagePreviews[0] ? (
+                  <Image
+                    src={imagePreviews[0].url}
+                    alt=""
+                    width={960}
+                    height={720}
+                    className="h-full w-full object-cover"
+                    unoptimized
+                  />
+                ) : (
+                  <div className="flex h-full min-h-[200px] items-center justify-center px-4 text-center text-sm text-gray-500">
+                    Add a photo in the previous step to see your hero preview here.
+                  </div>
+                )}
+              </div>
+              <div className="space-y-3 p-4 sm:p-5">
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#64748b]">
+                    Title
+                  </p>
+                  <p className="mt-1 text-lg font-semibold text-[#0f172a]">
+                    {title.trim() || "—"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#64748b]">
+                    Price
+                  </p>
+                  <p className="mt-1 text-base font-semibold text-[#c1121f]">{reviewPriceLabel}</p>
+                </div>
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#64748b]">
+                    Location
+                  </p>
+                  <p className="mt-1 text-sm text-[#334155]">
+                    {[addressLine1, suburb, city].filter(Boolean).join(", ") || "—"}
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => goToListingStep(0)}
+                    className="rounded-full border border-[#d7dde3] bg-white px-3 py-1.5 text-xs font-medium text-[#334155] shadow-sm transition hover:border-[#b8c2cc] hover:shadow-[0_2px_8px_rgba(15,23,42,0.06)]"
+                  >
+                    Edit basics
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => goToListingStep(1)}
+                    className="rounded-full border border-[#d7dde3] bg-white px-3 py-1.5 text-xs font-medium text-[#334155] shadow-sm transition hover:border-[#b8c2cc] hover:shadow-[0_2px_8px_rgba(15,23,42,0.06)]"
+                  >
+                    Edit location &amp; photos
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => goToListingStep(2)}
+                    className="rounded-full border border-[#d7dde3] bg-white px-3 py-1.5 text-xs font-medium text-[#334155] shadow-sm transition hover:border-[#b8c2cc] hover:shadow-[0_2px_8px_rgba(15,23,42,0.06)]"
+                  >
+                    Edit features &amp; quality
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <div className="rounded-2xl border border-[#e5e7eb] bg-[#fafbfc] p-4 shadow-sm">
+              <p className="text-sm font-semibold text-[#0f172a]">Features summary</p>
+              <p className="mt-2 text-sm leading-relaxed text-[#64748b]">
+                {featureSelectionCount > 0
+                  ? `${featureSelectionCount} amenity or attribute selections`
+                  : "No feature tags yet — optional but recommended."}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-[#e5e7eb] bg-[#fafbfc] p-4 shadow-sm">
+              <p className="text-sm font-semibold text-[#0f172a]">Renter requirements</p>
+              <p className="mt-2 text-sm leading-relaxed text-[#64748b]">
+                {renterRequirementsSummary.length > 0
+                  ? renterRequirementsSummary.join(" · ")
+                  : "No specific renter requirements selected."}
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-4 rounded-2xl border border-[#e5e7eb] bg-white p-3 shadow-sm sm:p-4">
+            <ListingQualityScoreSummary
+              intelCategory={intelCategory}
+              data={bookingIntelData}
+              listingQualityOptions={listingQualityOptionsCreate}
+              spaceTypeLabel={spaceType ? `Category: ${spaceType}` : undefined}
+              compact
+            />
+          </div>
+
+          <div className="mt-4 rounded-2xl border border-emerald-200/90 bg-emerald-50/70 p-4 shadow-sm">
+            <p className="text-sm font-semibold text-emerald-950">Verification checklist</p>
+            <ul className="mt-3 space-y-2.5 text-sm text-emerald-950">
+              <li className="flex gap-2.5">
+                <CheckCircle2
+                  className={`mt-0.5 h-4 w-4 shrink-0 ${title.trim() ? "text-emerald-600" : "text-gray-300"}`}
+                  aria-hidden
+                />
+                <span>Clear listing title and description</span>
+              </li>
+              <li className="flex gap-2.5">
+                <CheckCircle2
+                  className={`mt-0.5 h-4 w-4 shrink-0 ${!priceMissing ? "text-emerald-600" : "text-gray-300"}`}
+                  aria-hidden
+                />
+                <span>Valid price for your booking unit</span>
+              </li>
+              <li className="flex gap-2.5">
+                <CheckCircle2
+                  className={`mt-0.5 h-4 w-4 shrink-0 ${
+                    addressLine1.trim() && suburb.trim() && city.trim()
+                      ? "text-emerald-600"
+                      : "text-gray-300"
+                  }`}
+                  aria-hidden
+                />
+                <span>Complete address and map pin</span>
+              </li>
+              <li className="flex gap-2.5">
+                <CheckCircle2
+                  className={`mt-0.5 h-4 w-4 shrink-0 ${
+                    imageFiles.length >= 1 ? "text-emerald-600" : "text-gray-300"
+                  }`}
+                  aria-hidden
+                />
+                <span>At least one listing photo</span>
+              </li>
+              <li className="flex gap-2.5">
+                <CheckCircle2
+                  className={`mt-0.5 h-4 w-4 shrink-0 ${
+                    ownershipProofFile ? "text-emerald-600" : "text-gray-300"
+                  }`}
+                  aria-hidden
+                />
+                <span>Ownership proof uploaded for this space</span>
+              </li>
+            </ul>
+          </div>
+        </section>
+
+        <section className="rounded-2xl border border-[#e5e7eb] bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-5">
+          <h3 className="mb-1 text-base font-semibold text-[#0f172a] sm:text-lg">
+            Proof you own or control this space
+          </h3>
+          <p className="mb-3 text-xs leading-relaxed text-[#64748b] sm:text-sm">
+            This is specific to this listing. Your space will only go live once this ownership proof
+            has been reviewed.
+          </p>
+
+          <div>
+            <label className="mb-1.5 block text-xs font-medium leading-5 text-[#475569]">
+              Proof of ownership for this space
+            </label>
+            <input
+              type="file"
+              accept="image/*,.pdf"
+              onChange={(e) => setOwnershipProofFile(e.target.files?.[0] || null)}
+              className="w-full min-h-[44px] rounded-lg border border-[#d4dbe2] bg-white px-3 py-2 text-sm text-[#334155] shadow-sm outline-none transition-all duration-200 focus:border-[#c1121f] focus:ring-2 focus:ring-[#c1121f]/20"
+            />
+            <p className="mt-1.5 text-xs leading-relaxed text-[#64748b] sm:text-sm">
+              {ownershipProofFile
+                ? ownershipProofFile.name
+                : "Upload a document proving ownership of this specific space."}
+            </p>
+          </div>
+        </section>
+      </div>
+
+      <div className="mt-1 flex flex-col gap-2 border-t border-[#e5e7eb] pt-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+        {currentStep > 0 ? (
+          <button
+            type="button"
+            onClick={goPrevStep}
+            className="order-2 w-full min-h-[44px] rounded-xl border border-[#d7dde3] bg-white px-4 py-2.5 text-sm font-medium text-[#334155] shadow-sm transition hover:border-[#b8c2cc] sm:order-1 sm:w-auto"
+          >
+            Back
+          </button>
+        ) : (
+          <Link
+            href="/dashboard/verification?step=overview"
+            className="order-2 inline-flex min-h-[44px] items-center justify-center rounded-xl border border-[#d7dde3] bg-white px-4 py-2.5 text-sm font-medium text-[#334155] shadow-sm transition hover:border-[#b8c2cc] sm:order-1"
+          >
+            Back to host dashboard
+          </Link>
+        )}
+        <div className="order-1 flex w-full flex-col gap-2 sm:order-2 sm:w-auto sm:flex-row">
+          {currentStep < LISTING_CREATE_STEPS.length - 1 ? (
+            <button
+              type="button"
+              onClick={goNextStep}
+              className="w-full min-h-[44px] rounded-xl bg-[#c1121f] px-5 py-2.5 text-sm font-semibold text-white shadow-[0_1px_2px_rgba(15,23,42,0.12)] transition hover:opacity-95 sm:w-auto"
+            >
+              Continue
+            </button>
+          ) : (
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full min-h-[44px] rounded-xl bg-[#0f172a] px-5 py-2.5 text-sm font-semibold text-white shadow-[0_8px_24px_rgba(15,23,42,0.2)] transition hover:opacity-95 disabled:opacity-60 sm:w-auto"
+            >
+              {loading ? "Submitting listing..." : "Submit listing for review"}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {message ? (
+        <div className="rounded-2xl border border-[#e5e7eb] bg-[#f8fafc] p-4 text-sm leading-relaxed text-[#334155]">
           {message}
         </div>
-      )}
-      {previewIndex !== null && imagePreviews[previewIndex] && (
+      ) : null}
+        </div>
+      </form>
+
+      {previewIndex !== null && imagePreviews[previewIndex] ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
           <button
             type="button"
@@ -1694,8 +2139,8 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
             aria-label="Close image preview"
           />
 
-          <div className="relative z-10 max-h-[90vh] w-full max-w-4xl overflow-hidden rounded-xl bg-white shadow-2xl">
-            <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4">
+          <div className="relative z-10 max-h-[90vh] w-full max-w-4xl overflow-hidden rounded-3xl border border-[#e5e7eb] bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-[#e5e7eb] px-5 py-4">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
                   Image preview
@@ -1708,7 +2153,7 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
               <button
                 type="button"
                 onClick={() => setPreviewIndex(null)}
-                className="rounded-md border border-gray-300 px-3 py-2 text-sm text-[#192a3a]"
+                className="rounded-xl border border-[#d7dde3] bg-white px-3 py-2 text-sm font-medium text-[#334155] shadow-sm transition hover:border-[#b8c2cc]"
               >
                 Close
               </button>
@@ -1726,7 +2171,7 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
             </div>
           </div>
         </div>
-      )}
-    </form>
+      ) : null}
+    </div>
   );
 }

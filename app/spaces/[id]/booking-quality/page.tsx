@@ -21,12 +21,20 @@ export default async function BookingQualityPage({ params }: PageProps) {
               <h1 className="mt-1 text-3xl font-semibold tracking-tight">Improve your booking quality</h1>
               <p className="mt-2 text-sm text-gray-600">Better information = better bookings.</p>
             </div>
-            <Link
-              href={`/spaces/${id}/edit`}
-              className="inline-flex items-center justify-center rounded-xl border border-[#e2e8f0] bg-white px-4 py-2.5 text-sm font-medium text-[#192a3a] shadow-sm transition hover:bg-[#f8fafb]"
-            >
-              Back to edit listing
-            </Link>
+            <div className="flex flex-wrap gap-2">
+              <Link
+                href={`/spaces/${id}/edit#booking-quality`}
+                className="inline-flex items-center justify-center rounded-xl border border-[#e2e8f0] bg-white px-4 py-2.5 text-sm font-medium text-[#192a3a] shadow-sm transition hover:bg-[#f8fafb]"
+              >
+                Edit in listing form
+              </Link>
+              <Link
+                href={`/spaces/${id}/edit`}
+                className="inline-flex items-center justify-center rounded-xl border border-[#e2e8f0] bg-white px-4 py-2.5 text-sm font-medium text-[#192a3a] shadow-sm transition hover:bg-[#f8fafb]"
+              >
+                Full listing editor
+              </Link>
+            </div>
           </div>
 
           <HostListingBookingQualityClient spaceId={id} />

@@ -27,6 +27,11 @@ export type SpaceFormDraftV1 = {
   longitude: number;
   manualAdvisorCode: string;
   attributes: Record<string, string[]>;
+  /** Multi-step guided flow */
+  currentStep?: number;
+  maxUnlockedStep?: number;
+  bookingIntelData?: Record<string, unknown> | null;
+  bookingRequirements?: Record<string, boolean> | null;
 };
 
 function isDraft(value: unknown): value is SpaceFormDraftV1 {

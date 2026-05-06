@@ -17,12 +17,15 @@ type Props = {
   spaceType: string;
   attributes: AttributeState;
   setAttributes: React.Dispatch<React.SetStateAction<AttributeState>>;
+  /** Omit outer card — use inside a parent host layout (e.g. unified listing step). */
+  embedded?: boolean;
 };
 
 export default function SpaceCategoryFields({
   spaceType,
   attributes,
   setAttributes,
+  embedded = false,
 }: Props) {
   const layout = getSpaceFeatureLayout(spaceType);
   const normalized = normalizeSpaceTypeForFeatures(spaceType);
@@ -80,13 +83,13 @@ export default function SpaceCategoryFields({
       return (
         <label
           key={field.key}
-          className="flex cursor-pointer items-start gap-2 rounded-md border border-transparent px-1 py-1 text-sm text-[#192a3a] transition hover:border-gray-200 hover:bg-white"
+          className="flex cursor-pointer items-start gap-2 rounded-xl border border-transparent px-2 py-1.5 text-sm text-[#192a3a] transition hover:border-[#e2e8f0] hover:bg-white"
         >
           <input
             type="checkbox"
             checked={checked}
             onChange={(e) => toggleCheckbox(field.key, e.target.checked)}
-            className="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300 text-[#192a3a] focus:ring-[#192a3a]"
+            className="mt-0.5 h-4 w-4 shrink-0 rounded border-[#d4dbe2] text-[#c1121f] focus:ring-2 focus:ring-[#c1121f]/20"
           />
           <SpaceFeatureIcon name={field.icon} className="mt-0.5 h-4 w-4 shrink-0 text-gray-500" />
           <span className="leading-snug">{field.label}</span>
@@ -107,10 +110,10 @@ export default function SpaceCategoryFields({
               return (
                 <label
                   key={opt.value}
-                  className={`inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition ${
+                  className={`inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-all duration-200 ${
                     selected
-                      ? "border-[#192a3a] bg-[#192a3a] text-white"
-                      : "border-gray-200 bg-white text-[#192a3a] hover:border-gray-300"
+                      ? "border-[#c1121f] bg-[#c1121f] text-white shadow-[0_1px_2px_rgba(15,23,42,0.1)]"
+                      : "border-[#d7dde3] bg-white text-[#334155] hover:-translate-y-0.5 hover:border-[#b8c2cc] hover:shadow-sm"
                   }`}
                 >
                   <input
@@ -145,13 +148,13 @@ export default function SpaceCategoryFields({
               return (
                 <label
                   key={opt.value}
-                  className="flex cursor-pointer items-center gap-2 rounded-md border border-gray-100 bg-white px-2 py-1.5 text-xs text-[#192a3a] hover:border-gray-200"
+                  className="flex cursor-pointer items-center gap-2 rounded-xl border border-[#e8edf2] bg-white px-3 py-2 text-xs font-medium text-[#334155] transition hover:border-[#d4dbe2] hover:shadow-sm"
                 >
                   <input
                     type="checkbox"
                     checked={on}
                     onChange={() => toggleMultiValue(field.key, opt.value)}
-                    className="h-3.5 w-3.5 rounded border-gray-300 text-[#192a3a]"
+                    className="h-3.5 w-3.5 rounded border-[#d4dbe2] text-[#c1121f] focus:ring-2 focus:ring-[#c1121f]/20"
                   />
                   {opt.label}
                 </label>
@@ -169,11 +172,17 @@ export default function SpaceCategoryFields({
     return null;
   }
 
-  return (
-    <div className="space-y-4 rounded-md border border-gray-200 bg-white p-4 shadow-sm md:p-5">
-      <div className="border-b border-gray-100 pb-3">
-        <h3 className="text-base font-semibold text-[#192a3a]">Features &amp; amenities</h3>
-        <p className="mt-0.5 text-xs text-gray-600">
+  const body = (
+    <>
+      <div
+        className={
+          embedded
+            ? "border-b border-[#e5e7eb] pb-5"
+            : "border-b border-[#e5e7eb] pb-4"
+        }
+      >
+        <h3 className="text-base font-semibold text-[#0f172a]">Features &amp; amenities</h3>
+        <p className="mt-1.5 text-sm leading-relaxed text-[#64748b]">
           Select what applies — tailored for{" "}
           {SPACE_TYPE_LABELS[normalized] || spaceType}.
         </p>
@@ -187,9 +196,9 @@ export default function SpaceCategoryFields({
           return (
             <div
               key={section.id}
-              className="rounded-md border border-gray-100 bg-[#f8fafb] p-3 md:p-4"
+              className="rounded-xl border border-[#e8edf2] bg-[#f8fafc] p-3 md:p-4"
             >
-              <p className="mb-3 text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-[#64748b]">
                 {section.title}
               </p>
               <div className="space-y-4">
@@ -206,6 +215,16 @@ export default function SpaceCategoryFields({
           );
         })}
       </div>
+    </>
+  );
+
+  if (embedded) {
+    return <div className="space-y-4">{body}</div>;
+  }
+
+  return (
+    <div className="space-y-3 rounded-2xl border border-[#e5e7eb] bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-5">
+      {body}
     </div>
   );
 }
