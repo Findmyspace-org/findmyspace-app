@@ -3,13 +3,13 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  BadgeCheck,
   Briefcase,
   Car,
+  CheckCircle2,
   CircleEllipsis,
   LayoutGrid,
-  PartyPopper,
   Package,
+  PartyPopper,
   ShieldCheck,
   UserCheck,
 } from "lucide-react";
@@ -33,6 +33,9 @@ const INTENT_SUPPORT_TEXT: Record<SpaceIntentKey, string> = {
 };
 
 const BROWSE_SPACES_HREF = "/spaces#browse-search";
+const LIST_SPACE_HREF = "/list-your-space";
+const heroBackgroundImage = "/landing-background.jpg";
+// TODO: Replace with final FindMySpace lifestyle/location background image.
 
 /* ================= PAGE ================= */
 
@@ -71,52 +74,59 @@ export default function HomePage() {
 
   return (
     <main className="min-h-screen text-[#192a3a]">
-      {/* HERO */}
       <section className="relative min-h-[700px] overflow-visible pb-10 lg:pb-24 xl:pb-28">
-        {/* Background */}
         <div
           className="absolute inset-0 bg-cover bg-center"
-          style={{ backgroundImage: "url('/landing-background.jpg')" }}
+          style={{
+            backgroundImage: heroBackgroundImage
+              ? `url('${heroBackgroundImage}')`
+              : "linear-gradient(135deg, #f7f7f7 0%, #ffffff 55%, #f2f2f2 100%)",
+          }}
         />
+        <div className="pointer-events-none absolute inset-0 bg-black/15" />
 
-        {/* Overlay (NON-clickable) */}
-        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_right,rgba(248,250,251,0.72),rgba(248,250,251,0.38))]" />
-
-        {/* Content */}
         <div className="relative z-10 mx-auto grid max-w-7xl gap-10 px-6 py-14 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
-          
-          {/* LEFT */}
           <div>
             <p className="mb-4 text-sm uppercase tracking-[0.18em] text-gray-600">
               FindMySpace
             </p>
-
             <h1 className="text-5xl font-semibold leading-tight md:text-6xl">
-              Find the right space,
-              <br />
-              in the right place.
+              The right space in the right place.
             </h1>
-
-            <p className="mt-6 max-w-xl text-lg text-gray-700">
-              Discover useful spaces to rent across South Africa.
+            <p className="mt-6 max-w-xl rounded-lg bg-black/30 px-4 py-3 text-lg font-medium leading-relaxed text-white shadow-[0_6px_20px_rgba(0,0,0,0.25)]">
+              Find trusted storage, parking, workspace, and lifestyle spaces from local owners.
             </p>
+            <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
+              <button
+                type="button"
+                onClick={() => router.push(BROWSE_SPACES_HREF)}
+                className="min-h-[50px] rounded-xl border border-white/20 bg-gradient-to-b from-[#222222] to-[#0f0f0f] px-7 py-3 text-sm font-semibold tracking-[0.01em] text-white shadow-[0_10px_25px_rgba(0,0,0,0.32)] transition hover:-translate-y-0.5 hover:from-[#2b2b2b] hover:to-[#121212] hover:shadow-[0_14px_30px_rgba(0,0,0,0.38)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c1121f] focus-visible:ring-offset-2"
+                aria-label="Find a space"
+              >
+                Find a space
+              </button>
+              <button
+                type="button"
+                onClick={() => router.push(LIST_SPACE_HREF)}
+                className="min-h-[50px] rounded-xl border border-white/70 bg-white/92 px-7 py-3 text-sm font-semibold tracking-[0.01em] text-[#141414] shadow-[0_10px_25px_rgba(0,0,0,0.18)] transition hover:-translate-y-0.5 hover:bg-white hover:shadow-[0_14px_30px_rgba(0,0,0,0.25)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c1121f] focus-visible:ring-offset-2"
+                aria-label="List your space"
+              >
+                List your space
+              </button>
+            </div>
           </div>
 
-          {/* SEARCH CARD */}
-          <div className="rounded-md border border-white/40 bg-white/30 p-6 shadow-[0_20px_60px_rgba(15,23,42,0.18)] backdrop-blur-2xl">
+          <div className="rounded-md border border-white/40 bg-white/90 p-6 shadow-[0_20px_60px_rgba(15,23,42,0.18)]">
             <h2 className="mb-2 text-2xl font-semibold">Find a space</h2>
-
             <p className="mb-6 text-sm text-gray-600">
-              Tell us what you want to do and we&apos;ll show you matching
-              listings.
+              Tell us what you want to do and we&apos;ll show you matching listings.
             </p>
 
             <form onSubmit={handleSearch} className="space-y-5">
               <div>
                 <label className="mb-2 block text-sm font-medium" htmlFor="home-space-type">
-                  What do you want to do?
+                  What type of space are you looking for?
                 </label>
-
                 <div
                   id="home-space-type"
                   className="grid grid-cols-1 gap-2 sm:grid-cols-2"
@@ -210,9 +220,10 @@ export default function HomePage() {
 
               <button
                 type="submit"
-                className="w-full min-h-[48px] rounded-md bg-[#192a3a] py-3.5 text-base font-semibold text-white shadow-lg hover:opacity-95"
+                className="w-full min-h-[48px] rounded-md bg-[#c1121f] py-3.5 text-base font-semibold text-white shadow-lg transition hover:bg-[#a70f19]"
+                aria-label="Find matching spaces"
               >
-                Show matching spaces
+                Find matching spaces
               </button>
             </form>
           </div>
@@ -225,7 +236,7 @@ export default function HomePage() {
               aria-hidden
             />
             <div
-              className={`pointer-events-none cursor-default rounded-2xl border border-white/30 bg-white/55 p-4 shadow-[0_8px_30px_rgba(0,0,0,0.08),inset_0_1px_0_rgba(255,255,255,0.6)] backdrop-blur-md transition-[opacity,transform,filter,box-shadow] duration-[520ms] ease-out sm:p-5 ${
+              className={`pointer-events-none cursor-default rounded-2xl border border-white/30 bg-white/92 p-4 shadow-[0_8px_30px_rgba(0,0,0,0.08),inset_0_1px_0_rgba(255,255,255,0.6)] transition-[opacity,transform,filter,box-shadow] duration-[520ms] ease-out sm:p-5 ${
                 trustStripEntered
                   ? "translate-y-0 opacity-100 blur-0 shadow-[0_8px_30px_rgba(0,0,0,0.08),inset_0_1px_0_rgba(255,255,255,0.6)]"
                   : "translate-y-3 opacity-0 blur-[1.5px] shadow-[0_4px_18px_rgba(0,0,0,0.05),inset_0_1px_0_rgba(255,255,255,0.45)]"
@@ -235,12 +246,12 @@ export default function HomePage() {
                 <div className="min-w-0 cursor-default rounded-xl border border-transparent px-2.5 py-2.5 sm:px-3 sm:py-3">
                   <div className="flex items-start gap-2.5 sm:gap-3">
                     <span className="shrink-0 rounded-lg border border-white/40 bg-white/40 p-2 text-red-500">
-                      <BadgeCheck className="h-4 w-4" />
+                      <UserCheck className="h-4 w-4" />
                     </span>
                     <div className="min-w-0">
-                      <p className="text-sm font-semibold leading-snug text-[#192a3a]">Verified listings</p>
+                      <p className="text-sm font-semibold leading-snug text-[#192a3a]">Verified owners</p>
                       <p className="mt-1 text-xs leading-snug text-gray-600">
-                        Quality and trust you can rely on.
+                        Owners are reviewed before listings go live.
                       </p>
                     </div>
                   </div>
@@ -252,9 +263,9 @@ export default function HomePage() {
                       <ShieldCheck className="h-4 w-4" />
                     </span>
                     <div className="min-w-0">
-                      <p className="text-sm font-semibold leading-snug text-[#192a3a]">Secure payments</p>
+                      <p className="text-sm font-semibold leading-snug text-[#192a3a]">Secure booking flow</p>
                       <p className="mt-1 text-xs leading-snug text-gray-600">
-                        Safe, simple and protected.
+                        Bookings and payments follow a controlled platform process.
                       </p>
                     </div>
                   </div>
@@ -263,12 +274,12 @@ export default function HomePage() {
                 <div className="min-w-0 cursor-default rounded-xl border border-transparent px-2.5 py-2.5 sm:px-3 sm:py-3">
                   <div className="flex items-start gap-2.5 sm:gap-3">
                     <span className="shrink-0 rounded-lg border border-white/40 bg-white/40 p-2 text-red-500">
-                      <UserCheck className="h-4 w-4" />
+                      <CheckCircle2 className="h-4 w-4" />
                     </span>
                     <div className="min-w-0">
-                      <p className="text-sm font-semibold leading-snug text-[#192a3a]">Verified owners</p>
+                      <p className="text-sm font-semibold leading-snug text-[#192a3a]">Approved listings</p>
                       <p className="mt-1 text-xs leading-snug text-gray-600">
-                        Trusted hosts with verified details.
+                        Spaces are checked before being made available.
                       </p>
                     </div>
                   </div>
