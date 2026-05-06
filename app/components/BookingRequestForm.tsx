@@ -16,6 +16,13 @@ import {
   readBookingDraft,
   writeBookingDraft,
 } from "@/lib/bookingDraftStorage";
+import {
+  ACCESS_FREQUENCY_OPTIONS,
+  BookingRequestDetailPayload,
+  DEFAULT_LISTING_BOOKING_REQUIREMENTS,
+  ListingBookingRequirements,
+  RENTER_ITEM_TYPE_OPTIONS,
+} from "@/lib/booking-intelligence";
 
 type ExistingBooking = {
   id: string;
@@ -117,6 +124,20 @@ export default function BookingRequestForm({
 
   const [requestSentModalOpen, setRequestSentModalOpen] = useState(false);
 
+  const [hostRequirements, setHostRequirements] =
+    useState<ListingBookingRequirements | null>(null);
+  const [hostRequirementsLoading, setHostRequirementsLoading] = useState(true);
+  const [itemType, setItemType] = useState<string | null>(null);
+  const [dimLength, setDimLength] = useState("");
+  const [dimWidth, setDimWidth] = useState("");
+  const [dimHeight, setDimHeight] = useState("");
+  const [vehicleType, setVehicleType] = useState("");
+  const [vehicleRegistration, setVehicleRegistration] = useState("");
+  const [accessFrequency, setAccessFrequency] = useState("");
+  const [estimatedValueZar, setEstimatedValueZar] = useState("");
+  const [structuredNotes, setStructuredNotes] = useState("");
+  const [detailPhotoFiles, setDetailPhotoFiles] = useState<File[]>([]);
+
   const persistReadyRef = useRef(false);
   const unitKind = normalizeBookingUnit(bookingUnit);
 
@@ -161,6 +182,47 @@ export default function BookingRequestForm({
     loadAvailabilityData();
     loadSpacePaymentSettings();
   }, [spaceId]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadHostRequirements() {
+      setHostRequirementsLoading(true);
+      const { data, error } = await (supabase.from("listing_booking_requirements" as never) as any)
+        .select(
+          "require_item_type, require_dimensions, require_photos, require_vehicle_details, require_access_frequency, require_estimated_value, require_notes"
+        )
+        .eq("space_id", spaceId)
+        .maybeSingle();
+
+      if (cancelled) return;
+
+      if (error || !data) {
+        setHostRequirements({ ...DEFAULT_LISTING_BOOKING_REQUIREMENTS });
+      } else {
+        setHostRequirements({
+          require_item_type: Boolean(data.require_item_type),
+          require_dimensions: Boolean(data.require_dimensions),
+          require_photos: Boolean(data.require_photos),
+          require_vehicle_details: Boolean(data.require_vehicle_details),
+          require_access_frequency: Boolean(data.require_access_frequency),
+          require_estimated_value: Boolean(data.require_estimated_value),
+          require_notes: Boolean(data.require_notes),
+        });
+      }
+      setHostRequirementsLoading(false);
+    }
+
+    void loadHostRequirements();
+    return () => {
+      cancelled = true;
+    };
+  }, [spaceId]);
+
+  const hostRequiresStructuredInfo = useMemo(() => {
+    if (!hostRequirements) return false;
+    return Object.values(hostRequirements).some(Boolean);
+  }, [hostRequirements]);
 
   useEffect(() => {
     if (!persistReadyRef.current) return;
@@ -692,6 +754,101 @@ export default function BookingRequestForm({
     spaceSettings,
   ]);
 
+  function validateStructuredBookingFields(): string | null {
+    const req = hostRequirements;
+    if (!req) return null;
+    if (req.require_item_type && !itemType) {
+      return "Please select what you are storing, parking, or using.";
+    }
+    if (req.require_dimensions) {
+      const l = Number(dimLength);
+      const w = Number(dimWidth);
+      const h = Number(dimHeight);
+      if (
+        !Number.isFinite(l) ||
+        !Number.isFinite(w) ||
+        !Number.isFinite(h) ||
+        l <= 0 ||
+        w <= 0 ||
+        h <= 0
+      ) {
+        return "Please enter length, width, and height (cm), all greater than zero.";
+      }
+    }
+    if (req.require_photos && detailPhotoFiles.length === 0) {
+      return "Please add at least one photo.";
+    }
+    if (req.require_vehicle_details && !vehicleType.trim()) {
+      return "Please enter the vehicle type.";
+    }
+    if (req.require_access_frequency && !accessFrequency) {
+      return "Please select how often you need access.";
+    }
+    if (req.require_estimated_value) {
+      const v = Number(estimatedValueZar);
+      if (!Number.isFinite(v) || v <= 0) {
+        return "Please enter a realistic estimated value (ZAR).";
+      }
+    }
+    if (req.require_notes && !structuredNotes.trim()) {
+      return "Please add notes for the host.";
+    }
+    return null;
+  }
+
+  function buildStructuredDetailPayload(photoUrls: string[]): BookingRequestDetailPayload {
+    const out: BookingRequestDetailPayload = {};
+    if (itemType) out.item_type = itemType;
+    const l = Number(dimLength);
+    const w = Number(dimWidth);
+    const h = Number(dimHeight);
+    if (
+      Number.isFinite(l) &&
+      Number.isFinite(w) &&
+      Number.isFinite(h) &&
+      (l > 0 || w > 0 || h > 0)
+    ) {
+      out.dimensions_cm = {
+        length: l > 0 ? l : null,
+        width: w > 0 ? w : null,
+        height: h > 0 ? h : null,
+      };
+    }
+    if (vehicleType.trim() || vehicleRegistration.trim()) {
+      out.vehicle = {
+        type: vehicleType.trim() || null,
+        registration: vehicleRegistration.trim() || null,
+      };
+    }
+    if (accessFrequency) out.access_frequency = accessFrequency;
+    const ev = Number(estimatedValueZar);
+    if (Number.isFinite(ev) && ev > 0) out.estimated_value_zar = ev;
+    if (structuredNotes.trim()) out.notes = structuredNotes.trim();
+    if (photoUrls.length > 0) out.photo_urls = photoUrls;
+    return out;
+  }
+
+  async function uploadBookingDetailPhotos(
+    userId: string,
+    bookingId: string,
+    files: File[]
+  ) {
+    const urls: string[] = [];
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const ext = file.name.split(".").pop() || "bin";
+      const path = `${userId}/booking-request-${bookingId}-${Date.now()}-${i}.${ext}`;
+      const { error } = await supabase.storage.from("space-images").upload(path, file, {
+        cacheControl: "3600",
+        upsert: false,
+      });
+      if (error) throw error;
+      const { data: pub } = supabase.storage.from("space-images").getPublicUrl(path);
+      urls.push(pub.publicUrl);
+    }
+    return urls;
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setStatusMessage("");
@@ -793,6 +950,13 @@ export default function BookingRequestForm({
         return;
       }
 
+      const structuredError = validateStructuredBookingFields();
+      if (structuredError) {
+        setStatusMessage(structuredError);
+        setLoading(false);
+        return;
+      }
+
       // 🔥 LOAD SETTINGS (single source of truth)
       const { data: settingsData } = await (supabase.from("spaces") as any)
         .select("platform_fee_percent, deposit_type, deposit_months, monthly_payment_day")
@@ -854,7 +1018,7 @@ export default function BookingRequestForm({
         payment_status: "unpaid",
         payout_status: "unpaid_to_owner",
 
-        notes: null,
+        notes: structuredNotes.trim() ? structuredNotes.trim() : null,
 
         // monthly fields
         monthly_rent: bookingUnit === "month" ? monthlyRent : null,
@@ -919,6 +1083,33 @@ export default function BookingRequestForm({
           }
         }
 
+        let photoUrls: string[] = [];
+        if (detailPhotoFiles.length > 0) {
+          try {
+            photoUrls = await uploadBookingDetailPhotos(
+              user.id,
+              insertedBooking.id,
+              detailPhotoFiles
+            );
+          } catch (uploadErr) {
+            console.error("booking detail photos:", uploadErr);
+          }
+        }
+
+        const detailPayload = buildStructuredDetailPayload(photoUrls);
+        const persistDetails =
+          hostRequiresStructuredInfo || Object.keys(detailPayload).length > 0;
+        if (persistDetails) {
+          const { error: detailError } = await (supabase.from("booking_request_details" as never) as any)
+            .insert({
+              booking_id: insertedBooking.id,
+              data: detailPayload,
+            });
+          if (detailError) {
+            console.error("booking_request_details insert:", detailError);
+          }
+        }
+
         try {
           await fetch("/api/notifications/booking-event", {
             method: "POST",
@@ -945,6 +1136,16 @@ export default function BookingRequestForm({
       setMonthStart("");
       setMonthEnd("");
       setAcceptedTerms(false);
+      setItemType(null);
+      setDimLength("");
+      setDimWidth("");
+      setDimHeight("");
+      setVehicleType("");
+      setVehicleRegistration("");
+      setAccessFrequency("");
+      setEstimatedValueZar("");
+      setStructuredNotes("");
+      setDetailPhotoFiles([]);
 
       setStatusMessage("");
       setRequestSentModalOpen(true);
@@ -1200,6 +1401,193 @@ export default function BookingRequestForm({
             </div>
           )}
 
+          {hostRequirementsLoading && (
+            <div className="flex items-center gap-2 text-xs text-gray-600" role="status">
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-[#192a3a]" aria-hidden />
+              Loading host preferences…
+            </div>
+          )}
+
+          {hostRequiresStructuredInfo && !hostRequirementsLoading && (
+            <div className="space-y-4 rounded-xl border border-[#e2e8f0] bg-[#fbfcfd] p-4 shadow-sm">
+              <div>
+                <h3 className="text-sm font-semibold text-[#192a3a]">Before you request</h3>
+                <p className="mt-1 text-xs leading-relaxed text-gray-600">
+                  This host requires the following information before booking.
+                </p>
+              </div>
+
+              {hostRequirements?.require_item_type && (
+                <div>
+                  <p className="mb-2 text-xs font-medium text-gray-700">
+                    What are you storing, parking, or using? <span className="text-red-600">*</span>
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {RENTER_ITEM_TYPE_OPTIONS.map((opt) => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() =>
+                          setItemType((prev) => (prev === opt.value ? null : opt.value))
+                        }
+                        className={`rounded-full px-3 py-1.5 text-xs font-medium transition ${
+                          itemType === opt.value
+                            ? "bg-[#192a3a] text-white"
+                            : "border border-[#e2e8f0] bg-white text-[#192a3a] hover:bg-[#f8fafb]"
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {hostRequirements?.require_dimensions && (
+                <div>
+                  <p className="mb-2 text-xs font-medium text-gray-700">
+                    Dimensions (cm) <span className="text-red-600">*</span>
+                  </p>
+                  <div className="grid gap-2 sm:grid-cols-3">
+                    <input
+                      type="number"
+                      min={1}
+                      step={1}
+                      placeholder="Length"
+                      value={dimLength}
+                      onChange={(e) => setDimLength(e.target.value)}
+                      className="w-full rounded-lg border border-[#e2e8f0] bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#192a3a]/20"
+                    />
+                    <input
+                      type="number"
+                      min={1}
+                      step={1}
+                      placeholder="Width"
+                      value={dimWidth}
+                      onChange={(e) => setDimWidth(e.target.value)}
+                      className="w-full rounded-lg border border-[#e2e8f0] bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#192a3a]/20"
+                    />
+                    <input
+                      type="number"
+                      min={1}
+                      step={1}
+                      placeholder="Height"
+                      value={dimHeight}
+                      onChange={(e) => setDimHeight(e.target.value)}
+                      className="w-full rounded-lg border border-[#e2e8f0] bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#192a3a]/20"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {hostRequirements?.require_vehicle_details && (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-gray-700">
+                      Vehicle type <span className="text-red-600">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={vehicleType}
+                      onChange={(e) => setVehicleType(e.target.value)}
+                      className="w-full rounded-lg border border-[#e2e8f0] bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#192a3a]/20"
+                      placeholder="e.g. SUV, trailer"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-gray-700">
+                      Registration (optional)
+                    </label>
+                    <input
+                      type="text"
+                      value={vehicleRegistration}
+                      onChange={(e) => setVehicleRegistration(e.target.value)}
+                      className="w-full rounded-lg border border-[#e2e8f0] bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#192a3a]/20"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {hostRequirements?.require_photos && (
+                <div>
+                  <p className="mb-2 text-xs font-medium text-gray-700">
+                    Photos of items, vehicles, or equipment <span className="text-red-600">*</span>
+                  </p>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    onChange={(e) =>
+                      setDetailPhotoFiles(Array.from(e.target.files || []))
+                    }
+                    className="block w-full text-xs text-gray-600 file:mr-3 file:rounded-md file:border-0 file:bg-[#192a3a] file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-white"
+                  />
+                  {detailPhotoFiles.length > 0 && (
+                    <p className="mt-1 text-xs text-gray-500">
+                      {detailPhotoFiles.length} file{detailPhotoFiles.length === 1 ? "" : "s"} selected
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {hostRequirements?.require_access_frequency && (
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-700">
+                    Access frequency <span className="text-red-600">*</span>
+                  </label>
+                  <select
+                    value={accessFrequency}
+                    onChange={(e) => setAccessFrequency(e.target.value)}
+                    className="w-full rounded-lg border border-[#e2e8f0] bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#192a3a]/20"
+                  >
+                    <option value="">Select…</option>
+                    {ACCESS_FREQUENCY_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {hostRequirements?.require_estimated_value && (
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-700">
+                    Estimated value (ZAR) <span className="text-red-600">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    step={1}
+                    value={estimatedValueZar}
+                    onChange={(e) => setEstimatedValueZar(e.target.value)}
+                    className="w-full max-w-xs rounded-lg border border-[#e2e8f0] bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#192a3a]/20"
+                  />
+                </div>
+              )}
+
+              {hostRequirements?.require_notes && (
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-700">
+                    Additional notes <span className="text-red-600">*</span>
+                  </label>
+                  <textarea
+                    value={structuredNotes}
+                    onChange={(e) => setStructuredNotes(e.target.value)}
+                    rows={3}
+                    className="w-full rounded-lg border border-[#e2e8f0] bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#192a3a]/20"
+                    placeholder="Anything else the host should know…"
+                  />
+                </div>
+              )}
+
+              <p className="text-[10px] leading-relaxed text-gray-500">
+                {/* TODO: AI assistant integration — pre-validate renter answers against listing_questionnaires. */}
+                Your answers are stored with your booking request for the host to review.
+              </p>
+            </div>
+          )}
+
           <div className="rounded-md border border-gray-200 bg-[#f8fafb] p-3 text-xs text-gray-600">
             <label className="flex items-start gap-2">
               <input
@@ -1234,6 +1622,7 @@ export default function BookingRequestForm({
             disabled={
               loading ||
               availabilityLoading ||
+              hostRequirementsLoading ||
               Boolean(liveConflictMessage) ||
               Boolean(liveMinimumMessage) ||
               !acceptedTerms ||

@@ -34,6 +34,7 @@ import OwnerTopNav from "@/app/dashboard/_components/calendar/OwnerTopNav";
 import OwnerBookingRequestTimeline, {
   shouldShowCurrentBookingAsExisting,
 } from "@/app/dashboard/_components/calendar/OwnerBookingRequestTimeline";
+import BookingRequestDetailsPanel from "@/app/components/BookingRequestDetailsPanel";
 
 /** Shown to the renter as owner_response_message when declining from the requests UI. */
 const DECLINE_REASON_OPTIONS: { value: string; label: string }[] = [
@@ -108,6 +109,8 @@ type BlockingBooking = {
 type EnrichedBooking = Booking & {
   space?: Space;
   renter?: Profile;
+  /** From booking_request_details.data; RLS allows owner + renter only */
+  requestDetails?: Record<string, unknown> | null;
 };
 
 type BookingStage =
@@ -165,6 +168,7 @@ type ExpandedBookingPanelProps = {
   onDecline: (reason: string) => void | Promise<void>;
   /** When set, all decision controls are disabled; spinner on matching `booking.id`. */
   busyBookingId: string | null;
+  requestDetailData: Record<string, unknown> | null;
 };
 
 type StatusFilterItem = {
@@ -882,6 +886,7 @@ function ExpandedBookingPanel({
   onApprove,
   onDecline,
   busyBookingId,
+  requestDetailData,
 }: ExpandedBookingPanelProps) {
   const showRenterContact =
     isCommunicationAllowed(booking) && booking.renter?.email;
@@ -940,6 +945,10 @@ function ExpandedBookingPanel({
                 <p className="whitespace-pre-wrap text-[#192a3a]">{booking.notes}</p>
               </div>
             )}
+
+          <div className="mb-4">
+            <BookingRequestDetailsPanel data={requestDetailData} />
+          </div>
 
           {canDecide && (
             <div className="mb-4 rounded-md border border-amber-200/80 bg-amber-50/50 p-3">
@@ -1247,6 +1256,33 @@ export default function OwnerBookingRequestsPage() {
 
       const rawBookings = (bookingsData || []) as Booking[];
 
+      const detailByBookingId = new Map<string, Record<string, unknown>>();
+      if (rawBookings.length > 0) {
+        const allBookingIds = rawBookings.map((b) => b.id);
+        const { data: detailRows, error: detailsError } = await (
+          supabase.from("booking_request_details" as never) as any
+        )
+          .select("booking_id, data")
+          .in("booking_id", allBookingIds);
+
+        if (detailsError) {
+          console.error("booking_request_details load:", detailsError);
+        } else {
+          for (const row of (detailRows || []) as Array<{
+            booking_id: string;
+            data: unknown;
+          }>) {
+            if (
+              row.data &&
+              typeof row.data === "object" &&
+              !Array.isArray(row.data)
+            ) {
+              detailByBookingId.set(row.booking_id, row.data as Record<string, unknown>);
+            }
+          }
+        }
+      }
+
       const spaceIds = Array.from(new Set(rawBookings.map((b) => b.space_id)));
       const renterIds = Array.from(new Set(rawBookings.map((b) => b.renter_id)));
 
@@ -1334,6 +1370,7 @@ export default function OwnerBookingRequestsPage() {
           ),
           space: relatedSpace,
           renter: rentersMap.get(booking.renter_id),
+          requestDetails: detailByBookingId.get(booking.id) ?? null,
         };
       });
 
@@ -2146,6 +2183,7 @@ export default function OwnerBookingRequestsPage() {
                           void updateBookingStatus(booking.id, "declined", reason)
                         }
                         busyBookingId={busyBookingId}
+                        requestDetailData={booking.requestDetails ?? null}
                       />
                     )}
                   </div>

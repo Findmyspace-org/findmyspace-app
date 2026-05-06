@@ -35,6 +35,7 @@ import { renterPaymentStatusLabel } from "@/lib/booking-ui-labels";
 import { resolveRenterMyBookingsUi } from "@/lib/renter-my-bookings-status";
 import { shouldShowBookingRequestNotes } from "@/lib/booking-notes-visibility";
 import { broadcastInboxRefresh } from "@/lib/inbox-refresh";
+import BookingRequestDetailsPanel from "@/app/components/BookingRequestDetailsPanel";
 import {
   aggregateRenterPageMetrics,
   computeRenterBookingFinance,
@@ -91,6 +92,7 @@ type Profile = {
 type EnrichedBooking = Booking & {
   space?: Space;
   owner?: Profile;
+  requestDetails?: Record<string, unknown> | null;
 };
 
 function bookingDetailHref(bookingId: string) {
@@ -368,6 +370,33 @@ function MyBookingsPageContent({
 
       const rawBookings = (data || []) as Booking[];
 
+      const detailByBookingId = new Map<string, Record<string, unknown>>();
+      if (rawBookings.length > 0) {
+        const allIds = rawBookings.map((b) => b.id);
+        const { data: detailRows, error: detailsError } = await (
+          supabase.from("booking_request_details" as never) as any
+        )
+          .select("booking_id, data")
+          .in("booking_id", allIds);
+
+        if (detailsError) {
+          console.error("booking_request_details load:", detailsError);
+        } else {
+          for (const row of (detailRows || []) as Array<{
+            booking_id: string;
+            data: unknown;
+          }>) {
+            if (
+              row.data &&
+              typeof row.data === "object" &&
+              !Array.isArray(row.data)
+            ) {
+              detailByBookingId.set(row.booking_id, row.data as Record<string, unknown>);
+            }
+          }
+        }
+      }
+
       const spaceIds = Array.from(new Set(rawBookings.map((b) => b.space_id)));
       const ownerIds = Array.from(new Set(rawBookings.map((b) => b.owner_id)));
 
@@ -421,6 +450,7 @@ function MyBookingsPageContent({
         ...b,
         space: spacesMap.get(b.space_id),
         owner: ownersMap.get(b.owner_id),
+        requestDetails: detailByBookingId.get(b.id) ?? null,
       }));
 
       const bookingIds = rawBookings.map((b) => b.id);
@@ -1229,6 +1259,11 @@ function MyBookingsPageContent({
                                 </div>
                               </div>
                             </section>
+
+                            <BookingRequestDetailsPanel
+                              data={booking.requestDetails ?? null}
+                              title="Your booking request details"
+                            />
 
                             <section>
                               <div className="rounded-md border border-dashed border-gray-200 bg-gray-50/80 p-3 sm:p-4">

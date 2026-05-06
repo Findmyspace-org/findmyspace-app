@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
@@ -747,6 +748,22 @@ export default function EditListingPage({ params }: PageProps) {
             <div className="mb-6">
               <OwnerVerificationAlerts />
             </div>
+
+            {listingId ? (
+              <div className="mb-6 rounded-2xl border border-[#e2e8f0] bg-gradient-to-b from-white to-[#f8fafb] p-5 shadow-sm">
+                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
+                  Structured booking intelligence
+                </p>
+                <h2 className="mt-1 text-lg font-semibold text-[#192a3a]">Improve your booking quality</h2>
+                <p className="mt-1 text-sm text-gray-600">Better information = better bookings.</p>
+                <Link
+                  href={`/spaces/${listingId}/booking-quality`}
+                  className="mt-4 inline-flex w-full min-h-[44px] items-center justify-center rounded-xl bg-[#0f2740] px-4 py-2.5 text-center text-sm font-semibold text-white shadow-sm transition hover:opacity-95 sm:w-auto"
+                >
+                  Open advanced questionnaire
+                </Link>
+              </div>
+            ) : null}
 
             <div className="mb-6 rounded-md border border-gray-300 bg-white p-4 shadow-sm">
               <p className="mb-3 text-sm font-medium text-gray-700">

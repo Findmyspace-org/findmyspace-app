@@ -1017,6 +1017,15 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
           </Link>
 
           <Link
+            href={`/spaces/${createdListingId}/booking-quality`}
+            onClick={fireOnCreated}
+            className="flex w-full min-h-[48px] items-center justify-center rounded-md border border-[#0f2740]/25 bg-[#f4f7f9] px-4 py-3 text-center text-sm font-semibold text-[#0f2740] shadow-sm hover:bg-[#e8eef3]"
+          >
+            Improve your booking quality
+          </Link>
+          <p className="-mt-1 text-center text-xs text-gray-600">Better information = better bookings.</p>
+
+          <Link
             href={`/spaces/${createdListingId}/edit`}
             onClick={fireOnCreated}
             className="flex w-full min-h-[48px] items-center justify-center rounded-md border-2 border-[#192a3a] bg-white px-4 py-3 text-center text-sm font-semibold text-[#192a3a] hover:bg-gray-50"
