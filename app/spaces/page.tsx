@@ -1,12 +1,25 @@
 "use client";
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Image from "next/image";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import SpaceCard from "@/app/components/SpaceCard";
 import PriceRangeFilter from "@/app/components/PriceRangeFilter";
-import { Search, MapPinned, MapPin, ArrowUpDown, X } from "lucide-react";
+import {
+  Search,
+  MapPin,
+  ArrowUpDown,
+  X,
+  Package,
+  Car,
+  Briefcase,
+  Sparkles,
+  ChevronDown,
+  ShieldCheck,
+  CheckCircle2,
+  BadgeCheck,
+  SlidersHorizontal,
+} from "lucide-react";
 import MapView from "@/app/components/MapView";
 import { LISTING_SPACE_TYPE_OPTIONS } from "@/app/data/spaceFeatureConfig";
 import { BrowseWhenFilter } from "@/app/components/BrowseWhenFilter";
@@ -53,6 +66,9 @@ type SpaceImageRow = {
   image_url: string;
   sort_order: number | null;
 };
+
+const heroBackgroundImage = "/images/findmyspace-hero.jpg";
+// TODO: Replace with final premium FindMySpace launch hero image.
 
 function parseNumberParam(value: string | null, fallback: number) {
   const parsed = Number(value);
@@ -110,6 +126,11 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
   );
 
   const [showMap, setShowMap] = useState(false);
+  const [showMoreTypes, setShowMoreTypes] = useState(false);
+  const [showPriceModal, setShowPriceModal] = useState(false);
+  const [draftBookingUnit, setDraftBookingUnit] = useState("all");
+  const [draftMinPrice, setDraftMinPrice] = useState(0);
+  const [draftMaxPrice, setDraftMaxPrice] = useState(getDefaultMax("all"));
 
   useEffect(() => {
     const p = new URLSearchParams(searchParamsString);
@@ -300,14 +321,6 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
     }
   }, [bookingUnitFilter]);
 
-  const cityOptions = useMemo(() => {
-    const unique = Array.from(
-      new Set(spaces.map((space) => space.city).filter(Boolean))
-    ) as string[];
-
-    return unique.sort((a, b) => a.localeCompare(b));
-  }, [spaces]);
-
   const filteredSpaces = useMemo(() => {
     let result = [...spaces];
 
@@ -417,6 +430,24 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
     [spaces, filteredSpaces, appliedWhen]
   );
 
+  const locationLabel = cityFilter === "all" ? "across South Africa" : `near ${cityFilter}`;
+
+  const primaryTypeChips = useMemo(
+    () => [
+      { key: "all", label: "All spaces", value: "all", icon: Sparkles },
+      { key: "storage", label: "Storage", value: "storage", icon: Package },
+      { key: "parking", label: "Parking", value: "parking", icon: Car },
+      { key: "office", label: "Office", value: "office", icon: Briefcase },
+      { key: "event", label: "Event", value: "event_space", icon: BadgeCheck },
+    ],
+    []
+  );
+
+  const moreTypeOptions = useMemo(() => {
+    const primaryValues = new Set(primaryTypeChips.map((chip) => chip.value));
+    return typeOptions.options.filter((opt) => !primaryValues.has(opt.value));
+  }, [typeOptions.options, primaryTypeChips]);
+
   function clearAllFilters() {
     setSearch("");
     setTypeFilter("all");
@@ -430,30 +461,130 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
     pushBrowseUrl(null, "all", null);
   }
 
-  return (
-    <main className="mx-auto max-w-7xl px-6 py-10 text-[#192a3a]">
-      <div className="mb-6">
-        <h1 className="text-3xl font-semibold">Browse spaces</h1>
-        <p className="text-sm text-gray-600">
-          Find the right space for your needs.
-        </p>
-      </div>
+  function openPriceModal() {
+    const resolvedUnit =
+      bookingUnitFilter === "hour" || bookingUnitFilter === "day" || bookingUnitFilter === "month"
+        ? bookingUnitFilter
+        : "all";
+    setDraftBookingUnit(resolvedUnit);
+    setDraftMinPrice(minPrice);
+    setDraftMaxPrice(maxPrice);
+    setShowPriceModal(true);
+  }
 
-      <div
-        id="browse-search"
-        className="mb-6 scroll-mt-24 rounded-xl border border-gray-200/90 bg-white p-4 shadow-sm ring-1 ring-black/[0.03]"
-      >
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-          <div className="relative min-w-0 sm:col-span-2 xl:col-span-1">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-            <input
-              ref={searchInputRef}
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search..."
-              className="w-full rounded-lg border border-gray-200 bg-white px-10 py-2.5 text-sm shadow-sm outline-none ring-emerald-500/20 transition focus:border-emerald-500 focus:ring-2"
-              aria-label="Search spaces by keyword or area"
-            />
+  function applyPriceModal() {
+    const resolvedUnit =
+      draftBookingUnit === "hour" || draftBookingUnit === "day" || draftBookingUnit === "month"
+        ? draftBookingUnit
+        : "all";
+    setBookingUnitFilter(resolvedUnit);
+    setMinPrice(draftMinPrice);
+    setMaxPrice(draftMaxPrice);
+    setShowPriceModal(false);
+  }
+
+  function clearPriceModal() {
+    const defaultMax = getDefaultMax("all");
+    setDraftBookingUnit("all");
+    setDraftMinPrice(0);
+    setDraftMaxPrice(defaultMax);
+    setBookingUnitFilter("all");
+    setMinPrice(0);
+    setMaxPrice(defaultMax);
+    setShowPriceModal(false);
+  }
+
+  return (
+    <main className="pb-10 text-[#192a3a]">
+      <section className="relative h-[320px] w-full overflow-hidden sm:h-[360px] lg:h-[410px]">
+        <div
+          className="absolute inset-0 bg-cover bg-center"
+          style={{ backgroundImage: `url('${heroBackgroundImage}')` }}
+        />
+        <div className="absolute inset-0 bg-gradient-to-r from-white/72 via-white/52 to-white/36" />
+        <div className="mx-auto h-full max-w-7xl px-4 sm:px-6">
+          <div className="relative z-10 pt-12 sm:pt-14 lg:pt-16">
+            <h1 className="max-w-3xl text-4xl font-semibold leading-tight text-[#0f172a] sm:text-5xl lg:text-6xl">
+              The right space
+              <br />
+              in the <span className="text-[#c1121f]">right place.</span>
+            </h1>
+            <p className="mt-4 max-w-2xl text-base leading-relaxed text-[#1f2937] sm:text-lg">
+              Find trusted storage, parking, workspace and lifestyle spaces from local owners.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section className="relative z-20 mx-auto -mt-16 max-w-6xl px-4 sm:-mt-20 sm:px-6">
+        <div id="browse-search" className="scroll-mt-24 overflow-visible rounded-3xl border border-[#e5e7eb] bg-white p-4 shadow-[0_28px_65px_rgba(15,23,42,0.12)] sm:p-6">
+          <div className="mb-3">
+            <p className="text-sm font-medium text-[#1e293b]">What type of space do you need?</p>
+          </div>
+
+          <div className="relative z-10 mb-5 flex gap-2 overflow-x-auto overflow-y-visible py-1">
+            {primaryTypeChips.map((chip) => {
+              const Icon = chip.icon;
+              const selected = typeFilter === chip.value || (chip.value === "all" && typeFilter === "all");
+              return (
+                <button
+                  key={chip.key}
+                  type="button"
+                  onClick={() => {
+                    setTypeFilter(chip.value);
+                    if (chip.value === "all") setIntentFilter(null);
+                    setShowMoreTypes(false);
+                  }}
+                  className={`inline-flex min-h-[40px] shrink-0 items-center gap-2 rounded-full border px-4 text-sm font-medium transition-all duration-200 ${
+                    selected
+                      ? "border-[#c1121f] bg-[#c1121f] text-white shadow-[0_1px_2px_rgba(15,23,42,0.12)]"
+                      : "border-[#d7dde3] bg-white text-[#334155] hover:-translate-y-0.5 hover:border-[#b8c2cc] hover:shadow-[0_1px_2px_rgba(15,23,42,0.08)]"
+                  }`}
+                >
+                  <Icon className="h-4 w-4" />
+                  {chip.label}
+                </button>
+              );
+            })}
+            <div className="relative shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowMoreTypes((prev) => !prev)}
+                className={`inline-flex min-h-[40px] items-center gap-2 rounded-full border px-4 text-sm font-medium transition-all duration-200 ${
+                  !primaryTypeChips.some((chip) => chip.value === typeFilter) && typeFilter !== "all"
+                    ? "border-[#c1121f] bg-[#c1121f] text-white shadow-[0_1px_2px_rgba(15,23,42,0.12)]"
+                    : "border-[#d7dde3] bg-white text-[#334155] hover:-translate-y-0.5 hover:border-[#b8c2cc] hover:shadow-[0_1px_2px_rgba(15,23,42,0.08)]"
+                }`}
+                aria-expanded={showMoreTypes}
+                aria-haspopup="menu"
+              >
+                More
+                <ChevronDown className="h-4 w-4" />
+              </button>
+              {showMoreTypes ? (
+                <div className="absolute left-0 top-[calc(100%+8px)] z-20 w-64 rounded-2xl border border-[#e1e6ea] bg-white p-2 shadow-[0_16px_40px_rgba(15,23,42,0.18)]">
+                  <div className="max-h-72 overflow-auto py-1">
+                    {moreTypeOptions.map((opt) => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => {
+                          setTypeFilter(opt.value);
+                          setShowMoreTypes(false);
+                        }}
+                        className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm transition ${
+                          typeFilter === opt.value
+                            ? "bg-[#fff1f2] font-medium text-[#9f1239]"
+                            : "text-[#334155] hover:bg-[#f8fafc]"
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </div>
           </div>
 
           <select
@@ -466,7 +597,8 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
               }
               setTypeFilter(e.target.value);
             }}
-            className="min-h-[42px] rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm shadow-sm outline-none ring-emerald-500/20 transition focus:border-emerald-500 focus:ring-2"
+            className="sr-only"
+            aria-label="Space type filter"
           >
             <option value="all">{typeOptions.allLabel}</option>
             {intentFilter ? <option value="__all_types">All space types</option> : null}
@@ -477,101 +609,144 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
             ))}
           </select>
 
-          <select
-            value={cityFilter}
-            onChange={(e) => setCityFilter(e.target.value)}
-            className="min-h-[42px] rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm shadow-sm outline-none ring-emerald-500/20 transition focus:border-emerald-500 focus:ring-2"
-          >
-            <option value="all">All cities</option>
-            {cityOptions.map((city) => (
-              <option key={city} value={city}>
-                {city}
-              </option>
-            ))}
-          </select>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-[1fr_1fr_1fr_112px]">
+            <div className="min-w-0">
+              <p className="mb-1.5 text-xs font-medium leading-5 text-[#475569]">Where do you need it?</p>
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                <input
+                  ref={searchInputRef}
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Location, suburb, city, or keyword"
+                  className="min-h-[48px] w-full rounded-xl border border-[#d4dbe2] bg-white px-10 py-2.5 text-sm shadow-sm outline-none transition-all duration-200 focus:border-[#c1121f] focus:ring-2 focus:ring-[#c1121f]/20"
+                  aria-label="Location"
+                />
+              </div>
+            </div>
 
-          <div className="relative min-w-0">
-            <ArrowUpDown className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-            <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value)}
-              className="min-h-[42px] w-full rounded-lg border border-gray-200 bg-white px-10 py-2.5 text-sm shadow-sm outline-none ring-emerald-500/20 transition focus:border-emerald-500 focus:ring-2"
-            >
-              <option value="price_high_low">Price high → low</option>
-              <option value="price_low_high">Price low → high</option>
-            </select>
+            <div className="min-w-0">
+              <p className="mb-1.5 text-xs font-medium leading-5 text-[#475569]">Rental period</p>
+              <div className="min-h-[48px]">
+                <BrowseWhenFilter
+                  applied={appliedWhen}
+                  availabilitySignal={panelAvailabilitySignal}
+                  suggestedUnit={suggestedWhenUnit}
+                  placeholderText="Select duration"
+                  triggerClassName="min-h-[48px] h-[48px] w-full rounded-xl border border-[#d4dbe2] bg-white px-4 py-2.5 text-sm font-medium leading-5 text-[#334155] shadow-sm transition-all duration-200 hover:border-[#cbd5e1] focus:outline-none focus:ring-2 focus:ring-[#c1121f]/20"
+                  onApply={(w) => {
+                    setAppliedWhen(w);
+                    setBookingUnitFilter(w.unit);
+                    pushBrowseUrl(w);
+                  }}
+                  onClear={() => {
+                    setAppliedWhen(null);
+                    setBookingUnitFilter("all");
+                    pushBrowseUrl(null, "all");
+                  }}
+                />
+              </div>
+            </div>
+
+            <div className="min-w-0">
+              <p className="mb-1.5 text-xs font-medium leading-5 text-[#475569]">Price range</p>
+              <button
+                type="button"
+                onClick={openPriceModal}
+                className="inline-flex min-h-[48px] w-full items-center justify-between rounded-xl border border-[#d4dbe2] bg-white px-4 text-sm text-[#334155] shadow-sm transition-all duration-200 hover:border-[#cbd5e1] hover:bg-[#fafafa]"
+              >
+                <span className="truncate">
+                  {bookingUnitFilter === "all" ? "All units" : bookingUnitFilter} · R{minPrice} - R{maxPrice}
+                </span>
+                <SlidersHorizontal className="h-4 w-4 text-[#64748b]" />
+              </button>
+            </div>
+
+            <div className="min-w-0">
+              <p className="mb-1.5 text-xs font-medium leading-5 text-transparent">Search</p>
+              <button
+                type="button"
+                onClick={() => pushBrowseUrl(appliedWhen)}
+                className="min-h-[48px] w-full rounded-xl bg-[#c1121f] px-6 text-sm font-semibold text-white shadow-[0_10px_20px_rgba(193,18,31,0.28)] transition-all duration-200 hover:-translate-y-0.5 hover:bg-[#a70f19] hover:shadow-[0_14px_24px_rgba(193,18,31,0.34)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c1121f] focus-visible:ring-offset-2"
+              >
+                Search
+              </button>
+            </div>
           </div>
 
-          <BrowseWhenFilter
-            applied={appliedWhen}
-            availabilitySignal={panelAvailabilitySignal}
-            suggestedUnit={suggestedWhenUnit}
-            onApply={(w) => {
-              setAppliedWhen(w);
-              setBookingUnitFilter(w.unit);
-              pushBrowseUrl(w);
-            }}
-            onClear={() => {
-              setAppliedWhen(null);
-              setBookingUnitFilter("all");
-              pushBrowseUrl(null, "all");
-            }}
-          />
+          <div className="mt-5 grid gap-3 border-t border-[#edf1f5] pt-4 sm:grid-cols-3">
+            <article className="flex items-center gap-3 rounded-2xl bg-[#fafbfc] px-3 py-3">
+              <div className="inline-flex shrink-0 rounded-lg border border-[#f0d5d8] bg-[#fff6f7] p-2 text-[#c1121f]">
+                <BadgeCheck className="h-4 w-4" />
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold text-[#0f172a]">Verified spaces</h3>
+                <p className="text-xs text-[#475569]">Owners are reviewed before listings go live.</p>
+              </div>
+            </article>
+            <article className="flex items-center gap-3 rounded-2xl bg-[#fafbfc] px-3 py-3">
+              <div className="inline-flex shrink-0 rounded-lg border border-[#f0d5d8] bg-[#fff6f7] p-2 text-[#c1121f]">
+                <ShieldCheck className="h-4 w-4" />
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold text-[#0f172a]">Secure booking</h3>
+                <p className="text-xs text-[#475569]">Bookings and payments follow a secure process.</p>
+              </div>
+            </article>
+            <article className="flex items-center gap-3 rounded-2xl bg-[#fafbfc] px-3 py-3">
+              <div className="inline-flex shrink-0 rounded-lg border border-[#f0d5d8] bg-[#fff6f7] p-2 text-[#c1121f]">
+                <CheckCircle2 className="h-4 w-4" />
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold text-[#0f172a]">Approved listings</h3>
+                <p className="text-xs text-[#475569]">Spaces are checked before being made available.</p>
+              </div>
+            </article>
+          </div>
         </div>
-      </div>
+      </section>
 
-      <div className="mb-6 flex items-center justify-between gap-4">
-        <div className="flex items-center gap-2 text-sm text-gray-600">
-          <MapPin className="h-4 w-4" />
-          <span>{filteredSpaces.length} spaces found</span>
+      <section className="mx-auto mt-8 max-w-7xl px-4 sm:px-6">
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-2 rounded-full border border-[#e2e8f0] bg-white px-4 py-2 text-sm text-[#475569] shadow-sm">
+            <MapPin className="h-4 w-4 text-[#c1121f]" />
+            <span>
+              {filteredSpaces.length} verified spaces available {locationLabel}
+            </span>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowMap(true)}
+              className="inline-flex items-center gap-2 rounded-full border border-[#e2e8f0] bg-white px-4 py-2 text-sm font-medium text-[#334155] shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:bg-[#fafafa]"
+            >
+              <MapPin className="h-4 w-4" />
+              Map view
+            </button>
+            <div className="relative">
+              <ArrowUpDown className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value)}
+                className="min-h-[40px] rounded-full border border-[#e2e8f0] bg-white py-2 pl-9 pr-4 text-sm text-[#334155] shadow-sm outline-none transition-all duration-200 focus:border-[#c1121f] focus:ring-2 focus:ring-[#c1121f]/20"
+                aria-label="Sort by"
+              >
+                <option value="price_high_low">Sort by: Featured</option>
+                <option value="price_low_high">Sort by: Price low to high</option>
+              </select>
+            </div>
+            <button
+              type="button"
+              onClick={clearAllFilters}
+              className="inline-flex items-center gap-2 rounded-full border border-[#e2e8f0] bg-white px-4 py-2 text-sm text-[#475569] shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:text-[#192a3a]"
+            >
+              <X className="h-4 w-4" />
+              Clear filters
+            </button>
+          </div>
         </div>
 
-        <button
-          type="button"
-          onClick={clearAllFilters}
-          className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-[#192a3a]"
-        >
-          <X className="h-4 w-4" />
-          Clear filters
-        </button>
-      </div>
-
-      <div className="grid gap-6 lg:grid-cols-[300px_1fr]">
         <div className="space-y-6">
-          <button
-            onClick={() => setShowMap(true)}
-            className="w-full rounded-md border border-gray-200 bg-white p-4 shadow-sm text-left hover:shadow-md transition"
-          >
-            <div className="mb-3 flex items-center gap-2 text-sm font-medium text-[#192a3a]">
-              <MapPinned className="h-5 w-5" />
-              <span>View map</span>
-            </div>
-
-            <div className="overflow-hidden rounded-md bg-gray-100">
-              <Image
-                src="/map-preview.png"
-                alt="Map preview"
-                width={600}
-                height={360}
-                className="h-[180px] w-full object-cover"
-              />
-            </div>
-          </button>
-
-          <PriceRangeFilter
-            bookingUnitFilter={bookingUnitFilter}
-            setBookingUnitFilter={setBookingUnitFilter}
-            minPrice={minPrice}
-            maxPrice={maxPrice}
-            setMinPrice={setMinPrice}
-            setMaxPrice={setMaxPrice}
-            absoluteMin={0}
-            absoluteMax={20000}
-            step={50}
-          />
-        </div>
-
-        <div className="space-y-5">
           {message ? (
             <p className="text-sm text-red-600">{message}</p>
           ) : loading ? (
@@ -591,7 +766,7 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
             ))
           )}
         </div>
-      </div>
+      </section>
 
       {showMap && (
         <div
@@ -626,6 +801,60 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
           </div>
         </div>
       )}
+
+      {showPriceModal ? (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/45 p-0 sm:items-center sm:p-4"
+          onClick={() => setShowPriceModal(false)}
+        >
+          <div
+            className="w-full rounded-t-3xl bg-white p-4 shadow-2xl sm:w-[640px] sm:rounded-2xl sm:p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-[#0f172a]">Price filter</h2>
+              <button
+                type="button"
+                onClick={() => setShowPriceModal(false)}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#e2e8f0] text-[#475569] transition hover:bg-[#f8fafc]"
+                aria-label="Close price filter"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <PriceRangeFilter
+              bookingUnitFilter={draftBookingUnit}
+              setBookingUnitFilter={setDraftBookingUnit}
+              minPrice={draftMinPrice}
+              maxPrice={draftMaxPrice}
+              setMinPrice={setDraftMinPrice}
+              setMaxPrice={setDraftMaxPrice}
+              absoluteMin={0}
+              absoluteMax={20000}
+              step={50}
+              compact
+            />
+
+            <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={clearPriceModal}
+                className="min-h-[42px] rounded-xl border border-[#e2e8f0] bg-white px-4 text-sm font-medium text-[#475569] transition hover:bg-[#f8fafc]"
+              >
+                Clear
+              </button>
+              <button
+                type="button"
+                onClick={applyPriceModal}
+                className="min-h-[42px] rounded-xl bg-[#c1121f] px-5 text-sm font-semibold text-white shadow-[0_10px_20px_rgba(193,18,31,0.28)] transition hover:bg-[#a70f19]"
+              >
+                Apply
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }

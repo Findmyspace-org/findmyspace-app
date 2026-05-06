@@ -91,7 +91,9 @@ export default function HomePage() {
               FindMySpace
             </p>
             <h1 className="text-5xl font-semibold leading-tight md:text-6xl">
-              The right space in the right place.
+              The right space
+              <br />
+              in the <span className="text-[#c1121f]">right place.</span>
             </h1>
             <p className="mt-6 max-w-xl rounded-lg bg-black/30 px-4 py-3 text-lg font-medium leading-relaxed text-white shadow-[0_6px_20px_rgba(0,0,0,0.25)]">
               Find trusted storage, parking, workspace, and lifestyle spaces from local owners.
