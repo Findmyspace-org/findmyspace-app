@@ -67,6 +67,10 @@ type SpaceImageRow = {
   sort_order: number | null;
 };
 
+type UserFavouriteRow = {
+  space_id: string;
+};
+
 const heroBackgroundImage = "/images/findmyspace-hero.jpg";
 // TODO: Replace with final premium FindMySpace launch hero image.
 
@@ -131,6 +135,9 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
   const [draftBookingUnit, setDraftBookingUnit] = useState("all");
   const [draftMinPrice, setDraftMinPrice] = useState(0);
   const [draftMaxPrice, setDraftMaxPrice] = useState(getDefaultMax("all"));
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [favouriteSpaceIds, setFavouriteSpaceIds] = useState<Set<string>>(new Set());
+  const [favouriteBusyIds, setFavouriteBusyIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     const p = new URLSearchParams(searchParamsString);
@@ -310,6 +317,52 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
   }, []);
 
   useEffect(() => {
+    let active = true;
+
+    async function loadUserAndFavourites(userId?: string | null) {
+      const resolvedUserId =
+        userId !== undefined
+          ? userId
+          : (await supabase.auth.getUser()).data.user?.id ?? null;
+
+      if (!active) return;
+      setCurrentUserId(resolvedUserId);
+
+      if (!resolvedUserId) {
+        setFavouriteSpaceIds(new Set());
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("user_favourites" as never)
+        .select("space_id")
+        .eq("user_id", resolvedUserId);
+
+      if (!active) return;
+      if (error) {
+        console.warn("Failed to load favourites:", error.message);
+        return;
+      }
+
+      const nextSet = new Set(
+        ((data || []) as UserFavouriteRow[]).map((row) => row.space_id)
+      );
+      setFavouriteSpaceIds(nextSet);
+    }
+
+    loadUserAndFavourites();
+
+    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+      loadUserAndFavourites(session?.user?.id ?? null);
+    });
+
+    return () => {
+      active = false;
+      authListener.subscription.unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
     setMinPrice(0);
 
     if (bookingUnitFilter === "hour") {
@@ -459,6 +512,50 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
     setMinPrice(0);
     setMaxPrice(getDefaultMax("all"));
     pushBrowseUrl(null, "all", null);
+  }
+
+  async function handleToggleFavourite(spaceId: string) {
+    if (!currentUserId) {
+      router.push("/login");
+      return;
+    }
+
+    setFavouriteBusyIds((prev) => new Set(prev).add(spaceId));
+    const isAlreadyFavourite = favouriteSpaceIds.has(spaceId);
+
+    if (isAlreadyFavourite) {
+      const { error } = await supabase
+        .from("user_favourites" as never)
+        .delete()
+        .eq("user_id", currentUserId)
+        .eq("space_id", spaceId);
+
+      if (!error) {
+        setFavouriteSpaceIds((prev) => {
+          const next = new Set(prev);
+          next.delete(spaceId);
+          return next;
+        });
+      } else {
+        console.warn("Failed to remove favourite:", error.message);
+      }
+    } else {
+      const { error } = await supabase
+        .from("user_favourites" as never)
+        .insert({ user_id: currentUserId, space_id: spaceId } as never);
+
+      if (!error) {
+        setFavouriteSpaceIds((prev) => new Set(prev).add(spaceId));
+      } else {
+        console.warn("Failed to save favourite:", error.message);
+      }
+    }
+
+    setFavouriteBusyIds((prev) => {
+      const next = new Set(prev);
+      next.delete(spaceId);
+      return next;
+    });
   }
 
   function openPriceModal() {
@@ -746,7 +843,7 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
           </div>
         </div>
 
-        <div className="space-y-6">
+        <div>
           {message ? (
             <p className="text-sm text-red-600">{message}</p>
           ) : loading ? (
@@ -754,16 +851,21 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
           ) : filteredSpaces.length === 0 ? (
             <p className="text-sm text-gray-600">No spaces found.</p>
           ) : (
-            filteredSpaces.map((space) => (
-              <SpaceCard
-                key={space.id}
-                space={space}
-                availabilityHint={getCardAvailabilityHint({
-                  space,
-                  when: appliedWhen,
-                })}
-              />
-            ))
+            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+              {filteredSpaces.map((space) => (
+                <SpaceCard
+                  key={space.id}
+                  space={space}
+                  availabilityHint={getCardAvailabilityHint({
+                    space,
+                    when: appliedWhen,
+                  })}
+                  isFavourite={favouriteSpaceIds.has(space.id)}
+                  favouriteBusy={favouriteBusyIds.has(space.id)}
+                  onToggleFavourite={handleToggleFavourite}
+                />
+              ))}
+            </div>
           )}
         </div>
       </section>

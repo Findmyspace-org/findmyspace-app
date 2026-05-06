@@ -1,14 +1,11 @@
 "use client";
 
-import Link from "next/link";
 import Image from "next/image";
 import {
+  Heart,
   MapPin,
-  Tag,
-  CalendarDays,
-  Wallet,
-  ArrowRight,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { formatSpaceTypeLabel } from "@/app/data/spaceFeatureConfig";
 import type { CardAvailabilityHint } from "@/lib/browse-availability-signals";
 
@@ -31,9 +28,20 @@ type Space = {
 type Props = {
   space: Space;
   availabilityHint?: CardAvailabilityHint | null;
+  isFavourite?: boolean;
+  favouriteBusy?: boolean;
+  onToggleFavourite?: (spaceId: string) => void;
 };
 
-export default function SpaceCard({ space, availabilityHint }: Props) {
+export default function SpaceCard({
+  space,
+  availabilityHint,
+  isFavourite = false,
+  favouriteBusy = false,
+  onToggleFavourite,
+}: Props) {
+  const router = useRouter();
+
   function getPriceValue() {
     if (space.booking_unit === "hour") return space.price_per_hour;
     if (space.booking_unit === "month") return space.price_per_month;
@@ -51,119 +59,78 @@ export default function SpaceCard({ space, availabilityHint }: Props) {
     return price ? `R${price}` : "Price not set";
   }
 
-  function getShortDescription() {
-    if (!space.description) return "No description added yet.";
-    if (space.description.length <= 140) return space.description;
-    return `${space.description.slice(0, 140)}...`;
-  }
-
   function formatSpaceType(value?: string | null) {
     return formatSpaceTypeLabel(value);
   }
 
-  function formatBookingUnit(value?: string | null) {
-    if (value === "hour") return "By hour";
-    if (value === "month") return "By month";
-    return "By day";
-  }
-
   const coverImage = space.image_urls?.[0] || null;
-  const photoCount = space.image_urls?.length || 0;
-  const locationLine =
-    [space.address_line_1, space.suburb, space.city].filter(Boolean).join(", ") ||
-    "Address not set";
+  const locationLine = [space.suburb, space.city].filter(Boolean).join(", ") || "Location to be confirmed";
 
   return (
-    <Link
-      href={`/spaces/${space.id}`}
+    <article
+      role="button"
+      tabIndex={0}
+      onClick={() => router.push(`/spaces/${space.id}`)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          router.push(`/spaces/${space.id}`);
+        }
+      }}
       aria-label={`View listing: ${space.title}`}
-      className="group block cursor-pointer overflow-hidden rounded-md border border-gray-200 bg-white shadow-sm transition-all duration-200 ease-out hover:-translate-y-0.5 hover:border-gray-300 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#192a3a]/35 focus-visible:ring-offset-2"
+      className="group cursor-pointer overflow-hidden rounded-2xl border border-[#e2e8f0] bg-white shadow-[0_6px_24px_rgba(15,23,42,0.07)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_14px_28px_rgba(15,23,42,0.12)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#192a3a]/35 focus-visible:ring-offset-2"
     >
-      <div className="grid md:grid-cols-[380px_1fr]">
-        <div className="relative min-h-[260px] bg-gray-100">
-          {coverImage ? (
-            <Image
-              src={coverImage}
-              alt={space.title}
-              fill
-              className="object-cover"
-              unoptimized
-            />
-          ) : (
-            <div className="flex h-full items-center justify-center text-sm text-gray-500">
-              No image yet
-            </div>
-          )}
+      <div className="relative aspect-[16/10] bg-[#f4f5f7]">
+        <button
+          type="button"
+          disabled={favouriteBusy}
+          aria-label={isFavourite ? "Remove from favourites" : "Save to favourites"}
+          onClick={(event) => {
+            event.stopPropagation();
+            onToggleFavourite?.(space.id);
+          }}
+          className="absolute right-3 top-3 z-10 inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/95 text-[#334155] shadow-[0_8px_18px_rgba(15,23,42,0.18)] transition hover:bg-white disabled:opacity-70"
+        >
+          <Heart
+            className={`h-4.5 w-4.5 ${isFavourite ? "fill-[#c1121f] text-[#c1121f]" : "text-[#334155]"}`}
+          />
+        </button>
 
-          {photoCount > 1 && (
-            <div className="absolute left-4 top-4">
-              <span className="inline-flex rounded-full bg-white/90 px-3 py-1 text-xs font-medium text-gray-800 shadow-sm">
-                {photoCount} photos
-              </span>
-            </div>
-          )}
-        </div>
-
-        <div className="flex min-h-[260px] flex-col justify-between p-6">
-          <div>
-            <div className="mb-4 flex items-start justify-between gap-4">
-              <div className="min-w-0">
-                <h2 className="text-2xl font-semibold leading-tight text-[#192a3a]">
-                  {space.title}
-                </h2>
-
-                <div className="mt-3 flex items-start gap-2 text-sm text-gray-600">
-                  <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-gray-500" />
-                  <p>{locationLine}</p>
-                </div>
-              </div>
-
-              <div className="shrink-0 text-right">
-                <div className="flex items-center justify-end gap-2">
-                  <Wallet className="h-4 w-4 text-gray-500" />
-                  <p className="text-2xl font-semibold leading-none text-[#192a3a]">
-                    {getPriceLabel()}
-                  </p>
-                </div>
-                <p className="mt-1 text-sm text-gray-500">{getPriceSuffix()}</p>
-              </div>
-            </div>
-
-            <div className="mb-4 flex flex-wrap gap-2">
-              <span className="inline-flex items-center gap-2 rounded-md border border-gray-200 bg-[#f8fafb] px-3 py-1 text-xs font-medium text-gray-700">
-                <Tag className="h-3.5 w-3.5 text-gray-500" />
-                {formatSpaceType(space.space_type)}
-              </span>
-
-              <span className="inline-flex items-center gap-2 rounded-md border border-gray-200 bg-[#f8fafb] px-3 py-1 text-xs font-medium text-gray-700">
-                <CalendarDays className="h-3.5 w-3.5 text-gray-500" />
-                {formatBookingUnit(space.booking_unit)}
-              </span>
-
-              {availabilityHint ? (
-                <span className="inline-flex items-center rounded-md border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700">
-                  {availabilityHint.text}
-                </span>
-              ) : null}
-            </div>
-
-            <p className="text-sm leading-7 text-gray-700">
-              {getShortDescription()}
-            </p>
+        {coverImage ? (
+          <Image
+            src={coverImage}
+            alt={space.title}
+            fill
+            className="object-cover"
+            unoptimized
+          />
+        ) : (
+          <div className="flex h-full items-center justify-center text-sm text-gray-500">
+            No image available
           </div>
-
-          <div className="mt-6 flex items-center justify-between border-t border-gray-100 pt-4">
-            <span className="text-sm text-gray-500">
-              View details and request booking
-            </span>
-
-            <span className="relative z-10 inline-flex items-center justify-center rounded-lg border border-transparent bg-[#192a3a] px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all duration-200 ease-out hover:-translate-y-[1px] hover:bg-[#0a1726] hover:shadow-md">
-              Open listing
-              <ArrowRight className="ml-2 h-4 w-4 shrink-0 text-white" aria-hidden />
-            </span>
-          </div>
-        </div>
+        )}
       </div>
-    </Link>
+
+      <div className="p-4">
+        <p className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.08em] text-[#64748b]">
+          <MapPin className="h-3.5 w-3.5" />
+          {formatSpaceType(space.space_type)} · {locationLine}
+        </p>
+
+        <h3 className="mt-2 line-clamp-2 text-[17px] font-semibold leading-snug text-[#0f172a]">
+          {space.title}
+        </h3>
+
+        <p className="mt-3 text-base font-semibold text-[#0f172a]">
+          {getPriceLabel()} <span className="font-normal text-[#475569]">{getPriceSuffix()}</span>
+        </p>
+
+        {availabilityHint ? (
+          <p className="mt-2 text-xs text-slate-600">{availabilityHint.text}</p>
+        ) : null}
+
+        {/* TODO: Add rating/review summary once reviews are live. */}
+      </div>
+    </article>
   );
 }

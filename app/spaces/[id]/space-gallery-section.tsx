@@ -2,16 +2,25 @@
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
+import { Heart } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabase";
 
 export default function SpaceGallerySection({
+  spaceId,
   title,
   imageUrls,
 }: {
+  spaceId: string;
   title: string;
   imageUrls: string[];
 }) {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [isFavourite, setIsFavourite] = useState(false);
+  const [favouriteBusy, setFavouriteBusy] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -42,6 +51,59 @@ export default function SpaceGallerySection({
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, [open, imageUrls.length]);
+
+  useEffect(() => {
+    let active = true;
+    async function loadFavouriteState() {
+      const { data: userData } = await supabase.auth.getUser();
+      if (!active) return;
+      const uid = userData.user?.id ?? null;
+      setUserId(uid);
+      if (!uid) {
+        setIsFavourite(false);
+        return;
+      }
+
+      const favouriteResult = await supabase
+        .from("user_favourites" as never)
+        .select("id")
+        .eq("user_id", uid)
+        .eq("space_id", spaceId)
+        .maybeSingle();
+
+      if (!active) return;
+      setIsFavourite(
+        Boolean((favouriteResult as unknown as { data: { id: string } | null }).data)
+      );
+    }
+    loadFavouriteState();
+    return () => {
+      active = false;
+    };
+  }, [spaceId]);
+
+  async function toggleFavourite(event: React.MouseEvent<HTMLButtonElement>) {
+    event.stopPropagation();
+    if (!userId) {
+      router.push("/login");
+      return;
+    }
+    setFavouriteBusy(true);
+    if (isFavourite) {
+      await supabase
+        .from("user_favourites" as never)
+        .delete()
+        .eq("user_id", userId)
+        .eq("space_id", spaceId);
+      setIsFavourite(false);
+    } else {
+      await supabase
+        .from("user_favourites" as never)
+        .insert({ user_id: userId, space_id: spaceId } as never);
+      setIsFavourite(true);
+    }
+    setFavouriteBusy(false);
+  }
 
   if (!imageUrls || imageUrls.length === 0) {
     return (
@@ -78,6 +140,15 @@ export default function SpaceGallerySection({
   return (
     <>
       <div className="relative mb-6 grid gap-2 md:grid-cols-[2fr_1fr]">
+        <button
+          type="button"
+          onClick={toggleFavourite}
+          disabled={favouriteBusy}
+          aria-label={isFavourite ? "Remove from favourites" : "Save to favourites"}
+          className="absolute right-3 top-3 z-20 inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/95 text-[#334155] shadow-[0_8px_18px_rgba(15,23,42,0.18)] transition hover:bg-white disabled:opacity-70"
+        >
+          <Heart className={`h-4.5 w-4.5 ${isFavourite ? "fill-[#c1121f] text-[#c1121f]" : "text-[#334155]"}`} />
+        </button>
         <button
           type="button"
           onClick={() => openAtIndex(0)}
