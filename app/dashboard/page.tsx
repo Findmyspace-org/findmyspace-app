@@ -20,6 +20,7 @@ import {
   UserPlus,
   Mail,
   Shield,
+  HelpCircle,
 } from "lucide-react";
 
 type ProfileRow = {
@@ -110,6 +111,11 @@ export default function DashboardPage() {
       icon: CalendarCheck,
       badgeCount: myBookingActionCount,
     },
+    {
+      label: "Listing questions",
+      href: "/dashboard/listing-questions",
+      icon: HelpCircle,
+    },
   ];
 
   const hostingItems: DashboardItem[] = isHost
@@ -121,6 +127,11 @@ export default function DashboardPage() {
           href: "/dashboard/requests",
           icon: ClipboardList,
           badgeCount: bookingRequestActionCount,
+        },
+        {
+          label: "Listing questions",
+          href: "/dashboard/listing-questions",
+          icon: HelpCircle,
         },
         { label: "Finance", href: "/dashboard/finance", icon: Landmark },
         { label: "Host settings", href: "/dashboard/verification", icon: Settings },

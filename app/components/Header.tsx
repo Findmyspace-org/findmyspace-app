@@ -28,6 +28,7 @@ import {
   FileText,
   CheckCircle2,
   MessageSquare,
+  HelpCircle,
 } from "lucide-react";
 
 type MenuItem = {
@@ -54,6 +55,7 @@ type ActionNotification = {
     | "booking_confirmed"
     | "booking_paid"
     | "booking_message"
+    | "listing_question"
     | "notice";
   /** When set, row comes from `notifications` table and can be marked read. */
   tableRowId?: string;
@@ -336,15 +338,19 @@ export default function Header() {
           "booking_message",
           "identity_submitted",
           "bank_submitted",
+          "listing_question",
+          "listing_question_answered",
         ]);
 
         const RENTER_BADGE_NOTIFICATION_TYPES = new Set([
           "payment_needed",
           "booking_message",
+          "listing_question_answered",
         ]);
         const OWNER_BADGE_NOTIFICATION_TYPES = new Set([
           "booking_request",
           "booking_message",
+          "listing_question",
         ]);
         const ADMIN_BADGE_NOTIFICATION_TYPES = new Set([
           "payment_received",
@@ -412,6 +418,8 @@ export default function Header() {
             else if (t === "booking_confirmed") mappedType = "booking_confirmed";
             else if (t === "booking_paid") mappedType = "booking_paid";
             else if (t === "booking_message") mappedType = "booking_message";
+            else if (t === "listing_question" || t === "listing_question_answered")
+              mappedType = "listing_question";
             else if (
               t === "payment_received" ||
               t === "identity_submitted" ||
@@ -657,6 +665,11 @@ export default function Header() {
           icon: MessageSquare,
           badgeCount: messageUnreadCount,
         },
+        {
+          label: "Listing questions",
+          href: "/dashboard/listing-questions",
+          icon: HelpCircle,
+        },
       ],
     });
 
@@ -683,6 +696,11 @@ export default function Header() {
             href: "/dashboard/messages",
             icon: MessageSquare,
             badgeCount: messageUnreadCount,
+          },
+          {
+            label: "Listing questions",
+            href: "/dashboard/listing-questions",
+            icon: HelpCircle,
           },
           {
             label: "Finance",
@@ -881,6 +899,8 @@ export default function Header() {
                                 <Landmark className="mt-0.5 h-4 w-4 shrink-0 text-green-700" />
                               ) : notification.type === "booking_message" ? (
                                 <MessageSquare className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
+                              ) : notification.type === "listing_question" ? (
+                                <HelpCircle className="mt-0.5 h-4 w-4 shrink-0 text-[#c1121f]" />
                               ) : notification.type === "notice" ? (
                                 <Bell className="mt-0.5 h-4 w-4 shrink-0 text-gray-600" />
                               ) : (

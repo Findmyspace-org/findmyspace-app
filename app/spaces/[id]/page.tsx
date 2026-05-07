@@ -4,6 +4,8 @@ import Link from "next/link";
 import BookingSheetBootstrap from "./booking-sheet-bootstrap";
 import { supabase } from "@/lib/supabase";
 import BookingRequestForm from "@/app/components/BookingRequestForm";
+import SpaceAssistant from "@/app/components/SpaceAssistant";
+import AskAboutSpaceButton from "@/app/components/AskAboutSpaceButton";
 import SpaceAttributesDisplay from "@/app/components/SpaceAttributesDisplay";
 import SpaceGallerySection from "./space-gallery-section";
 import SpaceMapSection from "./space-map-section";
@@ -322,7 +324,7 @@ export default async function Page({
                 </li>
                 <li className="flex items-center gap-2">
                   <MessageCircle className="h-4 w-4 text-gray-500" />
-                  Message host before booking
+                  Ask about this space before booking
                 </li>
               </ul>
 
@@ -347,12 +349,7 @@ export default async function Page({
                   </p>
                 </div>
               </div>
-              <label
-                htmlFor="space-booking-toggle"
-                className="mt-4 inline-flex w-full cursor-pointer items-center justify-center rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-[#192a3a] transition hover:bg-gray-50"
-              >
-                Contact host
-              </label>
+              <AskAboutSpaceButton />
             </section>
           </aside>
         </div>
@@ -426,6 +423,12 @@ export default async function Page({
           </div>
         </div>
       </div>
+
+      <SpaceAssistant
+        spaceId={space.id}
+        spaceTitle={space.title}
+        spaceType={space.space_type}
+      />
     </main>
   );
 }
