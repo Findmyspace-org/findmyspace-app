@@ -29,6 +29,7 @@ import {
   CheckCircle2,
   MessageSquare,
   HelpCircle,
+  Inbox,
 } from "lucide-react";
 
 type MenuItem = {
@@ -56,6 +57,7 @@ type ActionNotification = {
     | "booking_paid"
     | "booking_message"
     | "listing_question"
+    | "listing_status"
     | "notice";
   /** When set, row comes from `notifications` table and can be marked read. */
   tableRowId?: string;
@@ -86,6 +88,20 @@ export default function Header() {
   const [notifications, setNotifications] = useState<ActionNotification[]>([]);
   const [bellRefresh, setBellRefresh] = useState(0);
   const [messageUnreadCount, setMessageUnreadCount] = useState(0);
+  /**
+   * Extra pending listing questions for the Comms badge.
+   *
+   * Why "extra": `bookingRequestActionCount` already absorbs unread
+   * `listing_question` notifications (see OWNER_BADGE_NOTIFICATION_TYPES
+   * below). To avoid double-counting, this number captures only the pending
+   * listing questions that are NOT already represented by an unread
+   * notification — i.e. the gap that opens when a host marks the notification
+   * read but hasn't actually answered the question yet.
+   *
+   * Calculated as: max(0, pendingHostQuestions - unreadListingQuestionNotifs).
+   */
+  const [pendingListingQuestionCount, setPendingListingQuestionCount] =
+    useState(0);
 
   const hideHeader = pathname === "/login" || pathname === "/signup";
 
@@ -144,6 +160,7 @@ export default function Header() {
         setBookingRequestActionCount(0);
         setAdminActionCount(0);
         setMessageUnreadCount(0);
+        setPendingListingQuestionCount(0);
         setNotifications([]);
       }
 
@@ -206,6 +223,7 @@ export default function Header() {
         setBookingRequestActionCount(0);
         setAdminActionCount(0);
         setMessageUnreadCount(0);
+        setPendingListingQuestionCount(0);
         setNotifications([]);
         return;
       }
@@ -338,8 +356,17 @@ export default function Header() {
           "booking_message",
           "identity_submitted",
           "bank_submitted",
+          "identity_verified",
+          "identity_rejected",
+          "bank_verified",
+          "bank_rejected",
           "listing_question",
           "listing_question_answered",
+          "listing_submitted",
+          "listing_pending",
+          "listing_rejected",
+          "listing_activated",
+          "ownership_proof_verified",
         ]);
 
         const RENTER_BADGE_NOTIFICATION_TYPES = new Set([
@@ -351,6 +378,14 @@ export default function Header() {
           "booking_request",
           "booking_message",
           "listing_question",
+          "listing_pending",
+          "listing_rejected",
+          "listing_activated",
+          "ownership_proof_verified",
+          "identity_verified",
+          "identity_rejected",
+          "bank_verified",
+          "bank_rejected",
         ]);
         const ADMIN_BADGE_NOTIFICATION_TYPES = new Set([
           "payment_received",
@@ -371,6 +406,75 @@ export default function Header() {
           } else if (messageCountError) {
             setMessageUnreadCount(0);
           }
+        }
+
+        // -------------------------------------------------------------------
+        // Pending listing-question count for the Comms badge.
+        //
+        // We separately count:
+        //   (a) pending host listing questions  (listing_yes_no_questions)
+        //   (b) unread `listing_question` notifications for this user
+        //
+        // The Comms badge already counts (b) via OWNER_BADGE_NOTIFICATION_TYPES
+        // below, so to avoid double-counting we add only the gap:
+        //   extra = max(0, pendingQuestions - unreadListingQuestionNotifs)
+        //
+        // This captures the case where a host clicked the bell row (marking
+        // the notification read) without actually answering the question.
+        //
+        // On any failure we default to 0 — never break header rendering.
+        // -------------------------------------------------------------------
+        let pendingQuestionsCount = 0;
+        if (isHost) {
+          try {
+            const {
+              count: pendingHostQ,
+              error: pendingHostError,
+            } = await supabase
+              .from("listing_yes_no_questions")
+              .select("id", { count: "exact", head: true })
+              .eq("owner_id", userId)
+              .eq("status", "pending");
+            if (pendingHostError) {
+              console.warn(
+                "Pending listing questions count failed:",
+                pendingHostError
+              );
+            } else if (typeof pendingHostQ === "number") {
+              pendingQuestionsCount = pendingHostQ;
+            }
+          } catch (err) {
+            console.warn("Pending listing questions count threw:", err);
+          }
+        }
+
+        let unreadListingQuestionNotifs = 0;
+        try {
+          const {
+            count: lqNotifCount,
+            error: lqNotifError,
+          } = await supabase
+            .from("notifications")
+            .select("id", { count: "exact", head: true })
+            .eq("user_id", userId)
+            .eq("type", "listing_question")
+            .eq("is_read", false);
+          if (lqNotifError) {
+            console.warn(
+              "Unread listing_question notifications count failed:",
+              lqNotifError
+            );
+          } else if (typeof lqNotifCount === "number") {
+            unreadListingQuestionNotifs = lqNotifCount;
+          }
+        } catch (err) {
+          console.warn("Unread listing_question notif count threw:", err);
+        }
+
+        if (mounted) {
+          setPendingListingQuestionCount(
+            Math.max(0, pendingQuestionsCount - unreadListingQuestionNotifs)
+          );
         }
 
         const { data: notificationRows, error: notificationsError } = await supabase
@@ -421,6 +525,18 @@ export default function Header() {
             else if (t === "listing_question" || t === "listing_question_answered")
               mappedType = "listing_question";
             else if (
+              t === "listing_submitted" ||
+              t === "listing_pending" ||
+              t === "listing_rejected" ||
+              t === "listing_activated" ||
+              t === "ownership_proof_verified" ||
+              t === "identity_verified" ||
+              t === "identity_rejected" ||
+              t === "bank_verified" ||
+              t === "bank_rejected"
+            ) {
+              mappedType = "listing_status";
+            } else if (
               t === "payment_received" ||
               t === "identity_submitted" ||
               t === "bank_submitted"
@@ -478,6 +594,7 @@ export default function Header() {
         setBookingRequestActionCount(0);
         setAdminActionCount(0);
         setMessageUnreadCount(0);
+        setPendingListingQuestionCount(0);
         setNotifications([]);
       }
     }
@@ -637,6 +754,18 @@ export default function Header() {
   const totalNotificationCount =
     myBookingActionCount + bookingRequestActionCount + adminActionCount;
 
+  /**
+   * Single source of truth for the Comms unread badge.
+   *
+   * `pendingListingQuestionCount` is the de-duplicated extra (see comment
+   * on its useState), so adding it here cannot double-count listing
+   * questions whose notifications are still unread.
+   */
+  const commsBadgeCount =
+    messageUnreadCount +
+    totalNotificationCount +
+    pendingListingQuestionCount;
+
   const menuSections: MenuSection[] = [
     {
       title: "Explore",
@@ -654,21 +783,20 @@ export default function Header() {
       items: [
         { label: "My dashboard", href: "/dashboard", icon: LayoutDashboard },
         {
+          // Comms is the single primary destination for all communication —
+          // platform notices, listing questions, booking messages, etc.
+          // The legacy /dashboard/messages, /dashboard/listing-questions and
+          // /dashboard/notifications routes still work for deep links.
+          label: "Comms",
+          href: "/dashboard/comms",
+          icon: Inbox,
+          badgeCount: commsBadgeCount,
+        },
+        {
           label: "My bookings",
           href: "/dashboard/my-bookings",
           icon: CalendarCheck,
           badgeCount: myBookingActionCount,
-        },
-        {
-          label: "Messages",
-          href: "/dashboard/messages",
-          icon: MessageSquare,
-          badgeCount: messageUnreadCount,
-        },
-        {
-          label: "Listing questions",
-          href: "/dashboard/listing-questions",
-          icon: HelpCircle,
         },
       ],
     });
@@ -677,35 +805,32 @@ export default function Header() {
       menuSections.push({
         title: "Hosting",
         items: [
-          { label: "Dashboard", href: "/dashboard/owner", icon: LayoutDashboard },
+          { label: "Host overview", href: "/dashboard/owner", icon: LayoutDashboard },
           { label: "List a space", onClick: handleListSpaceClick, icon: HousePlus },
           { label: "My listings", href: "/dashboard/listings", icon: Building2 },
           {
-            label: "Bookings & Request",
+            label: "Booking requests",
             href: "/dashboard/requests",
             icon: ClipboardList,
             badgeCount: bookingRequestActionCount,
           },
           {
-            label: "Host Admin",
-            href: "/dashboard/verification?step=overview",
-            icon: Settings,
-          },
-          {
-            label: "Messages",
-            href: "/dashboard/messages",
-            icon: MessageSquare,
-            badgeCount: messageUnreadCount,
-          },
-          {
-            label: "Listing questions",
-            href: "/dashboard/listing-questions",
-            icon: HelpCircle,
+            // See note in "My account" section above — Comms is now the single
+            // primary destination for owner ↔ renter communication.
+            label: "Comms",
+            href: "/dashboard/comms",
+            icon: Inbox,
+            badgeCount: commsBadgeCount,
           },
           {
             label: "Finance",
             href: "/dashboard/finance",
             icon: Landmark,
+          },
+          {
+            label: "Host settings",
+            href: "/dashboard/verification",
+            icon: Settings,
           },
         ],
       });
@@ -808,26 +933,33 @@ export default function Header() {
               )}
             </div>
 
-            {!loading && isLoggedIn && (
-              <Link
-                href="/dashboard/messages"
-                className="relative flex h-10 w-10 items-center justify-center rounded-md border border-gray-300 bg-white text-[#192a3a] hover:bg-gray-50 sm:h-11 sm:w-11"
-                aria-label={
-                  messageUnreadCount > 0
-                    ? `Messages, ${messageUnreadCount} unread`
-                    : "Messages"
-                }
-              >
-                <MessageSquare className="h-5 w-5" aria-hidden />
-                {messageUnreadCount > 0 ? (
-                  <span className="absolute -right-1 -top-1 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-[#192a3a] px-1 text-[10px] font-semibold text-white">
-                    {messageUnreadCount > 99 ? "99+" : messageUnreadCount}
-                  </span>
-                ) : null}
-              </Link>
-            )}
+            {!loading && isLoggedIn && (() => {
+              const commsLabel =
+                commsBadgeCount > 0
+                  ? `Comms Center, ${commsBadgeCount} unread`
+                  : "Comms Center";
+              return (
+                <Link
+                  href="/dashboard/comms"
+                  className="relative flex h-10 w-10 items-center justify-center rounded-md border border-gray-300 bg-white text-[#192a3a] hover:bg-gray-50 sm:h-11 sm:w-11"
+                  aria-label={commsLabel}
+                >
+                  <Inbox className="h-5 w-5" aria-hidden />
+                  {commsBadgeCount > 0 ? (
+                    <span className="absolute -right-1 -top-1 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-[#c1121f] px-1 text-[10px] font-semibold text-white">
+                      {commsBadgeCount > 99 ? "99+" : commsBadgeCount}
+                    </span>
+                  ) : null}
+                </Link>
+              );
+            })()}
 
-            {!loading && isLoggedIn && (
+            {/* The legacy bell-dropdown (notifications popover) was retired in
+                favour of the single Comms Center icon above. The /dashboard/notifications
+                archive remains reachable from inside Comms Center and via deep
+                links. The block below is left commented as historical context
+                while we observe Comms adoption — to be deleted in a follow-up. */}
+            {false && !loading && isLoggedIn && (
               <div className="relative" ref={bellRef}>
                 <button
                   type="button"
@@ -901,6 +1033,8 @@ export default function Header() {
                                 <MessageSquare className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
                               ) : notification.type === "listing_question" ? (
                                 <HelpCircle className="mt-0.5 h-4 w-4 shrink-0 text-[#c1121f]" />
+                              ) : notification.type === "listing_status" ? (
+                                <Building2 className="mt-0.5 h-4 w-4 shrink-0 text-[#0f2740]" />
                               ) : notification.type === "notice" ? (
                                 <Bell className="mt-0.5 h-4 w-4 shrink-0 text-gray-600" />
                               ) : (
@@ -911,6 +1045,26 @@ export default function Header() {
                           ))}
                         </div>
                       )}
+
+                      <div className="mt-2 space-y-1 border-t border-gray-100 pt-2">
+                        <Link
+                          href="/dashboard/comms"
+                          onClick={() => setBellOpen(false)}
+                          className="flex items-center justify-center gap-1.5 rounded-md bg-[#fff5f5] px-3 py-2 text-xs font-semibold text-[#c1121f] hover:bg-[#ffe7ea]"
+                        >
+                          <Inbox className="h-3.5 w-3.5" aria-hidden />
+                          Open Comms Center
+                          <span aria-hidden>→</span>
+                        </Link>
+                        <Link
+                          href="/dashboard/notifications"
+                          onClick={() => setBellOpen(false)}
+                          className="flex items-center justify-center gap-1.5 rounded-md px-3 py-2 text-xs font-medium text-[#475569] hover:bg-gray-100"
+                        >
+                          View all notifications
+                          <span aria-hidden>→</span>
+                        </Link>
+                      </div>
                     </div>
                   </div>
                 )}

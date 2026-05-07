@@ -1,0 +1,56 @@
+---
+description: Naming convention for new Supabase migrations
+globs: supabase/migrations/**/*.sql
+alwaysApply: true
+---
+
+# Supabase migration naming
+
+## Existing migrations — never rename
+
+The migrations dated `20260412…` through `20260507150000_listing_yes_no_questions.sql`
+use a `YYYYMMDDHHMMSS_description.sql` timestamp format. They have already been
+applied to a Supabase project, so renaming them would corrupt the
+`supabase_migrations.schema_migrations` history. **Leave those filenames
+untouched.**
+
+## New migrations — use sequential numbering
+
+Going forward, name new migrations with a 3-digit sequential prefix that
+continues from the highest number currently used (start at `001` if you can't
+see any earlier sequential migration in `supabase/migrations/`).
+
+```
+NNN_YYYYMMDD_short_description.sql
+```
+
+- `NNN` — zero-padded sequential counter, incremented by 1 each migration.
+- `YYYYMMDD` — date the migration was authored.
+- `short_description` — snake_case, terse, e.g. `add_assistant_messages`.
+
+### Examples
+
+```
+001_20260508_add_assistant_messages.sql
+002_20260510_listing_questions_question_id_index.sql
+003_20260515_admin_support_threads.sql
+```
+
+## Before adding a migration
+
+1. Run `ls supabase/migrations/` to find the highest existing `NNN_` prefix.
+2. Use `NNN + 1` for the new file.
+3. Never reuse a number, even if a migration was deleted.
+4. If the next migration is logically a small follow-up to the previous one,
+   it still gets its own next number — do not append `a`/`b` suffixes.
+
+## Caveat (be aware, not a blocker)
+
+Sequential `001_` filenames sort lexicographically **before** the legacy
+`2026…` timestamped files. This is fine for `supabase db push` (the CLI only
+runs migrations whose version is missing from `schema_migrations`), but
+`supabase db reset` will replay all migrations in lexicographic order. If you
+ever need a clean reset, the `001_` migrations will run before the `2026…`
+ones — make sure new migrations don't depend on objects that only exist
+in the legacy timestamped migrations, or place a guard (`IF NOT EXISTS`,
+`IF EXISTS`, conditional `DO` block) at the top.

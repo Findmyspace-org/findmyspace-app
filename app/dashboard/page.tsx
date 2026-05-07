@@ -20,7 +20,7 @@ import {
   UserPlus,
   Mail,
   Shield,
-  HelpCircle,
+  Inbox,
 } from "lucide-react";
 
 type ProfileRow = {
@@ -106,32 +106,45 @@ export default function DashboardPage() {
   const accountItems: DashboardItem[] = [
     { label: "My dashboard", href: "/dashboard", icon: LayoutDashboard },
     {
+      // Comms is the single primary communication destination. Listing
+      // questions, messages, and notifications all live inside it now —
+      // legacy routes remain reachable from inside Comms and via deep links.
+      // TODO: surface the same Comms unread badge that Header.tsx renders
+      //   (messageUnreadCount + totalNotificationCount + pending listing
+      //    questions). Skipped for V1 because the dashboard hub doesn't
+      //   currently fetch message-unread or notification counts; doing so
+      //   would duplicate the Header logic.
+      label: "Comms",
+      href: "/dashboard/comms",
+      icon: Inbox,
+    },
+    {
       label: "My bookings",
       href: "/dashboard/my-bookings",
       icon: CalendarCheck,
       badgeCount: myBookingActionCount,
     },
-    {
-      label: "Listing questions",
-      href: "/dashboard/listing-questions",
-      icon: HelpCircle,
-    },
   ];
 
   const hostingItems: DashboardItem[] = isHost
     ? [
-        { label: "List a space", href: "/dashboard/new-space", icon: HousePlus },
-        { label: "My Spaces", href: "/dashboard/listings", icon: Building2 },
         {
-          label: "Requests",
+          label: "Host overview",
+          href: "/dashboard/owner",
+          icon: LayoutDashboard,
+        },
+        { label: "List a space", href: "/dashboard/new-space", icon: HousePlus },
+        { label: "My listings", href: "/dashboard/listings", icon: Building2 },
+        {
+          label: "Booking requests",
           href: "/dashboard/requests",
           icon: ClipboardList,
           badgeCount: bookingRequestActionCount,
         },
         {
-          label: "Listing questions",
-          href: "/dashboard/listing-questions",
-          icon: HelpCircle,
+          label: "Comms",
+          href: "/dashboard/comms",
+          icon: Inbox,
         },
         { label: "Finance", href: "/dashboard/finance", icon: Landmark },
         { label: "Host settings", href: "/dashboard/verification", icon: Settings },

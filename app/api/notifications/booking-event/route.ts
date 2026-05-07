@@ -1,19 +1,39 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { sendEmail } from "@/lib/email";
+import { renderEmailLayout } from "@/lib/email-templates/EmailLayout";
 import {
-  bookingApprovedRenterTemplate,
-  bookingRequestOwnerTemplate,
-  paymentConfirmedTemplate,
-  sendEmail,
-} from "@/lib/email";
-import {
-  formatBookingRangeForEmail,
-  getDisplayName,
-} from "@/lib/bookingEmailHelpers";
+  buildBookingDeclinedCopy,
+  buildBookingExpiredOwnerCopy,
+  buildBookingExpiredRenterCopy,
+  buildBookingMessageCopy,
+  buildBookingRequestCopy,
+  buildPaymentConfirmedOwnerCopy,
+  buildPaymentConfirmedRenterCopy,
+  buildPaymentNeededCopy,
+} from "@/lib/communication-copy";
+import { formatBookingRangeForEmail } from "@/lib/bookingEmailHelpers";
 import { isCommunicationAllowed } from "@/lib/booking-communication";
 import { getCanonicalPublicSiteUrl } from "@/lib/site-url";
 import { buildModalLoginUrl } from "@/lib/auth-redirect";
 import { markNotificationsReadByBooking } from "@/lib/notification-lifecycle";
+
+/**
+ * Phase 2C complete:
+ *
+ * Every branch in this file now renders email through the shared
+ * `EmailLayout` + `lib/communication-copy` constants. The legacy inline HTML
+ * blocks and `paymentConfirmedTemplate` have been removed.
+ *
+ *   - booking_request_created          → buildBookingRequestCopy
+ *   - booking_approved_payment_needed  → buildPaymentNeededCopy
+ *   - booking_declined                 → buildBookingDeclinedCopy
+ *   - payment_confirmed (renter)       → buildPaymentConfirmedRenterCopy
+ *   - payment_confirmed (owner)        → buildPaymentConfirmedOwnerCopy
+ *   - booking_expired (renter)         → buildBookingExpiredRenterCopy
+ *   - booking_expired (owner)          → buildBookingExpiredOwnerCopy
+ *   - booking_message                  → buildBookingMessageCopy
+ */
 
 const MESSAGING_FORBIDDEN_MSG =
   "Messaging is only available after payment confirmation.";
@@ -166,19 +186,31 @@ export async function POST(req: NextRequest) {
     const periodLabel = formatBookingRangeForEmail(booking);
 
     if (eventType === "booking_request_created") {
+      const copy = buildBookingRequestCopy({
+        ownerFirstName: owner?.first_name ?? null,
+        renterFirstName: renter?.first_name ?? null,
+        spaceTitle: space?.title || "your space",
+        bookingType: booking.booking_unit,
+        periodLabel,
+        renterMessage: booking.notes || null,
+      });
+
       if (owner?.email) {
+        const rendered = renderEmailLayout({
+          preheader: copy.emailPreheader,
+          title: copy.emailTitle,
+          bodyLines: copy.emailBodyLines,
+          primaryCTA: {
+            label: copy.ctaLabel,
+            href: authNextUrl("/dashboard/requests"),
+          },
+          footerRole: copy.emailFooterRole,
+        });
         await sendEmail({
           to: owner.email,
-          subject: "New booking request - FindMySpace",
-          html: bookingRequestOwnerTemplate({
-            ownerName: getDisplayName(owner),
-            renterName: getDisplayName(renter),
-            spaceTitle: space?.title,
-            bookingType: booking.booking_unit,
-            periodLabel,
-            dashboardUrl: authNextUrl("/dashboard/requests"),
-            renterMessage: booking.notes || null,
-          }),
+          subject: copy.emailSubject,
+          html: rendered.html,
+          text: rendered.text,
         });
       }
 
@@ -187,8 +219,8 @@ export async function POST(req: NextRequest) {
           user_id: owner.id,
           role: "owner",
           type: "booking_request",
-          title: "New booking request",
-          message: `${getDisplayName(renter)} requested ${space?.title || "your space"}`,
+          title: copy.notificationTitle,
+          message: copy.notificationMessage,
           href: "/dashboard/requests",
           related_entity_type: "booking",
           related_entity_id: booking.id,
@@ -203,18 +235,30 @@ export async function POST(req: NextRequest) {
         userIds: booking.owner_id ? [booking.owner_id] : undefined,
       });
 
+      const copy = buildPaymentNeededCopy({
+        renterFirstName: renter?.first_name ?? null,
+        spaceTitle: space?.title || "the space",
+        periodLabel,
+        totalPrice: booking.total_price ?? null,
+        ownerMessage: booking.owner_response_message || null,
+      });
+
       if (renter?.email) {
+        const rendered = renderEmailLayout({
+          preheader: copy.emailPreheader,
+          title: copy.emailTitle,
+          bodyLines: copy.emailBodyLines,
+          primaryCTA: {
+            label: copy.ctaLabel,
+            href: authNextUrl("/dashboard/my-bookings"),
+          },
+          footerRole: copy.emailFooterRole,
+        });
         await sendEmail({
           to: renter.email,
-          subject: "Your booking was approved - payment needed",
-          html: bookingApprovedRenterTemplate({
-            renterName: getDisplayName(renter),
-            spaceTitle: space?.title,
-            periodLabel,
-            totalPrice: booking.total_price,
-            payUrl: authNextUrl("/dashboard/my-bookings"),
-            ownerMessage: booking.owner_response_message || null,
-          }),
+          subject: copy.emailSubject,
+          html: rendered.html,
+          text: rendered.text,
         });
       }
 
@@ -223,8 +267,8 @@ export async function POST(req: NextRequest) {
           user_id: renter.id,
           role: "renter",
           type: "payment_needed",
-          title: "Payment needed for your booking",
-          message: `${space?.title || "Your booking"} was approved and is awaiting payment`,
+          title: copy.notificationTitle,
+          message: copy.notificationMessage,
           href: "/dashboard/my-bookings",
           related_entity_type: "booking",
           related_entity_id: booking.id,
@@ -238,32 +282,29 @@ export async function POST(req: NextRequest) {
         types: ["booking_request", "payment_needed"],
       });
 
+      const copy = buildBookingDeclinedCopy({
+        renterFirstName: renter?.first_name ?? null,
+        spaceTitle: space?.title || "this space",
+        periodLabel,
+        ownerMessage: booking.owner_response_message || null,
+      });
+
       if (renter?.email) {
+        const rendered = renderEmailLayout({
+          preheader: copy.emailPreheader,
+          title: copy.emailTitle,
+          bodyLines: copy.emailBodyLines,
+          primaryCTA: {
+            label: copy.ctaLabel,
+            href: authNextUrl("/dashboard/my-bookings"),
+          },
+          footerRole: copy.emailFooterRole,
+        });
         await sendEmail({
           to: renter.email,
-          subject: "Your booking request was declined",
-          html: `
-            <div style="margin:0;padding:24px;background:#f5f7fb;font-family:Arial,sans-serif;color:#192a3a;line-height:1.5;">
-              <div style="max-width:640px;margin:0 auto;background:#ffffff;border:1px solid #e5e7eb;border-radius:16px;padding:32px;">
-                <h1 style="margin:0 0 16px;font-size:24px;line-height:1.3;">Booking request declined</h1>
-                <p style="margin:0 0 14px;font-size:15px;">Hello ${getDisplayName(renter)},</p>
-                <p style="margin:0 0 14px;font-size:15px;">Your booking request for <strong>${space?.title || "this space"}</strong> was declined.</p>
-                <p style="margin:0 0 14px;font-size:15px;"><strong>Requested period:</strong> ${periodLabel}</p>
-                ${booking.owner_response_message ? `
-                <div style="margin:0 0 24px;padding:18px 20px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:12px;">
-                  <p style="margin:0 0 8px;font-size:13px;color:#192a3a;font-weight:600;">Message from owner</p>
-                  <p style="margin:0;font-size:15px;color:#192a3a;white-space:pre-wrap;">${booking.owner_response_message}</p>
-                </div>
-                ` : ""}
-                <p style="margin:0 0 28px;">
-                  <a href="${appBaseUrl}/dashboard/my-bookings" style="display:inline-block;padding:14px 20px;background:#192a3a;color:#ffffff;text-decoration:none;border-radius:10px;font-size:15px;font-weight:600;">
-                    View my bookings
-                  </a>
-                </p>
-                <p style="margin:0;font-size:13px;color:#64748b;">FindMySpace</p>
-              </div>
-            </div>
-          `,
+          subject: copy.emailSubject,
+          html: rendered.html,
+          text: rendered.text,
         });
       }
 
@@ -272,8 +313,8 @@ export async function POST(req: NextRequest) {
           user_id: renter.id,
           role: "renter",
           type: "booking_declined",
-          title: "Booking request declined",
-          message: `${space?.title || "Your booking request"} was declined by the owner`,
+          title: copy.notificationTitle,
+          message: copy.notificationMessage,
           href: "/dashboard/my-bookings",
           related_entity_type: "booking",
           related_entity_id: booking.id,
@@ -287,33 +328,56 @@ export async function POST(req: NextRequest) {
         types: ["payment_needed", "booking_request"],
       });
 
+      const renterCopy = buildPaymentConfirmedRenterCopy({
+        renterFirstName: renter?.first_name ?? null,
+        spaceTitle: space?.title || "the space",
+        periodLabel,
+        totalPrice: booking.total_price ?? null,
+        ownerMessage: null,
+      });
+      const ownerCopy = buildPaymentConfirmedOwnerCopy({
+        ownerFirstName: owner?.first_name ?? null,
+        renterFirstName: renter?.first_name ?? null,
+        spaceTitle: space?.title || "your space",
+        periodLabel,
+        totalPrice: booking.total_price ?? null,
+      });
+
       if (renter?.email) {
+        const rendered = renderEmailLayout({
+          preheader: renterCopy.emailPreheader,
+          title: renterCopy.emailTitle,
+          bodyLines: renterCopy.emailBodyLines,
+          primaryCTA: {
+            label: renterCopy.ctaLabel,
+            href: authNextUrl("/dashboard/my-bookings"),
+          },
+          footerRole: renterCopy.emailFooterRole,
+        });
         await sendEmail({
           to: renter.email,
-          subject: "Your booking is confirmed",
-          html: paymentConfirmedTemplate({
-            name: getDisplayName(renter),
-            spaceTitle: space?.title,
-            periodLabel,
-            totalPrice: booking.total_price,
-            bookingsUrl: authNextUrl("/dashboard/my-bookings"),
-            ownerMessage: null,
-          }),
+          subject: renterCopy.emailSubject,
+          html: rendered.html,
+          text: rendered.text,
         });
       }
 
       if (owner?.email) {
+        const rendered = renderEmailLayout({
+          preheader: ownerCopy.emailPreheader,
+          title: ownerCopy.emailTitle,
+          bodyLines: ownerCopy.emailBodyLines,
+          primaryCTA: {
+            label: ownerCopy.ctaLabel,
+            href: authNextUrl("/dashboard/requests"),
+          },
+          footerRole: ownerCopy.emailFooterRole,
+        });
         await sendEmail({
           to: owner.email,
-          subject: "Payment received - booking confirmed",
-          html: paymentConfirmedTemplate({
-            name: getDisplayName(owner),
-            spaceTitle: space?.title,
-            periodLabel,
-            totalPrice: booking.total_price,
-            bookingsUrl: authNextUrl("/dashboard/requests"),
-            ownerMessage: null,
-          }),
+          subject: ownerCopy.emailSubject,
+          html: rendered.html,
+          text: rendered.text,
         });
       }
 
@@ -322,8 +386,8 @@ export async function POST(req: NextRequest) {
           user_id: renter.id,
           role: "renter",
           type: "booking_confirmed",
-          title: "Booking confirmed",
-          message: `${space?.title || "Your booking"} is confirmed and paid`,
+          title: renterCopy.notificationTitle,
+          message: renterCopy.notificationMessage,
           href: "/dashboard/my-bookings",
           related_entity_type: "booking",
           related_entity_id: booking.id,
@@ -335,8 +399,8 @@ export async function POST(req: NextRequest) {
           user_id: owner.id,
           role: "owner",
           type: "booking_paid",
-          title: "Payment received - booking confirmed",
-          message: `${getDisplayName(renter)} paid for ${space?.title || "your space"}. The booking is now confirmed.`,
+          title: ownerCopy.notificationTitle,
+          message: ownerCopy.notificationMessage,
           href: "/dashboard/requests",
           related_entity_type: "booking",
           related_entity_id: booking.id,
@@ -365,50 +429,52 @@ export async function POST(req: NextRequest) {
         types: ["payment_needed", "booking_request"],
       });
 
+      const renterCopy = buildBookingExpiredRenterCopy({
+        renterFirstName: renter?.first_name ?? null,
+        spaceTitle: space?.title || "this space",
+        periodLabel,
+      });
+      const ownerCopy = buildBookingExpiredOwnerCopy({
+        ownerFirstName: owner?.first_name ?? null,
+        spaceTitle: space?.title || "your space",
+        periodLabel,
+      });
+
       if (renter?.email) {
+        const rendered = renderEmailLayout({
+          preheader: renterCopy.emailPreheader,
+          title: renterCopy.emailTitle,
+          bodyLines: renterCopy.emailBodyLines,
+          primaryCTA: {
+            label: renterCopy.ctaLabel,
+            href: authNextUrl("/dashboard/my-bookings"),
+          },
+          footerRole: renterCopy.emailFooterRole,
+        });
         await sendEmail({
           to: renter.email,
-          subject: "Booking expired - payment not received",
-          html: `
-            <div style="margin:0;padding:24px;background:#f5f7fb;font-family:Arial,sans-serif;color:#192a3a;line-height:1.5;">
-              <div style="max-width:640px;margin:0 auto;background:#ffffff;border:1px solid #e5e7eb;border-radius:16px;padding:32px;">
-                <h1 style="margin:0 0 16px;font-size:24px;line-height:1.3;">Booking expired</h1>
-                <p style="margin:0 0 14px;font-size:15px;">Hello ${getDisplayName(renter)},</p>
-                <p style="margin:0 0 14px;font-size:15px;">Your booking for <strong>${space?.title || "this space"}</strong> expired because payment was not completed within 24 hours.</p>
-                <p style="margin:0 0 14px;font-size:15px;"><strong>Requested period:</strong> ${periodLabel}</p>
-                <p style="margin:0 0 28px;font-size:15px;">Thank you for your interest. You can submit a new request if you would still like to book this space.</p>
-                <p style="margin:0 0 28px;">
-                  <a href="${appBaseUrl}/dashboard/my-bookings" style="display:inline-block;padding:14px 20px;background:#192a3a;color:#ffffff;text-decoration:none;border-radius:10px;font-size:15px;font-weight:600;">
-                    View my bookings
-                  </a>
-                </p>
-                <p style="margin:0;font-size:13px;color:#64748b;">FindMySpace</p>
-              </div>
-            </div>
-          `,
+          subject: renterCopy.emailSubject,
+          html: rendered.html,
+          text: rendered.text,
         });
       }
 
       if (owner?.email) {
+        const rendered = renderEmailLayout({
+          preheader: ownerCopy.emailPreheader,
+          title: ownerCopy.emailTitle,
+          bodyLines: ownerCopy.emailBodyLines,
+          primaryCTA: {
+            label: ownerCopy.ctaLabel,
+            href: authNextUrl("/dashboard/requests"),
+          },
+          footerRole: ownerCopy.emailFooterRole,
+        });
         await sendEmail({
           to: owner.email,
-          subject: "Booking request expired - FindMySpace",
-          html: `
-            <div style="margin:0;padding:24px;background:#f5f7fb;font-family:Arial,sans-serif;color:#192a3a;line-height:1.5;">
-              <div style="max-width:640px;margin:0 auto;background:#ffffff;border:1px solid #e5e7eb;border-radius:16px;padding:32px;">
-                <h1 style="margin:0 0 16px;font-size:24px;line-height:1.3;">Booking expired</h1>
-                <p style="margin:0 0 14px;font-size:15px;">Hello ${getDisplayName(owner)},</p>
-                <p style="margin:0 0 14px;font-size:15px;">A booking request for <strong>${space?.title || "your space"}</strong> expired because the renter did not complete payment within 24 hours. The dates are available again.</p>
-                <p style="margin:0 0 14px;font-size:15px;"><strong>Requested period:</strong> ${periodLabel}</p>
-                <p style="margin:0 0 28px;">
-                  <a href="${appBaseUrl}/dashboard/requests" style="display:inline-block;padding:14px 20px;background:#192a3a;color:#ffffff;text-decoration:none;border-radius:10px;font-size:15px;font-weight:600;">
-                    Open requests
-                  </a>
-                </p>
-                <p style="margin:0;font-size:13px;color:#64748b;">FindMySpace</p>
-              </div>
-            </div>
-          `,
+          subject: ownerCopy.emailSubject,
+          html: rendered.html,
+          text: rendered.text,
         });
       }
 
@@ -417,8 +483,8 @@ export async function POST(req: NextRequest) {
           user_id: renter.id,
           role: "renter",
           type: "booking_expired",
-          title: "Booking expired",
-          message: `${space?.title || "Your booking"} expired — payment was not received in time`,
+          title: renterCopy.notificationTitle,
+          message: renterCopy.notificationMessage,
           href: "/dashboard/my-bookings",
           related_entity_type: "booking",
           related_entity_id: booking.id,
@@ -430,8 +496,8 @@ export async function POST(req: NextRequest) {
           user_id: owner.id,
           role: "owner",
           type: "booking_expired",
-          title: "Booking request expired",
-          message: `A request for ${space?.title || "your space"} expired without payment; dates are open again`,
+          title: ownerCopy.notificationTitle,
+          message: ownerCopy.notificationMessage,
           href: "/dashboard/requests",
           related_entity_type: "booking",
           related_entity_id: booking.id,
@@ -459,11 +525,14 @@ export async function POST(req: NextRequest) {
       const rawMessage = bookingMessageText;
 
       const resolvedRecipientId = rawRecipientId || null;
-      const resolvedSenderId = rawSenderId || null;
+      // `senderId` is still accepted in the request payload for backwards
+      // compatibility but is no longer needed: the new shared copy describes
+      // the sender by role ("from the host" / "from the renter") rather than
+      // by name.
+      void rawSenderId;
       const messagePreview = String(rawMessage || "").trim();
 
       let recipientProfile = null as any;
-      let senderProfile = null as any;
 
       if (resolvedRecipientId) {
         const { data } = await (supabaseAdmin.from("profiles") as any)
@@ -473,30 +542,25 @@ export async function POST(req: NextRequest) {
         recipientProfile = data;
       }
 
-      if (resolvedSenderId) {
-        const { data } = await (supabaseAdmin.from("profiles") as any)
-          .select("id, first_name, last_name, email")
-          .eq("id", resolvedSenderId)
-          .single();
-        senderProfile = data;
-      }
-
       const actionUrl = `/dashboard/messages/${booking.id}`;
-
-      const senderName = getDisplayName(senderProfile);
       const resolvedSpaceTitle = space?.title || "your booking";
-      const notificationTitle = `New message about ${resolvedSpaceTitle}`;
-      const notificationMessage = messagePreview
-        ? `${senderName}: ${messagePreview.length > 120 ? `${messagePreview.slice(0, 117)}...` : messagePreview}`
-        : `${senderName} sent you a new message about ${resolvedSpaceTitle}.`;
+      const recipientRole: "renter" | "host" =
+        resolvedRecipientId === booking.owner_id ? "host" : "renter";
+
+      const copy = buildBookingMessageCopy({
+        recipientRole,
+        recipientFirstName: recipientProfile?.first_name ?? null,
+        spaceTitle: resolvedSpaceTitle,
+        messagePreview,
+      });
 
       if (recipientProfile?.id) {
         await createNotification({
           user_id: recipientProfile.id,
           role: recipientProfile.id === booking.owner_id ? "owner" : "renter",
           type: "booking_message",
-          title: notificationTitle,
-          message: notificationMessage,
+          title: copy.notificationTitle,
+          message: copy.notificationMessage,
           href: actionUrl,
           related_entity_type: "booking",
           related_entity_id: booking.id,
@@ -504,33 +568,21 @@ export async function POST(req: NextRequest) {
       }
 
       if (recipientProfile?.email) {
+        const rendered = renderEmailLayout({
+          preheader: copy.emailPreheader,
+          title: copy.emailTitle,
+          bodyLines: copy.emailBodyLines,
+          primaryCTA: {
+            label: copy.ctaLabel,
+            href: `${appBaseUrl}${actionUrl}`,
+          },
+          footerRole: copy.emailFooterRole,
+        });
         await sendEmail({
           to: recipientProfile.email,
-          subject:
-            resolvedRecipientId === booking.owner_id
-              ? "New message from renter - FindMySpace"
-              : "New message from owner - FindMySpace",
-          html: `
-            <div style="margin:0;padding:24px;background:#f5f7fb;font-family:Arial,sans-serif;color:#192a3a;line-height:1.5;">
-              <div style="max-width:640px;margin:0 auto;background:#ffffff;border:1px solid #e5e7eb;border-radius:16px;padding:32px;">
-                <h1 style="margin:0 0 16px;font-size:24px;line-height:1.3;">New booking message</h1>
-                <p style="margin:0 0 14px;font-size:15px;">Hello ${getDisplayName(recipientProfile)},</p>
-                <p style="margin:0 0 20px;font-size:15px;">${senderName} sent you a new message about <strong>${resolvedSpaceTitle}</strong>.</p>
-                ${messagePreview ? `
-                <div style="margin:0 0 24px;padding:18px 20px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:12px;">
-                  <p style="margin:0 0 8px;font-size:13px;color:#192a3a;font-weight:600;">Message</p>
-                  <p style="margin:0;font-size:15px;color:#192a3a;white-space:pre-wrap;">${messagePreview}</p>
-                </div>
-                ` : ""}
-                <p style="margin:0 0 28px;">
-                  <a href="${appBaseUrl}/dashboard/messages/${booking.id}" style="display:inline-block;padding:14px 20px;background:#192a3a;color:#ffffff;text-decoration:none;border-radius:10px;font-size:15px;font-weight:600;">
-                    Open conversation
-                  </a>
-                </p>
-                <p style="margin:0;font-size:13px;color:#64748b;">FindMySpace</p>
-              </div>
-            </div>
-          `,
+          subject: copy.emailSubject,
+          html: rendered.html,
+          text: rendered.text,
         });
       }
 

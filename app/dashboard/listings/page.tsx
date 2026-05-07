@@ -2,10 +2,15 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import RequireAuth from "@/app/components/RequireAuth";
 import OwnerVerificationAlerts from "@/app/components/OwnerVerificationAlerts";
+import {
+  FOCUS_HIGHLIGHT_CLASS,
+  useFocusHighlight,
+} from "@/lib/use-focus-highlight";
 import {
   MapPin,
   Tag,
@@ -88,7 +93,13 @@ type ProfileVerificationRow = {
 };
 
 
-export default function MyListingsPage() {
+function MyListingsPageContent({
+  focusSpaceId,
+  createdStatus,
+}: {
+  focusSpaceId: string | null;
+  createdStatus: string | null;
+}) {
   const [sessionEmail, setSessionEmail] = useState<string | null>(null);
   const [spaces, setSpaces] = useState<Space[]>([]);
 
@@ -100,14 +111,49 @@ export default function MyListingsPage() {
   const [searchText, setSearchText] = useState("");
   const [selectedSpace, setSelectedSpace] = useState<Space | null>(null);
 
-  const createdStatus =
-    typeof window !== "undefined"
-      ? new URLSearchParams(window.location.search).get("created")
-      : null;
+  const { highlightedId } = useFocusHighlight({
+    focusId: focusSpaceId,
+    ready: !loading,
+    prefix: "space",
+  });
 
   useEffect(() => {
     loadMyListings();
   }, []);
+
+  // Mark related listing-lifecycle notifications for this space as read.
+  useEffect(() => {
+    if (!focusSpaceId || loading) return;
+    if (!spaces.some((s) => s.id === focusSpaceId)) return;
+    void (async () => {
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        if (!session?.access_token) return;
+        await fetch("/api/notifications/read-by-related", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({
+            relatedEntityType: "space",
+            relatedEntityId: focusSpaceId,
+            types: [
+              "listing_submitted",
+              "listing_pending",
+              "listing_rejected",
+              "listing_activated",
+              "ownership_proof_verified",
+            ],
+          }),
+        });
+      } catch {
+        /* non-fatal */
+      }
+    })();
+  }, [focusSpaceId, loading, spaces]);
 
   async function loadMyListings() {
     setLoading(true);
@@ -499,6 +545,7 @@ export default function MyListingsPage() {
                 return (
                   <div
                     key={space.id}
+                    id={`space-${space.id}`}
                     role="button"
                     tabIndex={0}
                     onClick={() => setSelectedSpace(space)}
@@ -508,7 +555,9 @@ export default function MyListingsPage() {
                         setSelectedSpace(space);
                       }
                     }}
-                    className="w-full overflow-hidden rounded-md border border-gray-200 bg-white text-left shadow-sm transition hover:border-gray-300 hover:bg-[#fbfcfd] focus:outline-none focus:ring-2 focus:ring-[#192a3a]/20"
+                    className={`w-full overflow-hidden rounded-md border border-gray-200 bg-white text-left shadow-sm transition hover:border-gray-300 hover:bg-[#fbfcfd] focus:outline-none focus:ring-2 focus:ring-[#192a3a]/20 ${
+                      highlightedId === space.id ? FOCUS_HIGHLIGHT_CLASS : ""
+                    }`}
                   >
                     <div className="grid items-center gap-3 p-3 md:grid-cols-[92px_1fr_auto]">
                       <div className="relative h-[72px] w-full overflow-hidden rounded-md bg-gray-100 md:w-[92px]">
@@ -888,4 +937,28 @@ function formatDepositType(
   if (depositMonths === 1) return "1 month deposit";
   if (depositMonths === 2) return "2 months deposit";
   return "No deposit";
+}
+
+function MyListingsSearchParamsClient() {
+  const searchParams = useSearchParams();
+  const focusSpaceId = searchParams.get("focus");
+  const createdStatus = searchParams.get("created");
+  return (
+    <MyListingsPageContent
+      focusSpaceId={focusSpaceId}
+      createdStatus={createdStatus}
+    />
+  );
+}
+
+export default function MyListingsPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="px-6 py-10 text-sm text-gray-600">Loading…</div>
+      }
+    >
+      <MyListingsSearchParamsClient />
+    </Suspense>
+  );
 }

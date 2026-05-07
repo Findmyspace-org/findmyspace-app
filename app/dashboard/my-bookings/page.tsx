@@ -44,6 +44,10 @@ import {
   formatZarCompact,
   type BookingChargeLite,
 } from "@/lib/renter-booking-finance";
+import {
+  FOCUS_HIGHLIGHT_CLASS,
+  useFocusHighlight,
+} from "@/lib/use-focus-highlight";
 
 type Booking = {
   id: string;
@@ -208,9 +212,11 @@ type BookingMessage = {
 function MyBookingsPageContent({
   payment,
   bookingId,
+  focusBookingId,
 }: {
   payment: string | null;
   bookingId: string | null;
+  focusBookingId: string | null;
 }) {
   const [sessionEmail, setSessionEmail] = useState<string | null>(null);
   const [sessionUserId, setSessionUserId] = useState<string | null>(null);
@@ -245,9 +251,57 @@ function MyBookingsPageContent({
     Record<string, { email: string | null; phone: string | null }>
   >({});
 
+  const { highlightedId } = useFocusHighlight({
+    focusId: focusBookingId,
+    ready: !loading,
+    prefix: "booking-card",
+  });
+
   useEffect(() => {
     loadMyBookings();
   }, []);
+
+  // When arriving via `?focus=`, expand the matching booking once data loaded.
+  useEffect(() => {
+    if (!focusBookingId || loading) return;
+    if (bookings.some((b) => b.id === focusBookingId)) {
+      setExpandedBookingId(focusBookingId);
+    }
+  }, [focusBookingId, loading, bookings]);
+
+  // Mark related renter-side notifications for this booking as read.
+  useEffect(() => {
+    if (!focusBookingId || loading) return;
+    if (!bookings.some((b) => b.id === focusBookingId)) return;
+    void (async () => {
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        if (!session?.access_token) return;
+        await fetch("/api/notifications/read-by-related", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({
+            relatedEntityType: "booking",
+            relatedEntityId: focusBookingId,
+            types: [
+              "payment_needed",
+              "booking_confirmed",
+              "booking_declined",
+              "booking_expired",
+              "booking_message",
+            ],
+          }),
+        });
+      } catch {
+        /* non-fatal */
+      }
+    })();
+  }, [focusBookingId, loading, bookings]);
 
   useEffect(() => {
     if (payment === "success") {
@@ -1061,7 +1115,10 @@ function MyBookingsPageContent({
                 return (
                   <div
                     key={booking.id}
-                    className="overflow-hidden rounded-md border border-gray-200 bg-white text-left shadow-sm transition hover:border-gray-300 hover:bg-[#fbfcfd]"
+                    id={`booking-card-${booking.id}`}
+                    className={`overflow-hidden rounded-md border border-gray-200 bg-white text-left shadow-sm transition hover:border-gray-300 hover:bg-[#fbfcfd] ${
+                      highlightedId === booking.id ? FOCUS_HIGHLIGHT_CLASS : ""
+                    }`}
                   >
                     <div className="flex flex-col md:flex-row md:items-stretch">
                       <div
@@ -1705,8 +1762,15 @@ function MyBookingsSearchParamsClient() {
   const searchParams = useSearchParams();
   const payment = searchParams.get("payment");
   const bookingId = searchParams.get("bookingId");
+  const focusBookingId = searchParams.get("focus");
 
-  return <MyBookingsPageContent payment={payment} bookingId={bookingId} />;
+  return (
+    <MyBookingsPageContent
+      payment={payment}
+      bookingId={bookingId}
+      focusBookingId={focusBookingId}
+    />
+  );
 }
 
 export default function MyBookingsPage() {

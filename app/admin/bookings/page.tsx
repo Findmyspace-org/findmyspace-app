@@ -1,7 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import {
+  FOCUS_HIGHLIGHT_CLASS,
+  useFocusHighlight,
+} from "@/lib/use-focus-highlight";
 import {
   Ban,
   Building2,
@@ -40,7 +45,11 @@ type AdminBookingRow = {
   createdAt: string | null;
 };
 
-export default function AdminBookingsPage() {
+function AdminBookingsPageContent({
+  focusBookingId,
+}: {
+  focusBookingId: string | null;
+}) {
   const [role, setRole] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
@@ -58,6 +67,22 @@ export default function AdminBookingsPage() {
   const [supportReason, setSupportReason] = useState("");
   const [supportBusy, setSupportBusy] = useState(false);
   const [payLinkResult, setPayLinkResult] = useState<string | null>(null);
+
+  const { highlightedId } = useFocusHighlight({
+    focusId: focusBookingId,
+    ready: !loading,
+    prefix: "admin-booking",
+  });
+
+  // When arriving via `?focus=…`, broaden filters so the row is visible and
+  // pre-populate the search box (the booking id is also queryable).
+  useEffect(() => {
+    if (!focusBookingId || loading) return;
+    const found = bookings.some((b) => b.id === focusBookingId);
+    if (!found) return;
+    setStatusFilter("all");
+    setPaymentFilter("all");
+  }, [focusBookingId, loading, bookings]);
 
   const checkRole = useCallback(async () => {
     const {
@@ -455,7 +480,13 @@ export default function AdminBookingsPage() {
               </thead>
               <tbody>
                 {bookings.map((b) => (
-                  <tr key={b.id} className="border-b border-gray-100">
+                  <tr
+                    key={b.id}
+                    id={`admin-booking-${b.id}`}
+                    className={`border-b border-gray-100 ${
+                      highlightedId === b.id ? FOCUS_HIGHLIGHT_CLASS : ""
+                    }`}
+                  >
                     <td className="max-w-[140px] px-3 py-3 font-mono text-xs text-[#192a3a]">
                       {b.id}
                     </td>
@@ -640,5 +671,23 @@ export default function AdminBookingsPage() {
         )}
       </div>
     </main>
+  );
+}
+
+function AdminBookingsSearchParamsClient() {
+  const searchParams = useSearchParams();
+  const focusBookingId = searchParams.get("focus");
+  return <AdminBookingsPageContent focusBookingId={focusBookingId} />;
+}
+
+export default function AdminBookingsPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="px-6 py-10 text-sm text-gray-600">Loading…</div>
+      }
+    >
+      <AdminBookingsSearchParamsClient />
+    </Suspense>
   );
 }

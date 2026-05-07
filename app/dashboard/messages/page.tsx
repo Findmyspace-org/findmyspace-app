@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { MessageSquare, Loader2 } from "lucide-react";
+import { ArrowLeft, MessageSquare, Loader2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import RequireAuth from "@/app/components/RequireAuth";
 
@@ -78,6 +78,13 @@ export default function MessagesInboxPage() {
     <RequireAuth>
       <main className="min-h-screen bg-[#f8fafb] px-4 py-8 text-[#192a3a] sm:px-6">
         <div className="mx-auto max-w-3xl">
+          <Link
+            href="/dashboard/comms"
+            className="mb-4 inline-flex items-center gap-1.5 text-xs font-medium text-[#475569] underline-offset-2 hover:text-[#0f172a] hover:underline"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
+            Back to Comms Center
+          </Link>
           <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <h1 className="text-2xl font-semibold tracking-tight">Messages</h1>

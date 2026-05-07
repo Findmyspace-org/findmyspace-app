@@ -1,7 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import {
+  FOCUS_HIGHLIGHT_CLASS,
+  useFocusHighlight,
+} from "@/lib/use-focus-highlight";
 import {
   Building2,
   CheckCircle2,
@@ -81,7 +86,11 @@ type OwnerVerificationRecord = {
   listingTitles: string[];
 };
 
-export default function AdminVerificationPage() {
+function AdminVerificationPageContent({
+  focusProfileId,
+}: {
+  focusProfileId: string | null;
+}) {
   const [role, setRole] = useState<string | null>(null);
   const [records, setRecords] = useState<OwnerVerificationRecord[]>([]);
   const [statusFilter, setStatusFilter] = useState("pending");
@@ -99,9 +108,27 @@ export default function AdminVerificationPage() {
   const [ownerComment, setOwnerComment] = useState<Record<string, string>>({});
   const [bankComment, setBankComment] = useState<Record<string, string>>({});
 
+  const { highlightedId } = useFocusHighlight({
+    focusId: focusProfileId,
+    ready: !loading,
+    prefix: "verification-profile",
+  });
+
   useEffect(() => {
     loadVerificationRecords();
   }, []);
+
+  // When a profile is focused via `?profile=…`, broaden filter (so they're
+  // visible regardless of pending/verified/rejected) and auto-expand identity.
+  useEffect(() => {
+    if (!focusProfileId || loading) return;
+    const found = records.find((r) => r.owner_id === focusProfileId);
+    if (!found) return;
+    setStatusFilter("all");
+    setExpandedSections((prev) =>
+      prev[focusProfileId] ? prev : { ...prev, [focusProfileId]: "identity" }
+    );
+  }, [focusProfileId, loading, records]);
 
   async function loadVerificationRecords() {
     setLoading(true);
@@ -342,6 +369,22 @@ export default function AdminVerificationPage() {
           }),
         });
       }
+
+      // Notify + email the host of the decision.
+      try {
+        await fetch("/api/notifications/verification-event", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId: ownerId,
+            eventType:
+              nextStatus === "verified" ? "identity_verified" : "identity_rejected",
+            adminComment: comment,
+          }),
+        });
+      } catch (notifyErr) {
+        console.error("Failed to notify host of identity decision:", notifyErr);
+      }
     }
     await loadVerificationRecords();
   }
@@ -394,6 +437,22 @@ export default function AdminVerificationPage() {
             types: ["bank_submitted"],
           }),
         });
+      }
+
+      // Notify + email the host of the decision.
+      try {
+        await fetch("/api/notifications/verification-event", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId: ownerId,
+            eventType:
+              nextStatus === "verified" ? "bank_verified" : "bank_rejected",
+            adminComment: comment,
+          }),
+        });
+      } catch (notifyErr) {
+        console.error("Failed to notify host of bank decision:", notifyErr);
       }
     }
     await loadVerificationRecords();
@@ -730,7 +789,12 @@ export default function AdminVerificationPage() {
               return (
                 <div
                   key={record.owner_id}
-                  className="rounded-md border border-gray-300 bg-white p-5 shadow-sm"
+                  id={`verification-profile-${record.owner_id}`}
+                  className={`rounded-md border border-gray-300 bg-white p-5 shadow-sm ${
+                    highlightedId === record.owner_id
+                      ? FOCUS_HIGHLIGHT_CLASS
+                      : ""
+                  }`}
                 >
                   <div className="mb-3 flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
                     <div className="flex-1">
@@ -1147,5 +1211,23 @@ export default function AdminVerificationPage() {
         )}
       </div>
     </main>
+  );
+}
+
+function AdminVerificationSearchParamsClient() {
+  const searchParams = useSearchParams();
+  const focusProfileId = searchParams.get("profile");
+  return <AdminVerificationPageContent focusProfileId={focusProfileId} />;
+}
+
+export default function AdminVerificationPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="px-6 py-10 text-sm text-gray-600">Loading…</div>
+      }
+    >
+      <AdminVerificationSearchParamsClient />
+    </Suspense>
   );
 }

@@ -5,7 +5,6 @@ import BookingSheetBootstrap from "./booking-sheet-bootstrap";
 import { supabase } from "@/lib/supabase";
 import BookingRequestForm from "@/app/components/BookingRequestForm";
 import SpaceAssistant from "@/app/components/SpaceAssistant";
-import AskAboutSpaceButton from "@/app/components/AskAboutSpaceButton";
 import SpaceAttributesDisplay from "@/app/components/SpaceAttributesDisplay";
 import SpaceGallerySection from "./space-gallery-section";
 import SpaceMapSection from "./space-map-section";
@@ -349,7 +348,12 @@ export default async function Page({
                   </p>
                 </div>
               </div>
-              <AskAboutSpaceButton />
+              <p className="mt-3 text-xs leading-relaxed text-gray-500">
+                Tap{" "}
+                <span className="font-medium text-[#192a3a]">Ask about this space</span>{" "}
+                in the corner to get instant answers from the listing details, or send the
+                host a yes/no question.
+              </p>
             </section>
           </aside>
         </div>
@@ -428,6 +432,7 @@ export default async function Page({
         spaceId={space.id}
         spaceTitle={space.title}
         spaceType={space.space_type}
+        bookingUnit={space.booking_unit}
       />
     </main>
   );

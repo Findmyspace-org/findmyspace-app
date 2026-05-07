@@ -101,7 +101,7 @@ export default function HomePage() {
               <button
                 type="button"
                 onClick={() => router.push(BROWSE_SPACES_HREF)}
-                className="inline-flex min-h-[46px] w-full items-center justify-center rounded-xl bg-[#c1121f] px-5 py-2.5 text-sm font-semibold text-white shadow-[0_4px_18px_rgba(193,18,31,0.38),0_1px_2px_rgba(15,23,42,0.08)] transition-all duration-200 ease-out hover:-translate-y-0.5 hover:bg-[#a70f19] hover:shadow-[0_10px_28px_rgba(193,18,31,0.44),0_2px_6px_rgba(15,23,42,0.1)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c1121f] focus-visible:ring-offset-2 active:translate-y-0 active:shadow-[0_4px_18px_rgba(193,18,31,0.38),0_1px_2px_rgba(15,23,42,0.08)] motion-reduce:transform-none motion-reduce:transition-colors sm:w-auto sm:px-6 sm:py-3"
+                className="inline-flex min-h-[46px] w-full items-center justify-center rounded-xl bg-[#0c1d2f] px-5 py-2.5 text-sm font-semibold text-white shadow-[0_4px_18px_rgba(12,29,47,0.32),0_1px_2px_rgba(15,23,42,0.08)] transition-all duration-200 ease-out hover:-translate-y-0.5 hover:bg-[#0a1726] hover:shadow-[0_10px_28px_rgba(12,29,47,0.38),0_2px_6px_rgba(15,23,42,0.1)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0c1d2f] focus-visible:ring-offset-2 active:translate-y-0 active:shadow-[0_4px_18px_rgba(12,29,47,0.32),0_1px_2px_rgba(15,23,42,0.08)] motion-reduce:transform-none motion-reduce:transition-colors sm:w-auto sm:px-6 sm:py-3"
                 aria-label="Find a space"
               >
                 Find a space

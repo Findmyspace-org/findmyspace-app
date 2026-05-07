@@ -75,6 +75,23 @@ export async function GET(req: NextRequest) {
       )
     );
 
+    // Cover thumbnail per space — lowest sort_order wins.
+    const spaceCoverMap = new Map<string, string>();
+    if (spaceIds.length) {
+      const { data: imageRows } = await (admin.from("space_images") as any)
+        .select("space_id, image_url, sort_order")
+        .in("space_id", spaceIds)
+        .order("sort_order", { ascending: true });
+      for (const row of (imageRows || []) as {
+        space_id: string;
+        image_url: string;
+      }[]) {
+        if (!spaceCoverMap.has(row.space_id)) {
+          spaceCoverMap.set(row.space_id, row.image_url);
+        }
+      }
+    }
+
     const otherIds = eligible.map((b) =>
       b.renter_id === user.id ? b.owner_id : b.renter_id
     ) as string[];
@@ -136,6 +153,7 @@ export async function GET(req: NextRequest) {
         bookingId: b.id as string,
         spaceId: b.space_id as string,
         listingTitle: space?.title || "Listing",
+        spaceCoverUrl: spaceCoverMap.get(b.space_id) || null,
         location: [space?.suburb, space?.city].filter(Boolean).join(", ") || null,
         otherPartyName: getDisplayName(profileMap.get(otherId) || undefined),
         viewerRole: b.renter_id === user.id ? "renter" : "owner",

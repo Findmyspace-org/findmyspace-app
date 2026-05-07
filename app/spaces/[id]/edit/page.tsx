@@ -1164,6 +1164,9 @@ export default function EditListingPage({ params }: PageProps) {
                       <p className="mt-1 text-sm text-gray-600">
                         Better information = better bookings. You can update this later.
                       </p>
+                      <p className="mt-1 text-xs leading-relaxed text-[#64748b]">
+                        These details help the Space Assistant answer renter questions and reduce back-and-forth.
+                      </p>
                     </div>
                     <span className="text-gray-500 transition group-open:rotate-180" aria-hidden>
                       ▼

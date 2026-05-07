@@ -6,11 +6,22 @@ import {
   CheckCircle2,
   ChevronDown,
   HelpCircle,
+  Plus,
   Send,
   Sparkles,
   X,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import {
+  evaluateListingQuestionSafety,
+  LISTING_QUESTION_BLOCKED_REPLY,
+  LISTING_QUESTION_MAX_LENGTH,
+} from "@/lib/listing-question-safety";
+import {
+  getHostQuestionTemplates,
+  getSuggestedAssistantQuestions,
+  type BookingUnit,
+} from "@/lib/space-assistant-suggestions";
 
 /**
  * SpaceAssistant — guided "Ask about this space" entry point.
@@ -31,6 +42,7 @@ type Props = {
   spaceId: string;
   spaceTitle: string;
   spaceType?: string | null;
+  bookingUnit?: BookingUnit;
 };
 
 type ChatMessage = {
@@ -39,31 +51,15 @@ type ChatMessage = {
   kind?: "context" | "safety" | "fallback" | "error";
 };
 
-const SUGGESTED_PROMPTS = [
-  "Will my vehicle fit?",
-  "What access hours are allowed?",
-  "Is this suitable for long-term storage?",
-  "What do I need before booking?",
-  "Is this space secure?",
-  "What size items fit here?",
-];
-
 const NETWORK_ERROR_REPLY =
   "I couldn’t reach the assistant just now. Please try again in a moment, or include your question in your booking request.";
 
-const HOST_QUESTION_TEMPLATES = [
-  "Is weekend access allowed?",
-  "Is the space covered?",
-  "Is 24/7 access available?",
-  "Can I store furniture here?",
-  "Can I park a trailer here?",
-  "Is the space suitable for long-term use?",
-];
+const MAX_BATCH_QUESTIONS = 5;
 
 type HostQuestionStatus =
   | { kind: "idle" }
   | { kind: "sending" }
-  | { kind: "sent" }
+  | { kind: "sent"; count: number }
   | { kind: "blocked"; message: string }
   | { kind: "error"; message: string }
   | { kind: "auth_required" };
@@ -72,6 +68,7 @@ export default function SpaceAssistant({
   spaceId,
   spaceTitle,
   spaceType,
+  bookingUnit,
 }: Props) {
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
@@ -80,10 +77,34 @@ export default function SpaceAssistant({
   const messagesRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
-  // Secondary host yes/no question flow state.
+  // Secondary host yes/no question flow state — now batches up to 5
+  // questions and sends them to the host in a single submit.
   const [hostFormOpen, setHostFormOpen] = useState(false);
-  const [hostQuestion, setHostQuestion] = useState("");
+  const [hostDraft, setHostDraft] = useState("");
+  const [hostQueue, setHostQueue] = useState<string[]>([]);
+  const [hostDraftError, setHostDraftError] = useState<string | null>(null);
   const [hostStatus, setHostStatus] = useState<HostQuestionStatus>({ kind: "idle" });
+
+  // Dynamic suggested prompts: tailored to listing category + booking unit.
+  const { prompts: suggestedPrompts } = useMemo(
+    () =>
+      getSuggestedAssistantQuestions({
+        spaceType,
+        bookingUnit,
+        limit: 6,
+      }),
+    [spaceType, bookingUnit]
+  );
+
+  const hostTemplates = useMemo(
+    () =>
+      getHostQuestionTemplates({
+        spaceType,
+        bookingUnit,
+        limit: 4,
+      }),
+    [spaceType, bookingUnit]
+  );
 
   // Allow other UI on the listing page (e.g. the secondary "Ask about this
   // space" button) to open the assistant via a window-level CustomEvent.
@@ -183,10 +204,85 @@ export default function SpaceAssistant({
     submitQuestion(input);
   }
 
-  async function submitHostQuestion(e: React.FormEvent) {
+  function addHostQuestion(raw: string) {
+    const text = raw.trim();
+    if (!text) {
+      setHostDraftError("Add a question before adding it to the list.");
+      return false;
+    }
+    if (text.length > LISTING_QUESTION_MAX_LENGTH) {
+      setHostDraftError(
+        `Keep each question under ${LISTING_QUESTION_MAX_LENGTH} characters.`
+      );
+      return false;
+    }
+    if (hostQueue.length >= MAX_BATCH_QUESTIONS) {
+      setHostDraftError(
+        `You can send up to ${MAX_BATCH_QUESTIONS} questions in one go.`
+      );
+      return false;
+    }
+    const dupKey = text.toLowerCase().replace(/\s+/g, " ");
+    if (hostQueue.some((q) => q.toLowerCase().replace(/\s+/g, " ") === dupKey)) {
+      setHostDraftError("That question is already in the list.");
+      return false;
+    }
+    const safety = evaluateListingQuestionSafety(text);
+    if (!safety.ok) {
+      setHostStatus({
+        kind: "blocked",
+        message: safety.reason || LISTING_QUESTION_BLOCKED_REPLY,
+      });
+      setHostDraftError(null);
+      return false;
+    }
+    setHostQueue((prev) => [...prev, text]);
+    setHostDraft("");
+    setHostDraftError(null);
+    if (hostStatus.kind === "blocked" || hostStatus.kind === "error") {
+      setHostStatus({ kind: "idle" });
+    }
+    return true;
+  }
+
+  function removeHostQuestion(index: number) {
+    setHostQueue((prev) => prev.filter((_, i) => i !== index));
+    setHostDraftError(null);
+    if (hostStatus.kind === "blocked" || hostStatus.kind === "error") {
+      setHostStatus({ kind: "idle" });
+    }
+  }
+
+  async function submitHostQuestions(e: React.FormEvent) {
     e.preventDefault();
-    const text = hostQuestion.trim();
-    if (!text || hostStatus.kind === "sending") return;
+    if (hostStatus.kind === "sending") return;
+
+    // If the renter typed a question but never clicked "Add", auto-add it
+    // before sending so nothing is lost.
+    let queue = hostQueue;
+    const draft = hostDraft.trim();
+    if (draft) {
+      const added = addHostQuestion(draft);
+      if (!added) return;
+      queue = [...hostQueue, draft];
+    }
+
+    if (queue.length === 0) {
+      setHostDraftError("Add at least one yes/no question.");
+      return;
+    }
+
+    // Re-validate every queued question right before sending.
+    for (const q of queue) {
+      const safety = evaluateListingQuestionSafety(q);
+      if (!safety.ok) {
+        setHostStatus({
+          kind: "blocked",
+          message: safety.reason || LISTING_QUESTION_BLOCKED_REPLY,
+        });
+        return;
+      }
+    }
 
     setHostStatus({ kind: "sending" });
     try {
@@ -203,11 +299,16 @@ export default function SpaceAssistant({
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ spaceId, question: text }),
+        body: JSON.stringify({ spaceId, questions: queue }),
       });
 
       const payload = (await res.json().catch(() => null)) as
-        | { kind?: "sent" | "blocked"; reason?: string; error?: string }
+        | {
+            kind?: "sent" | "blocked";
+            reason?: string;
+            error?: string;
+            questions?: unknown[];
+          }
         | null;
 
       if (!res.ok) {
@@ -215,7 +316,7 @@ export default function SpaceAssistant({
           kind: "error",
           message:
             payload?.error ||
-            "Could not send your question. Please try again in a moment.",
+            "Could not send your questions. Please try again in a moment.",
         });
         return;
       }
@@ -228,19 +329,27 @@ export default function SpaceAssistant({
         });
         return;
       }
-      setHostStatus({ kind: "sent" });
-      setHostQuestion("");
+      const sentCount = Array.isArray(payload?.questions)
+        ? payload!.questions!.length
+        : queue.length;
+      setHostStatus({ kind: "sent", count: sentCount });
+      setHostQueue([]);
+      setHostDraft("");
+      setHostDraftError(null);
     } catch {
       setHostStatus({
         kind: "error",
-        message: "Could not send your question. Please try again in a moment.",
+        message:
+          "Could not send your questions. Please try again in a moment.",
       });
     }
   }
 
   function resetHostForm() {
     setHostFormOpen(false);
-    setHostQuestion("");
+    setHostDraft("");
+    setHostQueue([]);
+    setHostDraftError(null);
     setHostStatus({ kind: "idle" });
   }
 
@@ -329,7 +438,7 @@ export default function SpaceAssistant({
                   </p>
                 </div>
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  {SUGGESTED_PROMPTS.map((prompt) => (
+                  {suggestedPrompts.map((prompt) => (
                     <button
                       key={prompt}
                       type="button"
@@ -402,10 +511,14 @@ export default function SpaceAssistant({
               <div className="flex items-start gap-3 rounded-xl border border-[#bbf7d0] bg-[#f0fdf4] px-3 py-2.5 text-sm text-[#166534]">
                 <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
                 <div className="min-w-0 flex-1">
-                  <p className="font-medium">Question sent.</p>
+                  <p className="font-medium">
+                    {hostStatus.count === 1
+                      ? "Question sent."
+                      : `${hostStatus.count} questions sent.`}
+                  </p>
                   <p className="mt-0.5 text-xs leading-relaxed text-[#15803d]">
-                    The host can reply Yes, No, or Not applicable. You’ll be notified when
-                    they answer.
+                    The host can reply Yes, No, or Not applicable to each question.
+                    You’ll be notified when they answer.
                   </p>
                   <button
                     type="button"
@@ -431,73 +544,140 @@ export default function SpaceAssistant({
                     Still need a host answer?
                   </span>
                   <span className="mt-0.5 block text-xs leading-relaxed text-[#64748b]">
-                    Try asking the assistant first — it can answer most questions
-                    instantly. Otherwise ask the host a yes/no question.
+                    Add up to {MAX_BATCH_QUESTIONS} yes/no questions and send them to
+                    the host together — one notification, one email.
                   </span>
                   <span className="mt-2 inline-flex items-center gap-1 text-[12px] font-medium text-[#c1121f]">
-                    Ask the host a yes/no question
+                    Ask the host yes/no questions
                     <ChevronDown className="h-3 w-3 transition-transform duration-200 group-hover:translate-y-0.5" aria-hidden />
                   </span>
                 </span>
               </button>
             ) : (
               <form
-                onSubmit={submitHostQuestion}
+                onSubmit={submitHostQuestions}
                 className="space-y-2.5 rounded-xl border border-[#e2e8f0] bg-white p-3 shadow-sm sm:p-3.5"
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <p className="text-sm font-semibold text-[#0f172a]">
-                      Ask the host a yes/no question
+                      Ask the host yes/no questions
                     </p>
                     <p className="mt-0.5 text-xs leading-relaxed text-[#64748b]">
-                      Please ask a question the host can answer with Yes, No, or Not
-                      applicable.
+                      Add up to {MAX_BATCH_QUESTIONS} questions the host can answer
+                      with Yes, No, or Not applicable.
                     </p>
                   </div>
                   <button
                     type="button"
                     onClick={resetHostForm}
-                    aria-label="Cancel host question"
+                    aria-label="Cancel host questions"
                     className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-[#e2e8f0] bg-white text-[#475569] transition-colors duration-200 hover:border-[#cbd5e1] hover:bg-[#f8fafb] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c1121f]/30"
                   >
                     <X className="h-3.5 w-3.5" aria-hidden />
                   </button>
                 </div>
 
-                <div className="flex flex-wrap gap-1.5">
-                  {HOST_QUESTION_TEMPLATES.map((template) => (
-                    <button
-                      key={template}
-                      type="button"
-                      onClick={() => {
-                        setHostQuestion(template);
-                        setHostStatus({ kind: "idle" });
-                      }}
-                      className="rounded-full border border-[#e5e7eb] bg-[#f8fafb] px-2.5 py-1 text-[11px] font-medium text-[#475569] transition-colors duration-200 hover:border-[#cbd5e1] hover:bg-white hover:text-[#0f172a] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c1121f]/30"
-                    >
-                      {template}
-                    </button>
-                  ))}
-                </div>
+                {hostQueue.length > 0 ? (
+                  <ul
+                    className="space-y-1.5"
+                    aria-label="Questions ready to send to the host"
+                  >
+                    {hostQueue.map((q, i) => (
+                      <li
+                        key={`${i}-${q}`}
+                        className="flex items-start gap-2 rounded-xl border border-[#e2e8f0] bg-[#f8fafb] px-3 py-2 text-sm text-[#0f172a]"
+                      >
+                        <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white text-[10px] font-semibold text-[#475569] ring-1 ring-[#e2e8f0]">
+                          {i + 1}
+                        </span>
+                        <span className="min-w-0 flex-1 break-words leading-relaxed">
+                          {q}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => removeHostQuestion(i)}
+                          aria-label={`Remove question ${i + 1}`}
+                          className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[#64748b] transition-colors duration-200 hover:bg-white hover:text-[#0f172a] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c1121f]/30"
+                        >
+                          <X className="h-3.5 w-3.5" aria-hidden />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
 
-                <textarea
-                  value={hostQuestion}
-                  onChange={(e) => {
-                    setHostQuestion(e.target.value);
-                    if (
-                      hostStatus.kind === "blocked" ||
-                      hostStatus.kind === "error"
-                    ) {
-                      setHostStatus({ kind: "idle" });
-                    }
-                  }}
-                  placeholder="Example: Is weekend access allowed?"
-                  rows={2}
-                  maxLength={280}
-                  className="block w-full resize-none rounded-xl border border-[#e2e8f0] bg-white px-3 py-2 text-sm leading-relaxed text-[#0f172a] placeholder:text-[#94a3b8] shadow-sm transition-colors duration-200 focus:border-[#c1121f]/40 focus:outline-none focus:ring-2 focus:ring-[#c1121f]/15"
-                />
+                {hostQueue.length < MAX_BATCH_QUESTIONS ? (
+                  <>
+                    {hostTemplates.length > 0 && hostQueue.length === 0 ? (
+                      <div className="flex flex-wrap gap-1.5">
+                        {hostTemplates.map((template) => (
+                          <button
+                            key={template}
+                            type="button"
+                            onClick={() => {
+                              setHostDraft(template);
+                              setHostStatus({ kind: "idle" });
+                            }}
+                            className="rounded-full border border-[#e5e7eb] bg-[#f8fafb] px-2.5 py-1 text-[11px] font-medium text-[#475569] transition-colors duration-200 hover:border-[#cbd5e1] hover:bg-white hover:text-[#0f172a] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c1121f]/30"
+                          >
+                            {template}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
 
+                    <div className="space-y-1.5">
+                      <textarea
+                        value={hostDraft}
+                        onChange={(e) => {
+                          setHostDraft(e.target.value);
+                          if (hostDraftError) setHostDraftError(null);
+                          if (
+                            hostStatus.kind === "blocked" ||
+                            hostStatus.kind === "error"
+                          ) {
+                            setHostStatus({ kind: "idle" });
+                          }
+                        }}
+                        placeholder={
+                          hostQueue.length === 0
+                            ? "Add a yes/no question…"
+                            : "Add another yes/no question…"
+                        }
+                        rows={2}
+                        maxLength={LISTING_QUESTION_MAX_LENGTH}
+                        className="block w-full resize-none rounded-xl border border-[#e2e8f0] bg-white px-3 py-2 text-sm leading-relaxed text-[#0f172a] placeholder:text-[#94a3b8] shadow-sm transition-colors duration-200 focus:border-[#c1121f]/40 focus:outline-none focus:ring-2 focus:ring-[#c1121f]/15"
+                      />
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-[11px] leading-relaxed text-[#94a3b8]">
+                          {hostDraft.length}/{LISTING_QUESTION_MAX_LENGTH} ·{" "}
+                          {hostQueue.length}/{MAX_BATCH_QUESTIONS} added
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => addHostQuestion(hostDraft)}
+                          disabled={!hostDraft.trim()}
+                          className="inline-flex items-center gap-1 rounded-lg border border-[#e2e8f0] bg-white px-2.5 py-1.5 text-[12px] font-semibold text-[#0f172a] shadow-sm transition-all duration-200 ease-out hover:-translate-y-0.5 hover:border-[#cbd5e1] hover:bg-[#f8fafb] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c1121f]/30 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0 motion-reduce:transform-none motion-reduce:transition-colors"
+                        >
+                          <Plus className="h-3 w-3" aria-hidden />
+                          Add question
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <p className="rounded-xl border border-[#e2e8f0] bg-[#f8fafb] px-3 py-2 text-[12px] leading-relaxed text-[#475569]">
+                    You’ve reached the {MAX_BATCH_QUESTIONS}-question limit. Send these
+                    to the host, then ask more once they reply.
+                  </p>
+                )}
+
+                {hostDraftError ? (
+                  <p className="rounded-xl border border-[#fde2e4] bg-[#fff5f5] px-3 py-2 text-[12px] leading-relaxed text-[#7f1d1d]">
+                    {hostDraftError}
+                  </p>
+                ) : null}
                 {hostStatus.kind === "blocked" ? (
                   <p className="rounded-xl border border-[#fde2e4] bg-[#fff5f5] px-3 py-2 text-[12px] leading-relaxed text-[#7f1d1d]">
                     {hostStatus.message}
@@ -517,20 +697,28 @@ export default function SpaceAssistant({
                     >
                       sign in
                     </a>{" "}
-                    to ask the host a yes/no question.
+                    to ask the host yes/no questions.
                   </p>
                 ) : null}
 
                 <div className="flex items-center justify-between gap-2 pt-0.5">
                   <p className="text-[11px] leading-relaxed text-[#94a3b8]">
-                    Contact details and exact access info aren’t shared here.
+                    The host gets one notification and one email with all your
+                    questions.
                   </p>
                   <button
                     type="submit"
-                    disabled={!hostQuestion.trim() || hostStatus.kind === "sending"}
+                    disabled={
+                      hostStatus.kind === "sending" ||
+                      (hostQueue.length === 0 && !hostDraft.trim())
+                    }
                     className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-[#c1121f] px-3 py-2 text-sm font-semibold text-white shadow-[0_4px_14px_rgba(193,18,31,0.32)] transition-all duration-200 ease-out hover:-translate-y-0.5 hover:bg-[#a70f19] hover:shadow-[0_8px_20px_rgba(193,18,31,0.4)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c1121f] focus-visible:ring-offset-2 active:translate-y-0 disabled:cursor-not-allowed disabled:bg-[#cbd5e1] disabled:shadow-none disabled:hover:translate-y-0 motion-reduce:transform-none motion-reduce:transition-colors"
                   >
-                    {hostStatus.kind === "sending" ? "Sending…" : "Send question to host"}
+                    {hostStatus.kind === "sending"
+                      ? "Sending…"
+                      : hostQueue.length > 1
+                        ? `Send ${hostQueue.length} questions to host`
+                        : "Send questions to host"}
                   </button>
                 </div>
               </form>

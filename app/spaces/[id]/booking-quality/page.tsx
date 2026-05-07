@@ -20,6 +20,9 @@ export default async function BookingQualityPage({ params }: PageProps) {
               </p>
               <h1 className="mt-1 text-3xl font-semibold tracking-tight">Improve your booking quality</h1>
               <p className="mt-2 text-sm text-gray-600">Better information = better bookings.</p>
+              <p className="mt-1 text-xs leading-relaxed text-[#64748b]">
+                These details help the Space Assistant answer renter questions and reduce back-and-forth.
+              </p>
             </div>
             <div className="flex flex-wrap gap-2">
               <Link

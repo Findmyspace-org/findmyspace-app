@@ -2,7 +2,12 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import {
+  FOCUS_HIGHLIGHT_CLASS,
+  useFocusHighlight,
+} from "@/lib/use-focus-highlight";
 import {
   CheckCircle2,
   ClipboardList,
@@ -1149,12 +1154,21 @@ function ExpandedBookingPanel({
   );
 }
 
-export default function OwnerBookingRequestsPage() {
+function OwnerBookingRequestsPageContent({
+  focusBookingId,
+}: {
+  focusBookingId: string | null;
+}) {
   const [sessionEmail, setSessionEmail] = useState<string | null>(null);
   const [sessionUserId, setSessionUserId] = useState<string | null>(null);
   const [bookings, setBookings] = useState<EnrichedBooking[]>([]);
   const [statusFilter, setStatusFilter] = useState("all");
   const [loading, setLoading] = useState(true);
+  const { highlightedId } = useFocusHighlight({
+    focusId: focusBookingId,
+    ready: !loading,
+    prefix: "booking-card",
+  });
   const [message, setMessage] = useState("");
   const [busyBookingId, setBusyBookingId] = useState<string | null>(null);
   const [ownerReplies, setOwnerReplies] = useState<Record<string, string>>({});
@@ -1183,6 +1197,47 @@ export default function OwnerBookingRequestsPage() {
   useEffect(() => {
     loadRequests();
   }, []);
+
+  // When arriving via `?focus=`, expand the matching booking once data loaded.
+  useEffect(() => {
+    if (!focusBookingId || loading) return;
+    if (bookings.some((b) => b.id === focusBookingId)) {
+      setExpandedBookingId(focusBookingId);
+    }
+  }, [focusBookingId, loading, bookings]);
+
+  // Mark related host-side notifications for this booking as read.
+  useEffect(() => {
+    if (!focusBookingId || loading) return;
+    if (!bookings.some((b) => b.id === focusBookingId)) return;
+    void (async () => {
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        if (!session?.access_token) return;
+        await fetch("/api/notifications/read-by-related", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({
+            relatedEntityType: "booking",
+            relatedEntityId: focusBookingId,
+            types: [
+              "booking_request",
+              "booking_paid",
+              "payment_received",
+              "booking_message",
+            ],
+          }),
+        });
+      } catch {
+        /* non-fatal */
+      }
+    })();
+  }, [focusBookingId, loading, bookings]);
 
   useEffect(() => {
     setCommunicationOpenBookingId(null);
@@ -2138,7 +2193,9 @@ export default function OwnerBookingRequestsPage() {
                   <div
                     id={`booking-card-${booking.id}`}
                     key={booking.id}
-                    className="overflow-hidden rounded-md border border-gray-200 bg-white shadow-sm"
+                    className={`overflow-hidden rounded-md border border-gray-200 bg-white shadow-sm ${
+                      highlightedId === booking.id ? FOCUS_HIGHLIGHT_CLASS : ""
+                    }`}
                   >
                     <BookingRow
                       booking={booking}
@@ -2309,5 +2366,23 @@ export default function OwnerBookingRequestsPage() {
         })()}
       </main>
     </RequireAuth>
+  );
+}
+
+function OwnerBookingRequestsSearchParamsClient() {
+  const searchParams = useSearchParams();
+  const focusBookingId = searchParams.get("focus");
+  return <OwnerBookingRequestsPageContent focusBookingId={focusBookingId} />;
+}
+
+export default function OwnerBookingRequestsPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="px-6 py-10 text-sm text-gray-600">Loading…</div>
+      }
+    >
+      <OwnerBookingRequestsSearchParamsClient />
+    </Suspense>
   );
 }

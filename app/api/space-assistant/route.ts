@@ -98,6 +98,13 @@ type AssistantContext = {
   features: FeatureSummary;
   requirements: string[];
   confirmedQas: ConfirmedQa[];
+  /**
+   * Free-form host quality details captured under "Booking quality details"
+   * in the listing flow (saved into `listing_questionnaires.data`). Already
+   * pre-flattened to label/value pairs here so the templated answers can use
+   * them without re-parsing per-category schemas.
+   */
+  questionnaireFacts: { label: string; value: string }[];
 };
 
 type IntentKind =
@@ -247,14 +254,28 @@ async function loadAssistantContext(
     attributes[row.attribute_key].push(row.attribute_value);
   });
 
-  // listing_questionnaires.data — fetched for future deep parsing (storage
-  // dimensions, parking limits, office capacity, etc.). Currently unused in
-  // template answers but injected here so the LLM swap can pick it up.
-  // TODO: parse per-category fields and surface in answers.
-  await (supabase.from("listing_questionnaires" as never) as any)
-    .select("data, category")
-    .eq("space_id", spaceId)
-    .maybeSingle();
+  // listing_questionnaires.data — host-authored booking-quality details
+  // captured during the listing flow. Flattened below into label/value
+  // facts that the templated answers and (future) LLM prompt can consume.
+  let questionnaireFacts: { label: string; value: string }[] = [];
+  try {
+    const { data: qRow } = await (supabase.from(
+      "listing_questionnaires" as never
+    ) as any)
+      .select("data, category")
+      .eq("space_id", spaceId)
+      .maybeSingle();
+    if (qRow?.data && typeof qRow.data === "object") {
+      questionnaireFacts = flattenQuestionnaireFacts(
+        qRow.data as Record<string, unknown>
+      );
+    }
+  } catch (questionnaireErr) {
+    console.warn(
+      "space-assistant: questionnaire fetch failed",
+      questionnaireErr
+    );
+  }
 
   const { data: reqRow } = await (supabase.from(
     "listing_booking_requirements" as never
@@ -308,7 +329,70 @@ async function loadAssistantContext(
     features,
     requirements,
     confirmedQas,
+    questionnaireFacts,
   };
+}
+
+// Flatten the booking-quality questionnaire JSON into a small list of
+// human-readable facts. Keys come in many shapes (snake_case, camelCase,
+// nested objects), so we normalise keys to "Title Case" labels and skip
+// empty / object-only values.
+function flattenQuestionnaireFacts(
+  data: Record<string, unknown>,
+  prefix = ""
+): { label: string; value: string }[] {
+  const out: { label: string; value: string }[] = [];
+  const humanise = (raw: string) =>
+    raw
+      .replace(/[_-]+/g, " ")
+      .replace(/([a-z])([A-Z])/g, "$1 $2")
+      .replace(/\s+/g, " ")
+      .trim()
+      .replace(/\b\w/g, (c) => c.toUpperCase());
+
+  for (const [key, value] of Object.entries(data)) {
+    const label = prefix
+      ? `${prefix} — ${humanise(key)}`
+      : humanise(key);
+    if (value === null || value === undefined || value === "") continue;
+    if (typeof value === "boolean") {
+      out.push({ label, value: value ? "Yes" : "No" });
+      continue;
+    }
+    if (typeof value === "number") {
+      out.push({ label, value: String(value) });
+      continue;
+    }
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      if (trimmed) out.push({ label, value: trimmed });
+      continue;
+    }
+    if (Array.isArray(value)) {
+      const text = value
+        .map((v) =>
+          typeof v === "string"
+            ? v.trim()
+            : typeof v === "number" || typeof v === "boolean"
+              ? String(v)
+              : null
+        )
+        .filter((v): v is string => Boolean(v))
+        .join(", ");
+      if (text) out.push({ label, value: text });
+      continue;
+    }
+    if (typeof value === "object") {
+      out.push(
+        ...flattenQuestionnaireFacts(
+          value as Record<string, unknown>,
+          label
+        )
+      );
+    }
+  }
+  // Cap to keep prompts/templates compact.
+  return out.slice(0, 30);
 }
 
 // ---------------------------------------------------------------------------
@@ -507,6 +591,13 @@ function answerBeforeBooking(ctx: AssistantContext): string | null {
   }
   if (ctx.minBookingNote) lines.push(ctx.minBookingNote);
   if (ctx.priceLine) lines.push(`Pricing: ${ctx.priceLine}.`);
+  // Surface up to two host-supplied booking-quality notes so the renter
+  // sees specifics like "estimated turnaround", "preferred lead time", etc.
+  if (ctx.questionnaireFacts.length) {
+    ctx.questionnaireFacts.slice(0, 2).forEach((f) => {
+      lines.push(`${f.label}: ${f.value}.`);
+    });
+  }
   return [intro(ctx), joinBullets(lines), ENCOURAGE_BOOKING_NOTE].join("\n\n");
 }
 
@@ -556,6 +647,12 @@ function answerGeneral(ctx: AssistantContext): string | null {
   const headlineFeatures = ctx.features.flatBooleanLabels.slice(0, 5);
   if (headlineFeatures.length) lines.push(`Highlights: ${headlineFeatures.join(", ")}.`);
   if (ctx.priceLine) lines.push(`Pricing: ${ctx.priceLine}.`);
+  if (ctx.questionnaireFacts.length) {
+    const facts = ctx.questionnaireFacts
+      .slice(0, 4)
+      .map((f) => `${f.label}: ${f.value}`);
+    lines.push(`Host details: ${facts.join("; ")}.`);
+  }
   if (lines.length === 0) return null;
   return [intro(ctx), lines.join("\n"), ENCOURAGE_BOOKING_NOTE].join("\n\n");
 }

@@ -1,5 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { sendEmail } from "@/lib/email";
+import { renderEmailLayout } from "@/lib/email-templates/EmailLayout";
+import { buildListingQuestionAnsweredCopy } from "@/lib/communication-copy";
+import { getCanonicalPublicSiteUrl } from "@/lib/site-url";
+
+const ANSWER_LABEL: Record<"yes" | "no" | "not_applicable", string> = {
+  yes: "Yes",
+  no: "No",
+  not_applicable: "Not applicable",
+};
 
 /**
  * Listing yes/no questions — single-row endpoints.
@@ -72,7 +82,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     const { data: row, error: fetchErr } = await (admin.from(
       "listing_yes_no_questions"
     ) as any)
-      .select("id, owner_id, renter_id, space_id, status")
+      .select("id, owner_id, renter_id, space_id, status, question")
       .eq("id", id)
       .maybeSingle();
 
@@ -120,20 +130,80 @@ export async function PATCH(req: NextRequest, { params }: Params) {
 
     // Only notify the renter for "answer" actions; dismissed questions are silent.
     if (body.action === "answer") {
+      // Comms Center is the primary destination for listing questions. The
+      // legacy /dashboard/listing-questions route still works for older
+      // notifications/emails that already shipped with the previous href.
+      const focusHref = `/dashboard/comms?focus=${id}&type=listing_question`;
+
+      // Fetch renter profile + space title so notification + email share copy.
+      let renterProfile: {
+        first_name: string | null;
+        last_name: string | null;
+        email: string | null;
+      } | null = null;
+      let spaceTitle: string = "the listing";
+      try {
+        const [{ data: renter }, { data: space }] = await Promise.all([
+          (admin.from("profiles") as any)
+            .select("first_name, last_name, email")
+            .eq("id", row.renter_id)
+            .maybeSingle(),
+          (admin.from("spaces") as any)
+            .select("title")
+            .eq("id", row.space_id)
+            .maybeSingle(),
+        ]);
+        renterProfile = renter || null;
+        spaceTitle = (space as { title?: string } | null)?.title || "the listing";
+      } catch (lookupErr) {
+        console.error("listing-question answer lookup failed:", lookupErr);
+      }
+
+      const copy = buildListingQuestionAnsweredCopy({
+        renterFirstName: renterProfile?.first_name ?? null,
+        spaceTitle,
+        question: row.question || "",
+        answerLabel: ANSWER_LABEL[body.answer],
+      });
+
       try {
         await (admin.from("notifications") as any).insert({
           user_id: row.renter_id,
           role: "renter",
           type: "listing_question_answered",
-          title: "Your listing question was answered",
-          message: "The host answered your question.",
-          href: "/dashboard/listing-questions",
+          title: copy.notificationTitle,
+          message: copy.notificationMessage,
+          href: focusHref,
           related_entity_type: "space",
           related_entity_id: row.space_id,
           is_read: false,
         });
       } catch (notifyErr) {
         console.error("listing-question notify renter failed:", notifyErr);
+      }
+
+      try {
+        if (renterProfile?.email) {
+          const siteUrl = getCanonicalPublicSiteUrl();
+          const rendered = renderEmailLayout({
+            preheader: copy.emailPreheader,
+            title: copy.emailTitle,
+            bodyLines: copy.emailBodyLines,
+            primaryCTA: {
+              label: copy.ctaLabel,
+              href: `${siteUrl}${focusHref}`,
+            },
+            footerRole: copy.emailFooterRole,
+          });
+          await sendEmail({
+            to: renterProfile.email,
+            subject: copy.emailSubject,
+            html: rendered.html,
+            text: rendered.text,
+          });
+        }
+      } catch (emailErr) {
+        console.error("listing-question renter email failed:", emailErr);
       }
     }
 

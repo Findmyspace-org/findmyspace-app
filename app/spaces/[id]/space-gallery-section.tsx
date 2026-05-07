@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
-import { Heart } from "lucide-react";
+import { Heart, Images } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
@@ -114,7 +114,17 @@ export default function SpaceGallerySection({
   }
 
   const main = imageUrls[0];
-  const rest = imageUrls.slice(1, 5);
+  // Show at most 2 secondaries — every other photo lives behind "View all photos".
+  const secondaries = imageUrls.slice(1, 3);
+  const hasSecondaries = secondaries.length > 0;
+  const onlyOneSecondary = secondaries.length === 1;
+  const twoSecondaries = secondaries.length === 2;
+  // How many photos are NOT shown in the preview tiles (main + secondaries).
+  // Drives the "+N" badge on the desktop "View all photos" overlay.
+  const remainingHiddenCount = Math.max(
+    0,
+    imageUrls.length - 1 - secondaries.length
+  );
 
   const openAtIndex = (index: number) => {
     setSelectedIndex(index);
@@ -139,51 +149,136 @@ export default function SpaceGallerySection({
 
   return (
     <>
-      <div className="relative mb-6 grid gap-2 md:grid-cols-[2fr_1fr]">
-        <button
-          type="button"
-          onClick={toggleFavourite}
-          disabled={favouriteBusy}
-          aria-label={isFavourite ? "Remove from favourites" : "Save to favourites"}
-          className="absolute right-3 top-3 z-20 inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/95 text-[#334155] shadow-[0_8px_18px_rgba(15,23,42,0.18)] transition hover:bg-white disabled:opacity-70"
+      <div className="mb-6">
+        <div
+          className={`grid gap-2 ${
+            hasSecondaries
+              ? "md:h-[340px] md:grid-cols-[2fr_1fr] md:grid-rows-2"
+              : ""
+          }`}
         >
-          <Heart className={`h-4.5 w-4.5 ${isFavourite ? "fill-[#c1121f] text-[#c1121f]" : "text-[#334155]"}`} />
-        </button>
-        <button
-          type="button"
-          onClick={() => openAtIndex(0)}
-          className="relative h-[340px] overflow-hidden rounded-md text-left"
-        >
-          <Image src={main} alt={title} fill className="object-cover" />
-        </button>
-
-        <div className="grid gap-2">
-          {rest.map((img, i) => (
+          {/* Main image — full width on mobile, spans both rows on desktop. */}
+          <div
+            className={`relative h-[280px] sm:h-[320px] md:h-auto ${
+              hasSecondaries ? "md:row-span-2" : ""
+            }`}
+          >
             <button
-              key={i}
               type="button"
-              onClick={() => openAtIndex(i + 1)}
-              className="relative h-[167px] overflow-hidden rounded-md text-left"
+              onClick={() => openAtIndex(0)}
+              aria-label={`View ${title} photo 1`}
+              className={`absolute inset-0 overflow-hidden text-left ${
+                hasSecondaries
+                  ? "rounded-2xl md:rounded-r-none"
+                  : "rounded-2xl"
+              }`}
             >
               <Image
-                src={img}
-                alt={`${title} ${i + 2}`}
+                src={main}
+                alt={title}
                 fill
                 className="object-cover"
+                priority
               />
             </button>
-          ))}
-        </div>
 
-        {imageUrls.length > 1 && (
-          <button
-            type="button"
-            onClick={() => openAtIndex(0)}
-            className="absolute bottom-3 right-3 rounded-md border bg-white px-3 py-1.5 text-sm shadow"
-          >
-            View all photos
-          </button>
-        )}
+            {/* Favourite heart — top-right of the main image, never clashes
+                with the desktop "View all photos" overlay (which sits on the
+                second secondary, bottom-right of the right column). */}
+            <button
+              type="button"
+              onClick={toggleFavourite}
+              disabled={favouriteBusy}
+              aria-label={
+                isFavourite ? "Remove from favourites" : "Save to favourites"
+              }
+              className="absolute right-3 top-3 z-20 inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/95 text-[#334155] shadow-[0_8px_18px_rgba(15,23,42,0.18)] transition hover:bg-white disabled:opacity-70"
+            >
+              <Heart
+                className={`h-4.5 w-4.5 ${
+                  isFavourite
+                    ? "fill-[#c1121f] text-[#c1121f]"
+                    : "text-[#334155]"
+                }`}
+              />
+            </button>
+
+            {/* Mobile-only "View all photos" pill — bottom-right of the main
+                image. Hidden on desktop because the secondary tiles take
+                over there. */}
+            {imageUrls.length > 1 && (
+              <button
+                type="button"
+                onClick={() => openAtIndex(0)}
+                className="absolute bottom-3 right-3 z-20 inline-flex items-center gap-1.5 rounded-full bg-white/95 px-3 py-1.5 text-xs font-semibold text-[#0f172a] shadow-[0_8px_18px_rgba(15,23,42,0.18)] backdrop-blur-sm transition hover:bg-white md:hidden"
+                aria-label={`View all ${imageUrls.length} photos`}
+              >
+                <Images className="h-3.5 w-3.5" aria-hidden />
+                View all {imageUrls.length} photos
+              </button>
+            )}
+          </div>
+
+          {/* Secondary 1 — desktop only. If it's the only secondary it
+              spans both rows; otherwise just the top row. */}
+          {hasSecondaries && (
+            <div
+              className={`relative hidden md:block ${
+                onlyOneSecondary ? "md:row-span-2" : ""
+              }`}
+            >
+              <button
+                type="button"
+                onClick={() => openAtIndex(1)}
+                aria-label={`View ${title} photo 2`}
+                className={`absolute inset-0 overflow-hidden text-left ${
+                  onlyOneSecondary ? "md:rounded-r-2xl" : "md:rounded-tr-2xl"
+                }`}
+              >
+                <Image
+                  src={secondaries[0]}
+                  alt={`${title} 2`}
+                  fill
+                  className="object-cover"
+                />
+              </button>
+
+              {/* If only one secondary tile exists (2 photos total),
+                  the "View all photos" overlay sits here. */}
+              {onlyOneSecondary && imageUrls.length > 1 && (
+                <ViewAllPhotosButton
+                  onClick={() => openAtIndex(0)}
+                  count={remainingHiddenCount}
+                />
+              )}
+            </div>
+          )}
+
+          {/* Secondary 2 — desktop only. Always carries the "View all
+              photos" overlay (with optional +N badge). */}
+          {twoSecondaries && (
+            <div className="relative hidden md:block">
+              <button
+                type="button"
+                onClick={() => openAtIndex(2)}
+                aria-label={`View ${title} photo 3`}
+                className="absolute inset-0 overflow-hidden text-left md:rounded-br-2xl"
+              >
+                <Image
+                  src={secondaries[1]}
+                  alt={`${title} 3`}
+                  fill
+                  className="object-cover"
+                />
+              </button>
+
+              <ViewAllPhotosButton
+                onClick={() => openAtIndex(0)}
+                count={remainingHiddenCount}
+              />
+            </div>
+          )}
+        </div>
       </div>
 
       {open && (
@@ -248,5 +343,45 @@ export default function SpaceGallerySection({
         </div>
       )}
     </>
+  );
+}
+
+/**
+ * Compact overlay pill that opens the full-screen photo modal.
+ *
+ * Layout matches the spec example: optional "+N" badge stacked above
+ * a "View all photos" row with a subtle icon, sitting in the
+ * bottom-right of whichever tile renders it.
+ */
+function ViewAllPhotosButton({
+  onClick,
+  count,
+}: {
+  onClick: () => void;
+  count: number;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={
+        count > 0
+          ? `View all photos, ${count} more`
+          : "View all photos"
+      }
+      className="absolute bottom-3 right-3 z-20 inline-flex flex-col items-end rounded-xl bg-white/95 px-3 py-2 text-xs font-semibold text-[#0f172a] shadow-[0_8px_18px_rgba(15,23,42,0.18)] backdrop-blur-sm transition duration-200 ease-out hover:-translate-y-0.5 hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f172a]/20"
+    >
+      {count > 0 ? (
+        <span className="text-[10px] font-semibold uppercase leading-none tracking-[0.08em] text-[#64748b]">
+          +{count}
+        </span>
+      ) : null}
+      <span
+        className={`inline-flex items-center gap-1.5 ${count > 0 ? "mt-0.5" : ""}`}
+      >
+        <Images className="h-3.5 w-3.5" aria-hidden />
+        View all photos
+      </span>
+    </button>
   );
 }

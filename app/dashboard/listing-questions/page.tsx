@@ -1,8 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
+  ArrowLeft,
   CheckCircle2,
   HelpCircle,
   Loader2,
@@ -11,6 +13,10 @@ import {
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import RequireAuth from "@/app/components/RequireAuth";
+import {
+  FOCUS_HIGHLIGHT_CLASS,
+  useFocusHighlight,
+} from "@/lib/use-focus-highlight";
 
 type ListingQuestion = {
   id: string;
@@ -54,13 +60,25 @@ function formatDate(iso: string) {
   }
 }
 
-export default function ListingQuestionsPage() {
+type ContentProps = {
+  focusId: string | null;
+  initialTab: Tab | null;
+};
+
+function ListingQuestionsPageContent({ focusId, initialTab }: ContentProps) {
   const [renterQuestions, setRenterQuestions] = useState<ListingQuestion[]>([]);
   const [ownerQuestions, setOwnerQuestions] = useState<ListingQuestion[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [actingId, setActingId] = useState<string | null>(null);
-  const [tab, setTab] = useState<Tab>("renter");
+  const [tab, setTab] = useState<Tab>(initialTab ?? "renter");
+  const [tabLocked, setTabLocked] = useState<boolean>(initialTab !== null);
+
+  const { highlightedId } = useFocusHighlight({
+    focusId,
+    ready: !loading,
+    prefix: "question",
+  });
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -89,22 +107,62 @@ export default function ListingQuestionsPage() {
       setOwnerQuestions(ownerJson?.questions || []);
 
       // If the user is a host with pending questions and no renter questions,
-      // default to the owner tab.
-      const hasOwnerPending = (ownerJson?.questions || []).some(
-        (q) => q.status === "pending"
-      );
-      const hasRenter = (renterJson?.questions || []).length > 0;
-      if (hasOwnerPending && !hasRenter) setTab("owner");
+      // default to the owner tab — but only when the tab wasn't explicitly
+      // requested via `?tab=…`.
+      if (!tabLocked) {
+        const hasOwnerPending = (ownerJson?.questions || []).some(
+          (q) => q.status === "pending"
+        );
+        const hasRenter = (renterJson?.questions || []).length > 0;
+        if (hasOwnerPending && !hasRenter) setTab("owner");
+      }
     } catch {
       setError("Could not load your listing questions.");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [tabLocked]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  // When arriving via `?focus=`, mark the matching notification(s) as read so
+  // the bell badge clears. We look up the question to find its `space_id`
+  // (notifications use related_entity_id = space_id).
+  useEffect(() => {
+    if (!focusId || loading) return;
+    const focused =
+      renterQuestions.find((q) => q.id === focusId) ||
+      ownerQuestions.find((q) => q.id === focusId);
+    if (!focused) return;
+    void (async () => {
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        if (!session?.access_token) return;
+        const types =
+          tab === "owner"
+            ? ["listing_question"]
+            : ["listing_question_answered"];
+        await fetch("/api/notifications/read-by-related", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({
+            relatedEntityType: "space",
+            relatedEntityId: focused.space_id,
+            types,
+          }),
+        });
+      } catch {
+        /* non-fatal */
+      }
+    })();
+  }, [focusId, loading, renterQuestions, ownerQuestions, tab]);
 
   async function answer(
     questionId: string,
@@ -156,6 +214,13 @@ export default function ListingQuestionsPage() {
     <RequireAuth>
       <main className="min-h-screen bg-[#f8fafb] px-4 py-8 text-[#0f172a] sm:px-6 sm:py-10">
         <div className="mx-auto max-w-4xl">
+          <Link
+            href="/dashboard/comms"
+            className="mb-4 inline-flex items-center gap-1.5 text-xs font-medium text-[#475569] underline-offset-2 hover:text-[#0f172a] hover:underline"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
+            Back to Comms Center
+          </Link>
           <div className="mb-6">
             <h1 className="text-2xl font-semibold sm:text-3xl">Listing questions</h1>
             <p className="mt-1 text-sm text-[#475569]">
@@ -174,7 +239,10 @@ export default function ListingQuestionsPage() {
                 role="tab"
                 type="button"
                 aria-selected={tab === "renter"}
-                onClick={() => setTab("renter")}
+                onClick={() => {
+                  setTab("renter");
+                  setTabLocked(true);
+                }}
                 className={`rounded-xl px-3 py-1.5 text-sm font-medium transition-colors duration-200 ${
                   tab === "renter"
                     ? "bg-[#0f2740] text-white shadow-sm"
@@ -188,7 +256,10 @@ export default function ListingQuestionsPage() {
                 role="tab"
                 type="button"
                 aria-selected={tab === "owner"}
-                onClick={() => setTab("owner")}
+                onClick={() => {
+                  setTab("owner");
+                  setTabLocked(true);
+                }}
                 className={`relative rounded-xl px-3 py-1.5 text-sm font-medium transition-colors duration-200 ${
                   tab === "owner"
                     ? "bg-[#0f2740] text-white shadow-sm"
@@ -217,11 +288,15 @@ export default function ListingQuestionsPage() {
               Loading your listing questions…
             </div>
           ) : tab === "renter" ? (
-            <RenterList questions={renterQuestions} />
+            <RenterList
+              questions={renterQuestions}
+              highlightedId={highlightedId}
+            />
           ) : (
             <OwnerList
               questions={ownerQuestions}
               actingId={actingId}
+              highlightedId={highlightedId}
               onAnswer={(id, ans) =>
                 answer(id, { action: "answer", answer: ans })
               }
@@ -260,7 +335,13 @@ function EmptyState({ title }: { title: string }) {
   );
 }
 
-function RenterList({ questions }: { questions: ListingQuestion[] }) {
+function RenterList({
+  questions,
+  highlightedId,
+}: {
+  questions: ListingQuestion[];
+  highlightedId: string | null;
+}) {
   if (!questions.length) {
     return <EmptyState title="No listing questions yet." />;
   }
@@ -269,7 +350,10 @@ function RenterList({ questions }: { questions: ListingQuestion[] }) {
       {questions.map((q) => (
         <li
           key={q.id}
-          className="rounded-2xl border border-[#e5e7eb] bg-white p-4 shadow-sm"
+          id={`question-${q.id}`}
+          className={`rounded-2xl border border-[#e5e7eb] bg-white p-4 shadow-sm ${
+            highlightedId === q.id ? FOCUS_HIGHLIGHT_CLASS : ""
+          }`}
         >
           <div className="flex flex-wrap items-center justify-between gap-2">
             <Link
@@ -310,11 +394,13 @@ function RenterList({ questions }: { questions: ListingQuestion[] }) {
 function OwnerList({
   questions,
   actingId,
+  highlightedId,
   onAnswer,
   onDismiss,
 }: {
   questions: ListingQuestion[];
   actingId: string | null;
+  highlightedId: string | null;
   onAnswer: (id: string, answer: "yes" | "no" | "not_applicable") => void;
   onDismiss: (id: string) => void;
 }) {
@@ -337,6 +423,7 @@ function OwnerList({
                 key={q.id}
                 question={q}
                 isActing={actingId === q.id}
+                isHighlighted={highlightedId === q.id}
                 onAnswer={onAnswer}
                 onDismiss={onDismiss}
               />
@@ -356,6 +443,7 @@ function OwnerList({
                 key={q.id}
                 question={q}
                 isActing={false}
+                isHighlighted={highlightedId === q.id}
                 onAnswer={onAnswer}
                 onDismiss={onDismiss}
                 readOnly
@@ -371,12 +459,14 @@ function OwnerList({
 function OwnerQuestionCard({
   question,
   isActing,
+  isHighlighted,
   onAnswer,
   onDismiss,
   readOnly = false,
 }: {
   question: ListingQuestion;
   isActing: boolean;
+  isHighlighted: boolean;
   onAnswer: (id: string, answer: "yes" | "no" | "not_applicable") => void;
   onDismiss: (id: string) => void;
   readOnly?: boolean;
@@ -384,7 +474,12 @@ function OwnerQuestionCard({
   const renterLabel =
     question.renter_first_name?.trim() || "A renter";
   return (
-    <li className="rounded-2xl border border-[#e5e7eb] bg-white p-4 shadow-sm">
+    <li
+      id={`question-${question.id}`}
+      className={`rounded-2xl border border-[#e5e7eb] bg-white p-4 shadow-sm ${
+        isHighlighted ? FOCUS_HIGHLIGHT_CLASS : ""
+      }`}
+    >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <Link
           href={`/spaces/${question.space_id}`}
@@ -452,5 +547,30 @@ function OwnerQuestionCard({
         </div>
       )}
     </li>
+  );
+}
+
+function ListingQuestionsSearchParamsClient() {
+  const searchParams = useSearchParams();
+  const focusId = searchParams.get("focus");
+  const tabParam = searchParams.get("tab");
+  const initialTab: Tab | null =
+    tabParam === "owner" || tabParam === "renter" ? tabParam : null;
+  return (
+    <ListingQuestionsPageContent focusId={focusId} initialTab={initialTab} />
+  );
+}
+
+export default function ListingQuestionsPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="px-6 py-10 text-sm text-gray-600">
+          Loading listing questions…
+        </div>
+      }
+    >
+      <ListingQuestionsSearchParamsClient />
+    </Suspense>
   );
 }
