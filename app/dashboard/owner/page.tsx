@@ -1,22 +1,46 @@
 "use client";
 
+/**
+ * /dashboard/owner — host workspace overview.
+ *
+ * IA model:
+ *   - This page is the primary destination for hosts. After they land here
+ *     the burger menu should rarely be needed; all hosting tasks are reached
+ *     through the workspace sidebar (lg+) or horizontal pill tabs (mobile).
+ *   - Routes for listings, requests, comms, calendar, finance, verification
+ *     and listing questions are preserved as-is and linked from this page.
+ *
+ * The previous implementation rendered an ad-hoc top nav strip that
+ * duplicated the global header; that's now replaced by `DashboardShell`.
+ */
+
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import {
   AlertCircle,
+  ArrowRight,
   BadgeCheck,
+  Building2,
   CalendarDays,
   CheckCircle2,
   ClipboardList,
   CreditCard,
-  Home,
+  HelpCircle,
+  HousePlus,
+  Inbox,
   Landmark,
   LayoutDashboard,
+  Loader2,
   Mail,
+  Settings,
   UserCircle2,
   Wallet,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import DashboardShell from "@/app/components/DashboardShell";
+import { HOST_NAV } from "@/lib/dashboard-nav";
+import OwnerVerificationAlerts from "@/app/components/OwnerVerificationAlerts";
+import RequireAuth from "@/app/components/RequireAuth";
 
 type OwnerDashboardListing = {
   id: string;
@@ -50,76 +74,20 @@ type OwnerDashboardBooking = {
 type OwnerProfile = {
   id: string;
   id_verification_status?: string | null;
-};
-
-type StatCardProps = {
-  title: string;
-  value: string | number;
-  icon: React.ReactNode;
-  subtitle: string;
-  href: string;
-  highlight?: boolean;
+  is_host?: boolean | null;
 };
 
 function formatCompactMoney(amount: number) {
   return `R ${amount.toLocaleString("en-ZA")}`;
 }
 
-function getStatValueClass(value: string | number) {
-  const stringValue = String(value);
-
-  if (typeof value === "number") {
-    return "text-4xl";
-  }
-
-  if (stringValue.length <= 4) {
-    return "text-4xl";
-  }
-
-  if (stringValue.length <= 8) {
-    return "text-3xl";
-  }
-
-  return "text-2xl leading-tight";
-}
-
-function StatCard({ title, value, icon, subtitle, href, highlight = false }: StatCardProps) {
-  return (
-    <Link
-      href={href}
-      className={`block rounded-lg border bg-white p-4 shadow-sm transition hover:border-gray-300 hover:bg-[#fbfcfd] ${highlight ? "border-amber-300 bg-amber-50/30" : "border-gray-200"}`}
-    >
-      <div className="flex min-h-[120px] items-stretch justify-between gap-4">
-        <div className="flex min-w-0 flex-1 flex-col justify-between">
-          <div>
-            <p className="text-[13px] font-medium text-gray-500">{title}</p>
-          </div>
-          <p className="max-w-[26ch] text-sm leading-6 text-gray-600">{subtitle}</p>
-        </div>
-
-        <div className="flex w-[132px] shrink-0 flex-col items-center justify-between border-l border-gray-200 pl-4">
-          <div className="flex h-14 w-14 items-center justify-center rounded-md bg-[#f7f9fb] text-[#192a3a]">
-            {icon}
-          </div>
-          <p
-            className={`w-full break-words text-center font-semibold tracking-tight text-[#192a3a] ${getStatValueClass(
-              value
-            )}`}
-          >
-            {value}
-          </p>
-        </div>
-      </div>
-    </Link>
-  );
-}
-
-export default function OwnerDashboardPage() {
+export default function HostDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [listings, setListings] = useState<OwnerDashboardListing[]>([]);
   const [bookings, setBookings] = useState<OwnerDashboardBooking[]>([]);
   const [profile, setProfile] = useState<OwnerProfile | null>(null);
+  const [pendingQuestionsCount, setPendingQuestionsCount] = useState(0);
 
   useEffect(() => {
     async function loadDashboard() {
@@ -133,13 +101,13 @@ export default function OwnerDashboardPage() {
         } = await supabase.auth.getUser();
 
         if (authError || !user) {
-          setError("Please log in to view your owner dashboard.");
+          setError("Please log in to view your host dashboard.");
           setLoading(false);
           return;
         }
 
         const { data: profileData } = await (supabase.from("profiles") as any)
-          .select("id, id_verification_status")
+          .select("id, id_verification_status, is_host")
           .eq("id", user.id)
           .single();
 
@@ -153,9 +121,7 @@ export default function OwnerDashboardPage() {
           .eq("owner_id", user.id)
           .order("created_at", { ascending: false });
 
-        if (listingError) {
-          throw listingError;
-        }
+        if (listingError) throw listingError;
 
         const nextListings = (listingData || []) as OwnerDashboardListing[];
         setListings(nextListings);
@@ -164,36 +130,45 @@ export default function OwnerDashboardPage() {
 
         if (listingIds.length === 0) {
           setBookings([]);
-          setLoading(false);
-          return;
+        } else {
+          const { data: bookingData, error: bookingError } = await (supabase
+            .from("bookings") as any)
+            .select(
+              `
+                id,
+                space_id,
+                status,
+                payment_status,
+                start_at,
+                end_at,
+                total_price,
+                created_at,
+                space:spaces(title),
+                renter:profiles!bookings_renter_id_fkey(first_name, last_name, email)
+              `
+            )
+            .in("space_id", listingIds)
+            .order("created_at", { ascending: false });
+
+          if (bookingError) throw bookingError;
+
+          setBookings((bookingData || []) as OwnerDashboardBooking[]);
         }
 
-        const { data: bookingData, error: bookingError } = await (supabase
-          .from("bookings") as any)
-          .select(
-            `
-              id,
-              space_id,
-              status,
-              payment_status,
-              start_at,
-              end_at,
-              total_price,
-              created_at,
-              space:spaces(title),
-              renter:profiles!bookings_renter_id_fkey(first_name, last_name, email)
-            `
-          )
-          .in("space_id", listingIds)
-          .order("created_at", { ascending: false });
-
-        if (bookingError) {
-          throw bookingError;
+        // Pending listing yes/no questions — primary inbox metric for hosts.
+        try {
+          const { count } = await (supabase.from(
+            "listing_yes_no_questions"
+          ) as any)
+            .select("id", { count: "exact", head: true })
+            .eq("owner_id", user.id)
+            .eq("status", "pending");
+          if (typeof count === "number") setPendingQuestionsCount(count);
+        } catch (qErr) {
+          console.warn("Pending listing questions count failed:", qErr);
         }
-
-        setBookings((bookingData || []) as OwnerDashboardBooking[]);
       } catch (loadError: any) {
-        setError(loadError?.message || "Could not load owner dashboard.");
+        setError(loadError?.message || "Could not load host dashboard.");
       } finally {
         setLoading(false);
       }
@@ -245,35 +220,23 @@ export default function OwnerDashboardPage() {
         booking.status === "paid_confirmed" ||
         booking.status === "confirmed" ||
         booking.status === "completed";
-
       if (!isConfirmed || !booking.created_at) return sum;
-
       const created = new Date(booking.created_at);
       const sameMonth =
         created.getFullYear() === now.getFullYear() &&
         created.getMonth() === now.getMonth();
-
       if (!sameMonth) return sum;
-
       return sum + Number(booking.total_price || 0);
     }, 0);
   }, [bookings]);
 
-  const pendingListingVerificationCount = useMemo(
+  const pendingListingApprovalCount = useMemo(
     () =>
       listings.filter(
         (listing) =>
           listing.verification_status === "pending" ||
-          listing.verification_status === "needs_clarification"
-      ).length,
-    [listings]
-  );
-
-  const activeVerifiedListingsCount = useMemo(
-    () =>
-      listings.filter(
-        (listing) =>
-          listing.status === "active" && listing.verification_status === "verified"
+          listing.verification_status === "needs_clarification" ||
+          listing.status === "pending"
       ).length,
     [listings]
   );
@@ -284,122 +247,375 @@ export default function OwnerDashboardPage() {
   );
 
   return (
-    <div className="min-h-screen bg-[#f7f9fb]">
-      <div className="mx-auto max-w-7xl px-4 py-5 sm:px-6 lg:px-8">
-        <div className="mb-5 flex flex-wrap items-center gap-2 border-b border-gray-200 pb-4">
-          <div className="inline-flex items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-[#192a3a] shadow-sm">
-            <LayoutDashboard className="h-4 w-4" />
-            <span>Overview</span>
+    <RequireAuth>
+      <DashboardShell
+        workspaceLabel="Hosting"
+        pageTitle="Host dashboard"
+        pageSubtitle="Respond to requests, keep listings up to date, and track earnings — all in one workspace."
+        navItems={HOST_NAV}
+        activeHref="/dashboard/owner"
+      >
+        {loading ? (
+          <div className="flex items-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-8 text-sm text-gray-600 shadow-sm">
+            <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+            Loading your host dashboard…
           </div>
-          <Link
-            href="/dashboard/listings"
-            className="inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm text-gray-600 hover:bg-white hover:text-[#192a3a]"
-          >
-            <Home className="h-4 w-4" />
-            <span>Listings</span>
-          </Link>
-          <Link
-            href="/dashboard/requests"
-            className="inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm text-gray-600 hover:bg-white hover:text-[#192a3a]"
-          >
-            <ClipboardList className="h-4 w-4" />
-            <span>Requests</span>
-          </Link>
-          <Link
-            href="/dashboard/calendar"
-            className="inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm text-gray-600 hover:bg-white hover:text-[#192a3a]"
-          >
-            <CalendarDays className="h-4 w-4" />
-            <span>Calendar</span>
-          </Link>
-          <Link
-            href="/dashboard/finance"
-            className="inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm text-gray-600 hover:bg-white hover:text-[#192a3a]"
-          >
-            <Landmark className="h-4 w-4" />
-            <span>Finance</span>
-          </Link>
-        </div>
+        ) : (
+          <>
+            {error ? (
+              <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                {error}
+              </div>
+            ) : null}
 
-        <div className="mb-6 rounded-md border border-gray-200 bg-white p-5 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">
-            Owner dashboard
-          </p>
-          <h1 className="mt-2 text-2xl font-semibold tracking-tight text-[#192a3a] sm:text-3xl">
-            Manage your spaces with confidence
-          </h1>
-          <p className="mt-2 max-w-2xl text-sm text-gray-600">
-            See what needs attention, respond to booking requests quickly, and keep
-            track of your listings, availability, and payments from one place.
-          </p>
+            {/* Verification reminders — only render when relevant. */}
+            <OwnerVerificationAlerts />
 
-        </div>
+            {/* TOP METRICS — what hosts most often act on. */}
+            <section aria-labelledby="host-overview-metrics">
+              <h2
+                id="host-overview-metrics"
+                className="mb-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-gray-500"
+              >
+                Today
+              </h2>
+              <div className="grid grid-cols-2 gap-2 sm:gap-4 xl:grid-cols-4">
+                <MetricCard
+                  title="Pending booking requests"
+                  value={pendingRequestsCount}
+                  subtitle="Waiting for your response"
+                  icon={<Mail className="h-6 w-6" aria-hidden />}
+                  href="/dashboard/requests"
+                  highlight={pendingRequestsCount > 0}
+                />
+                <MetricCard
+                  title="Pending questions"
+                  value={pendingQuestionsCount}
+                  subtitle="Yes/no questions from renters"
+                  icon={<HelpCircle className="h-6 w-6" aria-hidden />}
+                  href="/dashboard/comms?view=hosting"
+                  highlight={pendingQuestionsCount > 0}
+                />
+                <MetricCard
+                  title="Revenue this month"
+                  value={formatCompactMoney(monthlyIncome)}
+                  subtitle="Confirmed booking income"
+                  icon={<Wallet className="h-6 w-6" aria-hidden />}
+                  href="/dashboard/finance"
+                />
+                <MetricCard
+                  title="Listings awaiting approval"
+                  value={pendingListingApprovalCount}
+                  subtitle={
+                    pendingListingApprovalCount > 0
+                      ? "Items in admin review"
+                      : `${activeListingsCount} active listing${
+                          activeListingsCount === 1 ? "" : "s"
+                        }`
+                  }
+                  icon={<BadgeCheck className="h-6 w-6" aria-hidden />}
+                  href="/dashboard/listings"
+                  highlight={pendingListingApprovalCount > 0}
+                />
+              </div>
+            </section>
 
-        {error && (
-          <div className="mb-6 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-            {error}
-          </div>
+            {/* PRIMARY WORKSPACE SECTIONS — main host actions. */}
+            <section aria-labelledby="host-overview-workspace">
+              <h2
+                id="host-overview-workspace"
+                className="mb-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-gray-500"
+              >
+                Workspace
+              </h2>
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                <WorkspaceCard
+                  title="My listings"
+                  description="Manage spaces, photos, pricing and availability."
+                  icon={<Building2 className="h-5 w-5" aria-hidden />}
+                  href="/dashboard/listings"
+                  meta={`${activeListingsCount} active`}
+                />
+                <WorkspaceCard
+                  title="Booking requests"
+                  description="Approve or decline pending requests on your listings."
+                  icon={<ClipboardList className="h-5 w-5" aria-hidden />}
+                  href="/dashboard/requests"
+                  meta={
+                    pendingRequestsCount > 0
+                      ? `${pendingRequestsCount} pending`
+                      : "All caught up"
+                  }
+                  emphasised={pendingRequestsCount > 0}
+                />
+                <WorkspaceCard
+                  title="Comms"
+                  description="Renter questions, booking messages and platform updates."
+                  icon={<Inbox className="h-5 w-5" aria-hidden />}
+                  href="/dashboard/comms?view=hosting"
+                  meta={
+                    pendingQuestionsCount > 0
+                      ? `${pendingQuestionsCount} to answer`
+                      : "Inbox"
+                  }
+                  emphasised={pendingQuestionsCount > 0}
+                />
+              </div>
+            </section>
+
+            {/* SECONDARY — operational details surfaced at a glance. */}
+            <section aria-labelledby="host-overview-detail">
+              <h2
+                id="host-overview-detail"
+                className="mb-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-gray-500"
+              >
+                Operations
+              </h2>
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                <DetailCard
+                  title="Awaiting payment"
+                  value={awaitingPaymentCount}
+                  subtitle="Approved bookings waiting on the renter"
+                  icon={<CreditCard className="h-5 w-5" aria-hidden />}
+                  href="/dashboard/requests"
+                  highlight={awaitingPaymentCount > 0}
+                />
+                <DetailCard
+                  title="Confirmed bookings"
+                  value={confirmedBookingsCount}
+                  subtitle="Paid and on the calendar"
+                  icon={<CheckCircle2 className="h-5 w-5" aria-hidden />}
+                  href="/dashboard/calendar"
+                />
+                <DetailCard
+                  title="Profile & verification"
+                  value={profileNeedsAttention ? "Action" : "OK"}
+                  subtitle={
+                    profileNeedsAttention
+                      ? "ID verification required"
+                      : "Profile verified"
+                  }
+                  icon={
+                    profileNeedsAttention ? (
+                      <AlertCircle className="h-5 w-5" aria-hidden />
+                    ) : (
+                      <UserCircle2 className="h-5 w-5" aria-hidden />
+                    )
+                  }
+                  href="/dashboard/verification"
+                  highlight={profileNeedsAttention}
+                />
+              </div>
+            </section>
+
+            {/* SECONDARY TOOLS — calendar, verification, finance shortcuts.
+                Mirrors the sidebar but as tactile chips for users who prefer
+                buttons to a tree. */}
+            <section aria-labelledby="host-overview-tools">
+              <h2
+                id="host-overview-tools"
+                className="mb-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-gray-500"
+              >
+                Tools
+              </h2>
+              <div className="flex flex-wrap gap-2">
+                <ToolChip
+                  href="/dashboard/calendar"
+                  icon={<CalendarDays className="h-3.5 w-3.5" aria-hidden />}
+                >
+                  Calendar
+                </ToolChip>
+                <ToolChip
+                  href="/dashboard/verification"
+                  icon={<Settings className="h-3.5 w-3.5" aria-hidden />}
+                >
+                  Verification &amp; settings
+                </ToolChip>
+                <ToolChip
+                  href="/dashboard/finance"
+                  icon={<Landmark className="h-3.5 w-3.5" aria-hidden />}
+                >
+                  Finance
+                </ToolChip>
+                <ToolChip
+                  href="/dashboard/new-space"
+                  icon={<HousePlus className="h-3.5 w-3.5" aria-hidden />}
+                >
+                  List a new space
+                </ToolChip>
+                <ToolChip
+                  href="/dashboard"
+                  icon={<LayoutDashboard className="h-3.5 w-3.5" aria-hidden />}
+                >
+                  Switch to my dashboard
+                </ToolChip>
+              </div>
+            </section>
+          </>
         )}
+      </DashboardShell>
+    </RequireAuth>
+  );
+}
 
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <StatCard
-            title="Active listings"
-            value={activeListingsCount}
-            icon={<Home className="h-7 w-7" />}
-            subtitle="Visible to renters"
-            href="/dashboard/listings"
-          />
-          <StatCard
-            title="Pending requests"
-            value={pendingRequestsCount}
-            icon={<Mail className="h-7 w-7" />}
-            subtitle="Waiting for your response"
-            href="/dashboard/requests"
-            highlight={pendingRequestsCount > 0}
-          />
-          <StatCard
-            title="Awaiting payment"
-            value={awaitingPaymentCount}
-            icon={<CreditCard className="h-7 w-7" />}
-            subtitle="Waiting for renter payment"
-            href="/dashboard/requests"
-            highlight={awaitingPaymentCount > 0}
-          />
-          <StatCard
-            title="Confirmed bookings"
-            value={confirmedBookingsCount}
-            icon={<CheckCircle2 className="h-7 w-7" />}
-            subtitle="Paid and confirmed"
-            href="/dashboard/calendar"
-          />
-        </div>
+// ---------------------------------------------------------------------------
+// UI primitives, scoped to the host dashboard.
+// ---------------------------------------------------------------------------
 
-        <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          <StatCard
-            title="Income for the month"
-            value={formatCompactMoney(monthlyIncome)}
-            icon={<Wallet className="h-7 w-7" />}
-            subtitle="Confirmed booking income"
-            href="/dashboard/finance"
-          />
-          <StatCard
-            title="Manage profile"
-            value={profileNeedsAttention ? "!" : "OK"}
-            icon={profileNeedsAttention ? <AlertCircle className="h-7 w-7" /> : <UserCircle2 className="h-7 w-7" />}
-            subtitle={profileNeedsAttention ? "ID verification required" : "Profile up to date"}
-            href="/dashboard/verification"
-            highlight={profileNeedsAttention}
-          />
-          <StatCard
-            title="Listing verification"
-            value={pendingListingVerificationCount > 0 ? "Pending" : activeVerifiedListingsCount}
-            icon={<BadgeCheck className="h-7 w-7" />}
-            subtitle={pendingListingVerificationCount > 0 ? `${pendingListingVerificationCount} items need review` : pendingListingVerificationCount === 0 && activeVerifiedListingsCount === 0 ? "None" : `${activeVerifiedListingsCount} active verified`}
-            href="/dashboard/listings"
-            highlight={pendingListingVerificationCount > 0}
-          />
+function MetricCard({
+  title,
+  value,
+  subtitle,
+  icon,
+  href,
+  highlight = false,
+}: {
+  title: string;
+  value: number | string;
+  subtitle: string;
+  icon: React.ReactNode;
+  href: string;
+  highlight?: boolean;
+}) {
+  // Mirror the renter SummaryCard behaviour: compact tile on mobile, richer
+  // card on desktop. Hosts often have 4 metric cards so on phones we want a
+  // tight 2-col grid that fits above the fold.
+  return (
+    <Link
+      href={href}
+      className={`group block rounded-2xl border bg-white p-3 shadow-sm transition hover:-translate-y-0.5 hover:border-gray-300 hover:shadow-md sm:p-4 ${
+        highlight ? "border-amber-300 bg-amber-50/30" : "border-gray-200"
+      }`}
+    >
+      <div className="flex items-start justify-between gap-2 sm:gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="text-[11px] font-medium text-gray-500 sm:text-[12px]">
+            {title}
+          </p>
+          <p className="mt-0.5 break-words text-2xl font-semibold tracking-tight text-[#0c1d2f] sm:mt-1 sm:text-3xl">
+            {value}
+          </p>
+          {/* Subtitle hidden on mobile to keep tiles short. */}
+          <p className="mt-2 hidden text-xs leading-relaxed text-gray-600 sm:block">
+            {subtitle}
+          </p>
         </div>
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#f7f9fb] text-[#0c1d2f] sm:h-10 sm:w-10 sm:rounded-xl [&>svg]:h-4 [&>svg]:w-4 sm:[&>svg]:h-6 sm:[&>svg]:w-6">
+          {icon}
+        </span>
       </div>
-    </div>
+    </Link>
+  );
+}
+
+function WorkspaceCard({
+  title,
+  description,
+  icon,
+  href,
+  meta,
+  emphasised = false,
+}: {
+  title: string;
+  description: string;
+  icon: React.ReactNode;
+  href: string;
+  meta?: string;
+  emphasised?: boolean;
+}) {
+  return (
+    <Link
+      href={href}
+      className={`group flex h-full flex-col rounded-2xl border bg-white p-3 shadow-sm transition hover:-translate-y-0.5 hover:border-gray-300 hover:shadow-md sm:p-4 ${
+        emphasised ? "border-[#0c1d2f]/40 bg-[#fbfcfd]" : "border-gray-200"
+      }`}
+    >
+      <div className="flex items-center gap-2">
+        <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#0c1d2f] text-white">
+          {icon}
+        </span>
+        <p className="text-sm font-semibold text-[#0c1d2f]">{title}</p>
+      </div>
+      <p className="mt-2 flex-1 text-xs leading-relaxed text-gray-600">
+        {description}
+      </p>
+      <div className="mt-3 flex items-center justify-between gap-2 text-xs">
+        {meta ? (
+          <span
+            className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+              emphasised
+                ? "bg-[#0c1d2f] text-white"
+                : "bg-[#f7f9fb] text-[#475569]"
+            }`}
+          >
+            {meta}
+          </span>
+        ) : (
+          <span />
+        )}
+        <span className="inline-flex items-center gap-1 font-semibold text-[#0c1d2f] opacity-0 transition group-hover:opacity-100">
+          Open
+          <ArrowRight className="h-3 w-3" aria-hidden />
+        </span>
+      </div>
+    </Link>
+  );
+}
+
+function DetailCard({
+  title,
+  value,
+  subtitle,
+  icon,
+  href,
+  highlight = false,
+}: {
+  title: string;
+  value: number | string;
+  subtitle: string;
+  icon: React.ReactNode;
+  href: string;
+  highlight?: boolean;
+}) {
+  return (
+    <Link
+      href={href}
+      className={`group flex h-full flex-col rounded-2xl border bg-white p-3 shadow-sm transition hover:-translate-y-0.5 hover:border-gray-300 hover:shadow-md sm:p-4 ${
+        highlight ? "border-amber-300 bg-amber-50/30" : "border-gray-200"
+      }`}
+    >
+      <div className="flex items-center gap-2 text-xs font-medium text-gray-500">
+        <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-[#f7f9fb] text-[#0c1d2f] sm:h-7 sm:w-7">
+          {icon}
+        </span>
+        {title}
+      </div>
+      <p className="mt-2 break-words text-2xl font-semibold tracking-tight text-[#0c1d2f]">
+        {value}
+      </p>
+      <p className="mt-1 flex-1 text-xs leading-relaxed text-gray-600">
+        {subtitle}
+      </p>
+    </Link>
+  );
+}
+
+function ToolChip({
+  href,
+  icon,
+  children,
+}: {
+  href: string;
+  icon: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <Link
+      href={href}
+      className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3.5 py-2 text-xs font-semibold text-[#0c1d2f] shadow-sm transition hover:-translate-y-0.5 hover:border-gray-300 hover:bg-[#fbfcfd]"
+    >
+      <span className="text-[#475569]">{icon}</span>
+      {children}
+    </Link>
   );
 }

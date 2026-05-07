@@ -52,7 +52,6 @@ import {
   CreditCard,
   FileText,
   HelpCircle,
-  Inbox,
   Loader2,
   MessageSquare,
   RefreshCw,
@@ -63,6 +62,8 @@ import {
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import RequireAuth from "@/app/components/RequireAuth";
+import DashboardShell from "@/app/components/DashboardShell";
+import { HOST_NAV, RENTER_NAV } from "@/lib/dashboard-nav";
 import {
   LISTING_QUESTION_BLOCKED_REPLY,
   LISTING_QUESTION_MAX_LENGTH,
@@ -625,9 +626,26 @@ function CommsCenterContent() {
 
   const focusId = searchParams.get("focus");
   const focusType = searchParams.get("type");
+  // Workspace deep links: ?view=platform | bookings | hosting
+  //   - bookings → "My bookings" tab (renter workspace shortcut)
+  //   - hosting  → "My space enquiries" tab (host workspace shortcut)
+  //   - platform → Platform tab
+  // Mapping is one-shot: once the user clicks a different tab we lock and
+  // never override again, so URL params don't fight manual navigation.
+  const viewParam = (searchParams.get("view") || "").toLowerCase();
+  const initialTabFromView: CommsTab | null =
+    viewParam === "platform"
+      ? "platform"
+      : viewParam === "bookings"
+        ? "bookings"
+        : viewParam === "hosting"
+          ? "enquiries"
+          : null;
 
-  const [tab, setTab] = useState<CommsTab>("platform");
-  const [tabLocked, setTabLocked] = useState(false);
+  const [tab, setTab] = useState<CommsTab>(
+    initialTabFromView ?? "platform"
+  );
+  const [tabLocked, setTabLocked] = useState(Boolean(initialTabFromView));
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
@@ -970,24 +988,30 @@ function CommsCenterContent() {
   else if (tab === "enquiries") visibleCards = filteredEnquiries;
   else visibleCards = filteredBookings;
 
+  // Comms is shared across both workspaces. The `?view=` param tells us which
+  // workspace the user came from so we can wrap the page in the matching nav.
+  // If no view is supplied we default to the renter workspace — most users
+  // are renters and the renter nav covers the common path; hosts entering
+  // through the host overview always carry `view=hosting`.
+  const isHostWorkspace = viewParam === "hosting";
+  const navItems = isHostWorkspace ? HOST_NAV : RENTER_NAV;
+  const navActiveHref = isHostWorkspace
+    ? "/dashboard/comms?view=hosting"
+    : "/dashboard/comms?view=bookings";
+
   return (
     <RequireAuth>
-      <main className="min-h-screen bg-[#f8fafb] px-4 py-8 text-[#0f172a] sm:px-6 sm:py-10">
-        <div className="mx-auto max-w-3xl">
-          {/* Header */}
-          <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <div className="flex items-center gap-2">
-                <Inbox className="h-5 w-5 text-[#0f2740]" aria-hidden />
-                <h1 className="text-2xl font-semibold sm:text-3xl">
-                  Comms Center
-                </h1>
-              </div>
-              <p className="mt-1 text-sm text-[#475569]">
-                Platform updates, listing questions, booking messages, and
-                actions in one place.
-              </p>
-            </div>
+      <DashboardShell
+        workspaceLabel={isHostWorkspace ? "Hosting" : "My account"}
+        pageTitle="Comms Center"
+        pageSubtitle="Platform updates, listing questions, booking messages, and actions in one place."
+        navItems={navItems}
+        activeHref={navActiveHref}
+      >
+        <>
+          {/* Refresh action lives inline so it stays near the content while
+              the shell owns the page title. */}
+          <div className="-mt-1 flex justify-end">
             <button
               type="button"
               onClick={() => void loadAll(false)}
@@ -1115,8 +1139,8 @@ function CommsCenterContent() {
               Manage listing questions →
             </Link>
           </div>
-        </div>
-      </main>
+        </>
+      </DashboardShell>
     </RequireAuth>
   );
 }

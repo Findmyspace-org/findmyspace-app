@@ -7,6 +7,8 @@ import type { LucideIcon } from "lucide-react";
 import { Check, ClipboardList, Home, Landmark, User, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import RequireAuth from "@/app/components/RequireAuth";
+import DashboardShell from "@/app/components/DashboardShell";
+import { HOST_NAV } from "@/lib/dashboard-nav";
 import DecisionSuggestion from "@/app/components/DecisionSuggestion";
 import FileUploadField from "@/app/dashboard/verification/_components/FileUploadField";
 import {
@@ -1046,12 +1048,14 @@ function VerificationPageContent({ step }: { step: string }) {
 
   return (
     <RequireAuth>
-      <main className="min-h-screen bg-white px-6 py-10 text-[#192a3a]">
-        <div className="mx-auto max-w-6xl">
-          <div className="mb-8">
-            <h1 className="mb-2 text-4xl font-bold">{header.title}</h1>
-            <p className="text-gray-600">{header.subtitle}</p>
-          </div>
+      <DashboardShell
+        workspaceLabel="Hosting"
+        pageTitle={header.title}
+        pageSubtitle={header.subtitle}
+        navItems={HOST_NAV}
+        activeHref="/dashboard/verification"
+      >
+        <>
 
           <div className="mb-6 grid gap-2 sm:grid-cols-2 lg:grid-cols-4 lg:gap-3">
             {VERIFICATION_STEPS.map((item) => {
@@ -1481,8 +1485,8 @@ function VerificationPageContent({ step }: { step: string }) {
               )}
             </>
           )}
-        </div>
-      </main>
+        </>
+      </DashboardShell>
       {identityUploadSuccessOpen && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 px-4"

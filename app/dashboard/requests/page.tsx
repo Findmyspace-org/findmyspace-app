@@ -26,6 +26,8 @@ import {
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import RequireAuth from "@/app/components/RequireAuth";
+import DashboardShell from "@/app/components/DashboardShell";
+import { HOST_NAV } from "@/lib/dashboard-nav";
 import DecisionSuggestion from "@/app/components/DecisionSuggestion";
 import { getDisplayName } from "@/lib/utils";
 import { isCommunicationAllowed } from "@/lib/booking-communication";
@@ -35,7 +37,6 @@ import { broadcastInboxRefresh } from "@/lib/inbox-refresh";
 
 
 import OwnerCalendarLegend from "@/app/dashboard/_components/calendar/OwnerCalendarLegend";
-import OwnerTopNav from "@/app/dashboard/_components/calendar/OwnerTopNav";
 import OwnerBookingRequestTimeline, {
   shouldShowCurrentBookingAsExisting,
 } from "@/app/dashboard/_components/calendar/OwnerBookingRequestTimeline";
@@ -509,30 +510,18 @@ type RequestsPageHeaderProps = {
 };
 
 function RequestsPageHeader({
-  sessionEmail,
+  sessionEmail: _sessionEmail,
   searchText,
   onSearchTextChange,
   counts,
   statusFilter,
   onStatusFilterChange,
 }: RequestsPageHeaderProps) {
+  // Page title + intro now live in DashboardShell. This header keeps only the
+  // search input and status filters, rendered as a slim card.
   return (
-    <div className="mb-6 rounded-md border border-gray-200 bg-white p-5 shadow-sm">
-      <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-        <div>
-          <h1 className="mb-1 text-3xl font-semibold">Bookings and Requests</h1>
-          <p className="text-sm text-gray-600">
-            Review incoming requests and track each booking through the payment and confirmation journey.
-          </p>
-          {sessionEmail && (
-            <p className="mt-2 text-sm text-gray-500">
-              Logged in as {sessionEmail}
-            </p>
-          )}
-        </div>
-      </div>
-
-      <div className="mt-5 flex flex-col gap-3 lg:flex-row lg:items-center lg:gap-4">
+    <div className="rounded-2xl border border-gray-200 bg-white p-3 shadow-sm sm:p-5">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:gap-4">
         <div className="relative w-full shrink-0 lg:max-w-[min(100%,260px)]">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
           <input
@@ -2062,9 +2051,14 @@ function OwnerBookingRequestsPageContent({
 
   return (
     <RequireAuth>
-      <main className="min-h-screen bg-white px-6 py-10 text-[#192a3a]">
-        <div className="mx-auto max-w-6xl">
-          <OwnerTopNav active="requests" requestsLabel="Bookings and Requests" />
+      <DashboardShell
+        workspaceLabel="Hosting"
+        pageTitle="Booking requests"
+        pageSubtitle="Review incoming requests and track each booking through the payment and confirmation journey."
+        navItems={HOST_NAV}
+        activeHref="/dashboard/requests"
+      >
+        <>
           <RequestsPageHeader
             sessionEmail={sessionEmail}
             searchText={searchText}
@@ -2248,7 +2242,6 @@ function OwnerBookingRequestsPageContent({
               })}
             </div>
           )}
-        </div>
 
         {communicationOpenBookingId && (() => {
           const booking = bookings.find((b) => b.id === communicationOpenBookingId);
@@ -2364,7 +2357,8 @@ function OwnerBookingRequestsPageContent({
             </div>
           );
         })()}
-      </main>
+        </>
+      </DashboardShell>
     </RequireAuth>
   );
 }

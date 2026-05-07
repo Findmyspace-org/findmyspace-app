@@ -6,6 +6,8 @@ import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import RequireAuth from "@/app/components/RequireAuth";
+import DashboardShell from "@/app/components/DashboardShell";
+import { RENTER_NAV } from "@/lib/dashboard-nav";
 import DecisionSuggestion from "@/app/components/DecisionSuggestion";
 import { getDisplayName } from "@/lib/utils";
 import {
@@ -964,22 +966,16 @@ function MyBookingsPageContent({
 
   return (
     <RequireAuth>
-      <main className="min-h-screen bg-white px-6 py-10 text-[#192a3a]">
-        <div className="mx-auto max-w-6xl">
-          <div className="mb-6 rounded-md border border-gray-200 bg-white p-5 shadow-sm">
-            <div className="mb-5">
-              <h1 className="mb-1 text-3xl font-semibold">My bookings</h1>
-              <p className="text-sm text-gray-600">
-                Track the booking requests you have sent to space owners.
-              </p>
-              {sessionEmail && (
-                <p className="mt-2 text-sm text-gray-500">
-                  Logged in as {sessionEmail}
-                </p>
-              )}
-            </div>
-
-            <div className="mb-5 grid grid-cols-2 gap-2 lg:grid-cols-4">
+      <DashboardShell
+        workspaceLabel="My account"
+        pageTitle="My bookings"
+        pageSubtitle="Track the booking requests you have sent to space owners."
+        navItems={RENTER_NAV}
+        activeHref="/dashboard/my-bookings"
+      >
+        <>
+          <div className="rounded-2xl border border-gray-200 bg-white p-3 shadow-sm sm:p-5">
+            <div className="mb-4 grid grid-cols-2 gap-2 lg:grid-cols-4">
               {[
                 {
                   key: "spent",
@@ -1481,7 +1477,6 @@ function MyBookingsPageContent({
               })}
             </div>
           )}
-        </div>
 
         {communicationOpenBookingId && (() => {
           const booking = bookings.find((b) => b.id === communicationOpenBookingId);
@@ -1753,7 +1748,8 @@ function MyBookingsPageContent({
             </div>
           </div>
         )}
-      </main>
+        </>
+      </DashboardShell>
     </RequireAuth>
   );
 }

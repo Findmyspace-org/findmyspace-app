@@ -11,14 +11,9 @@ import {
   Home,
   Search,
   LayoutDashboard,
-  CalendarCheck,
   HousePlus,
   Building2,
-  ClipboardList,
-  Settings,
-  Landmark,
   ShieldCheck,
-  BadgeCheck,
   LogIn,
   LogOut,
   UserPlus,
@@ -27,9 +22,11 @@ import {
   Clock3,
   FileText,
   CheckCircle2,
+  Landmark,
   MessageSquare,
   HelpCircle,
   Inbox,
+  FileBadge,
 } from "lucide-react";
 
 type MenuItem = {
@@ -766,13 +763,20 @@ export default function Header() {
     totalNotificationCount +
     pendingListingQuestionCount;
 
+  // Workspace-based primary navigation.
+  //
+  // Goal: the burger menu answers "what role am I in right now?", not "what
+  // feature do I want?". Every workspace owns its own contextual nav once the
+  // user lands inside its dashboard, so we deliberately do NOT surface
+  // Messages, Notifications, Listing questions, Finance, My listings,
+  // Booking requests, or Host settings here — those routes still work and
+  // are reached from inside their respective workspace.
   const menuSections: MenuSection[] = [
     {
       title: "Explore",
       items: [
         { label: "Homepage", href: "/", icon: Home },
         { label: "Browse spaces", href: "/spaces", icon: Search },
-        { label: "Terms & Conditions", href: "/terms", icon: Settings },
       ],
     },
   ];
@@ -782,66 +786,27 @@ export default function Header() {
       title: "My account",
       items: [
         { label: "My dashboard", href: "/dashboard", icon: LayoutDashboard },
-        {
-          // Comms is the single primary destination for all communication —
-          // platform notices, listing questions, booking messages, etc.
-          // The legacy /dashboard/messages, /dashboard/listing-questions and
-          // /dashboard/notifications routes still work for deep links.
-          label: "Comms",
-          href: "/dashboard/comms",
-          icon: Inbox,
-          badgeCount: commsBadgeCount,
-        },
-        {
-          label: "My bookings",
-          href: "/dashboard/my-bookings",
-          icon: CalendarCheck,
-          badgeCount: myBookingActionCount,
-        },
       ],
     });
 
-    if (isHost) {
-      menuSections.push({
-        title: "Hosting",
-        items: [
-          { label: "Host overview", href: "/dashboard/owner", icon: LayoutDashboard },
-          { label: "List a space", onClick: handleListSpaceClick, icon: HousePlus },
-          { label: "My listings", href: "/dashboard/listings", icon: Building2 },
-          {
-            label: "Booking requests",
-            href: "/dashboard/requests",
-            icon: ClipboardList,
-            badgeCount: bookingRequestActionCount,
-          },
-          {
-            // See note in "My account" section above — Comms is now the single
-            // primary destination for owner ↔ renter communication.
-            label: "Comms",
-            href: "/dashboard/comms",
-            icon: Inbox,
-            badgeCount: commsBadgeCount,
-          },
-          {
-            label: "Finance",
-            href: "/dashboard/finance",
-            icon: Landmark,
-          },
-          {
-            label: "Host settings",
-            href: "/dashboard/verification",
-            icon: Settings,
-          },
-        ],
-      });
-    } else {
-      menuSections.push({
-        title: "Hosting",
-        items: [
-          { label: "Become a host", href: "/dashboard/become-host", icon: HousePlus },
-        ],
-      });
-    }
+    menuSections.push({
+      title: "Hosting",
+      items: isHost
+        ? [
+            {
+              label: "Host dashboard",
+              href: "/dashboard/owner",
+              icon: LayoutDashboard,
+            },
+          ]
+        : [
+            {
+              label: "Become a host",
+              href: "/dashboard/become-host",
+              icon: HousePlus,
+            },
+          ],
+    });
 
     if (isAdmin) {
       menuSections.push({
@@ -850,23 +815,7 @@ export default function Header() {
           {
             label: "Admin dashboard",
             href: "/admin",
-            icon: LayoutDashboard,
-          },
-          {
-            label: "Manage users",
-            href: "/admin#users-section",
-            icon: UserPlus,
-          },
-          {
-            label: "Manage spaces",
-            href: "/admin/spaces",
-            icon: Building2,
-          },
-          {
-            label: "Verification queue",
-            href: "/admin/verification",
-            icon: BadgeCheck,
-            badgeCount: adminActionCount,
+            icon: ShieldCheck,
           },
         ],
       });
@@ -889,49 +838,26 @@ export default function Header() {
           </Link>
 
           <div className="flex items-center gap-1.5 sm:gap-1.5 md:gap-2">
-            {loading ? null : !isLoggedIn ? (
-              <button
-                type="button"
-                onClick={openLoginModal}
-                className="fms-button-primary inline-flex h-10 items-center !rounded-md px-3 text-sm font-medium shadow-[0_1px_2px_rgba(12,29,47,0.18)] transition-all duration-200 hover:-translate-y-[1px] hover:bg-[#0a1726] sm:h-11 sm:px-4"
-              >
-                Login
-              </button>
-            ) : isHost ? (
-              <button
-                type="button"
-                onClick={handleListSpaceClick}
-                className="fms-button-primary inline-flex h-10 items-center !rounded-md px-3 text-sm font-medium shadow-[0_1px_2px_rgba(12,29,47,0.18)] transition-all duration-200 hover:-translate-y-[1px] hover:bg-[#0a1726] sm:h-11 sm:px-4"
-              >
-                List space
-              </button>
-            ) : (
-              <Link
-                href="/dashboard/become-host"
-                className="fms-button-primary inline-flex h-10 items-center !rounded-md px-3 text-sm font-medium shadow-[0_1px_2px_rgba(12,29,47,0.18)] transition-all duration-200 hover:-translate-y-[1px] hover:bg-[#0a1726] sm:h-11 sm:px-4"
-              >
-                Host with us
-              </Link>
-            )}
+            {/* Browse spaces — workspace-agnostic primary discovery link.
+                Hidden on mobile to avoid overcrowding; mobile users still
+                reach it via the burger menu under Explore. */}
+            <Link
+              href="/spaces"
+              className="hidden h-10 items-center rounded-md px-3 text-sm font-medium text-[#192a3a] transition-colors duration-200 hover:bg-gray-50 sm:inline-flex sm:h-11 sm:px-4"
+            >
+              Browse spaces
+            </Link>
 
-            <div className="hidden sm:block">
-              {loading ? null : isLoggedIn ? (
-                <button
-                  onClick={handleLogout}
-                  className="fms-button-secondary inline-flex h-10 items-center !rounded-md border border-gray-300 bg-white px-3 text-sm font-medium text-[#192a3a] transition-colors duration-200 hover:border-gray-400 hover:bg-gray-50 sm:h-11 sm:px-4"
-                >
-                  Log out
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={openSignupModal}
-                  className="fms-button-secondary inline-flex h-10 items-center !rounded-md border border-gray-300 bg-white px-3 text-sm font-medium text-[#192a3a] transition-colors duration-200 hover:border-gray-400 hover:bg-gray-50 sm:h-11 sm:px-4"
-                >
-                  Sign up
-                </button>
-              )}
-            </div>
+            {/* Single primary CTA in the top bar. Logged-out users tap this
+                and the existing handler routes them through the auth modal
+                before continuing to /dashboard/become-host or /dashboard/new-space. */}
+            <button
+              type="button"
+              onClick={handleListSpaceClick}
+              className="fms-button-primary inline-flex h-10 items-center !rounded-md px-3 text-sm font-medium shadow-[0_1px_2px_rgba(12,29,47,0.18)] transition-all duration-200 hover:-translate-y-[1px] hover:bg-[#0a1726] sm:h-11 sm:px-4"
+            >
+              List space
+            </button>
 
             {!loading && isLoggedIn && (() => {
               const commsLabel =
@@ -1155,45 +1081,46 @@ export default function Header() {
                       </div>
                     ))}
 
-                    {!loading && isLoggedIn && (
-                      <div className="rounded-md border border-gray-200 bg-white px-2 py-2">
+                    {/* Persistent footer: Terms first, then auth controls. */}
+                    <div className="rounded-md border border-gray-200 bg-white px-2 py-2">
+                      <Link
+                        href="/terms"
+                        onClick={() => setMenuOpen(false)}
+                        className="flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-[#192a3a] transition hover:bg-gray-100"
+                      >
+                        <FileBadge className="h-4 w-4 shrink-0 text-[#475569]" />
+                        <span>Terms &amp; Conditions</span>
+                      </Link>
+
+                      {!loading && isLoggedIn ? (
                         <button
                           onClick={handleLogout}
-                          className="flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-left text-sm font-medium text-red-600 hover:bg-red-50"
+                          className="mt-0.5 flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-left text-sm font-medium text-red-600 hover:bg-red-50"
                         >
                           <LogOut className="h-4 w-4 shrink-0 text-red-600" />
                           <span>Log out</span>
                         </button>
-                      </div>
-                    )}
-
-                    {!loading && !isLoggedIn && (
-                      <div className="rounded-md border border-gray-200 bg-white px-2 py-2">
-                        <div className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500">
-                          Account
-                        </div>
-
-                        <div className="space-y-0.5">
+                      ) : !loading ? (
+                        <>
                           <button
                             type="button"
                             onClick={openLoginModal}
-                            className="flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-left text-sm font-medium text-[#192a3a] transition hover:bg-gray-100"
+                            className="mt-0.5 flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-left text-sm font-medium text-[#192a3a] transition hover:bg-gray-100"
                           >
                             <LogIn className="h-4 w-4 shrink-0 text-[#192a3a]" />
                             <span>Log in</span>
                           </button>
-
                           <button
                             type="button"
                             onClick={openSignupModal}
-                            className="flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-left text-sm font-medium text-[#192a3a] transition hover:bg-gray-100"
+                            className="mt-0.5 flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-left text-sm font-medium text-[#192a3a] transition hover:bg-gray-100"
                           >
                             <UserPlus className="h-4 w-4 shrink-0 text-[#192a3a]" />
                             <span>Sign up</span>
                           </button>
-                        </div>
-                      </div>
-                    )}
+                        </>
+                      ) : null}
+                    </div>
                   </div>
                 </div>
               )}

@@ -22,9 +22,10 @@ import {
     Download,
 } from "lucide-react";
 import RequireAuth from "@/app/components/RequireAuth";
+import DashboardShell from "@/app/components/DashboardShell";
+import { HOST_NAV } from "@/lib/dashboard-nav";
 import { downloadInvoicePdf } from "@/lib/invoice-download-client";
 import OwnerCalendarLegend from "@/app/dashboard/_components/calendar/OwnerCalendarLegend";
-import OwnerTopNav from "@/app/dashboard/_components/calendar/OwnerTopNav";
 import { supabase } from "@/lib/supabase";
 import {
     ownerListingBookingStatusLabel,
@@ -2062,10 +2063,14 @@ export default function CalendarPage() {
 
     return (
         <RequireAuth>
-            <main className="min-h-screen bg-[#f7f9fb] px-4 py-5 sm:px-6 lg:px-8">
-                <div className="mx-auto max-w-7xl">
-                    <OwnerTopNav active="calendar" />
-
+            <DashboardShell
+                workspaceLabel="Hosting"
+                pageTitle="Calendar"
+                pageSubtitle="Visualise bookings and block availability across your spaces."
+                navItems={HOST_NAV}
+                activeHref="/dashboard/calendar"
+            >
+                <>
                     <CalendarToolbar
                         bookingType={bookingType}
                         onBookingTypeChange={setBookingType}
@@ -2105,7 +2110,6 @@ export default function CalendarPage() {
                         onBookingClick={handleTimelineBookingClick}
                         onBlockedDateClick={handleTimelineBlockedDateClick}
                     />
-                </div>
                 <BookingModal
                     open={Boolean(selectedBooking && selectedDrawerSpace)}
                     booking={selectedBooking}
@@ -2144,7 +2148,8 @@ export default function CalendarPage() {
                     onClose={closeSlotModal}
                     onSave={handleSaveSlotBlock}
                 />
-            </main>
+                </>
+            </DashboardShell>
         </RequireAuth>
     );
 }

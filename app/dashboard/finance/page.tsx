@@ -1,20 +1,17 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertCircle,
   CalendarDays,
-  ClipboardList,
   Download,
-  Home,
-  Landmark,
-  LayoutDashboard,
   Loader2,
   Search,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import RequireAuth from "@/app/components/RequireAuth";
+import DashboardShell from "@/app/components/DashboardShell";
+import { HOST_NAV } from "@/lib/dashboard-nav";
 import {
   buildFinanceLineItems,
   type FinanceBookingInput,
@@ -205,54 +202,14 @@ export default function OwnerFinancePage() {
 
   return (
     <RequireAuth>
-      <main className="min-h-screen bg-[#f7f9fb] px-4 py-8 text-[#192a3a] sm:px-6 lg:px-8">
-        <div className="mx-auto max-w-7xl">
-          <div className="mb-5 flex flex-wrap items-center gap-2 border-b border-gray-200 pb-4">
-            <Link
-              href="/dashboard/owner"
-              className="inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm text-gray-600 hover:bg-white hover:text-[#192a3a]"
-            >
-              <LayoutDashboard className="h-4 w-4" />
-              <span>Overview</span>
-            </Link>
-            <Link
-              href="/dashboard/listings"
-              className="inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm text-gray-600 hover:bg-white hover:text-[#192a3a]"
-            >
-              <Home className="h-4 w-4" />
-              <span>Listings</span>
-            </Link>
-            <Link
-              href="/dashboard/requests"
-              className="inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm text-gray-600 hover:bg-white hover:text-[#192a3a]"
-            >
-              <ClipboardList className="h-4 w-4" />
-              <span>Requests</span>
-            </Link>
-            <Link
-              href="/dashboard/calendar"
-              className="inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm text-gray-600 hover:bg-white hover:text-[#192a3a]"
-            >
-              <CalendarDays className="h-4 w-4" />
-              <span>Calendar</span>
-            </Link>
-            <div className="inline-flex items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-[#192a3a] shadow-sm">
-              <Landmark className="h-4 w-4" />
-              <span>Finance</span>
-            </div>
-          </div>
-
-          <div className="mb-6 rounded-md border border-gray-200 bg-white p-5 shadow-sm">
-            <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-              Finance
-            </h1>
-            <p className="mt-2 max-w-2xl text-sm text-gray-600">
-              Payments, deposits, fees, and net earnings across your listings.
-            </p>
-            {sessionEmail && (
-              <p className="mt-2 text-sm text-gray-500">Logged in as {sessionEmail}</p>
-            )}
-          </div>
+      <DashboardShell
+        workspaceLabel="Hosting"
+        pageTitle="Finance"
+        pageSubtitle="Payments, deposits, fees, and net earnings across your listings."
+        navItems={HOST_NAV}
+        activeHref="/dashboard/finance"
+      >
+        <>
 
           {error && (
             <div
@@ -567,8 +524,8 @@ export default function OwnerFinancePage() {
               </div>
             </>
           )}
-        </div>
-      </main>
+        </>
+      </DashboardShell>
     </RequireAuth>
   );
 }
