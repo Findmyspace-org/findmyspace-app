@@ -35,7 +35,7 @@ const INTENT_SUPPORT_TEXT: Record<SpaceIntentKey, string> = {
 const BROWSE_SPACES_HREF = "/spaces#browse-search";
 const LIST_SPACE_HREF = "/list-your-space";
 
-const heroBackgroundImage = "/images/findmyspace-hero.jpg";
+const heroBackgroundImage = "/images/homepage-hero.png";
 
 export default function HomePage() {
   const router = useRouter();
@@ -72,7 +72,7 @@ export default function HomePage() {
 
   return (
     <div className="pb-10 text-[#192a3a] sm:pb-12">
-      <section className="relative min-h-0 w-full overflow-visible lg:min-h-[560px]">
+      <section className="relative min-h-0 w-full overflow-visible lg:min-h-[640px] xl:min-h-[700px]">
         {/* Photo: more visible than heavy white wash; readability from left-weighted scrim */}
         <div
           className="absolute inset-0 bg-cover bg-center"
@@ -84,22 +84,24 @@ export default function HomePage() {
         />
         <div className="absolute inset-0 bg-black/[0.07] sm:bg-black/[0.05]" aria-hidden />
 
-        <div className="relative z-10 mx-auto max-w-7xl px-4 pt-7 pb-10 sm:px-6 sm:pt-9 sm:pb-12 lg:grid lg:grid-cols-[1fr_minmax(0,34rem)] lg:items-start lg:justify-between lg:gap-10 lg:pt-11 lg:pb-20 xl:grid-cols-[1fr_minmax(0,35.5rem)] xl:gap-12">
+        <div className="relative z-10 mx-auto max-w-7xl px-4 pt-7 pb-16 sm:px-6 sm:pt-9 sm:pb-20 lg:grid lg:grid-cols-[1fr_minmax(0,34rem)] lg:items-start lg:justify-between lg:gap-10 lg:pt-11 lg:pb-32 xl:grid-cols-[1fr_minmax(0,35.5rem)] xl:gap-12 xl:pb-36">
           {/* LEFT: editorial hero + CTAs */}
           <div className="max-w-xl lg:max-w-none lg:pt-1">
-            <h1 className="text-[1.75rem] font-semibold leading-[1.14] tracking-[-0.02em] text-[#0f172a] sm:text-[2.25rem] sm:leading-[1.1] lg:text-[2.875rem] lg:font-bold lg:leading-[1.05] xl:text-[3.125rem] xl:leading-[1.04]">
+            <h1 className="max-w-3xl text-4xl font-semibold leading-tight text-[#0f172a] sm:text-5xl lg:text-6xl">
               The right space
               <br />
               in the <span className="text-[#c1121f]">right place.</span>
             </h1>
-            <p className="mt-3 max-w-md text-sm leading-relaxed text-[#1f2937] sm:mt-4 sm:max-w-lg sm:text-[0.9375rem] lg:mt-5 lg:text-base">
-              Find trusted storage, parking, workspace and lifestyle spaces from local owners.
+            <p className="mt-3 max-w-md sm:mt-4 sm:max-w-lg lg:mt-5">
+              <span className="inline-block rounded-xl border border-[#0f172a]/5 bg-[#0f172a]/10 px-3 py-1.5 text-sm leading-relaxed text-[#1f2937] backdrop-blur-sm sm:text-[0.9375rem] lg:text-base">
+                Find trusted storage, parking, workspace and lifestyle spaces from local owners.
+              </span>
             </p>
             <div className="mt-6 flex flex-col gap-2.5 sm:mt-7 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3.5">
               <button
                 type="button"
                 onClick={() => router.push(BROWSE_SPACES_HREF)}
-                className="inline-flex min-h-[46px] w-full items-center justify-center rounded-xl bg-[#c1121f] px-5 py-2.5 text-sm font-semibold text-white shadow-[0_4px_18px_rgba(193,18,31,0.38),0_1px_2px_rgba(15,23,42,0.08)] transition hover:opacity-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c1121f] focus-visible:ring-offset-2 sm:w-auto sm:px-6 sm:py-3"
+                className="inline-flex min-h-[46px] w-full items-center justify-center rounded-xl bg-[#c1121f] px-5 py-2.5 text-sm font-semibold text-white shadow-[0_4px_18px_rgba(193,18,31,0.38),0_1px_2px_rgba(15,23,42,0.08)] transition-all duration-200 ease-out hover:-translate-y-0.5 hover:bg-[#a70f19] hover:shadow-[0_10px_28px_rgba(193,18,31,0.44),0_2px_6px_rgba(15,23,42,0.1)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c1121f] focus-visible:ring-offset-2 active:translate-y-0 active:shadow-[0_4px_18px_rgba(193,18,31,0.38),0_1px_2px_rgba(15,23,42,0.08)] motion-reduce:transform-none motion-reduce:transition-colors sm:w-auto sm:px-6 sm:py-3"
                 aria-label="Find a space"
               >
                 Find a space
@@ -107,7 +109,7 @@ export default function HomePage() {
               <button
                 type="button"
                 onClick={() => router.push(LIST_SPACE_HREF)}
-                className="inline-flex min-h-[46px] w-full items-center justify-center rounded-xl border-2 border-white/90 bg-white/95 px-5 py-2.5 text-sm font-semibold text-[#0f172a] shadow-[0_8px_28px_rgba(15,23,42,0.12)] backdrop-blur-sm transition hover:border-white hover:bg-white hover:shadow-[0_12px_36px_rgba(15,23,42,0.14)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c1121f]/35 focus-visible:ring-offset-2 sm:w-auto sm:px-6 sm:py-3"
+                className="inline-flex min-h-[46px] w-full items-center justify-center rounded-xl border-2 border-white/90 bg-white/95 px-5 py-2.5 text-sm font-semibold text-[#0f172a] shadow-[0_8px_28px_rgba(15,23,42,0.12)] backdrop-blur-sm transition-all duration-200 ease-out hover:-translate-y-0.5 hover:border-[#0f172a]/15 hover:bg-white hover:shadow-[0_14px_36px_rgba(15,23,42,0.16)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c1121f]/35 focus-visible:ring-offset-2 active:translate-y-0 active:shadow-[0_8px_28px_rgba(15,23,42,0.12)] motion-reduce:transform-none motion-reduce:transition-colors sm:w-auto sm:px-6 sm:py-3"
                 aria-label="List your space"
               >
                 List your space
@@ -147,10 +149,10 @@ export default function HomePage() {
                         setIntent(VIEW_ALL_KEY);
                         goToBrowse(VIEW_ALL_KEY);
                       }}
-                      className={`group w-full cursor-pointer rounded-xl border px-2.5 py-2.5 text-left shadow-sm transition-all duration-200 sm:px-3 sm:py-3 ${
+                      className={`group w-full cursor-pointer rounded-xl border px-2.5 py-2.5 text-left shadow-sm transition-all duration-200 ease-out hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c1121f]/30 focus-visible:ring-offset-2 active:translate-y-0 motion-reduce:transform-none motion-reduce:transition-colors sm:px-3 sm:py-3 ${
                         intent === VIEW_ALL_KEY
-                          ? "border-[#c1121f] bg-[#fff5f5] text-[#0f172a] shadow-[0_1px_2px_rgba(15,23,42,0.08)]"
-                          : "border-[#e5e7eb] bg-white text-[#334155] hover:border-[#d4dbe2] hover:shadow-[0_2px_8px_rgba(15,23,42,0.06)]"
+                          ? "border-[#c1121f] bg-[#fff5f5] text-[#0f172a] shadow-[0_6px_18px_rgba(193,18,31,0.16),0_1px_2px_rgba(15,23,42,0.08)] hover:shadow-[0_10px_24px_rgba(193,18,31,0.22),0_1px_2px_rgba(15,23,42,0.08)]"
+                          : "border-[#e5e7eb] bg-white text-[#334155] hover:border-[#cbd5e1] hover:bg-[#fcfdfd] hover:shadow-[0_8px_20px_rgba(15,23,42,0.08),0_1px_2px_rgba(15,23,42,0.04)]"
                       }`}
                     >
                       <div className="flex items-start gap-2.5">
@@ -191,10 +193,10 @@ export default function HomePage() {
                             }
                             setIntent(option.key);
                           }}
-                          className={`group w-full cursor-pointer rounded-xl border px-2.5 py-2.5 text-left shadow-sm transition-all duration-200 sm:px-3 sm:py-3 ${
+                          className={`group w-full cursor-pointer rounded-xl border px-2.5 py-2.5 text-left shadow-sm transition-all duration-200 ease-out hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c1121f]/30 focus-visible:ring-offset-2 active:translate-y-0 motion-reduce:transform-none motion-reduce:transition-colors sm:px-3 sm:py-3 ${
                             selected
-                              ? "border-[#c1121f] bg-[#fff5f5] text-[#0f172a] shadow-[0_1px_2px_rgba(15,23,42,0.08)]"
-                              : "border-[#e5e7eb] bg-white text-[#334155] hover:border-[#d4dbe2] hover:shadow-[0_2px_8px_rgba(15,23,42,0.06)]"
+                              ? "border-[#c1121f] bg-[#fff5f5] text-[#0f172a] shadow-[0_6px_18px_rgba(193,18,31,0.16),0_1px_2px_rgba(15,23,42,0.08)] hover:shadow-[0_10px_24px_rgba(193,18,31,0.22),0_1px_2px_rgba(15,23,42,0.08)]"
+                              : "border-[#e5e7eb] bg-white text-[#334155] hover:border-[#cbd5e1] hover:bg-[#fcfdfd] hover:shadow-[0_8px_20px_rgba(15,23,42,0.08),0_1px_2px_rgba(15,23,42,0.04)]"
                           }`}
                         >
                           <div className="flex items-start gap-2.5">
@@ -224,7 +226,7 @@ export default function HomePage() {
 
                 <button
                   type="submit"
-                  className="w-full min-h-[44px] rounded-xl bg-[#c1121f] py-2 text-sm font-semibold text-white shadow-[0_4px_16px_rgba(193,18,31,0.32)] transition hover:opacity-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c1121f] focus-visible:ring-offset-2 sm:min-h-[46px] sm:py-2.5 sm:text-[0.9375rem]"
+                  className="w-full min-h-[44px] rounded-xl bg-[#c1121f] py-2 text-sm font-semibold text-white shadow-[0_4px_16px_rgba(193,18,31,0.32)] transition-all duration-200 ease-out hover:-translate-y-0.5 hover:bg-[#a70f19] hover:shadow-[0_10px_24px_rgba(193,18,31,0.4)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c1121f] focus-visible:ring-offset-2 active:translate-y-0 active:shadow-[0_4px_16px_rgba(193,18,31,0.32)] motion-reduce:transform-none motion-reduce:transition-colors sm:min-h-[46px] sm:py-2.5 sm:text-[0.9375rem]"
                   aria-label="Find matching spaces"
                 >
                   Find matching spaces
@@ -233,12 +235,13 @@ export default function HomePage() {
             </div>
           </div>
         </div>
+      </section>
 
-        {/* Trust row: centered, overlapping hero bottom — slightly lower for breathing room */}
-        <div className="pointer-events-none relative z-20 -mt-6 px-4 sm:-mt-8 sm:px-6 lg:-mt-10">
-          <div className="mx-auto max-w-4xl">
-            <div
-              className={`pointer-events-auto rounded-2xl border border-white/70 bg-white/95 p-3 shadow-[0_20px_50px_rgba(15,23,42,0.12),0_2px_12px_rgba(15,23,42,0.06)] backdrop-blur-md transition-[opacity,transform,box-shadow] duration-[520ms] ease-out sm:rounded-3xl sm:p-5 ${
+      {/* Trust row: vertical middle aligns with the hero image's bottom edge */}
+      <div className="pointer-events-none relative z-20 -mt-14 px-4 sm:-mt-16 sm:px-6 lg:-mt-20">
+        <div className="mx-auto max-w-4xl">
+          <div
+            className={`pointer-events-auto rounded-2xl border border-white/70 bg-white/95 p-3 shadow-[0_20px_50px_rgba(15,23,42,0.12),0_2px_12px_rgba(15,23,42,0.06)] backdrop-blur-md transition-[opacity,transform,box-shadow] duration-[520ms] ease-out sm:rounded-3xl sm:p-5 ${
                 trustStripEntered
                   ? "translate-y-0 opacity-100"
                   : "translate-y-3 opacity-0"
@@ -290,7 +293,6 @@ export default function HomePage() {
             </div>
           </div>
         </div>
-      </section>
-    </div>
+      </div>
   );
 }

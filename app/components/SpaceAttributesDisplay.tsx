@@ -1,8 +1,8 @@
 "use client";
 
 import {
-  getSpaceFeatureField,
   getOptionLabel,
+  getSpaceFeatureLayout,
   normalizeFeatureAttributes,
   toCanonicalFeatureKey,
 } from "@/app/data/spaceFeatureConfig";
@@ -56,51 +56,39 @@ function getLegacyField(
   return fields?.find((f) => f.key === key);
 }
 
-function formatNewFeatureDisplay(
-  key: string,
-  values: string[]
-): { label: string; text: string; iconName: string } | null {
-  if (values.length === 0) return null;
+type FeatureItem = {
+  key: string;
+  label: string;
+  iconName?: string;
+  legacyIcon?: string;
+  isBoolean: boolean;
+  valueText?: string;
+};
 
-  const field = getSpaceFeatureField(key);
-  if (!field) return null;
+type FeatureGroup = {
+  id: string;
+  title: string;
+  items: FeatureItem[];
+};
 
-  if (field.kind === "checkbox") {
-    if (!values.includes("yes")) return null;
-    return { label: field.label, text: "Yes", iconName: field.icon };
-  }
-
-  if (field.kind === "radio") {
-    const v = values[0];
-    if (!v) return null;
-    return {
-      label: field.label,
-      text: getOptionLabel(field, v),
-      iconName: field.icon,
-    };
-  }
-
-  if (field.kind === "multiselect") {
-    const text = values
-      .map((v) => getOptionLabel(field, v))
-      .filter(Boolean)
-      .join(", ");
-    if (!text) return null;
-    return { label: field.label, text, iconName: field.icon };
-  }
-
-  return null;
-}
-
-function formatLegacyDisplay(
+function formatLegacyItem(
   spaceType: string,
   key: string,
   values: string[]
-): { label: string; text: string; legacyIcon?: string } | null {
+): FeatureItem | null {
   if (values.length === 0) return null;
-
   const field = getLegacyField(spaceType, key);
   if (!field) return null;
+
+  if (field.type === "boolean") {
+    if (values[0] !== "yes") return null;
+    return {
+      key,
+      label: field.label,
+      legacyIcon: field.icon,
+      isBoolean: true,
+    };
+  }
 
   if (field.type === "multiselect" || field.type === "select") {
     const text = values
@@ -109,22 +97,73 @@ function formatLegacyDisplay(
         return option?.label || value;
       })
       .join(", ");
-    return { label: field.label, text, legacyIcon: field.icon };
-  }
-
-  if (field.type === "boolean") {
+    if (!text) return null;
     return {
+      key,
       label: field.label,
-      text: values[0] === "yes" ? "Yes" : "No",
       legacyIcon: field.icon,
+      isBoolean: false,
+      valueText: text,
     };
   }
 
+  const text = values.join(", ");
+  if (!text) return null;
   return {
+    key,
     label: field.label,
-    text: values.join(", "),
     legacyIcon: field.icon,
+    isBoolean: false,
+    valueText: text,
   };
+}
+
+function FeatureGlyph({
+  iconName,
+  legacyIcon,
+}: {
+  iconName?: string;
+  legacyIcon?: string;
+}) {
+  if (iconName) {
+    return <SpaceFeatureIcon name={iconName} className="h-4 w-4" />;
+  }
+  if (legacyIcon) {
+    const Icon = legacyIconMap[legacyIcon];
+    return Icon ? <Icon className="h-4 w-4" /> : null;
+  }
+  return null;
+}
+
+function FeatureCard({ item }: { item: FeatureItem }) {
+  if (item.isBoolean) {
+    return (
+      <div className="flex min-w-0 items-center gap-2 sm:gap-2.5">
+        <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-[#e2e8f0] bg-white text-[#c1121f] sm:h-8 sm:w-8">
+          <FeatureGlyph iconName={item.iconName} legacyIcon={item.legacyIcon} />
+        </span>
+        <span className="min-w-0 truncate text-sm font-medium text-[#0f172a] sm:text-[0.9375rem]">
+          {item.label}
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex min-w-0 items-start gap-2 sm:gap-2.5">
+      <span className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-[#e2e8f0] bg-white text-[#475569] sm:h-8 sm:w-8">
+        <FeatureGlyph iconName={item.iconName} legacyIcon={item.legacyIcon} />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-[11px] font-medium leading-tight text-[#64748b] sm:text-xs">
+          {item.label}
+        </p>
+        <p className="mt-0.5 break-words text-sm font-semibold leading-tight text-[#0f172a] sm:text-[0.9375rem]">
+          {item.valueText}
+        </p>
+      </div>
+    </div>
+  );
 }
 
 export default function SpaceAttributesDisplay({
@@ -135,73 +174,99 @@ export default function SpaceAttributesDisplay({
 
   const normalizedAttributes = normalizeFeatureAttributes(attributes);
 
-  const keys = Object.keys(normalizedAttributes).filter(
+  const allKeys = Object.keys(normalizedAttributes).filter(
     (k) => (normalizedAttributes[k] || []).length > 0
   );
 
-  if (keys.length === 0) return null;
+  if (allKeys.length === 0) return null;
 
-  const rows: Array<{
-    key: string;
-    label: string;
-    text: string;
-    iconName?: string;
-    legacyIcon?: string;
-  }> = [];
+  const layout = getSpaceFeatureLayout(spaceType);
+  const usedCanonical = new Set<string>();
+  const groups: FeatureGroup[] = [];
 
-  for (const key of keys) {
-    const canonicalKey = toCanonicalFeatureKey(key);
-    const values = normalizedAttributes[canonicalKey] || [];
+  for (const sec of layout.sections) {
+    const items: FeatureItem[] = [];
 
-    const modern = formatNewFeatureDisplay(canonicalKey, values);
-    if (modern) {
-      rows.push({
-        key: canonicalKey,
-        label: modern.label,
-        text: modern.text,
-        iconName: modern.iconName,
-      });
-      continue;
+    for (const field of sec.fields) {
+      const canonical = toCanonicalFeatureKey(field.key);
+      const values = normalizedAttributes[canonical] || [];
+      if (values.length === 0) continue;
+      usedCanonical.add(canonical);
+
+      if (field.kind === "checkbox") {
+        if (!values.includes("yes")) continue;
+        items.push({
+          key: canonical,
+          label: field.label,
+          iconName: field.icon,
+          isBoolean: true,
+        });
+      } else if (field.kind === "radio") {
+        const v = values[0];
+        if (!v) continue;
+        items.push({
+          key: canonical,
+          label: field.label,
+          iconName: field.icon,
+          isBoolean: false,
+          valueText: getOptionLabel(field, v),
+        });
+      } else if (field.kind === "multiselect") {
+        const text = values
+          .map((v) => getOptionLabel(field, v))
+          .filter(Boolean)
+          .join(", ");
+        if (!text) continue;
+        items.push({
+          key: canonical,
+          label: field.label,
+          iconName: field.icon,
+          isBoolean: false,
+          valueText: text,
+        });
+      }
     }
 
-    const legacy = formatLegacyDisplay(spaceType, canonicalKey, values);
-    if (legacy) {
-      rows.push({
-        key,
-        label: legacy.label,
-        text: legacy.text,
-        legacyIcon: legacy.legacyIcon,
-      });
+    if (items.length > 0) {
+      groups.push({ id: sec.id, title: sec.title, items });
     }
   }
 
-  if (rows.length === 0) return null;
+  const legacyItems: FeatureItem[] = [];
+  for (const key of allKeys) {
+    const canonical = toCanonicalFeatureKey(key);
+    if (usedCanonical.has(canonical)) continue;
+    const item = formatLegacyItem(
+      spaceType,
+      canonical,
+      normalizedAttributes[canonical] || []
+    );
+    if (item) legacyItems.push(item);
+  }
+  if (legacyItems.length > 0) {
+    groups.push({
+      id: "legacy_additional",
+      title: "Additional details",
+      items: legacyItems,
+    });
+  }
+
+  if (groups.length === 0) return null;
 
   return (
-    <section className="rounded-md border border-gray-200 bg-white p-5 shadow-sm">
-      <h2 className="mb-4 text-xl font-semibold text-[#192a3a]">Space details</h2>
-
-      <div className="grid gap-y-4 gap-x-8 sm:grid-cols-2 lg:grid-cols-3 text-sm">
-        {rows.map((row) => (
-          <div key={row.key} className="flex items-start gap-3">
-            <div className="mt-0.5 text-gray-500">
-              {row.iconName ? (
-                <SpaceFeatureIcon name={row.iconName} className="h-4 w-4" />
-              ) : row.legacyIcon ? (
-                (() => {
-                  const Icon = legacyIconMap[row.legacyIcon];
-                  return Icon ? <Icon size={18} /> : null;
-                })()
-              ) : null}
-            </div>
-
-            <div className="min-w-0">
-              <p className="text-gray-500">{row.label}</p>
-              <p className="font-medium text-[#192a3a] break-words">{row.text}</p>
-            </div>
+    <div className="space-y-5 sm:space-y-6">
+      {groups.map((group) => (
+        <div key={group.id} className="space-y-2.5 sm:space-y-3">
+          <h3 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#64748b] sm:text-sm sm:tracking-normal sm:normal-case sm:text-[#0f172a]">
+            {group.title}
+          </h3>
+          <div className="grid grid-cols-2 gap-2">
+            {group.items.map((item) => (
+              <FeatureCard key={item.key} item={item} />
+            ))}
           </div>
-        ))}
-      </div>
-    </section>
+        </div>
+      ))}
+    </div>
   );
 }

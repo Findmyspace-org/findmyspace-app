@@ -41,6 +41,7 @@ type Space = {
   longitude: number | null;
   image_urls: string[];
   attributes: Record<string, string[]>;
+  cancellation_policy?: string | null;
 };
 
 type HostProfile = {
@@ -107,12 +108,6 @@ async function getHostProfile(ownerId: string) {
 function formatLabel(value: string | null) {
   if (!value) return "Not set";
   return formatSpaceTypeLabel(value);
-}
-
-function formatBookingUnit(value: string | null) {
-  if (value === "hour") return "By hour";
-  if (value === "month") return "By month";
-  return "By day";
 }
 
 export default async function Page({
@@ -234,26 +229,39 @@ export default async function Page({
         <div className="grid gap-7 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start">
           <div className="space-y-6">
             <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-              <div className="mb-2 flex flex-wrap items-center gap-2 text-sm text-gray-600">
-                <span className="inline-flex rounded-full bg-[#eef2f6] px-3 py-1 text-xs font-semibold uppercase tracking-[0.08em] text-[#334155]">
-                  {formatLabel(space.space_type)}
-                </span>
-                <span className="inline-flex items-center gap-1.5">
-                  <MapPin className="h-4 w-4" />
-                  {[space.suburb, space.city].filter(Boolean).join(", ") || address}
-                </span>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+                <div className="min-w-0 flex-1">
+                  <div className="mb-2 flex flex-wrap items-center gap-2 text-sm text-gray-600">
+                    <span className="inline-flex rounded-full bg-[#eef2f6] px-3 py-1 text-xs font-semibold uppercase tracking-[0.08em] text-[#334155]">
+                      {formatLabel(space.space_type)}
+                    </span>
+                    <span className="inline-flex items-center gap-1.5">
+                      <MapPin className="h-4 w-4" />
+                      {[space.suburb, space.city].filter(Boolean).join(", ") || address}
+                    </span>
+                  </div>
+
+                  <h1 className="text-3xl font-semibold tracking-tight text-[#192a3a] md:text-4xl">
+                    {space.title}
+                  </h1>
+
+                  {isVerifiedSpace ? (
+                    <p className="mt-3 inline-flex items-center gap-2 rounded-full border border-[#f0d5d8] bg-[#fff6f7] px-3 py-1 text-xs font-medium text-[#9f1239]">
+                      <BadgeCheck className="h-4 w-4" />
+                      Verified space
+                    </p>
+                  ) : null}
+                </div>
+
+                <label
+                  htmlFor="space-map-toggle"
+                  className="inline-flex shrink-0 cursor-pointer items-center gap-1.5 self-start rounded-xl border border-[#e2e8f0] bg-white px-3 py-2 text-sm font-medium text-[#192a3a] shadow-sm transition hover:border-[#cbd5e1] hover:bg-[#f8fafb]"
+                  aria-label="View on map"
+                >
+                  <Map className="h-4 w-4 shrink-0" aria-hidden />
+                  View on map
+                </label>
               </div>
-
-              <h1 className="text-3xl font-semibold tracking-tight text-[#192a3a] md:text-4xl">
-                {space.title}
-              </h1>
-
-              {isVerifiedSpace ? (
-                <p className="mt-3 inline-flex items-center gap-2 rounded-full border border-[#f0d5d8] bg-[#fff6f7] px-3 py-1 text-xs font-medium text-[#9f1239]">
-                  <BadgeCheck className="h-4 w-4" />
-                  Verified space
-                </p>
-              ) : null}
             </section>
 
             <SpaceGallerySection
@@ -269,29 +277,15 @@ export default async function Page({
               </p>
             </section>
 
-            <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-              <h2 className="mb-4 text-xl font-semibold text-[#192a3a]">Features & amenities</h2>
-              <div className="[&_section]:border-0 [&_section]:bg-transparent [&_section]:p-0 [&_section]:shadow-none [&_div[class*='grid']]:gap-3 [&_div[class*='grid']]:sm:grid-cols-2 [&_div[class*='grid']]:lg:grid-cols-3 [&_div[class*='grid']_>_div]:rounded-xl [&_div[class*='grid']_>_div]:border [&_div[class*='grid']_>_div]:border-[#e2e8f0] [&_div[class*='grid']_>_div]:bg-[#fbfcfd] [&_div[class*='grid']_>_div]:p-3">
+            <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
+              <h2 className="mb-3 text-lg font-semibold text-[#192a3a] sm:mb-4 sm:text-xl">
+                Features &amp; amenities
+              </h2>
+              <div className="[&_div[class*='grid']]:gap-2 [&_div[class*='grid']]:sm:gap-3 [&_div[class*='grid']]:sm:grid-cols-2 [&_div[class*='grid']]:lg:grid-cols-3 [&_div[class*='grid']_>_div]:rounded-xl [&_div[class*='grid']_>_div]:border [&_div[class*='grid']_>_div]:border-[#e2e8f0] [&_div[class*='grid']_>_div]:bg-[#fbfcfd] [&_div[class*='grid']_>_div]:p-2.5 [&_div[class*='grid']_>_div]:sm:p-3">
                 <SpaceAttributesDisplay
                   spaceType={space.space_type}
                   attributes={space.attributes}
                 />
-              </div>
-            </section>
-
-            <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-              <div className="flex items-center justify-between gap-4">
-                <div>
-                  <h2 className="text-xl font-semibold text-[#192a3a]">Location</h2>
-                  <p className="mt-1 text-sm text-gray-600">{address || "Address details available after booking request."}</p>
-                </div>
-                <label
-                  htmlFor="space-map-toggle"
-                  className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-gray-200 bg-[#f8fafb] px-3 py-2 text-sm font-medium text-[#192a3a] shadow-sm transition hover:bg-white"
-                >
-                  <Map className="h-4 w-4 shrink-0" aria-hidden />
-                  View on map
-                </label>
               </div>
             </section>
           </div>
@@ -307,18 +301,14 @@ export default async function Page({
               <p className="mt-2 text-sm text-gray-600">{suffix}</p>
 
               <div className="mt-5 rounded-xl border border-[#e2e8f0] bg-[#fafbfc] p-3">
-                <p className="text-xs font-medium uppercase tracking-[0.08em] text-gray-500">Booking period</p>
-                <p className="mt-1 text-sm font-medium text-[#192a3a]">
-                  {formatBookingUnit(space.booking_unit).replace("By", "").trim()} rental
+                <p className="text-xs font-medium uppercase tracking-[0.08em] text-gray-500">
+                  Cancellation policy
                 </p>
-              </div>
-
-              <div className="mt-4 rounded-xl border border-[#e2e8f0] bg-[#fafbfc] p-3">
-                <p className="text-xs font-medium uppercase tracking-[0.08em] text-gray-500">Cancellation policy</p>
-                <p className="mt-1 text-sm text-gray-700">
-                  Cancellation policy provided after booking request.
+                <p className="mt-1 whitespace-pre-line text-sm text-gray-700">
+                  {space.cancellation_policy?.trim()
+                    ? space.cancellation_policy.trim()
+                    : "Cancellation policy will be confirmed before payment."}
                 </p>
-                {/* TODO: Replace with host-defined cancellation policy when available in listing data. */}
               </div>
 
               <ul className="mt-4 space-y-2 text-sm text-gray-600">

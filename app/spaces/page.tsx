@@ -606,8 +606,10 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
               <br />
               in the <span className="text-[#c1121f]">right place.</span>
             </h1>
-            <p className="mt-4 max-w-2xl text-base leading-relaxed text-[#1f2937] sm:text-lg">
-              Find trusted storage, parking, workspace and lifestyle spaces from local owners.
+            <p className="mt-4 max-w-2xl">
+              <span className="inline-block rounded-xl border border-[#0f172a]/5 bg-[#0f172a]/10 px-3 py-1.5 text-base leading-relaxed text-[#1f2937] backdrop-blur-sm sm:text-lg">
+                Find trusted storage, parking, workspace and lifestyle spaces from local owners.
+              </span>
             </p>
           </div>
         </div>
