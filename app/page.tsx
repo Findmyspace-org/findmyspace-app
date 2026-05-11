@@ -7,10 +7,13 @@ import {
   Car,
   CheckCircle2,
   CircleEllipsis,
+  Home,
   LayoutGrid,
+  MapPin,
   Package,
   PartyPopper,
   ShieldCheck,
+  Sparkles,
   UserCheck,
 } from "lucide-react";
 import { SPACE_INTENTS, type SpaceIntentKey } from "@/lib/space-intents";
@@ -26,20 +29,37 @@ const VIEW_ALL_KEY = "__all__";
 
 type HomeIntentValue = SpaceIntentKey | typeof VIEW_ALL_KEY;
 
-/** Same order as the desktop category grid; labels are short mobile chip copy. */
+/** Desktop / tablet grid order (unchanged). */
 const ORDERED_HOME_INTENT_KEYS: SpaceIntentKey[] = ["store", "park", "work", "do", "host"];
 
-const HOME_MOBILE_CHIP_LABEL: Record<SpaceIntentKey, string> = {
-  store: "Storage",
-  park: "Parking",
-  work: "Workspace",
-  do: "Activities",
-  host: "Events",
+/** Mobile chip order (icon + short label); keys still map to `intent` / `SPACE_INTENTS`. */
+const MOBILE_INTENT_CHIP_ORDER: SpaceIntentKey[] = ["store", "park", "host", "work", "do"];
+
+type HomeIcon = React.ComponentType<{ className?: string }>;
+
+const MOBILE_INTENT_CHIP_ICON: Record<SpaceIntentKey, HomeIcon> = {
+  store: Package,
+  park: Car,
+  host: Home,
+  work: Briefcase,
+  do: Sparkles,
 };
 
-const HOME_MOBILE_CHIPS: { value: HomeIntentValue; label: string }[] = [
-  { value: VIEW_ALL_KEY, label: "All" },
-  ...ORDERED_HOME_INTENT_KEYS.map((key) => ({ value: key, label: HOME_MOBILE_CHIP_LABEL[key] })),
+const MOBILE_INTENT_CHIP_LABEL: Record<SpaceIntentKey, string> = {
+  store: "Store",
+  park: "Park",
+  host: "Host",
+  work: "Work",
+  do: "Do",
+};
+
+const HOME_MOBILE_INTENT_CHIPS: { value: HomeIntentValue; label: string; Icon: HomeIcon }[] = [
+  { value: VIEW_ALL_KEY, label: "View All", Icon: LayoutGrid },
+  ...MOBILE_INTENT_CHIP_ORDER.map((key) => ({
+    value: key,
+    label: MOBILE_INTENT_CHIP_LABEL[key],
+    Icon: MOBILE_INTENT_CHIP_ICON[key],
+  })),
 ];
 
 const INTENT_SUPPORT_TEXT: Record<SpaceIntentKey, string> = {
@@ -59,6 +79,7 @@ export default function HomePage() {
   const router = useRouter();
 
   const [intent, setIntent] = useState<HomeIntentValue>(VIEW_ALL_KEY);
+  const [browseQuery, setBrowseQuery] = useState("");
   const [trustStripEntered, setTrustStripEntered] = useState(false);
 
   useEffect(() => {
@@ -78,6 +99,8 @@ export default function HomePage() {
     if (nextIntent !== VIEW_ALL_KEY) {
       params.set("intent", nextIntent);
     }
+    const q = browseQuery.trim();
+    if (q) params.set("q", q);
     const queryString = params.toString();
     router.push(queryString ? `/spaces?${queryString}` : "/spaces");
   }
@@ -115,7 +138,7 @@ export default function HomePage() {
         />
         <div className="absolute inset-0 bg-black/[0.07] sm:bg-black/[0.05]" aria-hidden />
 
-        <div className="relative z-10 mx-auto max-w-7xl px-4 pt-5 pb-12 sm:px-6 md:pt-9 md:pb-20 lg:grid lg:grid-cols-[1fr_minmax(0,34rem)] lg:items-start lg:justify-between lg:gap-10 lg:pt-11 lg:pb-32 xl:grid-cols-[1fr_minmax(0,35.5rem)] xl:gap-12 xl:pb-36">
+        <div className="relative z-10 mx-auto max-w-7xl px-4 pt-4 pb-10 sm:px-6 md:pt-9 md:pb-20 lg:grid lg:grid-cols-[1fr_minmax(0,34rem)] lg:items-start lg:justify-between lg:gap-10 lg:pt-11 lg:pb-32 xl:grid-cols-[1fr_minmax(0,35.5rem)] xl:gap-12 xl:pb-36">
           {/* LEFT: editorial hero + CTAs */}
           <div className="max-w-xl lg:max-w-none lg:pt-1">
             <h1 className="max-w-3xl text-3xl font-semibold leading-[1.12] text-[#0f172a] md:text-5xl md:leading-tight lg:text-6xl">
@@ -123,12 +146,12 @@ export default function HomePage() {
               <br />
               in the <span className="text-[#c1121f]">right place.</span>
             </h1>
-            <p className="mt-2 max-w-md md:mt-4 md:max-w-lg lg:mt-5">
+            <p className="mt-1.5 max-w-md md:mt-4 md:max-w-lg lg:mt-5">
               <span className="inline-block max-w-full rounded-xl border border-[#0f172a]/5 bg-[#0f172a]/10 px-2.5 py-1.5 text-[13px] leading-snug text-[#1f2937] backdrop-blur-sm md:px-3 md:py-1.5 md:text-sm md:leading-relaxed lg:text-base">
                 Find trusted storage, parking, workspace and lifestyle spaces from local owners.
               </span>
             </p>
-            <div className="mt-4 flex flex-col gap-2.5 md:mt-7 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3.5">
+            <div className="mt-3 flex flex-col gap-2.5 md:mt-7 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3.5">
               <button
                 type="button"
                 onClick={() => router.push(BROWSE_SPACES_HREF)}
@@ -149,33 +172,32 @@ export default function HomePage() {
           </div>
 
           {/* RIGHT: floating marketplace card — narrower, lighter rhythm */}
-          <div className="mt-4 w-full md:mt-7 lg:mt-0 lg:max-w-[34rem] lg:justify-self-end lg:-translate-y-1 xl:max-w-[35.5rem] xl:-translate-y-2">
-            <div className="rounded-3xl border border-[#e5e7eb] bg-white p-3 shadow-[0_24px_60px_rgba(15,23,42,0.13),0_2px_8px_rgba(15,23,42,0.05)] md:p-4 lg:p-5">
-              <div className="mb-2 sm:mb-3 md:mb-2.5">
+          <div className="mt-3 w-full md:mt-7 lg:mt-0 lg:max-w-[34rem] lg:justify-self-end lg:-translate-y-1 xl:max-w-[35.5rem] xl:-translate-y-2">
+            <div className="rounded-3xl border border-white/55 bg-white/72 p-3 shadow-[0_24px_60px_rgba(15,23,42,0.13),0_2px_8px_rgba(15,23,42,0.05)] backdrop-blur-xl md:border-[#e5e7eb] md:bg-white md:p-4 md:shadow-[0_24px_60px_rgba(15,23,42,0.13),0_2px_8px_rgba(15,23,42,0.05)] md:backdrop-blur-none lg:p-5">
+              <div className="mb-2 hidden md:mb-2.5 md:block">
                 <p className="text-[0.8125rem] font-semibold text-[#1e293b] sm:text-sm">Find a space</p>
                 <p className="mt-0.5 text-[11px] leading-snug text-[#64748b] md:text-xs md:leading-snug">
                   Tell us what you want to do and we&apos;ll show you matching listings.
                 </p>
               </div>
 
-              <form onSubmit={handleSearch} className="space-y-2.5 md:space-y-3.5">
+              <form onSubmit={handleSearch} className="space-y-2 md:space-y-3.5">
                 <div>
                   <label
-                    className="mb-1 block text-xs font-medium leading-5 text-[#475569] md:mb-1.5"
+                    className="mb-1 hidden text-xs font-medium leading-5 text-[#475569] md:mb-1.5 md:block"
                     htmlFor="home-space-type"
                   >
                     What type of space are you looking for?
                   </label>
-
                   <div
                     id="home-space-type"
                     role="radiogroup"
-                    aria-label="Choose your intent"
+                    aria-label="What type of space are you looking for?"
                   >
-                    {/* Mobile: compact horizontal chips (< md) */}
-                    <div className="md:hidden -mx-0.5 mb-0.5">
+                    {/* Mobile: compact horizontal chips with icons (< md) */}
+                    <div className="md:hidden -mx-0.5">
                       <div className="flex gap-2 overflow-x-auto overscroll-x-contain pb-1 pt-0.5 [scrollbar-width:none] [-webkit-overflow-scrolling:touch] [&::-webkit-scrollbar]:hidden">
-                        {HOME_MOBILE_CHIPS.map(({ value, label }) => {
+                        {HOME_MOBILE_INTENT_CHIPS.map(({ value, label, Icon }) => {
                           const selected =
                             value === VIEW_ALL_KEY ? intent === VIEW_ALL_KEY : intent === value;
                           return (
@@ -185,12 +207,18 @@ export default function HomePage() {
                               role="radio"
                               aria-checked={selected}
                               onClick={() => handleHomeIntentSelect(value)}
-                              className={`shrink-0 select-none rounded-full px-4 py-2.5 text-[13px] font-semibold tracking-tight transition-all duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c1121f]/35 focus-visible:ring-offset-2 active:scale-[0.98] motion-reduce:transition-colors motion-reduce:active:scale-100 ${
+                              className={`flex shrink-0 select-none items-center gap-1.5 rounded-full border px-3 py-2 text-[12.5px] font-semibold tracking-tight transition-all duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c1121f]/35 focus-visible:ring-offset-2 active:scale-[0.98] motion-reduce:transition-colors motion-reduce:active:scale-100 ${
                                 selected
-                                  ? "bg-[#c1121f] text-white shadow-[0_4px_14px_rgba(193,18,31,0.35)] hover:bg-[#b0101c] hover:shadow-[0_6px_18px_rgba(193,18,31,0.42)]"
-                                  : "border border-transparent bg-[#f1f5f9] text-[#475569] shadow-sm hover:border-[#e2e8f0] hover:bg-[#e8eef5] hover:shadow-md hover:brightness-[1.02]"
+                                  ? "border-[#c1121f]/90 bg-[#c1121f] text-white shadow-[0_4px_16px_rgba(193,18,31,0.38),0_0_0_1px_rgba(255,255,255,0.06)_inset] hover:bg-[#b0101c]"
+                                  : "border border-white/60 bg-white/45 text-[#0f172a] shadow-[0_2px_10px_rgba(15,23,42,0.06)] backdrop-blur-md hover:border-white/85 hover:bg-white/60 hover:shadow-[0_4px_14px_rgba(15,23,42,0.08)]"
                               }`}
                             >
+                              <Icon
+                                className={`h-3.5 w-3.5 shrink-0 transition-colors duration-200 ${
+                                  selected ? "text-white" : "text-[#334155]"
+                                }`}
+                                aria-hidden
+                              />
                               {label}
                             </button>
                           );
@@ -270,6 +298,28 @@ export default function HomePage() {
                         </button>
                       );
                     })}
+                    </div>
+                  </div>
+
+                  <div className="mt-1.5 md:hidden">
+                    <label htmlFor="home-browse-q" className="sr-only">
+                      Location, suburb, city, or keyword (optional)
+                    </label>
+                    <div className="relative">
+                      <MapPin
+                        className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#64748b]"
+                        aria-hidden
+                      />
+                      <input
+                        id="home-browse-q"
+                        type="search"
+                        value={browseQuery}
+                        onChange={(e) => setBrowseQuery(e.target.value)}
+                        placeholder="Location, suburb, city, or keyword"
+                        autoCapitalize="words"
+                        enterKeyHint="search"
+                        className="w-full rounded-xl border border-white/55 bg-white/40 py-2.5 pl-10 pr-3 text-sm text-[#0f172a] shadow-[inset_0_1px_2px_rgba(15,23,42,0.04)] outline-none backdrop-blur-md transition-[border,box-shadow,background-color] duration-200 placeholder:text-[#64748b] focus:border-[#c1121f]/35 focus:bg-white/55 focus:ring-2 focus:ring-[#c1121f]/20"
+                      />
                     </div>
                   </div>
                 </div>
