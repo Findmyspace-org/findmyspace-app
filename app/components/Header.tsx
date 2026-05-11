@@ -824,8 +824,8 @@ export default function Header() {
 
   return (
     <>
-      <header className="relative z-[100] w-full border-b border-gray-200 bg-white">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-4 md:px-6">
+      <header className="relative z-[100] w-full border-b border-gray-200 bg-white max-md:border-white/35 max-md:bg-white/80 max-md:backdrop-blur-md md:bg-white">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-2 px-4 py-2.5 md:gap-3 md:px-6 md:py-4">
           <Link href="/" className="flex shrink-0 items-center">
             <Image
               src="/logo.png"
@@ -833,11 +833,11 @@ export default function Header() {
               width={150}
               height={48}
               priority
-              className="h-12 w-auto shrink-0 hover:opacity-80"
+              className="h-9 w-auto shrink-0 hover:opacity-80 md:h-12"
             />
           </Link>
 
-          <div className="flex items-center gap-1.5 sm:gap-1.5 md:gap-2">
+          <div className="flex items-center gap-1 sm:gap-1.5 md:gap-2">
             {/* Browse spaces — workspace-agnostic primary discovery link.
                 Hidden on mobile to avoid overcrowding; mobile users still
                 reach it via the burger menu under Explore. */}
@@ -854,7 +854,7 @@ export default function Header() {
             <button
               type="button"
               onClick={handleListSpaceClick}
-              className="fms-button-primary inline-flex h-10 items-center !rounded-md px-3 text-sm font-medium shadow-[0_1px_2px_rgba(12,29,47,0.18)] transition-all duration-200 hover:-translate-y-[1px] hover:bg-[#0a1726] sm:h-11 sm:px-4"
+              className="fms-button-primary inline-flex h-9 items-center border border-white/15 px-3 text-sm font-medium shadow-[0_2px_10px_rgba(12,29,47,0.2)] backdrop-blur-sm transition-all duration-200 hover:-translate-y-[1px] hover:bg-[#0a1726] max-md:!rounded-xl max-md:shadow-[0_4px_14px_rgba(12,29,47,0.22)] md:h-11 md:!rounded-md md:border-transparent md:shadow-[0_1px_2px_rgba(12,29,47,0.18)] md:backdrop-blur-none sm:px-4"
             >
               List space
             </button>
@@ -867,7 +867,7 @@ export default function Header() {
               return (
                 <Link
                   href="/dashboard/comms"
-                  className="relative flex h-10 w-10 items-center justify-center rounded-md border border-gray-300 bg-white text-[#192a3a] hover:bg-gray-50 sm:h-11 sm:w-11"
+                  className="relative flex h-9 w-9 items-center justify-center rounded-xl border border-gray-200/80 bg-white/75 text-[#192a3a] shadow-sm backdrop-blur-sm transition-colors hover:bg-white/95 md:h-11 md:w-11 md:rounded-md md:border-gray-300 md:bg-white md:shadow-none md:backdrop-blur-none md:hover:bg-gray-50"
                   aria-label={commsLabel}
                 >
                   <Inbox className="h-5 w-5" aria-hidden />
@@ -1001,7 +1001,7 @@ export default function Header() {
               <button
                 type="button"
                 onClick={() => setMenuOpen((prev) => !prev)}
-                className="flex h-10 w-10 items-center justify-center rounded-md border border-gray-300 bg-white text-[#192a3a] hover:bg-gray-50 sm:h-11 sm:w-11"
+                className="flex h-9 w-9 items-center justify-center rounded-xl border border-gray-200/80 bg-white/75 text-[#192a3a] shadow-sm backdrop-blur-sm transition-colors hover:bg-white/95 md:h-11 md:w-11 md:rounded-md md:border-gray-300 md:bg-white md:shadow-none md:backdrop-blur-none md:hover:bg-gray-50"
                 aria-label="Open menu"
                 aria-expanded={menuOpen}
               >
