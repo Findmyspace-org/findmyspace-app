@@ -24,6 +24,24 @@ const INTENT_ICONS: Record<SpaceIntentKey, React.ComponentType<{ className?: str
 };
 const VIEW_ALL_KEY = "__all__";
 
+type HomeIntentValue = SpaceIntentKey | typeof VIEW_ALL_KEY;
+
+/** Same order as the desktop category grid; labels are short mobile chip copy. */
+const ORDERED_HOME_INTENT_KEYS: SpaceIntentKey[] = ["store", "park", "work", "do", "host"];
+
+const HOME_MOBILE_CHIP_LABEL: Record<SpaceIntentKey, string> = {
+  store: "Storage",
+  park: "Parking",
+  work: "Workspace",
+  do: "Activities",
+  host: "Events",
+};
+
+const HOME_MOBILE_CHIPS: { value: HomeIntentValue; label: string }[] = [
+  { value: VIEW_ALL_KEY, label: "All" },
+  ...ORDERED_HOME_INTENT_KEYS.map((key) => ({ value: key, label: HOME_MOBILE_CHIP_LABEL[key] })),
+];
+
 const INTENT_SUPPORT_TEXT: Record<SpaceIntentKey, string> = {
   store: "Storage, garage and practical options",
   park: "Safe parking and vehicle-friendly spaces",
@@ -40,9 +58,8 @@ const heroBackgroundImage = "/images/homepage-hero.png";
 export default function HomePage() {
   const router = useRouter();
 
-  const [intent, setIntent] = useState<SpaceIntentKey | typeof VIEW_ALL_KEY>(VIEW_ALL_KEY);
+  const [intent, setIntent] = useState<HomeIntentValue>(VIEW_ALL_KEY);
   const [trustStripEntered, setTrustStripEntered] = useState(false);
-  const orderedIntentKeys: SpaceIntentKey[] = ["store", "park", "work", "do", "host"];
 
   useEffect(() => {
     const prefersReduced =
@@ -56,13 +73,27 @@ export default function HomePage() {
     return () => window.clearTimeout(id);
   }, []);
 
-  function goToBrowse(nextIntent: SpaceIntentKey | typeof VIEW_ALL_KEY) {
+  function goToBrowse(nextIntent: HomeIntentValue) {
     const params = new URLSearchParams();
     if (nextIntent !== VIEW_ALL_KEY) {
       params.set("intent", nextIntent);
     }
     const queryString = params.toString();
     router.push(queryString ? `/spaces?${queryString}` : "/spaces");
+  }
+
+  /** Same rules as the category cards: “All” navigates immediately; intent toggles selection then navigates on repeat tap. */
+  function handleHomeIntentSelect(nextIntent: HomeIntentValue) {
+    if (nextIntent === VIEW_ALL_KEY) {
+      setIntent(VIEW_ALL_KEY);
+      goToBrowse(VIEW_ALL_KEY);
+      return;
+    }
+    if (intent === nextIntent) {
+      goToBrowse(nextIntent);
+      return;
+    }
+    setIntent(nextIntent);
   }
 
   function handleSearch(e: React.FormEvent) {
@@ -84,20 +115,20 @@ export default function HomePage() {
         />
         <div className="absolute inset-0 bg-black/[0.07] sm:bg-black/[0.05]" aria-hidden />
 
-        <div className="relative z-10 mx-auto max-w-7xl px-4 pt-7 pb-16 sm:px-6 sm:pt-9 sm:pb-20 lg:grid lg:grid-cols-[1fr_minmax(0,34rem)] lg:items-start lg:justify-between lg:gap-10 lg:pt-11 lg:pb-32 xl:grid-cols-[1fr_minmax(0,35.5rem)] xl:gap-12 xl:pb-36">
+        <div className="relative z-10 mx-auto max-w-7xl px-4 pt-5 pb-12 sm:px-6 md:pt-9 md:pb-20 lg:grid lg:grid-cols-[1fr_minmax(0,34rem)] lg:items-start lg:justify-between lg:gap-10 lg:pt-11 lg:pb-32 xl:grid-cols-[1fr_minmax(0,35.5rem)] xl:gap-12 xl:pb-36">
           {/* LEFT: editorial hero + CTAs */}
           <div className="max-w-xl lg:max-w-none lg:pt-1">
-            <h1 className="max-w-3xl text-4xl font-semibold leading-tight text-[#0f172a] sm:text-5xl lg:text-6xl">
+            <h1 className="max-w-3xl text-3xl font-semibold leading-[1.12] text-[#0f172a] md:text-5xl md:leading-tight lg:text-6xl">
               The right space
               <br />
               in the <span className="text-[#c1121f]">right place.</span>
             </h1>
-            <p className="mt-3 max-w-md sm:mt-4 sm:max-w-lg lg:mt-5">
-              <span className="inline-block rounded-xl border border-[#0f172a]/5 bg-[#0f172a]/10 px-3 py-1.5 text-sm leading-relaxed text-[#1f2937] backdrop-blur-sm sm:text-[0.9375rem] lg:text-base">
+            <p className="mt-2 max-w-md md:mt-4 md:max-w-lg lg:mt-5">
+              <span className="inline-block max-w-full rounded-xl border border-[#0f172a]/5 bg-[#0f172a]/10 px-2.5 py-1.5 text-[13px] leading-snug text-[#1f2937] backdrop-blur-sm md:px-3 md:py-1.5 md:text-sm md:leading-relaxed lg:text-base">
                 Find trusted storage, parking, workspace and lifestyle spaces from local owners.
               </span>
             </p>
-            <div className="mt-6 flex flex-col gap-2.5 sm:mt-7 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3.5">
+            <div className="mt-4 flex flex-col gap-2.5 md:mt-7 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3.5">
               <button
                 type="button"
                 onClick={() => router.push(BROWSE_SPACES_HREF)}
@@ -118,37 +149,61 @@ export default function HomePage() {
           </div>
 
           {/* RIGHT: floating marketplace card — narrower, lighter rhythm */}
-          <div className="mt-7 w-full lg:mt-0 lg:max-w-[34rem] lg:justify-self-end lg:-translate-y-1 xl:max-w-[35.5rem] xl:-translate-y-2">
-            <div className="rounded-3xl border border-[#e5e7eb] bg-white p-4 shadow-[0_24px_60px_rgba(15,23,42,0.13),0_2px_8px_rgba(15,23,42,0.05)] sm:p-4 lg:p-5">
-              <div className="mb-2.5 sm:mb-3">
+          <div className="mt-4 w-full md:mt-7 lg:mt-0 lg:max-w-[34rem] lg:justify-self-end lg:-translate-y-1 xl:max-w-[35.5rem] xl:-translate-y-2">
+            <div className="rounded-3xl border border-[#e5e7eb] bg-white p-3 shadow-[0_24px_60px_rgba(15,23,42,0.13),0_2px_8px_rgba(15,23,42,0.05)] md:p-4 lg:p-5">
+              <div className="mb-2 sm:mb-3 md:mb-2.5">
                 <p className="text-[0.8125rem] font-semibold text-[#1e293b] sm:text-sm">Find a space</p>
-                <p className="mt-0.5 text-[11px] leading-snug text-[#64748b] sm:text-xs sm:leading-snug">
+                <p className="mt-0.5 text-[11px] leading-snug text-[#64748b] md:text-xs md:leading-snug">
                   Tell us what you want to do and we&apos;ll show you matching listings.
                 </p>
               </div>
 
-              <form onSubmit={handleSearch} className="space-y-3.5">
+              <form onSubmit={handleSearch} className="space-y-2.5 md:space-y-3.5">
                 <div>
                   <label
-                    className="mb-1.5 block text-xs font-medium leading-5 text-[#475569]"
+                    className="mb-1 block text-xs font-medium leading-5 text-[#475569] md:mb-1.5"
                     htmlFor="home-space-type"
                   >
                     What type of space are you looking for?
                   </label>
+
                   <div
                     id="home-space-type"
-                    className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 sm:gap-2.5"
                     role="radiogroup"
                     aria-label="Choose your intent"
                   >
+                    {/* Mobile: compact horizontal chips (< md) */}
+                    <div className="md:hidden -mx-0.5 mb-0.5">
+                      <div className="flex gap-2 overflow-x-auto overscroll-x-contain pb-1 pt-0.5 [scrollbar-width:none] [-webkit-overflow-scrolling:touch] [&::-webkit-scrollbar]:hidden">
+                        {HOME_MOBILE_CHIPS.map(({ value, label }) => {
+                          const selected =
+                            value === VIEW_ALL_KEY ? intent === VIEW_ALL_KEY : intent === value;
+                          return (
+                            <button
+                              key={value === VIEW_ALL_KEY ? "all" : value}
+                              type="button"
+                              role="radio"
+                              aria-checked={selected}
+                              onClick={() => handleHomeIntentSelect(value)}
+                              className={`shrink-0 select-none rounded-full px-4 py-2.5 text-[13px] font-semibold tracking-tight transition-all duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c1121f]/35 focus-visible:ring-offset-2 active:scale-[0.98] motion-reduce:transition-colors motion-reduce:active:scale-100 ${
+                                selected
+                                  ? "bg-[#c1121f] text-white shadow-[0_4px_14px_rgba(193,18,31,0.35)] hover:bg-[#b0101c] hover:shadow-[0_6px_18px_rgba(193,18,31,0.42)]"
+                                  : "border border-transparent bg-[#f1f5f9] text-[#475569] shadow-sm hover:border-[#e2e8f0] hover:bg-[#e8eef5] hover:shadow-md hover:brightness-[1.02]"
+                              }`}
+                            >
+                              {label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="hidden grid-cols-2 gap-2.5 md:grid">
                     <button
                       type="button"
                       role="radio"
                       aria-checked={intent === VIEW_ALL_KEY}
-                      onClick={() => {
-                        setIntent(VIEW_ALL_KEY);
-                        goToBrowse(VIEW_ALL_KEY);
-                      }}
+                      onClick={() => handleHomeIntentSelect(VIEW_ALL_KEY)}
                       className={`group w-full cursor-pointer rounded-xl border px-2.5 py-2.5 text-left shadow-sm transition-all duration-200 ease-out hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c1121f]/30 focus-visible:ring-offset-2 active:translate-y-0 motion-reduce:transform-none motion-reduce:transition-colors sm:px-3 sm:py-3 ${
                         intent === VIEW_ALL_KEY
                           ? "border-[#c1121f] bg-[#fff5f5] text-[#0f172a] shadow-[0_6px_18px_rgba(193,18,31,0.16),0_1px_2px_rgba(15,23,42,0.08)] hover:shadow-[0_10px_24px_rgba(193,18,31,0.22),0_1px_2px_rgba(15,23,42,0.08)]"
@@ -175,7 +230,7 @@ export default function HomePage() {
                         </span>
                       </div>
                     </button>
-                    {orderedIntentKeys.map((intentKey) => {
+                    {ORDERED_HOME_INTENT_KEYS.map((intentKey) => {
                       const option = SPACE_INTENTS.find((item) => item.key === intentKey);
                       if (!option) return null;
                       const Icon = INTENT_ICONS[option.key];
@@ -186,13 +241,7 @@ export default function HomePage() {
                           type="button"
                           role="radio"
                           aria-checked={selected}
-                          onClick={() => {
-                            if (intent === option.key) {
-                              goToBrowse(option.key);
-                              return;
-                            }
-                            setIntent(option.key);
-                          }}
+                          onClick={() => handleHomeIntentSelect(option.key)}
                           className={`group w-full cursor-pointer rounded-xl border px-2.5 py-2.5 text-left shadow-sm transition-all duration-200 ease-out hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c1121f]/30 focus-visible:ring-offset-2 active:translate-y-0 motion-reduce:transform-none motion-reduce:transition-colors sm:px-3 sm:py-3 ${
                             selected
                               ? "border-[#c1121f] bg-[#fff5f5] text-[#0f172a] shadow-[0_6px_18px_rgba(193,18,31,0.16),0_1px_2px_rgba(15,23,42,0.08)] hover:shadow-[0_10px_24px_rgba(193,18,31,0.22),0_1px_2px_rgba(15,23,42,0.08)]"
@@ -221,12 +270,13 @@ export default function HomePage() {
                         </button>
                       );
                     })}
+                    </div>
                   </div>
                 </div>
 
                 <button
                   type="submit"
-                  className="w-full min-h-[44px] rounded-xl bg-[#c1121f] py-2 text-sm font-semibold text-white shadow-[0_4px_16px_rgba(193,18,31,0.32)] transition-all duration-200 ease-out hover:-translate-y-0.5 hover:bg-[#a70f19] hover:shadow-[0_10px_24px_rgba(193,18,31,0.4)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c1121f] focus-visible:ring-offset-2 active:translate-y-0 active:shadow-[0_4px_16px_rgba(193,18,31,0.32)] motion-reduce:transform-none motion-reduce:transition-colors sm:min-h-[46px] sm:py-2.5 sm:text-[0.9375rem]"
+                  className="w-full min-h-[46px] rounded-xl bg-[#c1121f] py-2.5 text-sm font-semibold text-white shadow-[0_4px_16px_rgba(193,18,31,0.32)] transition-all duration-200 ease-out hover:-translate-y-0.5 hover:bg-[#a70f19] hover:shadow-[0_10px_24px_rgba(193,18,31,0.4)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c1121f] focus-visible:ring-offset-2 active:translate-y-0 active:shadow-[0_4px_16px_rgba(193,18,31,0.32)] motion-reduce:transform-none motion-reduce:transition-colors md:text-[0.9375rem]"
                   aria-label="Find matching spaces"
                 >
                   Find matching spaces
