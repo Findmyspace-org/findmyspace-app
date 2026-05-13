@@ -16,6 +16,7 @@ import {
   UserCheck,
 } from "lucide-react";
 import { SPACE_INTENTS, type SpaceIntentKey } from "@/lib/space-intents";
+import HomeLaunchModal from "@/app/components/HomeLaunchModal";
 
 const INTENT_ICONS: Record<SpaceIntentKey, React.ComponentType<{ className?: string }>> = {
   store: Package,
@@ -55,6 +56,7 @@ const BROWSE_SPACES_HREF = "/spaces#browse-search";
 const LIST_SPACE_HREF = "/list-your-space";
 
 const heroBackgroundImage = "/images/homepage-hero.png";
+const heroBackgroundImageMobile = "/images/homepage-hero-mobile.png";
 
 export default function HomePage() {
   const router = useRouter();
@@ -103,29 +105,54 @@ export default function HomePage() {
   }
 
   return (
-    <div className="pb-10 text-[#192a3a] sm:pb-12">
-      <section className="relative flex min-h-[100svh] w-full flex-col overflow-visible md:block md:min-h-0 lg:min-h-[640px] xl:min-h-[700px]">
-        {/* Photo: more visible than heavy white wash; readability from left-weighted scrim */}
+    <>
+      <HomeLaunchModal />
+      <div className="pb-10 text-[#192a3a] sm:pb-12">
+      <section className="relative flex w-full flex-col overflow-hidden max-md:h-[100dvh] max-md:max-h-[100dvh] max-md:min-h-0 md:block md:h-auto md:max-h-none md:min-h-0 md:overflow-visible lg:min-h-[640px] xl:min-h-[700px]">
+        {/* Mobile-only hero: portrait storage / trust imagery */}
         <div
-          className="absolute inset-0 bg-cover bg-center"
-          style={{ backgroundImage: `url('${heroBackgroundImage}')` }}
-        />
-        <div
-          className="absolute inset-0 bg-gradient-to-r from-white/78 via-white/38 to-white/14 sm:from-white/72 sm:via-white/32 sm:to-white/10"
+          className="absolute inset-0 bg-cover bg-[center_22%] md:hidden"
+          style={{ backgroundImage: `url('${heroBackgroundImageMobile}')` }}
           aria-hidden
         />
-        <div className="absolute inset-0 bg-black/[0.07] sm:bg-black/[0.05]" aria-hidden />
+        {/* Desktop / tablet hero (unchanged image) */}
+        <div
+          className="absolute inset-0 hidden bg-cover bg-center md:block"
+          style={{ backgroundImage: `url('${heroBackgroundImage}')` }}
+          aria-hidden
+        />
+        {/* Mobile: soft dark scrims for headline + lower UI */}
+        <div
+          className="pointer-events-none absolute inset-0 bg-gradient-to-b from-[#0c1d2f]/90 via-[#0c1d2f]/25 to-[#0c1d2f]/55 md:hidden"
+          aria-hidden
+        />
+        <div
+          className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent md:hidden"
+          aria-hidden
+        />
+        {/* Desktop: original light scrims */}
+        <div
+          className="absolute inset-0 hidden bg-gradient-to-r from-white/78 via-white/38 to-white/14 sm:from-white/72 sm:via-white/32 sm:to-white/10 md:block"
+          aria-hidden
+        />
+        <div
+          className="absolute inset-0 hidden bg-black/[0.07] sm:bg-black/[0.05] md:block"
+          aria-hidden
+        />
 
-        <div className="relative z-10 mx-auto flex min-h-0 w-full max-w-7xl flex-1 flex-col px-4 pt-3 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:px-6 md:block md:flex-none md:pb-20 md:pt-9 lg:grid lg:grid-cols-[1fr_minmax(0,34rem)] lg:items-start lg:justify-between lg:gap-10 lg:pt-11 lg:pb-32 xl:grid-cols-[1fr_minmax(0,35.5rem)] xl:gap-12 xl:pb-36">
+        <div className="relative z-10 mx-auto flex min-h-0 w-full max-w-7xl flex-1 flex-col px-4 max-md:justify-between max-md:gap-6 max-md:overflow-y-auto max-md:overscroll-y-contain max-md:pb-[max(1.25rem,env(safe-area-inset-bottom))] max-md:pt-12 sm:px-6 md:block md:flex-none md:justify-start md:overflow-visible md:px-6 md:pb-20 md:pt-9 lg:grid lg:grid-cols-[1fr_minmax(0,34rem)] lg:items-start lg:justify-between lg:gap-10 lg:pt-11 lg:pb-32 xl:grid-cols-[1fr_minmax(0,35.5rem)] xl:gap-12 xl:pb-36">
           {/* LEFT: editorial hero + CTAs (CTAs hidden on mobile — navbar + category panel carry actions) */}
-          <div className="max-w-xl shrink-0 lg:max-w-none lg:pt-1">
-            <h1 className="max-w-3xl text-[1.9rem] font-semibold leading-[1.05] tracking-tight text-[#0f172a] md:text-5xl md:leading-tight md:tracking-normal lg:text-6xl">
+          <div className="max-w-xl shrink-0 max-md:mx-auto max-md:w-full max-md:text-center lg:max-w-none lg:pt-1">
+            <h1 className="max-w-3xl text-[1.85rem] font-semibold leading-[1.08] tracking-tight text-white max-md:mx-auto max-md:max-w-[20ch] md:text-[#0f172a] md:text-5xl md:leading-tight md:tracking-normal md:max-w-3xl lg:text-6xl">
               The right space
               <br />
-              in the <span className="text-[#c1121f]">right place.</span>
+              in the{" "}
+              <span className="text-[#fca5a5] drop-shadow-[0_2px_14px_rgba(0,0,0,0.45)] md:text-[#c1121f] md:drop-shadow-none">
+                right place.
+              </span>
             </h1>
-            <p className="mt-1 mb-10 max-w-md md:mb-0 md:mt-4 md:max-w-lg lg:mt-5">
-              <span className="inline-block max-w-full rounded-3xl border border-white/40 bg-white/45 px-3 py-1.5 text-[13px] leading-snug text-[#1f2937] shadow-[0_6px_28px_rgba(15,23,42,0.08)] backdrop-blur-md md:rounded-xl md:border-[#0f172a]/5 md:bg-[#0f172a]/10 md:px-3 md:py-1.5 md:text-sm md:leading-relaxed md:shadow-none lg:text-base">
+            <p className="mx-auto mt-4 mb-10 max-w-md max-md:mb-0 md:mb-0 md:mt-4 md:mx-0 md:text-left lg:mt-5">
+              <span className="inline-block max-w-full rounded-3xl border border-white/25 bg-white/14 px-3 py-2 text-[13px] leading-snug text-white/95 shadow-[0_8px_32px_rgba(12,29,47,0.35)] backdrop-blur-md md:rounded-xl md:border-[#0f172a]/5 md:bg-[#0f172a]/10 md:px-3 md:py-1.5 md:text-sm md:leading-relaxed md:text-[#1f2937] md:shadow-none lg:text-base">
                 Find trusted storage, parking, workspace and lifestyle spaces from local owners.
               </span>
             </p>
@@ -149,9 +176,9 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* RIGHT: floating marketplace card — mobile: glass + 3×2 tiles, anchored toward bottom of first screen; md+: unchanged */}
-          <div className="mt-auto w-full shrink-0 md:mt-7 lg:mt-0 lg:max-w-[34rem] lg:justify-self-end lg:-translate-y-1 xl:max-w-[35.5rem] xl:-translate-y-2">
-            <div className="rounded-3xl border border-white/60 bg-white/72 p-3.5 shadow-[0_20px_50px_rgba(15,23,42,0.12),0_2px_12px_rgba(15,23,42,0.06)] backdrop-blur-xl md:border-[#e5e7eb] md:bg-white md:p-4 md:shadow-[0_24px_60px_rgba(15,23,42,0.13),0_2px_8px_rgba(15,23,42,0.05)] md:backdrop-blur-none lg:p-5">
+          {/* RIGHT: floating marketplace card — mobile: glass + 3×2 tiles + CTA in viewport; md+: unchanged */}
+          <div className="mt-auto w-full shrink-0 max-md:mt-0 md:mt-7 lg:mt-0 lg:max-w-[34rem] lg:justify-self-end lg:-translate-y-1 xl:max-w-[35.5rem] xl:-translate-y-2">
+            <div className="rounded-3xl border border-white/55 bg-white/78 p-3 shadow-[0_20px_50px_rgba(15,23,42,0.14),0_2px_12px_rgba(15,23,42,0.07)] backdrop-blur-xl max-md:shadow-[0_24px_56px_rgba(12,29,47,0.22)] md:border-[#e5e7eb] md:bg-white md:p-4 md:shadow-[0_24px_60px_rgba(15,23,42,0.13),0_2px_8px_rgba(15,23,42,0.05)] md:backdrop-blur-none lg:p-5">
               <div className="mb-2 hidden md:mb-2.5 md:block">
                 <p className="text-[0.8125rem] font-semibold text-[#1e293b] sm:text-sm">Find a space</p>
                 <p className="mt-0.5 text-[11px] leading-snug text-[#64748b] md:text-xs md:leading-snug">
@@ -159,7 +186,10 @@ export default function HomePage() {
                 </p>
               </div>
 
-              <form onSubmit={handleSearch} className="space-y-2.5 md:space-y-3.5">
+              <form
+                onSubmit={handleSearch}
+                className="space-y-3 max-md:space-y-3.5 md:space-y-3.5"
+              >
                 <div>
                   <label
                     className="mb-1 hidden text-xs font-medium leading-5 text-[#475569] md:mb-1.5 md:block"
@@ -174,7 +204,7 @@ export default function HomePage() {
                     aria-label="What type of space are you looking for?"
                   >
                     {/* Mobile: premium 3×2 category tiles */}
-                    <div className="md:hidden grid grid-cols-3 gap-2">
+                    <div className="grid grid-cols-3 gap-2 md:hidden">
                       {MOBILE_LANDING_TILES.map(({ value, label, Icon }) => {
                         const selected =
                           value === VIEW_ALL_KEY ? intent === VIEW_ALL_KEY : intent === value;
@@ -185,7 +215,7 @@ export default function HomePage() {
                             role="radio"
                             aria-checked={selected}
                             onClick={() => handleHomeIntentSelect(value)}
-                            className={`flex min-h-[4.5rem] flex-col items-center justify-center gap-1 rounded-2xl border px-1.5 py-2.5 text-center transition-all duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c1121f]/35 focus-visible:ring-offset-2 active:scale-[0.98] motion-reduce:transition-colors motion-reduce:active:scale-100 ${
+                            className={`flex min-h-[3.875rem] flex-col items-center justify-center gap-1 rounded-2xl border px-1.5 py-2 text-center transition-all duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c1121f]/35 focus-visible:ring-offset-2 active:scale-[0.98] motion-reduce:transition-colors motion-reduce:active:scale-100 ${
                               selected
                                 ? "border-[#c1121f]/55 bg-white/85 shadow-[0_8px_22px_rgba(193,18,31,0.18),0_0_0_1px_rgba(193,18,31,0.12)] ring-1 ring-[#c1121f]/20 -translate-y-px"
                                 : "border border-white/55 bg-white/55 shadow-[0_2px_10px_rgba(15,23,42,0.06)] backdrop-blur-sm hover:border-white/80 hover:bg-white/70 hover:shadow-[0_6px_16px_rgba(15,23,42,0.08)]"
@@ -287,7 +317,7 @@ export default function HomePage() {
 
                 <button
                   type="submit"
-                  className="w-full min-h-[52px] rounded-2xl bg-[#c1121f] py-3 text-sm font-semibold text-white shadow-[0_4px_18px_rgba(193,18,31,0.35)] transition-all duration-200 ease-out hover:-translate-y-0.5 hover:bg-[#a70f19] hover:shadow-[0_10px_26px_rgba(193,18,31,0.42)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c1121f] focus-visible:ring-offset-2 active:translate-y-0 active:shadow-[0_4px_16px_rgba(193,18,31,0.32)] motion-reduce:transform-none motion-reduce:transition-colors md:min-h-[46px] md:rounded-xl md:py-2.5 md:text-[0.9375rem]"
+                  className="w-full shrink-0 min-h-[52px] rounded-2xl bg-[#c1121f] py-3.5 text-sm font-semibold text-white shadow-[0_4px_18px_rgba(193,18,31,0.35)] transition-all duration-200 ease-out hover:-translate-y-0.5 hover:bg-[#a70f19] hover:shadow-[0_10px_26px_rgba(193,18,31,0.42)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c1121f] focus-visible:ring-offset-2 active:translate-y-0 active:shadow-[0_4px_16px_rgba(193,18,31,0.32)] motion-reduce:transform-none motion-reduce:transition-colors max-md:mb-0.5 md:min-h-[46px] md:rounded-xl md:py-2.5 md:text-[0.9375rem]"
                   aria-label="Find matching spaces"
                 >
                   Find matching spaces
@@ -299,7 +329,7 @@ export default function HomePage() {
       </section>
 
       {/* Trust row: below the fold on mobile; overlaps hero from md+ (unchanged) */}
-      <div className="pointer-events-none relative z-20 mt-28 px-4 sm:px-6 md:-mt-14 lg:-mt-20">
+      <div className="pointer-events-none relative z-20 max-md:mt-8 px-4 sm:px-6 md:-mt-14 md:mt-28 lg:-mt-20">
         <div className="mx-auto max-w-4xl">
           <div
             className={`pointer-events-auto rounded-2xl border border-white/70 bg-white/95 p-3 shadow-[0_20px_50px_rgba(15,23,42,0.12),0_2px_12px_rgba(15,23,42,0.06)] backdrop-blur-md transition-[opacity,transform,box-shadow] duration-[520ms] ease-out sm:rounded-3xl sm:p-5 ${
@@ -353,5 +383,6 @@ export default function HomePage() {
         </div>
       </div>
     </div>
+    </>
   );
 }
