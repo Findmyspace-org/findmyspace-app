@@ -184,14 +184,27 @@ export default function Header() {
         const { data, error } = await (supabase.from("profiles") as any)
           .select("role, is_host")
           .eq("id", userId)
-          .single();
+          .limit(1)
+          .maybeSingle();
 
         if (!mounted) return;
 
         if (error) {
+          console.error("Supabase profiles lookup failed (header):", {
+            message: error.message,
+            code: (error as { code?: string }).code,
+            details: (error as { details?: string }).details,
+            hint: (error as { hint?: string }).hint,
+          });
           setIsAdmin(false);
           setIsHost(false);
           return;
+        }
+
+        if (!data) {
+          console.warn(
+            "Header: authenticated user has no profiles row; showing default nav (non-admin, non-host)."
+          );
         }
 
         setIsAdmin(data?.role === "admin");
