@@ -2,55 +2,58 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  Briefcase,
-  Car,
-  CheckCircle2,
-  CircleEllipsis,
-  Home,
-  LayoutGrid,
-  Package,
-  PartyPopper,
-  ShieldCheck,
-  Sparkles,
-  UserCheck,
-} from "lucide-react";
-import { SPACE_INTENTS, type SpaceIntentKey } from "@/lib/space-intents";
+import { CheckCircle2, ShieldCheck, UserCheck } from "lucide-react";
+import type { SpaceIntentKey } from "@/lib/space-intents";
 import HomeLaunchModal from "@/app/components/HomeLaunchModal";
+import HomeCategoryCard from "@/app/components/HomeCategoryCard";
 
-const INTENT_ICONS: Record<SpaceIntentKey, React.ComponentType<{ className?: string }>> = {
-  store: Package,
-  park: Car,
-  work: Briefcase,
-  do: CircleEllipsis,
-  host: PartyPopper,
-};
 const VIEW_ALL_KEY = "__all__";
 
 type HomeIntentValue = SpaceIntentKey | typeof VIEW_ALL_KEY;
 
-/** Desktop / tablet grid order (unchanged). */
-const ORDERED_HOME_INTENT_KEYS: SpaceIntentKey[] = ["store", "park", "work", "do", "host"];
-
-type HomeIcon = React.ComponentType<{ className?: string }>;
-
-/** Mobile (< md): 2×3 concept grid — View All, Store, Park / Host, Work, Do. */
-const MOBILE_LANDING_TILES: { value: HomeIntentValue; label: string; Icon: HomeIcon }[] = [
-  { value: VIEW_ALL_KEY, label: "View All", Icon: LayoutGrid },
-  { value: "store", label: "Store", Icon: Package },
-  { value: "park", label: "Park", Icon: Car },
-  { value: "host", label: "Host", Icon: Home },
-  { value: "work", label: "Work", Icon: Briefcase },
-  { value: "do", label: "Do", Icon: Sparkles },
+const HOME_CATEGORY_CARDS: {
+  value: HomeIntentValue;
+  title: string;
+  description: string;
+  image: string;
+}[] = [
+  {
+    value: VIEW_ALL_KEY,
+    title: "View all spaces",
+    description: "Discover every type of space available.",
+    image: "/images/categories/browse.png",
+  },
+  {
+    value: "store",
+    title: "Store something",
+    description: "Storage, garages & practical space.",
+    image: "/images/categories/store.png",
+  },
+  {
+    value: "park",
+    title: "Park something",
+    description: "Secure parking for cars & trailers.",
+    image: "/images/categories/park.png",
+  },
+  {
+    value: "work",
+    title: "Work somewhere",
+    description: "Offices, desks & focused workspaces.",
+    image: "/images/categories/work.png",
+  },
+  {
+    value: "do",
+    title: "Do something",
+    description: "Sports, studios & activity spaces.",
+    image: "/images/categories/do.png",
+  },
+  {
+    value: "host",
+    title: "Host something",
+    description: "Event, dining & gathering spaces.",
+    image: "/images/categories/host.png",
+  },
 ];
-
-const INTENT_SUPPORT_TEXT: Record<SpaceIntentKey, string> = {
-  store: "Storage, garage and practical options",
-  park: "Safe parking and vehicle-friendly spaces",
-  work: "Offices, desks and focused work settings",
-  do: "Studios and flexible spaces for activities",
-  host: "Spaces suited for events and gatherings",
-};
 
 const BROWSE_SPACES_HREF = "/spaces#browse-search";
 const LIST_SPACE_HREF = "/list-your-space";
@@ -136,7 +139,7 @@ export default function HomePage() {
           aria-hidden
         />
 
-        <div className="relative z-10 mx-auto flex min-h-0 w-full max-w-7xl flex-1 flex-col px-4 max-md:justify-between max-md:gap-6 max-md:overflow-y-auto max-md:overscroll-y-contain max-md:pb-[max(1.25rem,env(safe-area-inset-bottom))] max-md:pt-12 sm:px-6 md:block md:flex-none md:justify-start md:overflow-visible md:px-6 md:pb-20 md:pt-9 lg:grid lg:grid-cols-[1fr_minmax(0,34rem)] lg:items-start lg:justify-between lg:gap-10 lg:pt-11 lg:pb-32 xl:grid-cols-[1fr_minmax(0,35.5rem)] xl:gap-12 xl:pb-36">
+        <div className="relative z-10 mx-auto flex min-h-0 w-full max-w-7xl flex-1 flex-col px-4 max-md:justify-between max-md:gap-6 max-md:overflow-y-auto max-md:overscroll-y-contain max-md:pb-[max(1.25rem,env(safe-area-inset-bottom))] max-md:pt-12 sm:px-6 md:block md:flex-none md:justify-start md:overflow-visible md:px-6 md:pb-20 md:pt-9 lg:grid lg:grid-cols-[1fr_minmax(0,42rem)] lg:items-start lg:justify-between lg:gap-10 lg:pt-11 lg:pb-32 xl:grid-cols-[1fr_minmax(0,44rem)] xl:gap-12 xl:pb-36">
           {/* LEFT: editorial hero + CTAs (CTAs hidden on mobile — navbar + category panel carry actions) */}
           <div className="max-w-xl shrink-0 max-md:mx-auto max-md:w-full max-md:text-center lg:max-w-none lg:pt-1">
             <h1 className="max-w-3xl text-[1.85rem] font-semibold leading-[1.08] tracking-tight text-white max-md:mx-auto max-md:max-w-[20ch] md:text-[#0f172a] md:text-5xl md:leading-tight md:tracking-normal md:max-w-3xl lg:text-6xl">
@@ -172,148 +175,46 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* RIGHT: floating marketplace card — mobile: glass + 3×2 tiles + CTA in viewport; md+: unchanged */}
-          <div className="mt-auto w-full shrink-0 max-md:mt-0 md:mt-7 lg:mt-0 lg:max-w-[34rem] lg:justify-self-end lg:-translate-y-1 xl:max-w-[35.5rem] xl:-translate-y-2">
-            <div className="rounded-3xl border border-white/55 bg-white/92 p-3 shadow-[0_20px_50px_rgba(15,23,42,0.14),0_2px_12px_rgba(15,23,42,0.07)] max-md:shadow-[0_24px_56px_rgba(12,29,47,0.22)] md:border-[#e5e7eb] md:bg-white md:p-4 md:shadow-[0_24px_60px_rgba(15,23,42,0.13),0_2px_8px_rgba(15,23,42,0.05)] lg:p-5">
-              <div className="mb-2 hidden md:mb-2.5 md:block">
-                <p className="text-[0.8125rem] font-semibold text-[#1e293b] sm:text-sm">Find a space</p>
-                <p className="mt-0.5 text-[11px] leading-snug text-[#64748b] md:text-xs md:leading-snug">
+          {/* RIGHT: category selector + CTA */}
+          <div className="mt-auto w-full shrink-0 max-md:mt-0 md:mt-7 lg:mt-0 lg:max-w-[42rem] lg:justify-self-end lg:-translate-y-1 xl:max-w-[44rem] xl:-translate-y-2">
+            <div className="rounded-3xl border border-white/55 bg-white/92 p-3 shadow-[0_20px_50px_rgba(15,23,42,0.14),0_2px_12px_rgba(15,23,42,0.07)] max-md:shadow-[0_24px_56px_rgba(12,29,47,0.22)] md:border-[#e5e7eb] md:bg-white md:p-5 md:shadow-[0_24px_60px_rgba(15,23,42,0.13),0_2px_8px_rgba(15,23,42,0.05)] lg:p-6">
+              <div className="mb-4 md:mb-5">
+                <p className="text-base font-semibold text-[#0f172a] sm:text-lg">
+                  What do you need space for?
+                </p>
+                <p className="mt-1 text-xs leading-relaxed text-[#64748b] sm:text-sm">
                   Tell us what you want to do and we&apos;ll show you matching listings.
                 </p>
               </div>
 
-              <form
-                onSubmit={handleSearch}
-                className="space-y-3 max-md:space-y-3.5 md:space-y-3.5"
-              >
-                <div>
-                  <label
-                    className="mb-1 hidden text-xs font-medium leading-5 text-[#475569] md:mb-1.5 md:block"
-                    htmlFor="home-space-type"
-                  >
-                    What type of space are you looking for?
-                  </label>
-
-                  <div
-                    id="home-space-type"
-                    role="radiogroup"
-                    aria-label="What type of space are you looking for?"
-                  >
-                    {/* Mobile: premium 3×2 category tiles */}
-                    <div className="grid grid-cols-3 gap-2 md:hidden">
-                      {MOBILE_LANDING_TILES.map(({ value, label, Icon }) => {
-                        const selected =
-                          value === VIEW_ALL_KEY ? intent === VIEW_ALL_KEY : intent === value;
-                        return (
-                          <button
-                            key={value === VIEW_ALL_KEY ? "all" : value}
-                            type="button"
-                            role="radio"
-                            aria-checked={selected}
-                            onClick={() => handleHomeIntentSelect(value)}
-                            className={`flex min-h-[3.875rem] flex-col items-center justify-center gap-1 rounded-2xl border px-1.5 py-2 text-center transition-all duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c1121f]/35 focus-visible:ring-offset-2 active:scale-[0.98] motion-reduce:transition-colors motion-reduce:active:scale-100 ${
-                              selected
-                                ? "border-[#c1121f]/55 bg-white/85 shadow-[0_8px_22px_rgba(193,18,31,0.18),0_0_0_1px_rgba(193,18,31,0.12)] ring-1 ring-[#c1121f]/20 -translate-y-px"
-                                : "border border-white/55 bg-white/70 shadow-[0_2px_10px_rgba(15,23,42,0.06)] hover:border-white/80 hover:bg-white/85 hover:shadow-[0_6px_16px_rgba(15,23,42,0.08)]"
-                            }`}
-                          >
-                            <Icon
-                              className={`h-[1.125rem] w-[1.125rem] shrink-0 transition-colors duration-200 ${
-                                selected ? "text-[#c1121f]" : "text-[#475569]"
-                              }`}
-                              aria-hidden
-                            />
-                            <span
-                              className={`text-[11px] font-semibold leading-tight tracking-tight ${
-                                selected ? "text-[#0f172a]" : "text-[#334155]"
-                              }`}
-                            >
-                              {label}
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
-
-                    <div className="hidden grid-cols-2 gap-2.5 md:grid">
-                      <button
-                        type="button"
-                        role="radio"
-                        aria-checked={intent === VIEW_ALL_KEY}
-                        onClick={() => handleHomeIntentSelect(VIEW_ALL_KEY)}
-                        className={`group w-full cursor-pointer rounded-xl border px-2.5 py-2.5 text-left shadow-sm transition-all duration-200 ease-out hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c1121f]/30 focus-visible:ring-offset-2 active:translate-y-0 motion-reduce:transform-none motion-reduce:transition-colors sm:px-3 sm:py-3 ${
-                          intent === VIEW_ALL_KEY
-                            ? "border-[#c1121f] bg-[#fff5f5] text-[#0f172a] shadow-[0_6px_18px_rgba(193,18,31,0.16),0_1px_2px_rgba(15,23,42,0.08)] hover:shadow-[0_10px_24px_rgba(193,18,31,0.22),0_1px_2px_rgba(15,23,42,0.08)]"
-                            : "border-[#e5e7eb] bg-white text-[#334155] hover:border-[#cbd5e1] hover:bg-[#fcfdfd] hover:shadow-[0_8px_20px_rgba(15,23,42,0.08),0_1px_2px_rgba(15,23,42,0.04)]"
-                        }`}
-                      >
-                        <div className="flex items-start gap-2.5">
-                          <span
-                            className={`rounded-lg border p-1.5 ${
-                              intent === VIEW_ALL_KEY
-                                ? "border-[#c1121f]/25 bg-white text-[#c1121f]"
-                                : "border-[#e5e7eb] bg-[#f8fafc] text-[#64748b]"
-                            }`}
-                          >
-                            <LayoutGrid className="h-4 w-4 transition duration-200 group-hover:scale-[1.04]" />
-                          </span>
-                          <span className="min-w-0">
-                            <span className="block text-[0.8125rem] font-semibold leading-[1.25] text-[#0f172a] sm:text-sm sm:whitespace-nowrap">
-                              View all spaces
-                            </span>
-                            <span className="mt-0.5 block text-[11px] leading-[1.35] text-[#64748b] sm:text-xs">
-                              Browse all categories without pre-filtering
-                            </span>
-                          </span>
-                        </div>
-                      </button>
-                      {ORDERED_HOME_INTENT_KEYS.map((intentKey) => {
-                        const option = SPACE_INTENTS.find((item) => item.key === intentKey);
-                        if (!option) return null;
-                        const Icon = INTENT_ICONS[option.key];
-                        const selected = intent === option.key;
-                        return (
-                          <button
-                            key={option.key}
-                            type="button"
-                            role="radio"
-                            aria-checked={selected}
-                            onClick={() => handleHomeIntentSelect(option.key)}
-                            className={`group w-full cursor-pointer rounded-xl border px-2.5 py-2.5 text-left shadow-sm transition-all duration-200 ease-out hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c1121f]/30 focus-visible:ring-offset-2 active:translate-y-0 motion-reduce:transform-none motion-reduce:transition-colors sm:px-3 sm:py-3 ${
-                              selected
-                                ? "border-[#c1121f] bg-[#fff5f5] text-[#0f172a] shadow-[0_6px_18px_rgba(193,18,31,0.16),0_1px_2px_rgba(15,23,42,0.08)] hover:shadow-[0_10px_24px_rgba(193,18,31,0.22),0_1px_2px_rgba(15,23,42,0.08)]"
-                                : "border-[#e5e7eb] bg-white text-[#334155] hover:border-[#cbd5e1] hover:bg-[#fcfdfd] hover:shadow-[0_8px_20px_rgba(15,23,42,0.08),0_1px_2px_rgba(15,23,42,0.04)]"
-                            }`}
-                          >
-                            <div className="flex items-start gap-2.5">
-                              <span
-                                className={`rounded-lg border p-1.5 ${
-                                  selected
-                                    ? "border-[#c1121f]/25 bg-white text-[#c1121f]"
-                                    : "border-[#e5e7eb] bg-[#f8fafc] text-[#64748b]"
-                                }`}
-                              >
-                                <Icon className="h-4 w-4 transition duration-200 group-hover:scale-[1.04]" />
-                              </span>
-                              <span className="min-w-0">
-                                <span className="block text-[0.8125rem] font-semibold leading-[1.25] text-[#0f172a] sm:text-sm sm:whitespace-nowrap">
-                                  {option.label}
-                                </span>
-                                <span className="mt-0.5 block text-[11px] leading-[1.35] text-[#64748b] sm:text-xs">
-                                  {INTENT_SUPPORT_TEXT[option.key]}
-                                </span>
-                              </span>
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
+              <form onSubmit={handleSearch} className="space-y-4 md:space-y-5">
+                <div
+                  id="home-space-type"
+                  role="radiogroup"
+                  aria-label="What do you need space for?"
+                  className="grid grid-cols-2 gap-2.5 sm:gap-3"
+                >
+                  {HOME_CATEGORY_CARDS.map((card) => {
+                    const selected =
+                      card.value === VIEW_ALL_KEY
+                        ? intent === VIEW_ALL_KEY
+                        : intent === card.value;
+                    return (
+                      <HomeCategoryCard
+                        key={card.value === VIEW_ALL_KEY ? "all" : card.value}
+                        title={card.title}
+                        description={card.description}
+                        imageSrc={card.image}
+                        selected={selected}
+                        onClick={() => handleHomeIntentSelect(card.value)}
+                      />
+                    );
+                  })}
                 </div>
 
                 <button
                   type="submit"
-                  className="w-full shrink-0 min-h-[52px] rounded-2xl bg-[#c1121f] py-3.5 text-sm font-semibold text-white shadow-[0_4px_18px_rgba(193,18,31,0.35)] transition-all duration-200 ease-out hover:-translate-y-0.5 hover:bg-[#a70f19] hover:shadow-[0_10px_26px_rgba(193,18,31,0.42)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c1121f] focus-visible:ring-offset-2 active:translate-y-0 active:shadow-[0_4px_16px_rgba(193,18,31,0.32)] motion-reduce:transform-none motion-reduce:transition-colors max-md:mb-0.5 md:min-h-[46px] md:rounded-xl md:py-2.5 md:text-[0.9375rem]"
+                  className="w-full min-h-[54px] rounded-xl bg-[#c1121f] px-5 py-3.5 text-sm font-semibold text-white shadow-[0_4px_18px_rgba(193,18,31,0.35)] transition-all duration-300 ease-out hover:-translate-y-0.5 hover:bg-[#a70f19] hover:shadow-[0_12px_28px_rgba(193,18,31,0.42)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c1121f] focus-visible:ring-offset-2 active:translate-y-0 active:shadow-[0_4px_16px_rgba(193,18,31,0.32)] motion-reduce:transform-none motion-reduce:transition-colors max-md:mb-0.5"
                   aria-label="Find matching spaces"
                 >
                   Find matching spaces

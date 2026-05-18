@@ -27,6 +27,7 @@ import {
   HelpCircle,
   Inbox,
   FileBadge,
+  Mail,
 } from "lucide-react";
 
 type MenuItem = {
@@ -1103,6 +1104,15 @@ export default function Header() {
                       >
                         <FileBadge className="h-4 w-4 shrink-0 text-[#475569]" />
                         <span>Terms &amp; Conditions</span>
+                      </Link>
+
+                      <Link
+                        href="/contact"
+                        onClick={() => setMenuOpen(false)}
+                        className="flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-[#192a3a] transition hover:bg-gray-100"
+                      >
+                        <Mail className="h-4 w-4 shrink-0 text-[#475569]" />
+                        <span>Contact us</span>
                       </Link>
 
                       {!loading && isLoggedIn ? (

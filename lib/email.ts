@@ -17,6 +17,8 @@ type SendEmailInput = {
   html: string;
   /** Optional plain-text body. If omitted, derived from `html` automatically. */
   text?: string;
+  /** Optional sender override (defaults to EMAIL_FROM). */
+  from?: string;
 };
 
 /**
@@ -45,8 +47,8 @@ function htmlToPlainText(html: string): string {
     .trim();
 }
 
-export async function sendEmail({ to, subject, html, text }: SendEmailInput) {
-  const from = process.env.EMAIL_FROM;
+export async function sendEmail({ to, subject, html, text, from: fromOverride }: SendEmailInput) {
+  const from = fromOverride?.trim() || process.env.EMAIL_FROM?.trim();
   const resend = getResendClient();
 
   if (!resend || !from) {
