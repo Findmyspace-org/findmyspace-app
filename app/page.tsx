@@ -115,28 +115,24 @@ export default function HomePage() {
           style={{ backgroundImage: `url('${heroBackgroundImageMobile}')` }}
           aria-hidden
         />
-        {/* Desktop / tablet hero (unchanged image) */}
+        {/* Desktop / tablet hero */}
         <div
           className="absolute inset-0 hidden bg-cover bg-center md:block"
           style={{ backgroundImage: `url('${heroBackgroundImage}')` }}
           aria-hidden
         />
-        {/* Mobile: soft dark scrims for headline + lower UI */}
+        {/* Mobile: light scrims for headline legibility */}
         <div
-          className="pointer-events-none absolute inset-0 bg-gradient-to-b from-[#0c1d2f]/90 via-[#0c1d2f]/25 to-[#0c1d2f]/55 md:hidden"
+          className="pointer-events-none absolute inset-0 bg-gradient-to-b from-[#0c1d2f]/65 via-[#0c1d2f]/15 to-[#0c1d2f]/40 md:hidden"
           aria-hidden
         />
         <div
-          className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent md:hidden"
+          className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/45 via-transparent to-transparent md:hidden"
           aria-hidden
         />
-        {/* Desktop: original light scrims */}
+        {/* Desktop: subtle left scrim for headline legibility only */}
         <div
-          className="absolute inset-0 hidden bg-gradient-to-r from-white/78 via-white/38 to-white/14 sm:from-white/72 sm:via-white/32 sm:to-white/10 md:block"
-          aria-hidden
-        />
-        <div
-          className="absolute inset-0 hidden bg-black/[0.07] sm:bg-black/[0.05] md:block"
+          className="absolute inset-0 hidden bg-gradient-to-r from-white/50 via-white/18 to-transparent sm:from-white/45 sm:via-white/14 md:block"
           aria-hidden
         />
 
@@ -152,7 +148,7 @@ export default function HomePage() {
               </span>
             </h1>
             <p className="mx-auto mt-4 mb-10 max-w-md max-md:mb-0 md:mb-0 md:mt-4 md:mx-0 md:text-left lg:mt-5">
-              <span className="inline-block max-w-full rounded-3xl border border-white/25 bg-white/14 px-3 py-2 text-[13px] leading-snug text-white/95 shadow-[0_8px_32px_rgba(12,29,47,0.35)] backdrop-blur-md md:rounded-xl md:border-[#0f172a]/5 md:bg-[#0f172a]/10 md:px-3 md:py-1.5 md:text-sm md:leading-relaxed md:text-[#1f2937] md:shadow-none lg:text-base">
+              <span className="inline-block max-w-full rounded-3xl border border-white/25 bg-[#0c1d2f]/45 px-3 py-2 text-[13px] leading-snug text-white/95 shadow-[0_8px_32px_rgba(12,29,47,0.35)] md:rounded-xl md:border-[#0f172a]/5 md:bg-[#0f172a]/10 md:px-3 md:py-1.5 md:text-sm md:leading-relaxed md:text-[#1f2937] md:shadow-none lg:text-base">
                 Find trusted storage, parking, workspace and lifestyle spaces from local owners.
               </span>
             </p>
@@ -178,7 +174,7 @@ export default function HomePage() {
 
           {/* RIGHT: floating marketplace card — mobile: glass + 3×2 tiles + CTA in viewport; md+: unchanged */}
           <div className="mt-auto w-full shrink-0 max-md:mt-0 md:mt-7 lg:mt-0 lg:max-w-[34rem] lg:justify-self-end lg:-translate-y-1 xl:max-w-[35.5rem] xl:-translate-y-2">
-            <div className="rounded-3xl border border-white/55 bg-white/78 p-3 shadow-[0_20px_50px_rgba(15,23,42,0.14),0_2px_12px_rgba(15,23,42,0.07)] backdrop-blur-xl max-md:shadow-[0_24px_56px_rgba(12,29,47,0.22)] md:border-[#e5e7eb] md:bg-white md:p-4 md:shadow-[0_24px_60px_rgba(15,23,42,0.13),0_2px_8px_rgba(15,23,42,0.05)] md:backdrop-blur-none lg:p-5">
+            <div className="rounded-3xl border border-white/55 bg-white/92 p-3 shadow-[0_20px_50px_rgba(15,23,42,0.14),0_2px_12px_rgba(15,23,42,0.07)] max-md:shadow-[0_24px_56px_rgba(12,29,47,0.22)] md:border-[#e5e7eb] md:bg-white md:p-4 md:shadow-[0_24px_60px_rgba(15,23,42,0.13),0_2px_8px_rgba(15,23,42,0.05)] lg:p-5">
               <div className="mb-2 hidden md:mb-2.5 md:block">
                 <p className="text-[0.8125rem] font-semibold text-[#1e293b] sm:text-sm">Find a space</p>
                 <p className="mt-0.5 text-[11px] leading-snug text-[#64748b] md:text-xs md:leading-snug">
@@ -218,7 +214,7 @@ export default function HomePage() {
                             className={`flex min-h-[3.875rem] flex-col items-center justify-center gap-1 rounded-2xl border px-1.5 py-2 text-center transition-all duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c1121f]/35 focus-visible:ring-offset-2 active:scale-[0.98] motion-reduce:transition-colors motion-reduce:active:scale-100 ${
                               selected
                                 ? "border-[#c1121f]/55 bg-white/85 shadow-[0_8px_22px_rgba(193,18,31,0.18),0_0_0_1px_rgba(193,18,31,0.12)] ring-1 ring-[#c1121f]/20 -translate-y-px"
-                                : "border border-white/55 bg-white/55 shadow-[0_2px_10px_rgba(15,23,42,0.06)] backdrop-blur-sm hover:border-white/80 hover:bg-white/70 hover:shadow-[0_6px_16px_rgba(15,23,42,0.08)]"
+                                : "border border-white/55 bg-white/70 shadow-[0_2px_10px_rgba(15,23,42,0.06)] hover:border-white/80 hover:bg-white/85 hover:shadow-[0_6px_16px_rgba(15,23,42,0.08)]"
                             }`}
                           >
                             <Icon
