@@ -139,19 +139,19 @@ export default function HomePage() {
           aria-hidden
         />
 
-        <div className="relative z-10 mx-auto flex min-h-0 w-full max-w-7xl flex-1 flex-col px-4 max-md:justify-between max-md:gap-6 max-md:overflow-y-auto max-md:overscroll-y-contain max-md:pb-[max(1.25rem,env(safe-area-inset-bottom))] max-md:pt-12 sm:px-6 md:block md:flex-none md:justify-start md:overflow-visible md:px-6 md:pb-20 md:pt-9 lg:grid lg:grid-cols-[1fr_minmax(0,42rem)] lg:items-start lg:justify-between lg:gap-10 lg:pt-11 lg:pb-32 xl:grid-cols-[1fr_minmax(0,44rem)] xl:gap-12 xl:pb-36">
+        <div className="relative z-10 mx-auto flex min-h-0 w-full max-w-7xl flex-1 flex-col px-4 max-md:justify-between max-md:gap-3 max-md:overflow-y-auto max-md:overscroll-y-contain max-md:pb-[max(0.75rem,env(safe-area-inset-bottom))] max-md:pt-10 sm:px-6 md:block md:flex-none md:justify-start md:gap-6 md:overflow-visible md:px-6 md:pb-20 md:pt-9 lg:grid lg:grid-cols-[1fr_minmax(0,42rem)] lg:items-start lg:justify-between lg:gap-10 lg:pt-11 lg:pb-32 xl:grid-cols-[1fr_minmax(0,44rem)] xl:gap-12 xl:pb-36">
           {/* LEFT: editorial hero + CTAs (CTAs hidden on mobile — navbar + category panel carry actions) */}
           <div className="max-w-xl shrink-0 max-md:mx-auto max-md:w-full max-md:text-center lg:max-w-none lg:pt-1">
-            <h1 className="max-w-3xl text-[1.85rem] font-semibold leading-[1.08] tracking-tight text-white max-md:mx-auto max-md:max-w-[20ch] md:text-[#0f172a] md:text-5xl md:leading-tight md:tracking-normal md:max-w-3xl lg:text-6xl">
+            <h1 className="max-w-3xl text-[1.65rem] font-semibold leading-[1.08] tracking-tight text-white max-md:mx-auto max-md:max-w-[20ch] md:text-[#0f172a] md:text-5xl md:leading-tight md:tracking-normal md:max-w-3xl lg:text-6xl">
               The right space
               <br />
               in the{" "}
-              <span className="text-[#fca5a5] drop-shadow-[0_2px_14px_rgba(0,0,0,0.45)] md:text-[#c1121f] md:drop-shadow-none">
+              <span className="text-[#c1121f] drop-shadow-[0_2px_14px_rgba(0,0,0,0.45)] md:drop-shadow-none">
                 right place.
               </span>
             </h1>
-            <p className="mx-auto mt-4 mb-10 max-w-md max-md:mb-0 md:mb-0 md:mt-4 md:mx-0 md:text-left lg:mt-5">
-              <span className="inline-block max-w-full rounded-3xl border border-white/25 bg-[#0c1d2f]/45 px-3 py-2 text-[13px] leading-snug text-white/95 shadow-[0_8px_32px_rgba(12,29,47,0.35)] md:rounded-xl md:border-[#0f172a]/5 md:bg-[#0f172a]/10 md:px-3 md:py-1.5 md:text-sm md:leading-relaxed md:text-[#1f2937] md:shadow-none lg:text-base">
+            <p className="mx-auto mt-2 mb-0 max-w-md max-md:mb-0 md:mb-0 md:mt-4 md:mx-0 md:text-left lg:mt-5">
+              <span className="inline-block max-w-full rounded-2xl border border-white/25 bg-[#0c1d2f]/45 px-2.5 py-1.5 text-[12px] leading-snug text-white/95 shadow-[0_8px_32px_rgba(12,29,47,0.35)] md:rounded-xl md:border-[#0f172a]/5 md:bg-[#0f172a]/10 md:px-3 md:py-1.5 md:text-sm md:leading-relaxed md:text-[#1f2937] md:shadow-none lg:text-base">
                 Find trusted storage, parking, workspace and lifestyle spaces from local owners.
               </span>
             </p>
@@ -177,22 +177,22 @@ export default function HomePage() {
 
           {/* RIGHT: category selector + CTA */}
           <div className="mt-auto w-full shrink-0 max-md:mt-0 md:mt-7 lg:mt-0 lg:max-w-[42rem] lg:justify-self-end lg:-translate-y-1 xl:max-w-[44rem] xl:-translate-y-2">
-            <div className="rounded-3xl border border-white/55 bg-white/92 p-3 shadow-[0_20px_50px_rgba(15,23,42,0.14),0_2px_12px_rgba(15,23,42,0.07)] max-md:shadow-[0_24px_56px_rgba(12,29,47,0.22)] md:border-[#e5e7eb] md:bg-white md:p-5 md:shadow-[0_24px_60px_rgba(15,23,42,0.13),0_2px_8px_rgba(15,23,42,0.05)] lg:p-6">
-              <div className="mb-4 md:mb-5">
-                <p className="text-base font-semibold text-[#0f172a] sm:text-lg">
+            <div className="rounded-2xl border border-white/55 bg-white/92 p-2.5 shadow-[0_20px_50px_rgba(15,23,42,0.14),0_2px_12px_rgba(15,23,42,0.07)] max-md:shadow-[0_24px_56px_rgba(12,29,47,0.22)] md:rounded-3xl md:border-[#e5e7eb] md:bg-white md:p-5 md:shadow-[0_24px_60px_rgba(15,23,42,0.13),0_2px_8px_rgba(15,23,42,0.05)] lg:p-6">
+              <div className="mb-2 md:mb-5">
+                <p className="text-sm font-semibold text-[#0f172a] md:text-lg">
                   What do you need space for?
                 </p>
-                <p className="mt-1 text-xs leading-relaxed text-[#64748b] sm:text-sm">
+                <p className="mt-0.5 line-clamp-1 text-[10px] leading-snug text-[#64748b] md:mt-1 md:line-clamp-none md:text-xs md:leading-relaxed md:text-sm">
                   Tell us what you want to do and we&apos;ll show you matching listings.
                 </p>
               </div>
 
-              <form onSubmit={handleSearch} className="space-y-4 md:space-y-5">
+              <form onSubmit={handleSearch} className="space-y-2 md:space-y-5">
                 <div
                   id="home-space-type"
                   role="radiogroup"
                   aria-label="What do you need space for?"
-                  className="grid grid-cols-2 gap-2.5 sm:gap-3"
+                  className="grid grid-cols-2 gap-1.5 md:gap-3"
                 >
                   {HOME_CATEGORY_CARDS.map((card) => {
                     const selected =
@@ -214,7 +214,7 @@ export default function HomePage() {
 
                 <button
                   type="submit"
-                  className="w-full min-h-[54px] rounded-xl bg-[#c1121f] px-5 py-3.5 text-sm font-semibold text-white shadow-[0_4px_18px_rgba(193,18,31,0.35)] transition-all duration-300 ease-out hover:-translate-y-0.5 hover:bg-[#a70f19] hover:shadow-[0_12px_28px_rgba(193,18,31,0.42)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c1121f] focus-visible:ring-offset-2 active:translate-y-0 active:shadow-[0_4px_16px_rgba(193,18,31,0.32)] motion-reduce:transform-none motion-reduce:transition-colors max-md:mb-0.5"
+                  className="w-full min-h-[46px] shrink-0 rounded-xl bg-[#c1121f] px-4 py-2.5 text-sm font-semibold text-white shadow-[0_4px_18px_rgba(193,18,31,0.35)] transition-all duration-300 ease-out hover:-translate-y-0.5 hover:bg-[#a70f19] hover:shadow-[0_12px_28px_rgba(193,18,31,0.42)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c1121f] focus-visible:ring-offset-2 active:translate-y-0 active:shadow-[0_4px_16px_rgba(193,18,31,0.32)] motion-reduce:transform-none motion-reduce:transition-colors md:min-h-[54px] md:px-5 md:py-3.5"
                   aria-label="Find matching spaces"
                 >
                   Find matching spaces
