@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, ShieldCheck, UserCheck } from "lucide-react";
 import type { SpaceIntentKey } from "@/lib/space-intents";
@@ -58,8 +59,7 @@ const HOME_CATEGORY_CARDS: {
 const BROWSE_SPACES_HREF = "/spaces#browse-search";
 const LIST_SPACE_HREF = "/list-your-space";
 
-const heroBackgroundImage = "/images/homepage-hero.png";
-const heroBackgroundImageMobile = "/images/homepage-hero-mobile.png";
+const heroBackgroundImage = "/images/browse-hero.png";
 
 export default function HomePage() {
   const router = useRouter();
@@ -112,46 +112,36 @@ export default function HomePage() {
       <HomeLaunchModal />
       <div className="pb-10 text-[#192a3a] sm:pb-12">
       <section className="relative flex w-full flex-col overflow-hidden max-md:h-[100dvh] max-md:max-h-[100dvh] max-md:min-h-0 md:block md:h-auto md:max-h-none md:min-h-0 md:overflow-visible lg:min-h-[640px] xl:min-h-[700px]">
-        {/* Mobile-only hero: portrait storage / trust imagery */}
+        {/* Hero background — full-resolution asset, no blur filters */}
+        <div className="pointer-events-none absolute inset-0 [transform:translateZ(0)]" aria-hidden>
+          <Image
+            src={heroBackgroundImage}
+            alt=""
+            fill
+            priority
+            quality={100}
+            unoptimized
+            sizes="(max-width: 768px) 100vw, 1920px"
+            className="object-cover object-center"
+          />
+        </div>
+        {/* Desktop/tablet: narrow left gradient — image stays sharp on the right */}
         <div
-          className="absolute inset-0 bg-cover bg-[center_22%] md:hidden"
-          style={{ backgroundImage: `url('${heroBackgroundImageMobile}')` }}
-          aria-hidden
-        />
-        {/* Desktop / tablet hero */}
-        <div
-          className="absolute inset-0 hidden bg-cover bg-center md:block"
-          style={{ backgroundImage: `url('${heroBackgroundImage}')` }}
-          aria-hidden
-        />
-        {/* Mobile: light scrims for headline legibility */}
-        <div
-          className="pointer-events-none absolute inset-0 bg-gradient-to-b from-[#0c1d2f]/65 via-[#0c1d2f]/15 to-[#0c1d2f]/40 md:hidden"
-          aria-hidden
-        />
-        <div
-          className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/45 via-transparent to-transparent md:hidden"
-          aria-hidden
-        />
-        {/* Desktop: subtle left scrim for headline legibility only */}
-        <div
-          className="absolute inset-0 hidden bg-gradient-to-r from-white/50 via-white/18 to-transparent sm:from-white/45 sm:via-white/14 md:block"
+          className="pointer-events-none absolute inset-y-0 left-0 hidden w-[min(52%,44rem)] bg-gradient-to-r from-white/88 via-white/48 to-transparent md:block"
           aria-hidden
         />
 
         <div className="relative z-10 mx-auto flex min-h-0 w-full max-w-7xl flex-1 flex-col px-4 max-md:justify-between max-md:gap-3 max-md:overflow-y-auto max-md:overscroll-y-contain max-md:pb-[max(0.75rem,env(safe-area-inset-bottom))] max-md:pt-10 sm:px-6 md:block md:flex-none md:justify-start md:gap-6 md:overflow-visible md:px-6 md:pb-20 md:pt-9 lg:grid lg:grid-cols-[1fr_minmax(0,42rem)] lg:items-start lg:justify-between lg:gap-10 lg:pt-11 lg:pb-32 xl:grid-cols-[1fr_minmax(0,44rem)] xl:gap-12 xl:pb-36">
           {/* LEFT: editorial hero + CTAs (CTAs hidden on mobile — navbar + category panel carry actions) */}
-          <div className="max-w-xl shrink-0 max-md:mx-auto max-md:w-full max-md:text-center lg:max-w-none lg:pt-1">
-            <h1 className="max-w-3xl text-[1.65rem] font-semibold leading-[1.08] tracking-tight text-white max-md:mx-auto max-md:max-w-[20ch] md:text-[#0f172a] md:text-5xl md:leading-tight md:tracking-normal md:max-w-3xl lg:text-6xl">
+          <div className="max-w-xl shrink-0 max-md:mx-auto max-md:w-full max-md:rounded-2xl max-md:bg-white/94 max-md:px-4 max-md:py-3 max-md:text-center max-md:shadow-[0_4px_28px_rgba(15,23,42,0.1)] lg:max-w-none lg:pt-1 md:bg-transparent md:p-0 md:shadow-none">
+            <h1 className="max-w-3xl text-[1.65rem] font-semibold leading-[1.08] tracking-tight text-[#0f172a] max-md:mx-auto max-md:max-w-[20ch] md:text-5xl md:leading-tight md:tracking-normal md:max-w-3xl lg:text-6xl">
               The right space
               <br />
               in the{" "}
-              <span className="text-[#c1121f] drop-shadow-[0_2px_14px_rgba(0,0,0,0.45)] md:drop-shadow-none">
-                right place.
-              </span>
+              <span className="text-[#c1121f]">right place.</span>
             </h1>
             <p className="mx-auto mt-2 mb-0 max-w-md max-md:mb-0 md:mb-0 md:mt-4 md:mx-0 md:text-left lg:mt-5">
-              <span className="inline-block max-w-full rounded-2xl border border-white/25 bg-[#0c1d2f]/45 px-2.5 py-1.5 text-[12px] leading-snug text-white/95 shadow-[0_8px_32px_rgba(12,29,47,0.35)] md:rounded-xl md:border-[#0f172a]/5 md:bg-[#0f172a]/10 md:px-3 md:py-1.5 md:text-sm md:leading-relaxed md:text-[#1f2937] md:shadow-none lg:text-base">
+              <span className="inline-block max-w-full rounded-2xl border border-[#0f172a]/8 bg-white/95 px-2.5 py-1.5 text-[12px] leading-snug text-[#1f2937] shadow-[0_2px_10px_rgba(15,23,42,0.06)] md:rounded-xl md:px-3 md:py-1.5 md:text-sm md:leading-relaxed lg:text-base">
                 Find trusted storage, parking, workspace and lifestyle spaces from local owners.
               </span>
             </p>
@@ -177,7 +167,7 @@ export default function HomePage() {
 
           {/* RIGHT: category selector + CTA */}
           <div className="mt-auto w-full shrink-0 max-md:mt-0 md:mt-7 lg:mt-0 lg:max-w-[42rem] lg:justify-self-end lg:-translate-y-1 xl:max-w-[44rem] xl:-translate-y-2">
-            <div className="rounded-2xl border border-white/55 bg-white/92 p-2.5 shadow-[0_20px_50px_rgba(15,23,42,0.14),0_2px_12px_rgba(15,23,42,0.07)] max-md:shadow-[0_24px_56px_rgba(12,29,47,0.22)] md:rounded-3xl md:border-[#e5e7eb] md:bg-white md:p-5 md:shadow-[0_24px_60px_rgba(15,23,42,0.13),0_2px_8px_rgba(15,23,42,0.05)] lg:p-6">
+            <div className="rounded-2xl border border-white/55 bg-white p-2.5 shadow-[0_20px_50px_rgba(15,23,42,0.14),0_2px_12px_rgba(15,23,42,0.07)] max-md:shadow-[0_24px_56px_rgba(12,29,47,0.22)] md:rounded-3xl md:border-[#e5e7eb] md:bg-white md:p-5 md:shadow-[0_24px_60px_rgba(15,23,42,0.13),0_2px_8px_rgba(15,23,42,0.05)] lg:p-6">
               <div className="mb-2 md:mb-5">
                 <p className="text-sm font-semibold text-[#0f172a] md:text-lg">
                   What do you need space for?

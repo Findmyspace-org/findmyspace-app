@@ -23,7 +23,7 @@ export default function HomeCategoryCard({
       role="radio"
       aria-checked={selected}
       onClick={onClick}
-      className={`group relative flex h-[5rem] w-full overflow-hidden rounded-xl border border-white/40 bg-white/80 text-left shadow-[0_6px_22px_rgba(0,0,0,0.07)] backdrop-blur-md transition-all duration-300 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c1121f]/30 focus-visible:ring-offset-2 motion-reduce:transition-none md:h-[6.125rem] md:rounded-2xl md:shadow-[0_8px_30px_rgba(0,0,0,0.08)] ${
+      className={`group relative flex h-[5rem] w-full overflow-hidden rounded-xl border border-white/40 bg-white text-left shadow-[0_6px_22px_rgba(0,0,0,0.07)] transition-all duration-300 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c1121f]/30 focus-visible:ring-offset-2 motion-reduce:transition-none md:h-[6.125rem] md:rounded-2xl md:bg-white/95 md:shadow-[0_8px_30px_rgba(0,0,0,0.08)] ${
         selected
           ? "-translate-y-0.5 ring-2 ring-red-500/20 shadow-[0_10px_30px_rgba(220,38,38,0.12)]"
           : "hover:-translate-y-1 hover:shadow-[0_14px_40px_rgba(0,0,0,0.1)]"

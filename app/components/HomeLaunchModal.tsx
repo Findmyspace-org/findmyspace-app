@@ -89,7 +89,7 @@ export default function HomeLaunchModal() {
             id="home-launch-modal-title"
             className="text-lg font-semibold leading-tight tracking-tight text-[#0c1d2f] sm:text-xl"
           >
-            Launching 1 June 2026
+            Launching 1 July 2026
           </p>
           <p className="mt-2 text-[0.8125rem] font-semibold uppercase tracking-[0.18em] text-[#c1121f] sm:text-sm sm:tracking-[0.2em]">
             Be part of the SPACE RACE

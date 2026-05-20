@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Image from "next/image";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import SpaceCard from "@/app/components/SpaceCard";
@@ -71,8 +72,7 @@ type UserFavouriteRow = {
   space_id: string;
 };
 
-const heroBackgroundImage = "/images/findmyspace-hero.jpg";
-// TODO: Replace with final premium FindMySpace launch hero image.
+const heroBackgroundImage = "/images/browse-hero.png";
 
 function parseNumberParam(value: string | null, fallback: number) {
   const parsed = Number(value);
@@ -594,20 +594,32 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
   return (
     <main className="pb-10 text-[#192a3a]">
       <section className="relative h-[320px] w-full overflow-hidden sm:h-[360px] lg:h-[410px]">
+        <div className="pointer-events-none absolute inset-0 [transform:translateZ(0)]" aria-hidden>
+          <Image
+            src={heroBackgroundImage}
+            alt=""
+            fill
+            priority
+            quality={100}
+            unoptimized
+            sizes="(max-width: 768px) 100vw, 1920px"
+            className="object-cover object-center"
+          />
+        </div>
+        {/* Left-side only — keeps the rest of the image crisp */}
         <div
-          className="absolute inset-0 bg-cover bg-center"
-          style={{ backgroundImage: `url('${heroBackgroundImage}')` }}
+          className="pointer-events-none absolute inset-y-0 left-0 w-[min(100%,34rem)] bg-gradient-to-r from-white/95 via-white/75 to-transparent sm:w-[min(100%,38rem)] md:w-[min(58%,44rem)] md:from-white/90 md:via-white/50"
+          aria-hidden
         />
-        <div className="absolute inset-0 bg-gradient-to-r from-white/72 via-white/52 to-white/36" />
         <div className="mx-auto h-full max-w-7xl px-4 sm:px-6">
           <div className="relative z-10 pt-12 sm:pt-14 lg:pt-16">
-            <h1 className="max-w-3xl text-4xl font-semibold leading-tight text-[#0f172a] sm:text-5xl lg:text-6xl">
+            <h1 className="max-w-3xl text-4xl font-semibold leading-tight text-[#0f172a] drop-shadow-[0_1px_1px_rgba(255,255,255,0.8)] sm:text-5xl lg:text-6xl">
               The right space
               <br />
               in the <span className="text-[#c1121f]">right place.</span>
             </h1>
             <p className="mt-4 max-w-2xl">
-              <span className="inline-block rounded-xl border border-[#0f172a]/5 bg-[#0f172a]/10 px-3 py-1.5 text-base leading-relaxed text-[#1f2937] backdrop-blur-sm sm:text-lg">
+              <span className="inline-block rounded-xl border border-[#0f172a]/8 bg-white/95 px-3 py-1.5 text-base leading-relaxed text-[#1f2937] shadow-[0_2px_12px_rgba(15,23,42,0.06)] sm:text-lg">
                 Find trusted storage, parking, workspace and lifestyle spaces from local owners.
               </span>
             </p>
