@@ -613,10 +613,13 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
         />
         <div className="mx-auto h-full max-w-7xl px-4 sm:px-6">
           <div className="relative z-10 pt-12 sm:pt-14 lg:pt-16">
-            <h1 className="max-w-3xl text-4xl font-semibold leading-tight text-[#0f172a] drop-shadow-[0_1px_1px_rgba(255,255,255,0.8)] sm:text-5xl lg:text-6xl">
+            <h1 className="max-w-3xl text-4xl font-semibold leading-tight text-[#0f172a] [text-shadow:0_2px_18px_rgba(255,255,255,0.95),0_1px_4px_rgba(255,255,255,0.75)] sm:text-5xl lg:text-6xl">
               The right space
               <br />
-              in the <span className="text-[#c1121f]">right place.</span>
+              in the{" "}
+              <span className="text-[#c1121f] [text-shadow:0_2px_18px_rgba(255,255,255,0.95),0_1px_4px_rgba(255,255,255,0.75)]">
+                right place.
+              </span>
             </h1>
             <p className="mt-4 max-w-2xl">
               <span className="inline-block rounded-xl border border-[#0f172a]/8 bg-white/95 px-3 py-1.5 text-base leading-relaxed text-[#1f2937] shadow-[0_2px_12px_rgba(15,23,42,0.06)] sm:text-lg">
