@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, ShieldCheck, UserCheck } from "lucide-react";
+import { CheckCircle2, ExternalLink, ShieldCheck, UserCheck } from "lucide-react";
 import type { SpaceIntentKey } from "@/lib/space-intents";
 import HomeLaunchModal from "@/app/components/HomeLaunchModal";
 import HomeCategoryCard from "@/app/components/HomeCategoryCard";
@@ -58,6 +58,8 @@ const HOME_CATEGORY_CARDS: {
 
 const BROWSE_SPACES_HREF = "/spaces#browse-search";
 const LIST_SPACE_HREF = "/list-your-space";
+const INFO_DECK_HREF =
+  "https://1drv.ms/b/c/3ff18aea40551967/IQDgOVp9cZugQ6AHRquW2dZhAReMnivOCkcSt3uhgDHRzlw?e=r4JRKI";
 
 const heroBackgroundImage = "/images/homepage-hero.png";
 const heroBackgroundImageMobile = "/images/homepage-hero-mobile.png";
@@ -224,13 +226,24 @@ export default function HomePage() {
                   })}
                 </div>
 
-                <button
-                  type="submit"
-                  className="w-full min-h-[46px] shrink-0 rounded-xl bg-[#c1121f] px-4 py-2.5 text-sm font-semibold text-white shadow-[0_4px_18px_rgba(193,18,31,0.35)] transition-all duration-300 ease-out hover:-translate-y-0.5 hover:bg-[#a70f19] hover:shadow-[0_12px_28px_rgba(193,18,31,0.42)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c1121f] focus-visible:ring-offset-2 active:translate-y-0 active:shadow-[0_4px_16px_rgba(193,18,31,0.32)] motion-reduce:transform-none motion-reduce:transition-colors md:min-h-[54px] md:px-5 md:py-3.5"
-                  aria-label="Find matching spaces"
-                >
-                  Find matching spaces
-                </button>
+                <div className="space-y-2">
+                  <button
+                    type="submit"
+                    className="w-full min-h-[46px] shrink-0 rounded-xl bg-[#c1121f] px-4 py-2.5 text-sm font-semibold text-white shadow-[0_4px_18px_rgba(193,18,31,0.35)] transition-all duration-300 ease-out hover:-translate-y-0.5 hover:bg-[#a70f19] hover:shadow-[0_12px_28px_rgba(193,18,31,0.42)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c1121f] focus-visible:ring-offset-2 active:translate-y-0 active:shadow-[0_4px_16px_rgba(193,18,31,0.32)] motion-reduce:transform-none motion-reduce:transition-colors md:min-h-[54px] md:px-5 md:py-3.5"
+                    aria-label="Find matching spaces"
+                  >
+                    Find matching spaces
+                  </button>
+                  <a
+                    href={INFO_DECK_HREF}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mx-auto flex w-fit items-center justify-center gap-1.5 py-1 text-xs font-medium text-slate-600 transition-colors hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0c1d2f]/20 focus-visible:ring-offset-2 md:text-[0.8125rem]"
+                  >
+                    View info deck
+                    <ExternalLink className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden />
+                  </a>
+                </div>
               </form>
             </div>
           </div>
