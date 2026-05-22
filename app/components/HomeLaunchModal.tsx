@@ -2,14 +2,13 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { useRouter } from "next/navigation";
-import { X } from "lucide-react";
+import { ExternalLink, X } from "lucide-react";
 
 const SESSION_STORAGE_KEY = "fms_home_launch_modal_dismissed";
-const LIST_SPACE_HREF = "/list-your-space";
+const INFO_DECK_HREF =
+  "https://1drv.ms/b/c/3ff18aea40551967/IQDgOVp9cZugQ6AHRquW2dZhAReMnivOCkcSt3uhgDHRzlw?e=r4JRKI";
 
 export default function HomeLaunchModal() {
-  const router = useRouter();
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
@@ -50,11 +49,6 @@ export default function HomeLaunchModal() {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [open, dismiss]);
-
-  function handleListSpace() {
-    dismiss();
-    router.push(LIST_SPACE_HREF);
-  }
 
   if (typeof document === "undefined" || !open) return null;
 
@@ -102,21 +96,23 @@ export default function HomeLaunchModal() {
           </p>
         </div>
 
-        <div className="mt-8 flex flex-col gap-3 sm:mt-9">
-          <button
-            type="button"
-            onClick={handleListSpace}
-            className="w-full min-h-[48px] rounded-xl bg-[#c1121f] px-4 py-3 text-center text-sm font-semibold text-white shadow-[0_4px_18px_rgba(193,18,31,0.35)] transition-all duration-200 hover:bg-[#a70f19] hover:shadow-[0_8px_24px_rgba(193,18,31,0.4)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c1121f] focus-visible:ring-offset-2 active:translate-y-px"
-          >
-            List your space
-          </button>
+        <div className="mt-8 flex flex-col items-center gap-3 sm:mt-9">
           <button
             type="button"
             onClick={dismiss}
-            className="w-full rounded-lg py-2 text-center text-sm font-medium text-[#475569] underline decoration-[#cbd5e1] underline-offset-4 transition-colors hover:text-[#0c1d2f] hover:decoration-[#94a3b8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0c1d2f]/20 focus-visible:ring-offset-2"
+            className="w-full min-h-[48px] rounded-xl bg-[#c1121f] px-4 py-3 text-center text-sm font-semibold text-white shadow-[0_4px_18px_rgba(193,18,31,0.35)] transition-all duration-200 hover:bg-[#a70f19] hover:shadow-[0_8px_24px_rgba(193,18,31,0.4)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c1121f] focus-visible:ring-offset-2 active:translate-y-px"
           >
             Continue to site
           </button>
+          <a
+            href={INFO_DECK_HREF}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center justify-center gap-1.5 py-1 text-xs font-medium text-slate-600 transition-colors hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0c1d2f]/20 focus-visible:ring-offset-2 sm:text-[0.8125rem]"
+          >
+            View info deck
+            <ExternalLink className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden />
+          </a>
         </div>
       </div>
     </div>,
