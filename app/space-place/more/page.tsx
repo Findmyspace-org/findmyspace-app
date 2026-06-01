@@ -19,46 +19,38 @@ export default function MorePage() {
       />
 
       <div className="grid gap-3">
+        <Link href="/space-place/spaces/new" className={LINK_CLASS}>
+          Add Space
+        </Link>
+        <Link href="/space-place/contacts/new" className={LINK_CLASS}>
+          Add Contact
+        </Link>
+
         {isAdmin ? (
           <>
-            <Link href="/space-place/team" className={LINK_CLASS}>
-              Team
-            </Link>
             <Link href="/space-place/team/invite" className={LINK_CLASS}>
               Invite Spacer
             </Link>
-          </>
-        ) : (
-          <>
-            <Link href="/space-place/spaces" className={LINK_CLASS}>
-              My Spaces
-            </Link>
-            <Link href="/space-place/tasks" className={LINK_CLASS}>
-              My Tasks
+            <Link href="/space-place/team" className={LINK_CLASS}>
+              Team
             </Link>
           </>
-        )}
-
-        {isAdmin ? (
-          <Link href="/space-place/tasks" className={LINK_CLASS}>
-            Tasks
-          </Link>
         ) : null}
 
-        <Link href="/space-place/dashboard" className={LINK_CLASS}>
-          {isAdmin ? "Dashboard" : "My dashboard"}
+        <Link href="/space-place/tasks" className={LINK_CLASS}>
+          Tasks
         </Link>
-
+        <Link href="/space-place/dashboard" className={LINK_CLASS}>
+          Dashboard
+        </Link>
+        <Link href="/space-place/settings" className={LINK_CLASS}>
+          Settings
+        </Link>
         <Link href="/space-place/activity" className={LINK_CLASS}>
           Activity
         </Link>
-
         <Link href="/space-place/contacts" className={LINK_CLASS}>
           Contacts
-        </Link>
-
-        <Link href="/space-place/settings" className={LINK_CLASS}>
-          Settings
         </Link>
 
         <Link href="/" className={`${LINK_CLASS} text-neutral-600`}>

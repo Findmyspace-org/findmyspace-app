@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { Plus } from "lucide-react";
 import { crmDb } from "@/lib/space-place/db";
 import { PIPELINE_STAGE_LABELS } from "@/lib/space-place/constants";
 import { displayName, formatActivityDate } from "@/lib/space-place/format";
@@ -123,6 +124,14 @@ export default function SpacesPage() {
   return (
     <div>
       <PageTitle title="Spaces" subtitle="All spaces and prospects" />
+
+      <Link
+        href="/space-place/spaces/new"
+        className="mb-4 flex min-h-[52px] items-center justify-center gap-2 rounded-2xl border-2 border-[#c1121f] bg-[#c1121f] px-4 text-lg font-semibold text-white shadow-sm active:bg-[#a10f1a]"
+      >
+        <Plus className="h-5 w-5" strokeWidth={2.5} />
+        Add Space
+      </Link>
 
       <input
         type="search"

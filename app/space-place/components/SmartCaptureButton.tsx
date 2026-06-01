@@ -38,9 +38,14 @@ function ActionBadge({ action }: { action: "match" | "create" }) {
   );
 }
 
-export function SmartCaptureButton() {
+export function SmartCaptureModal({
+  open,
+  onClose,
+}: {
+  open: boolean;
+  onClose: () => void;
+}) {
   const router = useRouter();
-  const [open, setOpen] = useState(false);
   const [step, setStep] = useState<Step>("input");
   const [text, setText] = useState("");
   const [parseResult, setParseResult] = useState<SmartCaptureParseResult | null>(
@@ -64,7 +69,7 @@ export function SmartCaptureButton() {
   }
 
   function close() {
-    setOpen(false);
+    onClose();
     reset();
   }
 
@@ -175,19 +180,10 @@ export function SmartCaptureButton() {
     router.push(`/space-place/organisations/${data.organisationId}`);
   }
 
-  return (
-    <>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="flex min-h-[48px] items-center gap-2 rounded-full border-2 border-[#c1121f] bg-white px-5 py-2.5 text-sm font-bold text-[#c1121f] shadow-md"
-      >
-        <Sparkles className="h-4 w-4" />
-        SMART CAPTURE
-      </button>
+  if (!open) return null;
 
-      {open ? (
-        <div
+  return (
+    <div
           className="fixed inset-0 z-[60] flex items-end justify-center bg-black/40 p-4 pb-[calc(5.5rem+env(safe-area-inset-bottom))] sm:items-center sm:pb-4"
           role="dialog"
           aria-modal="true"
@@ -451,7 +447,23 @@ export function SmartCaptureButton() {
             </div>
           </div>
         </div>
-      ) : null}
+  );
+}
+
+export function SmartCaptureButton() {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="flex min-h-[48px] items-center gap-2 rounded-full border-2 border-[#c1121f] bg-white px-5 py-2.5 text-sm font-bold text-[#c1121f] shadow-md"
+      >
+        <Sparkles className="h-4 w-4" />
+        SMART CAPTURE
+      </button>
+      <SmartCaptureModal open={open} onClose={() => setOpen(false)} />
     </>
   );
 }

@@ -1,30 +1,24 @@
 "use client";
 
-import Link from "next/link";
 import { usePathname } from "next/navigation";
-import {
-  Building2,
-  CalendarDays,
-  GitBranch,
-  MoreHorizontal,
-  PlusCircle,
-} from "lucide-react";
 import { useSpacePlace } from "../SpacePlaceContext";
 import { SpacePlaceAccessGate } from "./SpacePlaceAccessGate";
-import { QuickUpdateButton } from "./QuickUpdateButton";
-import { SmartCaptureButton } from "./SmartCaptureButton";
+import { BottomNav } from "./BottomNav";
 
-const BOTTOM_NAV = [
-  { href: "/space-place/today", label: "Today", icon: CalendarDays },
-  { href: "/space-place/pipeline", label: "Pipeline", icon: GitBranch },
-  { href: "/space-place/spaces", label: "Spaces", icon: Building2 },
-  { href: "/space-place/add", label: "Add", icon: PlusCircle },
-  { href: "/space-place/more", label: "More", icon: MoreHorizontal },
-] as const;
+function shouldHideNav(pathname: string): boolean {
+  return (
+    pathname.includes("/organisations/") ||
+    pathname.includes("/contacts/") ||
+    pathname.includes("/spacers/") ||
+    pathname.includes("/team/") ||
+    pathname.endsWith("/new") ||
+    pathname.startsWith("/space-place/add/log")
+  );
+}
 
 export function SpacePlaceShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { profile, isAdmin } = useSpacePlace();
+  const { profile } = useSpacePlace();
 
   if (pathname.startsWith("/space-place/join")) {
     return (
@@ -34,77 +28,37 @@ export function SpacePlaceShell({ children }: { children: React.ReactNode }) {
     );
   }
 
-  const nav = BOTTOM_NAV;
-  const hideNav =
-    pathname.includes("/organisations/") ||
-    pathname.includes("/contacts/") ||
-    pathname.includes("/spacers/") ||
-    pathname.includes("/team/");
+  const hideNav = shouldHideNav(pathname);
 
   return (
     <SpacePlaceAccessGate>
-    <div className="flex min-h-screen flex-col bg-neutral-50 text-neutral-900">
-      <header className="sticky top-0 z-20 border-b border-neutral-200 bg-white/95 px-4 py-3 backdrop-blur">
-        <div className="mx-auto flex max-w-3xl items-center justify-between gap-3">
-          <div>
-            <p className="text-xs font-medium uppercase tracking-wide text-[#c1121f]">
-              Internal
+      <div className="flex min-h-screen flex-col bg-neutral-50 text-neutral-900">
+        <header className="sticky top-0 z-20 border-b border-neutral-200 bg-white/95 px-4 py-3 backdrop-blur">
+          <div className="mx-auto flex max-w-3xl items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wide text-[#c1121f]">
+                Internal
+              </p>
+              <h1 className="text-lg font-bold leading-tight">The Space Place</h1>
+            </div>
+            <p className="truncate text-right text-sm text-neutral-600">
+              {profile?.full_name || profile?.email}
             </p>
-            <h1 className="text-lg font-bold leading-tight">The Space Place</h1>
           </div>
-          <p className="truncate text-right text-sm text-neutral-600">
-            {profile?.full_name || profile?.email}
-          </p>
-        </div>
-      </header>
+        </header>
 
-      <main
-        className={`mx-auto w-full max-w-3xl flex-1 px-4 pt-4 ${
-          hideNav
-            ? "pb-[calc(1.5rem+env(safe-area-inset-bottom))]"
-            : "pb-[calc(13.5rem+env(safe-area-inset-bottom))]"
-        }`}
-      >
-        {children}
-      </main>
+        <main
+          className={`mx-auto w-full max-w-3xl flex-1 px-4 pt-4 ${
+            hideNav
+              ? "pb-[calc(1.5rem+env(safe-area-inset-bottom))]"
+              : "pb-[calc(6.5rem+env(safe-area-inset-bottom))]"
+          }`}
+        >
+          {children}
+        </main>
 
-      {!hideNav && (
-        <div className="pointer-events-none fixed inset-x-0 bottom-[calc(4.75rem+env(safe-area-inset-bottom))] z-30 flex justify-center px-4">
-          <div className="pointer-events-auto flex flex-col items-center gap-2">
-            <QuickUpdateButton />
-            <SmartCaptureButton />
-          </div>
-        </div>
-      )}
-
-      {!hideNav && (
-        <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-neutral-200 bg-white">
-          <div className="mx-auto grid max-w-3xl grid-cols-5 gap-1 px-1 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
-            {nav.map((item) => {
-              const Icon = item.icon;
-              const active =
-                pathname === item.href || pathname.startsWith(`${item.href}/`);
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={`flex min-h-[60px] flex-col items-center justify-center gap-0.5 rounded-xl px-1 py-1.5 text-center transition ${
-                    active
-                      ? "bg-[#c1121f]/10 text-[#c1121f]"
-                      : "text-neutral-600 hover:bg-neutral-100"
-                  }`}
-                >
-                  <Icon className="h-6 w-6 shrink-0" strokeWidth={active ? 2.5 : 2} />
-                  <span className="max-w-full truncate px-0.5 text-[10px] font-semibold leading-tight sm:text-xs">
-                    {item.label}
-                  </span>
-                </Link>
-              );
-            })}
-          </div>
-        </nav>
-      )}
-    </div>
+        {!hideNav ? <BottomNav /> : null}
+      </div>
     </SpacePlaceAccessGate>
   );
 }
