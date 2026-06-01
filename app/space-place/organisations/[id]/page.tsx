@@ -30,12 +30,13 @@ import {
   type SpaceEngagementRow,
 } from "../../components/SpaceActivityHistory";
 import { EditOrganisationPanel } from "../../components/EditOrganisationPanel";
+import { CreateContactPanel } from "../../components/CreateContactPanel";
 
 export default function OrganisationDetailPage() {
   const params = useParams();
   const id = params.id as string;
   const router = useRouter();
-  const { isAdmin } = useSpacePlace();
+  const { isAdmin, profile } = useSpacePlace();
 
   const [org, setOrg] = useState<CrmOrganisation | null>(null);
   const [contacts, setContacts] = useState<CrmContact[]>([]);
@@ -48,6 +49,7 @@ export default function OrganisationDetailPage() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [editOpen, setEditOpen] = useState(false);
+  const [createContactOpen, setCreateContactOpen] = useState(false);
 
   const load = useCallback(async () => {
     setActivityLoading(true);
@@ -131,6 +133,13 @@ export default function OrganisationDetailPage() {
     setOrg(updated);
     setNotes(updated.notes || "");
     setLostReason(updated.lost_reason || "");
+  }
+
+  function handleContactCreated(created: CrmContact) {
+    setContacts((prev) => {
+      if (prev.some((c) => c.id === created.id)) return prev;
+      return [...prev, created];
+    });
   }
 
   if (!org) {
@@ -260,6 +269,25 @@ export default function OrganisationDetailPage() {
       />
 
       <SectionHeading>Contacts</SectionHeading>
+      <button
+        type="button"
+        onClick={() => setCreateContactOpen(true)}
+        className="mb-3 flex min-h-[44px] w-full items-center justify-center rounded-xl border border-[#c1121f] bg-white px-4 text-sm font-semibold text-[#c1121f] active:bg-[#c1121f]/5"
+      >
+        Add contact
+      </button>
+
+      {profile ? (
+        <CreateContactPanel
+          open={createContactOpen}
+          onClose={() => setCreateContactOpen(false)}
+          onCreated={handleContactCreated}
+          isAdmin={isAdmin}
+          userId={profile.id}
+          defaultOrganisationId={org.id}
+        />
+      ) : null}
+
       {contacts.map((c) => (
         <Link key={c.id} href={`/space-place/contacts/${c.id}`}>
           <Card className="mb-2">{c.full_name || c.first_name}</Card>

@@ -1,29 +1,34 @@
 "use client";
-import { crmDb } from "@/lib/space-place/db";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { supabase } from "@/lib/supabase";
+import { Plus } from "lucide-react";
+import { crmDb } from "@/lib/space-place/db";
 import { displayName, formatActivityDate } from "@/lib/space-place/format";
 import type { CrmContact, CrmEngagement, CrmOrganisation, CrmTask } from "@/lib/space-place/types";
+import { useSpacePlace } from "../SpacePlaceContext";
 import { Card, PageTitle } from "../components/SpacePlaceShell";
 import { ContactActionBar } from "../components/ContactActionBar";
+import { CreateContactPanel } from "../components/CreateContactPanel";
 
 type ContactRow = CrmContact & {
   organisation?: Pick<CrmOrganisation, "id" | "name"> | null;
 };
 
 export default function ContactsPage() {
+  const { isAdmin, profile } = useSpacePlace();
   const [contacts, setContacts] = useState<ContactRow[]>([]);
   const [engagements, setEngagements] = useState<CrmEngagement[]>([]);
   const [tasks, setTasks] = useState<CrmTask[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
+  const [createOpen, setCreateOpen] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     const [cRes, eRes, tRes] = await Promise.all([
-      crmDb.contacts()
+      crmDb
+        .contacts()
         .select("*, organisation:crm_organisations(id, name)")
         .order("full_name"),
       crmDb.engagements()
@@ -40,6 +45,27 @@ export default function ContactsPage() {
     setTasks((tRes.data as CrmTask[]) || []);
     setLoading(false);
   }, []);
+
+  async function handleContactCreated(contact: CrmContact) {
+    const { data } = await crmDb
+      .contacts()
+      .select("*, organisation:crm_organisations(id, name)")
+      .eq("id", contact.id)
+      .single();
+    if (data) {
+      setContacts((prev) => {
+        const row = data as ContactRow;
+        if (prev.some((c) => c.id === row.id)) return prev;
+        return [...prev, row].sort((a, b) =>
+          displayName(a.full_name, a.first_name, a.last_name).localeCompare(
+            displayName(b.full_name, b.first_name, b.last_name)
+          )
+        );
+      });
+    } else {
+      void load();
+    }
+  }
 
   useEffect(() => {
     load();
@@ -73,6 +99,26 @@ export default function ContactsPage() {
   return (
     <div>
       <PageTitle title="Contacts" subtitle="People at your spaces" />
+
+      <button
+        type="button"
+        onClick={() => setCreateOpen(true)}
+        className="mb-4 flex min-h-[52px] w-full items-center justify-center gap-2 rounded-2xl border-2 border-[#c1121f] bg-[#c1121f] px-4 text-lg font-semibold text-white shadow-sm active:bg-[#a10f1a]"
+      >
+        <Plus className="h-5 w-5" strokeWidth={2.5} />
+        New contact
+      </button>
+
+      {profile ? (
+        <CreateContactPanel
+          open={createOpen}
+          onClose={() => setCreateOpen(false)}
+          onCreated={handleContactCreated}
+          isAdmin={isAdmin}
+          userId={profile.id}
+        />
+      ) : null}
+
       <input
         type="search"
         value={search}

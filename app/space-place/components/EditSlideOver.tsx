@@ -14,6 +14,8 @@ type EditSlideOverProps = {
   success: string | null;
   children: React.ReactNode;
   formId?: string;
+  saveLabel?: string;
+  savingLabel?: string;
 };
 
 export function EditSlideOver({
@@ -26,6 +28,8 @@ export function EditSlideOver({
   success,
   children,
   formId,
+  saveLabel = "Save",
+  savingLabel = "Saving…",
 }: EditSlideOverProps) {
   useEffect(() => {
     if (!open) return;
@@ -92,11 +96,11 @@ export function EditSlideOver({
             <div className="flex-1">
               {formId ? (
                 <PrimaryButton type="submit" form={formId} disabled={saving}>
-                  {saving ? "Saving…" : "Save"}
+                  {saving ? savingLabel : saveLabel}
                 </PrimaryButton>
               ) : (
                 <PrimaryButton onClick={onSave} disabled={saving}>
-                  {saving ? "Saving…" : "Save"}
+                  {saving ? savingLabel : saveLabel}
                 </PrimaryButton>
               )}
             </div>

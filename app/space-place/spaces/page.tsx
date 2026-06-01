@@ -15,6 +15,8 @@ import type {
 import { useSpacePlace } from "../SpacePlaceContext";
 import { Card, PageTitle } from "../components/SpacePlaceShell";
 import { ContactActionBar } from "../components/ContactActionBar";
+import { CreateOrganisationPanel } from "../components/CreateOrganisationPanel";
+import type { CrmProfile } from "@/lib/space-place/types";
 
 type SpaceRow = CrmOrganisation & {
   assigned_name: string | null;
@@ -27,8 +29,10 @@ type SpaceRow = CrmOrganisation & {
 export default function SpacesPage() {
   const { isAdmin, profile } = useSpacePlace();
   const [spaces, setSpaces] = useState<SpaceRow[]>([]);
+  const [spacers, setSpacers] = useState<CrmProfile[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
+  const [createOpen, setCreateOpen] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -37,7 +41,7 @@ export default function SpacesPage() {
       oq = oq.eq("assigned_to", profile.id);
     }
 
-    const [oRes, cRes, eRes, tRes, pRes] = await Promise.all([
+    const [oRes, cRes, eRes, tRes, pRes, spacerRes] = await Promise.all([
       oq,
       crmDb.contacts().select("*"),
       crmDb.engagements()
@@ -49,7 +53,12 @@ export default function SpacesPage() {
         .eq("status", "open")
         .order("due_date", { ascending: true }),
       crmDb.profiles().select("id, full_name"),
+      isAdmin
+        ? crmDb.profiles().select("*").eq("active", true).order("full_name")
+        : Promise.resolve({ data: [] as CrmProfile[] }),
     ]);
+
+    setSpacers((spacerRes.data as CrmProfile[]) || []);
 
     const contacts = (cRes.data as CrmContact[]) || [];
     const engagements = (eRes.data as CrmEngagement[]) || [];
@@ -125,13 +134,25 @@ export default function SpacesPage() {
     <div>
       <PageTitle title="Spaces" subtitle="All spaces and prospects" />
 
-      <Link
-        href="/space-place/spaces/new"
-        className="mb-4 flex min-h-[52px] items-center justify-center gap-2 rounded-2xl border-2 border-[#c1121f] bg-[#c1121f] px-4 text-lg font-semibold text-white shadow-sm active:bg-[#a10f1a]"
+      <button
+        type="button"
+        onClick={() => setCreateOpen(true)}
+        className="mb-4 flex min-h-[52px] w-full items-center justify-center gap-2 rounded-2xl border-2 border-[#c1121f] bg-[#c1121f] px-4 text-lg font-semibold text-white shadow-sm active:bg-[#a10f1a]"
       >
         <Plus className="h-5 w-5" strokeWidth={2.5} />
-        Add Space
-      </Link>
+        New organisation
+      </button>
+
+      {profile ? (
+        <CreateOrganisationPanel
+          open={createOpen}
+          onClose={() => setCreateOpen(false)}
+          onCreated={() => void load()}
+          isAdmin={isAdmin}
+          userId={profile.id}
+          spacers={spacers}
+        />
+      ) : null}
 
       <input
         type="search"
