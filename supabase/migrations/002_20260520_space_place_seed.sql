@@ -75,35 +75,11 @@ VALUES
   )
 ON CONFLICT (id) DO NOTHING;
 
--- One crm_profile per auth email (avoids duplicate Schalk rows from multiple auth accounts)
-INSERT INTO public.crm_profiles (id, full_name, email, role, active)
-SELECT DISTINCT ON (lower(btrim(u.email)))
-  u.id,
-  CASE
-    WHEN u.email ILIKE '%schalk%' THEN 'Schalk van der Merwe'
-    WHEN u.email ILIKE '%amelie%' THEN 'Amelie'
-    ELSE COALESCE(u.raw_user_meta_data->>'full_name', split_part(u.email, '@', 1))
-  END,
-  u.email,
-  CASE WHEN u.email ILIKE '%schalk%' THEN 'admin' ELSE 'spacer' END,
-  true
-FROM auth.users u
-WHERE u.email IS NOT NULL
-  AND btrim(u.email) <> ''
-  AND (
-    u.email ILIKE '%schalk%'
-    OR u.email ILIKE '%amelie%'
-    OR u.email ILIKE '%spacer1%'
-    OR u.email ILIKE '%spacer2%'
-  )
-ORDER BY lower(btrim(u.email)), u.created_at ASC
-ON CONFLICT (id) DO UPDATE SET
-  full_name = EXCLUDED.full_name,
-  email = EXCLUDED.email,
-  role = EXCLUDED.role,
-  active = true;
+-- Spacer/Main Admin profiles are NOT auto-created from auth.users.
+-- Main Admin: enable via Space Place → "Enable Main Admin access" (platform admin only).
+-- Spacers: invite via More → Team → Invite Spacer (crm_spacer_invites).
 
--- Assign Drakenstein to Amelie when her profile exists
+-- Assign Drakenstein when a Spacer profile named Amelie exists (post-invite)
 UPDATE public.crm_organisations o
 SET assigned_to = p.id
 FROM public.crm_profiles p

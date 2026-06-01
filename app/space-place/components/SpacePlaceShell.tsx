@@ -10,6 +10,7 @@ import {
   PlusCircle,
 } from "lucide-react";
 import { useSpacePlace } from "../SpacePlaceContext";
+import { SpacePlaceAccessGate } from "./SpacePlaceAccessGate";
 import { QuickUpdateButton } from "./QuickUpdateButton";
 import { SmartCaptureButton } from "./SmartCaptureButton";
 
@@ -23,27 +24,12 @@ const BOTTOM_NAV = [
 
 export function SpacePlaceShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { profile, loading, error, isAdmin } = useSpacePlace();
+  const { profile, isAdmin } = useSpacePlace();
 
-  if (loading) {
+  if (pathname.startsWith("/space-place/join")) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-neutral-50 px-6">
-        <p className="text-lg text-neutral-600">Loading The Space Place…</p>
-      </div>
-    );
-  }
-
-  if (error || !profile) {
-    return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-neutral-50 px-6 text-center">
-        <p className="text-xl font-semibold text-neutral-900">The Space Place</p>
-        <p className="max-w-md text-neutral-600">{error || "Access denied."}</p>
-        <Link
-          href="/"
-          className="rounded-full bg-[#c1121f] px-6 py-3 text-base font-semibold text-white"
-        >
-          Back to FindMySpace
-        </Link>
+      <div className="min-h-screen bg-neutral-50 px-4 py-8 text-neutral-900">
+        {children}
       </div>
     );
   }
@@ -52,9 +38,11 @@ export function SpacePlaceShell({ children }: { children: React.ReactNode }) {
   const hideNav =
     pathname.includes("/organisations/") ||
     pathname.includes("/contacts/") ||
-    pathname.includes("/spacers/");
+    pathname.includes("/spacers/") ||
+    pathname.includes("/team/");
 
   return (
+    <SpacePlaceAccessGate>
     <div className="flex min-h-screen flex-col bg-neutral-50 text-neutral-900">
       <header className="sticky top-0 z-20 border-b border-neutral-200 bg-white/95 px-4 py-3 backdrop-blur">
         <div className="mx-auto flex max-w-3xl items-center justify-between gap-3">
@@ -65,7 +53,7 @@ export function SpacePlaceShell({ children }: { children: React.ReactNode }) {
             <h1 className="text-lg font-bold leading-tight">The Space Place</h1>
           </div>
           <p className="truncate text-right text-sm text-neutral-600">
-            {profile.full_name || profile.email}
+            {profile?.full_name || profile?.email}
           </p>
         </div>
       </header>
@@ -117,6 +105,7 @@ export function SpacePlaceShell({ children }: { children: React.ReactNode }) {
         </nav>
       )}
     </div>
+    </SpacePlaceAccessGate>
   );
 }
 

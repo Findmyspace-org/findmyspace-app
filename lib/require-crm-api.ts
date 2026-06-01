@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { isSpacePlaceRole } from "@/lib/space-place/access";
 
 export type CrmAuthOk = {
   userId: string;
@@ -59,7 +60,8 @@ export async function requireCrmApi(
     .maybeSingle();
 
   const profile = crmProfile as { role?: string; active?: boolean } | null;
-  if (crmError || !profile?.active) {
+
+  if (crmError || !profile?.active || !isSpacePlaceRole(profile.role)) {
     return {
       response: NextResponse.json(
         { error: "The Space Place access required." },
@@ -68,8 +70,7 @@ export async function requireCrmApi(
     };
   }
 
-  const crmRole =
-    profile.role === "admin" ? ("admin" as const) : ("spacer" as const);
+  const crmRole = profile.role;
 
   const adminClient = createClient(supabaseUrl, serviceKey, {
     auth: {

@@ -1,6 +1,6 @@
 "use client";
-import { crmDb } from "@/lib/space-place/db";
 
+import { crmDb } from "@/lib/space-place/db";
 import {
   createContext,
   useCallback,
@@ -10,6 +10,10 @@ import {
   useState,
 } from "react";
 import { supabase } from "@/lib/supabase";
+import {
+  hasSpacePlaceAccess,
+  SPACE_PLACE_ACCESS_DENIED_MESSAGE,
+} from "@/lib/space-place/access";
 import type { CrmProfile } from "@/lib/space-place/types";
 
 type SpacePlaceContextValue = {
@@ -17,6 +21,7 @@ type SpacePlaceContextValue = {
   loading: boolean;
   error: string | null;
   isAdmin: boolean;
+  canBootstrapMainAdmin: boolean;
   refreshProfile: () => Promise<void>;
 };
 
@@ -26,10 +31,13 @@ export function SpacePlaceProvider({ children }: { children: React.ReactNode }) 
   const [profile, setProfile] = useState<CrmProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [canBootstrapMainAdmin, setCanBootstrapMainAdmin] = useState(false);
 
   const refreshProfile = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setCanBootstrapMainAdmin(false);
+
     try {
       const {
         data: { user },
@@ -51,58 +59,43 @@ export function SpacePlaceProvider({ children }: { children: React.ReactNode }) 
         return;
       }
 
-      if (existing) {
-        if (!existing.active) {
-          setProfile(null);
-          setError("Your Space Place access is inactive.");
-          return;
-        }
-        setProfile(existing as CrmProfile);
+      const crmRow = existing as CrmProfile | null;
+
+      if (crmRow && hasSpacePlaceAccess(crmRow)) {
+        setProfile(crmRow);
+        return;
+      }
+
+      if (crmRow && !crmRow.active) {
+        setProfile(null);
+        setError("Your Space Place access has been deactivated.");
+        return;
+      }
+
+      if (crmRow && !hasSpacePlaceAccess(crmRow)) {
+        setProfile(null);
+        setError(SPACE_PLACE_ACCESS_DENIED_MESSAGE);
         return;
       }
 
       const { data: platformProfile } = await supabase
         .from("profiles")
-        .select("role, full_name, email, phone")
+        .select("role")
         .eq("id", user.id)
         .maybeSingle();
 
       const isPlatformAdmin =
         (platformProfile as { role?: string } | null)?.role === "admin";
 
-      if (!isPlatformAdmin) {
+      if (isPlatformAdmin) {
         setProfile(null);
-        setError(
-          "You do not have access to The Space Place yet. Ask an admin to add you."
-        );
+        setCanBootstrapMainAdmin(true);
+        setError(null);
         return;
       }
 
-      const insertPayload = {
-        id: user.id,
-        full_name:
-          (platformProfile as { full_name?: string } | null)?.full_name ||
-          user.user_metadata?.full_name ||
-          user.email?.split("@")[0] ||
-          "Spacer",
-        email: user.email,
-        phone: (platformProfile as { phone?: string } | null)?.phone ?? null,
-        role: "admin" as const,
-        active: true,
-      };
-
-      const { data: created, error: upsertErr } = await crmDb
-        .profiles()
-        .upsert(insertPayload, { onConflict: "id" })
-        .select("*")
-        .single();
-
-      if (upsertErr) {
-        setError(upsertErr.message);
-        return;
-      }
-
-      setProfile(created as CrmProfile);
+      setProfile(null);
+      setError(SPACE_PLACE_ACCESS_DENIED_MESSAGE);
     } finally {
       setLoading(false);
     }
@@ -118,9 +111,10 @@ export function SpacePlaceProvider({ children }: { children: React.ReactNode }) 
       loading,
       error,
       isAdmin: profile?.role === "admin",
+      canBootstrapMainAdmin,
       refreshProfile,
     }),
-    [profile, loading, error, refreshProfile]
+    [profile, loading, error, canBootstrapMainAdmin, refreshProfile]
   );
 
   return (

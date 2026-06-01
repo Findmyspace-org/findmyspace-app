@@ -3,13 +3,15 @@ import { crmDb } from "@/lib/space-place/db";
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
-import { supabase } from "@/lib/supabase";
+import { useParams, useRouter } from "next/navigation";
 import type { CrmProfile, CrmOrganisation, CrmTask, CrmEngagement } from "@/lib/space-place/types";
+import { useSpacePlace } from "../../SpacePlaceContext";
 import { Card, PageTitle, SectionHeading } from "../../components/SpacePlaceShell";
 import { formatDateTime } from "@/lib/space-place/format";
 
 export default function SpacerDetailPage() {
+  const { isAdmin } = useSpacePlace();
+  const router = useRouter();
   const params = useParams();
   const id = params.id as string;
   const [spacer, setSpacer] = useState<CrmProfile | null>(null);
@@ -35,8 +37,14 @@ export default function SpacerDetailPage() {
   }, [id]);
 
   useEffect(() => {
+    if (!isAdmin) {
+      router.replace("/space-place/today");
+      return;
+    }
     load();
-  }, [load]);
+  }, [isAdmin, load, router]);
+
+  if (!isAdmin) return null;
 
   if (!spacer) {
     return <p className="text-neutral-600">Loading…</p>;
