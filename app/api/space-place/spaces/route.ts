@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireCrmApi } from "@/lib/require-crm-api";
+import { requireCrmApi, resolveCrmAssignedTo } from "@/lib/require-crm-api";
+import {
+  logCrmWriteFailure,
+  publicCrmDbError,
+} from "@/lib/space-place/crm-api-log";
 import { buildOrganisationNotes } from "@/lib/space-place/build-notes";
 import {
   PIPELINE_STAGES,
@@ -65,10 +69,7 @@ export async function POST(req: NextRequest) {
     ? body.pipeline_stage
     : "prospect";
 
-  let assignedTo = body.assigned_to?.trim() || null;
-  if (auth.crmRole === "spacer") {
-    assignedTo = auth.userId;
-  }
+  const assignedTo = resolveCrmAssignedTo(auth, body.assigned_to);
 
   const combinedNotes = buildOrganisationNotes({
     notes: body.notes || "",
@@ -95,8 +96,16 @@ export async function POST(req: NextRequest) {
     .single();
 
   if (orgErr || !createdOrg) {
+    logCrmWriteFailure({
+      operation: "insert",
+      table: "crm_organisations",
+      userId: auth.userId,
+      platformRole: auth.platformRole,
+      crmRole: auth.crmRole,
+      error: orgErr || { message: "No row returned" },
+    });
     return NextResponse.json(
-      { error: orgErr?.message || "Failed to create space." },
+      { error: publicCrmDbError(orgErr, "Failed to create space.") },
       { status: 500 }
     );
   }
@@ -129,8 +138,21 @@ export async function POST(req: NextRequest) {
       .single();
 
     if (contactErr || !createdContact) {
+      logCrmWriteFailure({
+        operation: "insert",
+        table: "crm_contacts",
+        userId: auth.userId,
+        platformRole: auth.platformRole,
+        crmRole: auth.crmRole,
+        error: contactErr || { message: "No row returned" },
+      });
       return NextResponse.json(
-        { error: contactErr?.message || "Space created but contact failed." },
+        {
+          error: publicCrmDbError(
+            contactErr,
+            "Space created but contact failed."
+          ),
+        },
         { status: 500 }
       );
     }
