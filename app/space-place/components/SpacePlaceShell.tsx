@@ -66,12 +66,14 @@ export function SpacePlaceShell({ children }: { children: React.ReactNode }) {
 export function PageTitle({
   title,
   subtitle,
+  className = "",
 }: {
   title: string;
   subtitle?: string;
+  className?: string;
 }) {
   return (
-    <div className="mb-5">
+    <div className={`mb-5 ${className}`}>
       <h2 className="text-2xl font-bold tracking-tight">{title}</h2>
       {subtitle ? (
         <p className="mt-1 text-base text-neutral-600">{subtitle}</p>
@@ -102,18 +104,21 @@ export function PrimaryButton({
   type = "button",
   disabled,
   className = "",
+  form,
 }: {
   children: React.ReactNode;
   onClick?: () => void;
   type?: "button" | "submit";
   disabled?: boolean;
   className?: string;
+  form?: string;
 }) {
   return (
     <button
       type={type}
       disabled={disabled}
       onClick={onClick}
+      form={form}
       className={`flex min-h-[48px] w-full items-center justify-center rounded-xl bg-[#c1121f] px-4 py-3 text-base font-semibold text-white transition hover:bg-[#a10f1a] disabled:opacity-50 ${className}`}
     >
       {children}

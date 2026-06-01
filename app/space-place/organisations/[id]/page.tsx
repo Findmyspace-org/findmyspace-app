@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
+import { Pencil } from "lucide-react";
 import { crmDb } from "@/lib/space-place/db";
 import {
   PIPELINE_STAGES,
@@ -28,6 +29,7 @@ import {
   SpaceActivityHistory,
   type SpaceEngagementRow,
 } from "../../components/SpaceActivityHistory";
+import { EditOrganisationPanel } from "../../components/EditOrganisationPanel";
 
 export default function OrganisationDetailPage() {
   const params = useParams();
@@ -45,6 +47,7 @@ export default function OrganisationDetailPage() {
   const [lostReason, setLostReason] = useState("");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [editOpen, setEditOpen] = useState(false);
 
   const load = useCallback(async () => {
     setActivityLoading(true);
@@ -124,6 +127,12 @@ export default function OrganisationDetailPage() {
     await updateField({ notes });
   }
 
+  function handleOrganisationSaved(updated: CrmOrganisation) {
+    setOrg(updated);
+    setNotes(updated.notes || "");
+    setLostReason(updated.lost_reason || "");
+  }
+
   if (!org) {
     return <p className="text-neutral-600">Loading…</p>;
   }
@@ -137,7 +146,30 @@ export default function OrganisationDetailPage() {
       >
         ← Back
       </button>
-      <PageTitle title={org.name} subtitle={org.type || "Organisation"} />
+      <div className="mb-5 flex items-start justify-between gap-3">
+        <PageTitle
+          title={org.name}
+          subtitle={org.type || "Organisation"}
+          className="mb-0 min-w-0 flex-1"
+        />
+        <button
+          type="button"
+          onClick={() => setEditOpen(true)}
+          className="flex shrink-0 items-center gap-1.5 rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm font-semibold text-neutral-800 shadow-sm active:bg-neutral-50"
+        >
+          <Pencil className="h-4 w-4" />
+          Edit
+        </button>
+      </div>
+
+      <EditOrganisationPanel
+        organisation={org}
+        open={editOpen}
+        onClose={() => setEditOpen(false)}
+        onSaved={handleOrganisationSaved}
+        isAdmin={isAdmin}
+        spacers={spacers}
+      />
 
       <Card className="mb-4">
         <p className="text-sm text-neutral-600">Assigned Spacer</p>

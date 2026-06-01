@@ -10,6 +10,27 @@ export function displayName(
   return parts.length ? parts.join(" ") : "Unnamed";
 }
 
+/** Prefer explicit full name; otherwise first + last. */
+export function resolveContactFullName(
+  fullName: string,
+  firstName: string,
+  lastName: string
+): string {
+  const trimmed = fullName.trim();
+  if (trimmed) return trimmed;
+  return [firstName.trim(), lastName.trim()].filter(Boolean).join(" ");
+}
+
+export function contactNameIsValid(
+  fullName: string,
+  firstName: string,
+  lastName: string
+): boolean {
+  return Boolean(
+    fullName.trim() || firstName.trim() || lastName.trim()
+  );
+}
+
 export function formatDueDate(dueDate: string | null | undefined): string {
   if (!dueDate) return "No date";
   const d = parseISO(dueDate.length === 10 ? `${dueDate}T12:00:00` : dueDate);

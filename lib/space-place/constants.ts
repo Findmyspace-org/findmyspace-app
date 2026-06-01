@@ -31,4 +31,13 @@ export const ENGAGEMENT_TYPES = [
 export const TASK_STATUSES = ["open", "done", "cancelled"] as const;
 export const TASK_PRIORITIES = ["low", "normal", "high"] as const;
 
+export const ORGANISATION_STATUSES = [
+  "new",
+  "active",
+  "inactive",
+  "archived",
+] as const;
+
+export const CONTACT_STATUSES = ["active", "inactive", "lead"] as const;
+
 export const BRAND_RED = "#c1121f";
