@@ -9,6 +9,7 @@ import { dueBucket } from "@/lib/space-place/format";
 import type { CrmOrganisation, CrmTask, CrmProfile, CrmEngagement } from "@/lib/space-place/types";
 import { useSpacePlace } from "../SpacePlaceContext";
 import { Card, PageTitle, SectionHeading } from "../components/SpacePlaceShell";
+import { dedupeActiveSpacers } from "@/lib/space-place/spacers";
 
 export default function DashboardPage() {
   const { isAdmin, profile } = useSpacePlace();
@@ -106,7 +107,7 @@ export default function DashboardPage() {
           </div>
 
           <SectionHeading>Performance by Spacer</SectionHeading>
-          {spacers.map((s) => {
+          {dedupeActiveSpacers(spacers).map((s) => {
             const assigned = orgs.filter((o) => o.assigned_to === s.id);
             const spacerTasks = openTasks.filter((t) => t.owner_id === s.id);
             const spacerOverdue = spacerTasks.filter(

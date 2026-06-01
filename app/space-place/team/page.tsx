@@ -10,6 +10,7 @@ import type { CrmProfile, CrmOrganisation, CrmTask, CrmEngagement } from "@/lib/
 import { useSpacePlace } from "../SpacePlaceContext";
 import { Card, PageTitle } from "../components/SpacePlaceShell";
 import { dueBucket } from "@/lib/space-place/format";
+import { dedupeActiveSpacers } from "@/lib/space-place/spacers";
 
 export default function TeamPage() {
   const { isAdmin } = useSpacePlace();
@@ -45,10 +46,12 @@ export default function TeamPage() {
 
   if (!isAdmin) return null;
 
+  const roster = dedupeActiveSpacers(spacers);
+
   return (
     <div>
       <PageTitle title="Team" subtitle="Spacers and workload" />
-      {spacers.map((s) => {
+      {roster.map((s) => {
         const assigned = orgs.filter((o) => o.assigned_to === s.id);
         const openTasks = tasks.filter((t) => t.owner_id === s.id);
         const overdue = openTasks.filter(

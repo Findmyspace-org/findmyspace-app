@@ -1,20 +1,19 @@
 "use client";
-import { crmDb } from "@/lib/space-place/db";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabase";
+import { crmDb } from "@/lib/space-place/db";
 import {
   PIPELINE_STAGES,
   PIPELINE_STAGE_LABELS,
   type PipelineStage,
 } from "@/lib/space-place/constants";
+import { dedupeActiveSpacers } from "@/lib/space-place/spacers";
 import type {
   CrmOrganisation,
   CrmContact,
   CrmTask,
-  CrmEngagement,
   CrmProfile,
 } from "@/lib/space-place/types";
 import { useSpacePlace } from "../../SpacePlaceContext";
@@ -24,7 +23,11 @@ import {
   PrimaryButton,
   SectionHeading,
 } from "../../components/SpacePlaceShell";
-import { formatDateTime } from "@/lib/space-place/format";
+import { SpacerSelect } from "../../components/SpacerSelect";
+import {
+  SpaceActivityHistory,
+  type SpaceEngagementRow,
+} from "../../components/SpaceActivityHistory";
 
 export default function OrganisationDetailPage() {
   const params = useParams();
@@ -35,43 +38,72 @@ export default function OrganisationDetailPage() {
   const [org, setOrg] = useState<CrmOrganisation | null>(null);
   const [contacts, setContacts] = useState<CrmContact[]>([]);
   const [tasks, setTasks] = useState<CrmTask[]>([]);
-  const [engagements, setEngagements] = useState<CrmEngagement[]>([]);
+  const [engagements, setEngagements] = useState<SpaceEngagementRow[]>([]);
   const [spacers, setSpacers] = useState<CrmProfile[]>([]);
+  const [activityLoading, setActivityLoading] = useState(true);
   const [notes, setNotes] = useState("");
   const [lostReason, setLostReason] = useState("");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   const load = useCallback(async () => {
+    setActivityLoading(true);
     const [o, c, t, e, p] = await Promise.all([
       crmDb.organisations().select("*").eq("id", id).single(),
       crmDb.contacts().select("*").eq("organisation_id", id),
-      crmDb.tasks()
-        .select("*")
+      crmDb.tasks().select("*").eq("organisation_id", id).order("due_date"),
+      crmDb
+        .engagements()
+        .select(
+          `*,
+          crm_contacts ( id, full_name, first_name, last_name )`
+        )
         .eq("organisation_id", id)
-        .order("due_date"),
-      crmDb.engagements()
-        .select("*")
-        .eq("organisation_id", id)
-        .order("occurred_at", { ascending: false })
-        .limit(20),
+        .order("occurred_at", { ascending: false }),
       isAdmin
-        ? crmDb.profiles().select("*").eq("active", true)
+        ? crmDb.profiles().select("*").eq("active", true).order("full_name")
         : Promise.resolve({ data: [] }),
     ]);
+
     const row = o.data as CrmOrganisation | null;
     setOrg(row);
     setNotes(row?.notes || "");
     setLostReason(row?.lost_reason || "");
     setContacts((c.data as CrmContact[]) || []);
     setTasks((t.data as CrmTask[]) || []);
-    setEngagements((e.data as CrmEngagement[]) || []);
     setSpacers((p.data as CrmProfile[]) || []);
+
+    const { data: profs } = await crmDb.profiles().select("id, full_name");
+    const creatorMap = Object.fromEntries(
+      ((profs as { id: string; full_name: string | null }[]) || []).map(
+        (profile) => [profile.id, profile.full_name]
+      )
+    );
+
+    const engagementRows = ((e.data as SpaceEngagementRow[]) || []).map(
+      (eng) => ({
+        ...eng,
+        contact: eng.crm_contacts ?? null,
+        creator: eng.created_by
+          ? {
+              id: eng.created_by,
+              full_name: creatorMap[eng.created_by] ?? null,
+            }
+          : null,
+      })
+    );
+    setEngagements(engagementRows);
+    setActivityLoading(false);
   }, [id, isAdmin]);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  const roster = useMemo(() => dedupeActiveSpacers(spacers), [spacers]);
+
+  const assignedName =
+    roster.find((s) => s.id === org?.assigned_to)?.full_name || "Unassigned";
 
   async function updateField(
     patch: Partial<CrmOrganisation> & { pipeline_stage?: PipelineStage }
@@ -79,9 +111,7 @@ export default function OrganisationDetailPage() {
     if (!org) return;
     setSaving(true);
     setMessage(null);
-    const { error } = await crmDb.organisations()
-      .update(patch)
-      .eq("id", org.id);
+    const { error } = await crmDb.organisations().update(patch).eq("id", org.id);
     setSaving(false);
     if (error) {
       setMessage(error.message);
@@ -98,9 +128,6 @@ export default function OrganisationDetailPage() {
     return <p className="text-neutral-600">Loading…</p>;
   }
 
-  const assignedName =
-    spacers.find((s) => s.id === org.assigned_to)?.full_name || "Unassigned";
-
   return (
     <div>
       <button
@@ -115,22 +142,15 @@ export default function OrganisationDetailPage() {
       <Card className="mb-4">
         <p className="text-sm text-neutral-600">Assigned Spacer</p>
         {isAdmin ? (
-          <select
+          <SpacerSelect
             value={org.assigned_to || ""}
-            onChange={(e) =>
+            onChange={(value) =>
               updateField({
-                assigned_to: e.target.value || null,
+                assigned_to: value || null,
               } as Partial<CrmOrganisation>)
             }
-            className="mt-1 w-full rounded-xl border border-neutral-200 p-3 text-base"
-          >
-            <option value="">Unassigned</option>
-            {spacers.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.full_name || s.email}
-              </option>
-            ))}
-          </select>
+            spacers={spacers}
+          />
         ) : (
           <p className="mt-1 text-lg font-medium">{assignedName}</p>
         )}
@@ -197,6 +217,16 @@ export default function OrganisationDetailPage() {
         Save notes
       </PrimaryButton>
 
+      <SectionHeading>Space Activity History</SectionHeading>
+      <p className="mb-4 text-sm text-neutral-600">
+        All interactions for this space — every contact included.
+      </p>
+      <SpaceActivityHistory
+        engagements={engagements}
+        tasks={tasks}
+        loading={activityLoading}
+      />
+
       <SectionHeading>Contacts</SectionHeading>
       {contacts.map((c) => (
         <Link key={c.id} href={`/space-place/contacts/${c.id}`}>
@@ -221,16 +251,6 @@ export default function OrganisationDetailPage() {
           + Assign task
         </Link>
       ) : null}
-
-      <SectionHeading>Recent engagements</SectionHeading>
-      {engagements.map((e) => (
-        <Card key={e.id} className="mb-2">
-          <p className="text-xs text-neutral-500">
-            {formatDateTime(e.occurred_at)} · {e.type}
-          </p>
-          <p>{e.summary}</p>
-        </Card>
-      ))}
     </div>
   );
 }

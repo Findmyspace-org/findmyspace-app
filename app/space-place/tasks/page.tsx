@@ -11,6 +11,10 @@ import type { CrmTaskWithRelations, CrmProfile } from "@/lib/space-place/types";
 import { useSpacePlace } from "../SpacePlaceContext";
 import { PageTitle } from "../components/SpacePlaceShell";
 import { TaskCard } from "../components/TaskCard";
+import {
+  dedupeActiveSpacers,
+  formatSpacerOptionLabel,
+} from "@/lib/space-place/spacers";
 
 const FILTERS = ["all", "spacer", "overdue", "today", "upcoming", "done"] as const;
 type Filter = (typeof FILTERS)[number];
@@ -63,6 +67,8 @@ function TasksPageContent() {
 
   if (!isAdmin) return null;
 
+  const roster = dedupeActiveSpacers(spacers);
+
   return (
     <div>
       <PageTitle title="Tasks" subtitle="Assign and track follow-ups" />
@@ -100,9 +106,9 @@ function TasksPageContent() {
           className="mb-4 w-full rounded-xl border border-neutral-200 p-3"
         >
           <option value="">All Spacers</option>
-          {spacers.map((s) => (
+          {roster.map((s) => (
             <option key={s.id} value={s.id}>
-              {s.full_name}
+              {formatSpacerOptionLabel(s, roster)}
             </option>
           ))}
         </select>

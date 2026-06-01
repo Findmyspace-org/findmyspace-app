@@ -75,9 +75,9 @@ VALUES
   )
 ON CONFLICT (id) DO NOTHING;
 
--- Link platform admins / known emails to crm_profiles when those auth users exist
+-- One crm_profile per auth email (avoids duplicate Schalk rows from multiple auth accounts)
 INSERT INTO public.crm_profiles (id, full_name, email, role, active)
-SELECT
+SELECT DISTINCT ON (lower(btrim(u.email)))
   u.id,
   CASE
     WHEN u.email ILIKE '%schalk%' THEN 'Schalk van der Merwe'
@@ -89,12 +89,14 @@ SELECT
   true
 FROM auth.users u
 WHERE u.email IS NOT NULL
+  AND btrim(u.email) <> ''
   AND (
     u.email ILIKE '%schalk%'
     OR u.email ILIKE '%amelie%'
     OR u.email ILIKE '%spacer1%'
     OR u.email ILIKE '%spacer2%'
   )
+ORDER BY lower(btrim(u.email)), u.created_at ASC
 ON CONFLICT (id) DO UPDATE SET
   full_name = EXCLUDED.full_name,
   email = EXCLUDED.email,

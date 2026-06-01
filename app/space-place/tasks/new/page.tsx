@@ -7,6 +7,7 @@ import { supabase } from "@/lib/supabase";
 import type { CrmContact, CrmOrganisation, CrmProfile } from "@/lib/space-place/types";
 import { useSpacePlace } from "../../SpacePlaceContext";
 import { PageTitle, PrimaryButton } from "../../components/SpacePlaceShell";
+import { SpacerSelect } from "../../components/SpacerSelect";
 
 function NewTaskContent() {
   const router = useRouter();
@@ -130,18 +131,12 @@ function NewTaskContent() {
       {isAdmin ? (
         <label className="block">
           <span className="text-sm font-semibold">Assigned to</span>
-          <select
-            required
+          <SpacerSelect
+            includeUnassigned={false}
             value={ownerId}
-            onChange={(e) => setOwnerId(e.target.value)}
-            className="mt-1 w-full rounded-xl border border-neutral-200 p-3 text-base"
-          >
-            {spacers.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.full_name || s.email}
-              </option>
-            ))}
-          </select>
+            onChange={setOwnerId}
+            spacers={spacers}
+          />
         </label>
       ) : null}
       <label className="block">

@@ -105,7 +105,7 @@ export default function ContactDetailPage() {
         </div>
       </Card>
 
-      <SectionHeading>Activity</SectionHeading>
+      <SectionHeading>Activity with this contact</SectionHeading>
       {engagements.length === 0 ? (
         <p className="text-neutral-500">No activity yet.</p>
       ) : (

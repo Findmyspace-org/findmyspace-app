@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { useSpacePlace } from "../SpacePlaceContext";
 import { QuickUpdateButton } from "./QuickUpdateButton";
+import { SmartCaptureButton } from "./SmartCaptureButton";
 
 const ADMIN_NAV = [
   { href: "/space-place/today", label: "Today", icon: CalendarDays },
@@ -81,19 +82,28 @@ export function SpacePlaceShell({ children }: { children: React.ReactNode }) {
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-3xl flex-1 px-4 pb-28 pt-4">
+      <main
+        className={`mx-auto w-full max-w-3xl flex-1 px-4 pt-4 ${
+          hideNav
+            ? "pb-[calc(1.5rem+env(safe-area-inset-bottom))]"
+            : "pb-[calc(13.5rem+env(safe-area-inset-bottom))]"
+        }`}
+      >
         {children}
       </main>
 
       {!hideNav && (
-        <div className="fixed bottom-20 left-0 right-0 z-30 flex justify-center px-4 md:bottom-24">
-          <QuickUpdateButton />
+        <div className="pointer-events-none fixed inset-x-0 bottom-[calc(4.75rem+env(safe-area-inset-bottom))] z-30 flex justify-center px-4">
+          <div className="pointer-events-auto flex flex-col items-center gap-2">
+            <QuickUpdateButton />
+            <SmartCaptureButton />
+          </div>
         </div>
       )}
 
       {!hideNav && (
-        <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-neutral-200 bg-white pb-[env(safe-area-inset-bottom)]">
-          <div className="mx-auto grid max-w-3xl grid-cols-5 gap-1 px-1 py-2">
+        <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-neutral-200 bg-white">
+          <div className="mx-auto grid max-w-3xl grid-cols-5 gap-1 px-1 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
             {nav.map((item) => {
               const Icon = item.icon;
               const active =
@@ -102,14 +112,14 @@ export function SpacePlaceShell({ children }: { children: React.ReactNode }) {
                 <Link
                   key={item.href}
                   href={item.href}
-                  className={`flex min-h-[56px] flex-col items-center justify-center gap-1 rounded-xl px-1 py-2 text-center transition ${
+                  className={`flex min-h-[60px] flex-col items-center justify-center gap-0.5 rounded-xl px-1 py-1.5 text-center transition ${
                     active
                       ? "bg-[#c1121f]/10 text-[#c1121f]"
                       : "text-neutral-600 hover:bg-neutral-100"
                   }`}
                 >
-                  <Icon className="h-6 w-6" strokeWidth={active ? 2.5 : 2} />
-                  <span className="text-[10px] font-semibold leading-tight sm:text-xs">
+                  <Icon className="h-6 w-6 shrink-0" strokeWidth={active ? 2.5 : 2} />
+                  <span className="max-w-full truncate px-0.5 text-[10px] font-semibold leading-tight sm:text-xs">
                     {item.label}
                   </span>
                 </Link>
