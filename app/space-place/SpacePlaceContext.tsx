@@ -91,14 +91,14 @@ export function SpacePlaceProvider({ children }: { children: React.ReactNode }) 
         active: true,
       };
 
-      const { data: created, error: insertErr } = await crmDb
+      const { data: created, error: upsertErr } = await crmDb
         .profiles()
-        .insert(insertPayload)
+        .upsert(insertPayload, { onConflict: "id" })
         .select("*")
         .single();
 
-      if (insertErr) {
-        setError(insertErr.message);
+      if (upsertErr) {
+        setError(upsertErr.message);
         return;
       }
 

@@ -20,37 +20,40 @@ const FILTERS = ["all", "spacer", "overdue", "today", "upcoming", "done"] as con
 type Filter = (typeof FILTERS)[number];
 
 function TasksPageContent() {
-  const { isAdmin } = useSpacePlace();
+  const { isAdmin, profile } = useSpacePlace();
   const router = useRouter();
   const params = useSearchParams();
   const filter = (params.get("filter") as Filter) || "all";
-  const spacerId = params.get("spacer") || "";
+  const spacerId = isAdmin ? params.get("spacer") || "" : profile?.id || "";
 
   const [tasks, setTasks] = useState<CrmTaskWithRelations[]>([]);
   const [spacers, setSpacers] = useState<CrmProfile[]>([]);
 
   const load = useCallback(async () => {
-    const { data } = await crmDb.tasks()
+    let q = crmDb
+      .tasks()
       .select(
         `*,
         crm_organisations ( id, name ),
         crm_contacts ( id, full_name, phone, whatsapp, email )`
       )
       .order("due_date", { ascending: true });
+    if (!isAdmin && profile) {
+      q = q.eq("owner_id", profile.id);
+    }
+    const { data } = await q;
     setTasks((data as CrmTaskWithRelations[]) || []);
-    const { data: profs } = await crmDb.profiles()
-      .select("*")
-      .eq("active", true);
-    setSpacers((profs as CrmProfile[]) || []);
-  }, []);
+    if (isAdmin) {
+      const { data: profs } = await crmDb.profiles()
+        .select("*")
+        .eq("active", true);
+      setSpacers((profs as CrmProfile[]) || []);
+    }
+  }, [isAdmin, profile]);
 
   useEffect(() => {
-    if (!isAdmin) {
-      router.replace("/space-place/today");
-      return;
-    }
     load();
-  }, [isAdmin, load, router]);
+  }, [load]);
 
   const filtered = useMemo(() => {
     return tasks.filter((t) => {
@@ -65,13 +68,15 @@ function TasksPageContent() {
     });
   }, [tasks, filter, spacerId]);
 
-  if (!isAdmin) return null;
-
   const roster = dedupeActiveSpacers(spacers);
+  const spacerFilters = FILTERS.filter((f) => f !== "spacer");
 
   return (
     <div>
-      <PageTitle title="Tasks" subtitle="Assign and track follow-ups" />
+      <PageTitle
+        title="Tasks"
+        subtitle={isAdmin ? "Assign and track follow-ups" : "Your follow-ups"}
+      />
       <Link
         href="/space-place/tasks/new"
         className="mb-4 block rounded-xl bg-[#c1121f] py-3 text-center font-semibold text-white"
@@ -80,10 +85,10 @@ function TasksPageContent() {
       </Link>
 
       <div className="mb-4 flex flex-wrap gap-2">
-        {FILTERS.map((f) => (
+        {(isAdmin ? FILTERS : spacerFilters).map((f) => (
           <Link
             key={f}
-            href={`/space-place/tasks?filter=${f}${spacerId ? `&spacer=${spacerId}` : ""}`}
+            href={`/space-place/tasks?filter=${f}${isAdmin && spacerId ? `&spacer=${spacerId}` : ""}`}
             className={`rounded-full px-3 py-1.5 text-sm font-semibold capitalize ${
               filter === f
                 ? "bg-[#c1121f] text-white"
@@ -95,7 +100,7 @@ function TasksPageContent() {
         ))}
       </div>
 
-      {filter === "spacer" || spacerId ? (
+      {isAdmin && (filter === "spacer" || spacerId) ? (
         <select
           value={spacerId}
           onChange={(e) =>

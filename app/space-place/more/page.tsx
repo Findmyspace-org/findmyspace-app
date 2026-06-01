@@ -5,38 +5,35 @@ import { useSpacePlace } from "../SpacePlaceContext";
 import { Card, PageTitle } from "../components/SpacePlaceShell";
 
 const LINK_CLASS =
-  "flex min-h-[52px] items-center rounded-2xl border border-neutral-200 bg-white px-5 text-lg font-semibold shadow-sm";
+  "flex min-h-[52px] items-center rounded-2xl border border-neutral-200 bg-white px-5 text-lg font-semibold shadow-sm active:bg-neutral-50";
 
 export default function MorePage() {
   const { isAdmin } = useSpacePlace();
 
   return (
     <div>
-      <PageTitle title="More" subtitle="Contacts, reports & settings" />
+      <PageTitle title="More" subtitle="Team, tasks, and settings" />
 
       <div className="grid gap-3">
-        <Link href="/space-place/contacts" className={LINK_CLASS}>
-          Contacts
+        {isAdmin ? (
+          <Link href="/space-place/team" className={LINK_CLASS}>
+            Team
+          </Link>
+        ) : null}
+        <Link href="/space-place/tasks" className={LINK_CLASS}>
+          {isAdmin ? "Tasks" : "My tasks"}
         </Link>
         <Link href="/space-place/dashboard" className={LINK_CLASS}>
-          {isAdmin ? "Admin dashboard" : "My dashboard"}
+          {isAdmin ? "Dashboard" : "My dashboard"}
         </Link>
-        {isAdmin ? (
-          <>
-            <Link href="/space-place/tasks" className={LINK_CLASS}>
-              All tasks
-            </Link>
-            <Link href="/space-place/pipeline" className={LINK_CLASS}>
-              Pipeline
-            </Link>
-          </>
-        ) : (
-          <Link href="/space-place/pipeline" className={LINK_CLASS}>
-            My pipeline
-          </Link>
-        )}
         <Link href="/space-place/settings" className={LINK_CLASS}>
-          Integrations
+          Settings
+        </Link>
+        <Link href="/space-place/activity" className={LINK_CLASS}>
+          Activity
+        </Link>
+        <Link href="/space-place/contacts" className={LINK_CLASS}>
+          Contacts
         </Link>
         <Link href="/" className={`${LINK_CLASS} text-neutral-600`}>
           Back to FindMySpace

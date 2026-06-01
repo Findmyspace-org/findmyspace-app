@@ -4,21 +4,48 @@ export function normalizeSpacerEmail(email: string | null | undefined): string {
   return (email ?? "").trim().toLowerCase();
 }
 
-/** Active profiles only; one row per id and per email. */
+export function normalizeDisplayName(name: string | null | undefined): string {
+  return (name ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+/** Prefer admin, rows with email, then newest. */
+function profilePreferenceScore(profile: CrmProfile): number {
+  let score = 0;
+  if (profile.role === "admin") score += 1000;
+  if (profile.email?.trim()) score += 100;
+  const created = profile.created_at
+    ? new Date(profile.created_at).getTime()
+    : 0;
+  return score + created / 1e12;
+}
+
+/**
+ * Active profiles only — one entry per id, email, and display name.
+ * Resolves duplicate "Schalk van der Merwe" rows from multiple auth accounts.
+ */
 export function dedupeActiveSpacers(profiles: CrmProfile[]): CrmProfile[] {
+  const active = profiles.filter((p) => p.active);
+  const sorted = [...active].sort(
+    (a, b) => profilePreferenceScore(b) - profilePreferenceScore(a)
+  );
+
   const seenIds = new Set<string>();
   const seenEmails = new Set<string>();
+  const seenNames = new Set<string>();
   const result: CrmProfile[] = [];
 
-  for (const profile of profiles) {
-    if (!profile.active) continue;
+  for (const profile of sorted) {
     if (seenIds.has(profile.id)) continue;
 
     const emailKey = normalizeSpacerEmail(profile.email);
+    const nameKey = normalizeDisplayName(profile.full_name);
+
     if (emailKey && seenEmails.has(emailKey)) continue;
+    if (nameKey && seenNames.has(nameKey)) continue;
 
     seenIds.add(profile.id);
     if (emailKey) seenEmails.add(emailKey);
+    if (nameKey) seenNames.add(nameKey);
     result.push(profile);
   }
 
@@ -53,4 +80,9 @@ export function formatSpacerOptionLabel(
     return profile.email.trim();
   }
   return name;
+}
+
+export function countDuplicateProfileIds(profiles: CrmProfile[]): number {
+  const ids = profiles.map((p) => p.id);
+  return ids.length - new Set(ids).size;
 }

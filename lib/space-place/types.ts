@@ -9,6 +9,8 @@ export type CrmProfile = {
   phone: string | null;
   role: CrmRole;
   active: boolean;
+  created_at?: string;
+  updated_at?: string;
 };
 
 export type CrmOrganisation = {

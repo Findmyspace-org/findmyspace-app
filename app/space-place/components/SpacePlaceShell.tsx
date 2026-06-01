@@ -3,33 +3,21 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  Activity,
+  Building2,
   CalendarDays,
   GitBranch,
-  LayoutGrid,
-  Mic,
   MoreHorizontal,
   PlusCircle,
-  Users,
-  UserCircle,
 } from "lucide-react";
 import { useSpacePlace } from "../SpacePlaceContext";
 import { QuickUpdateButton } from "./QuickUpdateButton";
 import { SmartCaptureButton } from "./SmartCaptureButton";
 
-const ADMIN_NAV = [
+const BOTTOM_NAV = [
   { href: "/space-place/today", label: "Today", icon: CalendarDays },
   { href: "/space-place/pipeline", label: "Pipeline", icon: GitBranch },
+  { href: "/space-place/spaces", label: "Spaces", icon: Building2 },
   { href: "/space-place/add", label: "Add", icon: PlusCircle },
-  { href: "/space-place/team", label: "Team", icon: Users },
-  { href: "/space-place/more", label: "More", icon: MoreHorizontal },
-] as const;
-
-const SPACER_NAV = [
-  { href: "/space-place/today", label: "Today", icon: CalendarDays },
-  { href: "/space-place/prospects", label: "My Prospects", icon: UserCircle },
-  { href: "/space-place/add", label: "Add", icon: PlusCircle },
-  { href: "/space-place/activity", label: "Activity", icon: Activity },
   { href: "/space-place/more", label: "More", icon: MoreHorizontal },
 ] as const;
 
@@ -60,7 +48,7 @@ export function SpacePlaceShell({ children }: { children: React.ReactNode }) {
     );
   }
 
-  const nav = isAdmin ? ADMIN_NAV : SPACER_NAV;
+  const nav = BOTTOM_NAV;
   const hideNav =
     pathname.includes("/organisations/") ||
     pathname.includes("/contacts/") ||
