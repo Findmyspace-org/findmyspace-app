@@ -1,23 +1,29 @@
 "use client";
 import { crmDb } from "@/lib/space-place/db";
+import { useState } from "react";
 
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import { formatDueDate } from "@/lib/space-place/format";
-import type { CrmTaskWithRelations } from "@/lib/space-place/types";
+import type { CrmProfile, CrmTaskWithRelations } from "@/lib/space-place/types";
 import { Card } from "./SpacePlaceShell";
 import { ContactActionBar } from "./ContactActionBar";
+import { formatSpacerOptionLabel } from "@/lib/space-place/spacers";
 
 export function TaskCard({
   task,
   onUpdated,
+  assignees = [],
 }: {
   task: CrmTaskWithRelations;
   onUpdated?: () => void;
+  assignees?: CrmProfile[];
 }) {
   const orgName = task.crm_organisations?.name;
   const contact = task.crm_contacts;
   const owner = task.owner_profile?.full_name;
+  const [reassigning, setReassigning] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
 
   async function markDone() {
     const { error } = await crmDb.tasks()
@@ -27,6 +33,19 @@ export function TaskCard({
       })
       .eq("id", task.id);
     if (!error) onUpdated?.();
+  }
+
+  async function reassign(ownerId: string) {
+    if (!ownerId || ownerId === task.owner_id) return;
+    setReassigning(true);
+    setMessage(null);
+    const { error } = await crmDb.tasks().update({ owner_id: ownerId }).eq("id", task.id);
+    setReassigning(false);
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+    onUpdated?.();
   }
 
   return (
@@ -54,6 +73,24 @@ export function TaskCard({
         </span>
       </div>
       <div className="mt-3">
+        {task.status === "open" && assignees.length > 0 ? (
+          <div className="mb-3">
+            <label className="text-xs font-semibold text-neutral-600">Assigned to</label>
+            <select
+              value={task.owner_id || ""}
+              onChange={(e) => void reassign(e.target.value)}
+              disabled={reassigning}
+              className="mt-1 w-full rounded-xl border border-neutral-200 bg-white p-2.5 text-sm disabled:opacity-60"
+            >
+              {assignees.map((profile) => (
+                <option key={profile.id} value={profile.id}>
+                  {formatSpacerOptionLabel(profile, assignees)}
+                </option>
+              ))}
+            </select>
+            {message ? <p className="mt-1 text-xs text-red-600">{message}</p> : null}
+          </div>
+        ) : null}
         <ContactActionBar
           phone={contact?.phone}
           whatsapp={contact?.whatsapp}

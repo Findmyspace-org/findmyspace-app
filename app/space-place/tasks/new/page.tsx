@@ -128,17 +128,15 @@ function NewTaskContent() {
           ))}
         </select>
       </label>
-      {isAdmin ? (
-        <label className="block">
-          <span className="text-sm font-semibold">Assigned to</span>
-          <SpacerSelect
-            includeUnassigned={false}
-            value={ownerId}
-            onChange={setOwnerId}
-            spacers={spacers}
-          />
-        </label>
-      ) : null}
+      <label className="block">
+        <span className="text-sm font-semibold">Assigned to</span>
+        <SpacerSelect
+          includeUnassigned={false}
+          value={ownerId}
+          onChange={setOwnerId}
+          spacers={spacers}
+        />
+      </label>
       <label className="block">
         <span className="text-sm font-semibold">Due date</span>
         <input

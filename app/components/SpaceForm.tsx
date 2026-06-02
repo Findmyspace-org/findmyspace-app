@@ -35,6 +35,7 @@ import {
   readSpaceFormDraft,
   writeSpaceFormDraft,
 } from "@/lib/spaceFormDraftStorage";
+import { formatListingAddress, ZA_PROVINCES } from "@/lib/za-provinces";
 
 const MapPicker = dynamic(() => import("@/app/components/MapPicker"), {
   ssr: false,
@@ -73,6 +74,11 @@ type SpaceInsertPayload = {
   min_booking_months: number | null;
   city: string;
   suburb: string;
+  street_address: string;
+  province: string;
+  postal_code: string;
+  country: string;
+  // Backward-compatible legacy field.
   address_line_1: string;
   latitude: number;
   longitude: number;
@@ -87,6 +93,18 @@ type SpaceInsertPayload = {
   advisor_id?: string | null;
   advisor_code?: string | null;
   advisor_source?: string | null;
+};
+
+type AddressSuggestion = {
+  label: string;
+  streetAddress: string;
+  suburb: string;
+  city: string;
+  province: string;
+  postalCode: string;
+  country: string;
+  latitude: number;
+  longitude: number;
 };
 
 type SpaceImageInsertRow = {
@@ -116,7 +134,10 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
   const [description, setDescription] = useState("");
   const [city, setCity] = useState("");
   const [suburb, setSuburb] = useState("");
-  const [addressLine1, setAddressLine1] = useState("");
+  const [streetAddress, setStreetAddress] = useState("");
+  const [province, setProvince] = useState("");
+  const [postalCode, setPostalCode] = useState("");
+  const [country, setCountry] = useState("South Africa");
   const [spaceType, setSpaceType] = useState("storage");
   const [bookingUnit, setBookingUnit] = useState("day");
 
@@ -154,19 +175,12 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
   const [searchingAddress, setSearchingAddress] = useState(false);
   const [usingDeviceLocation, setUsingDeviceLocation] = useState(false);
   const [reverseGeocoding, setReverseGeocoding] = useState(false);
-  const [addressSuggestions, setAddressSuggestions] = useState<
-    Array<{
-      label: string;
-      addressLine1: string;
-      suburb: string;
-      city: string;
-      latitude: number;
-      longitude: number;
-    }>
-  >([]);
+  const [addressSuggestions, setAddressSuggestions] = useState<AddressSuggestion[]>([]);
   const [addressSuggestionsOpen, setAddressSuggestionsOpen] = useState(false);
   const [suburbTouched, setSuburbTouched] = useState(false);
   const [cityTouched, setCityTouched] = useState(false);
+  const [provinceTouched, setProvinceTouched] = useState(false);
+  const [postalCodeTouched, setPostalCodeTouched] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const [draftRestored, setDraftRestored] = useState(false);
@@ -260,7 +274,7 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
     setDescription(d.description);
     setCity(d.city);
     setSuburb(d.suburb);
-    setAddressLine1(d.addressLine1);
+    setStreetAddress(d.streetAddress);
     setSpaceType(d.spaceType);
     setBookingUnit(d.bookingUnit);
     setPricePerHour(d.pricePerHour);
@@ -269,6 +283,9 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
     setMinBookingHours(d.minBookingHours);
     setMinBookingDays(d.minBookingDays);
     setMinBookingMonths(d.minBookingMonths);
+    setProvince(d.province);
+    setPostalCode(d.postalCode);
+    setCountry(d.country || "South Africa");
     setDepositType((d.depositType as DepositType) || "none");
     setLatitude(d.latitude);
     setLongitude(d.longitude);
@@ -314,7 +331,7 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
         description,
         city,
         suburb,
-        addressLine1,
+        streetAddress,
         spaceType,
         bookingUnit,
         pricePerHour,
@@ -323,6 +340,9 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
         minBookingHours,
         minBookingDays,
         minBookingMonths,
+        province,
+        postalCode,
+        country,
         depositType,
         latitude,
         longitude,
@@ -341,7 +361,7 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
     description,
     city,
     suburb,
-    addressLine1,
+    streetAddress,
     spaceType,
     bookingUnit,
     pricePerHour,
@@ -350,6 +370,9 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
     minBookingHours,
     minBookingDays,
     minBookingMonths,
+    province,
+    postalCode,
+    country,
     depositType,
     latitude,
     longitude,
@@ -389,9 +412,12 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
       return null;
     }
     if (stepIndex === 1) {
-      if (!addressLine1.trim()) return "Please enter a street address.";
+      if (!streetAddress.trim()) return "Please enter a street address.";
       if (!suburb.trim()) return "Please enter a suburb.";
       if (!city.trim()) return "Please enter a city.";
+      if (!province.trim()) return "Please select a province.";
+      if (!postalCode.trim()) return "Please enter a postal code.";
+      if (!country.trim()) return "Please enter a country.";
       if (imageFiles.length < 1) return "Add at least one photo of your space.";
       return null;
     }
@@ -526,7 +552,7 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
      */
     const streetName =
       addr.road || addr.pedestrian || addr.footway || addr.path || "";
-    const addressLine = [addr.house_number, streetName].filter(Boolean).join(" ").trim();
+    const streetAddress = [addr.house_number, streetName].filter(Boolean).join(" ").trim();
     const fallbackStreetLine = (displayName || "").split(",")[0]?.trim() || "";
 
     /**
@@ -557,14 +583,21 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
       addr.state_district ||
       "";
 
+    const provinceValue = addr.state || addr.province || "";
+    const postalCodeValue = addr.postcode || "";
+    const countryValue = addr.country || "South Africa";
+
     /**
      * If street-level data is missing, keep line1 blank and let caller
      * decide whether to preserve existing user-entered line1.
      */
     return {
-      addressLine: addressLine || streetName || fallbackStreetLine,
+      streetAddress: streetAddress || streetName || fallbackStreetLine,
       suburbValue,
       cityValue,
+      provinceValue,
+      postalCodeValue,
+      countryValue,
     };
   }
 
@@ -597,24 +630,31 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
 
       const data = await res.json();
       const addr = data.address || {};
-      const { addressLine, suburbValue, cityValue } = pickReverseAddressFields(
+      const {
+        streetAddress: nextStreetAddress,
+        suburbValue,
+        cityValue,
+        provinceValue,
+        postalCodeValue,
+        countryValue,
+      } = pickReverseAddressFields(
         addr as Record<string, string | undefined>,
         (data.display_name as string | undefined) || ""
       );
       const forcePopulate = Boolean(options?.forcePopulate);
 
-      setAddressLine1((current) => {
-        if (forcePopulate && addressLine) return addressLine;
-        if (!current) return addressLine;
+      setStreetAddress((current) => {
+        if (forcePopulate && nextStreetAddress) return nextStreetAddress;
+        if (!current) return nextStreetAddress;
 
         const hasNumber = /\d/.test(current);
 
-        if (!forcePopulate && hasNumber && addressLine) {
+        if (!forcePopulate && hasNumber && nextStreetAddress) {
           const number = current.match(/\d+[A-Za-z-]*/)?.[0] || "";
           const roadOnly =
-            addressLine
+            nextStreetAddress
               .replace(/^(\d+[A-Za-z-]*\s*)/, "")
-              .trim() || addressLine;
+              .trim() || nextStreetAddress;
           return `${number} ${roadOnly}`.trim();
         }
 
@@ -632,6 +672,17 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
           ? cityValue
           : current
       );
+      setProvince((current) =>
+        shouldOverwriteWithReverse(current, provinceValue, provinceTouched, forcePopulate)
+          ? provinceValue
+          : current
+      );
+      setPostalCode((current) =>
+        shouldOverwriteWithReverse(current, postalCodeValue, postalCodeTouched, forcePopulate)
+          ? postalCodeValue
+          : current
+      );
+      if (countryValue) setCountry(countryValue);
     } catch (error) {
       console.error("Reverse geocoding failed", error);
     } finally {
@@ -640,11 +691,11 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
   }
 
   useEffect(() => {
-    const query = [addressLine1.trim(), suburb.trim(), city.trim()]
+    const query = [streetAddress.trim(), suburb.trim(), city.trim(), province.trim(), country.trim()]
       .filter(Boolean)
       .join(", ");
 
-    if (addressLine1.trim().length < 3) {
+    if (streetAddress.trim().length < 3) {
       setAddressSuggestions([]);
       setAddressSuggestionsOpen(false);
       return;
@@ -670,6 +721,8 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
           address?: Record<string, string | undefined>;
         }>;
 
+        // NOTE: This powers current OSM suggestions and keeps fields aligned for
+        // future Google Places autocomplete integration.
         const next = (data || [])
           .map((item) => {
             const lat = Number(item.lat);
@@ -677,22 +730,18 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
             if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
             const fields = pickReverseAddressFields(item.address || {});
             return {
-              label: item.display_name || `${fields.addressLine}, ${fields.cityValue}`,
-              addressLine1: fields.addressLine,
+              label: item.display_name || `${fields.streetAddress}, ${fields.cityValue}`,
+              streetAddress: fields.streetAddress,
               suburb: fields.suburbValue,
               city: fields.cityValue,
+              province: fields.provinceValue,
+              postalCode: fields.postalCodeValue,
+              country: fields.countryValue,
               latitude: lat,
               longitude: lng,
             };
           })
-          .filter(Boolean) as Array<{
-          label: string;
-          addressLine1: string;
-          suburb: string;
-          city: string;
-          latitude: number;
-          longitude: number;
-        }>;
+          .filter(Boolean) as AddressSuggestion[];
 
         setAddressSuggestions(next);
         setAddressSuggestionsOpen(next.length > 0);
@@ -704,12 +753,14 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
     }, 280);
 
     return () => window.clearTimeout(timer);
-  }, [addressLine1, suburb, city]);
+  }, [streetAddress, suburb, city, province, country]);
 
   async function searchAddressOnMap() {
     setSearchingAddress(true);
     try {
-      const query = [addressLine1, suburb, city].filter(Boolean).join(", ");
+      const query = [streetAddress, suburb, city, province, country]
+        .filter(Boolean)
+        .join(", ");
 
       if (!query) {
         setMessage("Please enter an address, suburb, or city first.");
@@ -988,7 +1039,11 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
           bookingUnit === "month" ? Number(minBookingMonths || 1) : null,
         city,
         suburb,
-        address_line_1: addressLine1,
+        street_address: streetAddress,
+        province: province,
+        postal_code: postalCode,
+        country: country || "South Africa",
+        address_line_1: streetAddress,
         latitude,
         longitude,
         status: "pending",
@@ -1622,13 +1677,13 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
 
         <div className="space-y-4">
           <div>
-            <label className="mb-1 block text-xs font-medium leading-5 text-[#475569]">Address line 1</label>
+            <label className="mb-1 block text-xs font-medium leading-5 text-[#475569]">Street address</label>
             <div className="relative">
               <input
                 type="text"
-                value={addressLine1}
+                value={streetAddress}
                 onChange={(e) => {
-                  setAddressLine1(e.target.value);
+                  setStreetAddress(e.target.value);
                   setAddressSuggestionsOpen(true);
                 }}
                 onBlur={() => {
@@ -1649,9 +1704,12 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
                       type="button"
                       onMouseDown={(e) => {
                         e.preventDefault();
-                        setAddressLine1(suggestion.addressLine1 || addressLine1);
+                        setStreetAddress(suggestion.streetAddress || streetAddress);
                         if (!suburbTouched) setSuburb(suggestion.suburb || suburb);
                         if (!cityTouched) setCity(suggestion.city || city);
+                        if (!provinceTouched) setProvince(suggestion.province || province);
+                        if (!postalCodeTouched) setPostalCode(suggestion.postalCode || postalCode);
+                        setCountry(suggestion.country || country);
                         setLatitude(suggestion.latitude);
                         setLongitude(suggestion.longitude);
                         setAddressSuggestionsOpen(false);
@@ -1670,7 +1728,7 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
             </p>
           </div>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-x-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-x-4 lg:grid-cols-3">
             <div className="min-w-0">
               <label className="mb-1 block text-xs font-medium leading-5 text-[#475569]">Suburb</label>
               <input
@@ -1697,6 +1755,48 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
                 placeholder="e.g. Cape Town"
                 className="w-full min-h-[44px] rounded-lg border border-[#d4dbe2] bg-white px-3 py-2 text-sm text-[#334155] shadow-sm outline-none transition-all duration-200 focus:border-[#c1121f] focus:ring-2 focus:ring-[#c1121f]/20"
                 autoComplete="address-level1"
+              />
+            </div>
+            <div className="min-w-0">
+              <label className="mb-1 block text-xs font-medium leading-5 text-[#475569]">Province</label>
+              <select
+                value={province}
+                onChange={(e) => {
+                  setProvince(e.target.value);
+                  setProvinceTouched(true);
+                }}
+                className="w-full min-h-[44px] rounded-lg border border-[#d4dbe2] bg-white px-3 py-2 text-sm text-[#334155] shadow-sm outline-none transition-all duration-200 focus:border-[#c1121f] focus:ring-2 focus:ring-[#c1121f]/20"
+              >
+                <option value="">Select province</option>
+                {ZA_PROVINCES.map((p) => (
+                  <option key={p} value={p}>
+                    {p}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="min-w-0">
+              <label className="mb-1 block text-xs font-medium leading-5 text-[#475569]">Postal code</label>
+              <input
+                type="text"
+                value={postalCode}
+                onChange={(e) => {
+                  setPostalCode(e.target.value);
+                  setPostalCodeTouched(true);
+                }}
+                placeholder="e.g. 8001"
+                className="w-full min-h-[44px] rounded-lg border border-[#d4dbe2] bg-white px-3 py-2 text-sm text-[#334155] shadow-sm outline-none transition-all duration-200 focus:border-[#c1121f] focus:ring-2 focus:ring-[#c1121f]/20"
+                autoComplete="postal-code"
+              />
+            </div>
+            <div className="min-w-0">
+              <label className="mb-1 block text-xs font-medium leading-5 text-[#475569]">Country</label>
+              <input
+                type="text"
+                value={country}
+                onChange={(e) => setCountry(e.target.value)}
+                className="w-full min-h-[44px] rounded-lg border border-[#d4dbe2] bg-white px-3 py-2 text-sm text-[#334155] shadow-sm outline-none transition-all duration-200 focus:border-[#c1121f] focus:ring-2 focus:ring-[#c1121f]/20"
+                autoComplete="country-name"
               />
             </div>
           </div>
@@ -1947,7 +2047,14 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
                     Location
                   </p>
                   <p className="mt-1 text-sm text-[#334155]">
-                    {[addressLine1, suburb, city].filter(Boolean).join(", ") || "—"}
+                    {formatListingAddress({
+                      street_address: streetAddress,
+                      suburb,
+                      city,
+                      province,
+                      postal_code: postalCode,
+                      country,
+                    }) || "—"}
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2 pt-1">
@@ -2026,7 +2133,12 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
               <li className="flex gap-2.5">
                 <CheckCircle2
                   className={`mt-0.5 h-4 w-4 shrink-0 ${
-                    addressLine1.trim() && suburb.trim() && city.trim()
+                    streetAddress.trim() &&
+                    suburb.trim() &&
+                    city.trim() &&
+                    province.trim() &&
+                    postalCode.trim() &&
+                    country.trim()
                       ? "text-emerald-600"
                       : "text-gray-300"
                   }`}

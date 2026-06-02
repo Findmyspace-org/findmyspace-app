@@ -15,6 +15,10 @@ type Space = {
   description?: string | null;
   city: string | null;
   suburb: string | null;
+  street_address?: string | null;
+  province?: string | null;
+  postal_code?: string | null;
+  country?: string | null;
   address_line_1: string | null;
   space_type: string | null;
   booking_unit: string | null;

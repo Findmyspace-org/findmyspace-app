@@ -9,6 +9,7 @@ import SpaceAttributesDisplay from "@/app/components/SpaceAttributesDisplay";
 import SpaceGallerySection from "./space-gallery-section";
 import SpaceMapSection from "./space-map-section";
 import { formatSpaceTypeLabel } from "@/app/data/spaceFeatureConfig";
+import { formatListingAddress } from "@/lib/za-provinces";
 
 import {
   ArrowLeft,
@@ -29,6 +30,10 @@ type Space = {
   description: string | null;
   city: string | null;
   suburb: string | null;
+  street_address: string | null;
+  province: string | null;
+  postal_code: string | null;
+  country: string | null;
   address_line_1: string | null;
   space_type: string | null;
   booking_unit: string | null;
@@ -146,9 +151,15 @@ export default async function Page({
       ? "/ month"
       : "/ day";
 
-  const address = [space.address_line_1, space.suburb, space.city]
-    .filter(Boolean)
-    .join(", ");
+  const address = formatListingAddress({
+    street_address: space.street_address,
+    suburb: space.suburb,
+    city: space.city,
+    province: space.province,
+    postal_code: space.postal_code,
+    country: space.country,
+    address_line_1: space.address_line_1,
+  });
   const hostProfile = await getHostProfile(space.owner_id);
   const hostName =
     [hostProfile?.first_name, hostProfile?.last_name].filter(Boolean).join(" ").trim() ||

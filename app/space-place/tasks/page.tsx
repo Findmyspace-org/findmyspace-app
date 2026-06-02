@@ -35,20 +35,14 @@ function TasksPageContent() {
       .select(
         `*,
         crm_organisations ( id, name ),
-        crm_contacts ( id, full_name, phone, whatsapp, email )`
+        crm_contacts ( id, full_name, phone, whatsapp, email ),
+        owner_profile:crm_profiles ( id, full_name, email, active, role )`
       )
       .order("due_date", { ascending: true });
-    if (!isAdmin && profile) {
-      q = q.eq("owner_id", profile.id);
-    }
     const { data } = await q;
     setTasks((data as CrmTaskWithRelations[]) || []);
-    if (isAdmin) {
-      const { data: profs } = await crmDb.profiles()
-        .select("*")
-        .eq("active", true);
-      setSpacers((profs as CrmProfile[]) || []);
-    }
+    const { data: profs } = await crmDb.profiles().select("*").eq("active", true);
+    setSpacers((profs as CrmProfile[]) || []);
   }, [isAdmin, profile]);
 
   useEffect(() => {
@@ -120,7 +114,7 @@ function TasksPageContent() {
       ) : null}
 
       {filtered.map((t) => (
-        <TaskCard key={t.id} task={t} onUpdated={load} />
+        <TaskCard key={t.id} task={t} onUpdated={load} assignees={roster} />
       ))}
     </div>
   );

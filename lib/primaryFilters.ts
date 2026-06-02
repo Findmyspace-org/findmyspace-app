@@ -31,6 +31,8 @@ export function applyPrimaryFilters(
       normalize(space.title).includes(normalizedSearch) ||
       normalize(space.city).includes(normalizedSearch) ||
       normalize(space.suburb).includes(normalizedSearch) ||
+      normalize(space.street_address).includes(normalizedSearch) ||
+      normalize(space.province).includes(normalizedSearch) ||
       normalize(space.address_line_1).includes(normalizedSearch) ||
       normalize(space.description).includes(normalizedSearch);
 

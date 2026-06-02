@@ -4,6 +4,10 @@ export type Space = {
   description: string | null;
   city: string | null;
   suburb: string | null;
+  street_address: string | null;
+  province: string | null;
+  postal_code: string | null;
+  country: string | null;
   address_line_1: string | null;
   price_per_hour: number | null;
   price_per_day: number | null;
@@ -100,6 +104,8 @@ export function filterSpaces(
       normalize(space.title).includes(normalizedSearch) ||
       normalize(space.city).includes(normalizedSearch) ||
       normalize(space.suburb).includes(normalizedSearch) ||
+      normalize(space.street_address).includes(normalizedSearch) ||
+      normalize(space.province).includes(normalizedSearch) ||
       normalize(space.address_line_1).includes(normalizedSearch) ||
       normalize(space.description).includes(normalizedSearch);
 

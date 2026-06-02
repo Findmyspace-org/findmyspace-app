@@ -3,17 +3,17 @@
  * Files (images, ownership) cannot be restored — user re-adds those.
  */
 
-const KEY = "findmyspace_space_form_draft_v1";
+const KEY = "findmyspace_space_form_draft_v2";
 const MAX_AGE_MS = 1000 * 60 * 60 * 72; // 72 hours
 
 export type SpaceFormDraftV1 = {
-  v: 1;
+  v: 2;
   savedAt: number;
   title: string;
   description: string;
   city: string;
   suburb: string;
-  addressLine1: string;
+  streetAddress: string;
   spaceType: string;
   bookingUnit: string;
   pricePerHour: string;
@@ -22,6 +22,9 @@ export type SpaceFormDraftV1 = {
   minBookingHours: string;
   minBookingDays: string;
   minBookingMonths: string;
+  province: string;
+  postalCode: string;
+  country: string;
   depositType: string;
   latitude: number;
   longitude: number;
@@ -38,9 +41,10 @@ function isDraft(value: unknown): value is SpaceFormDraftV1 {
   if (!value || typeof value !== "object") return false;
   const o = value as Record<string, unknown>;
   return (
-    o.v === 1 &&
+    o.v === 2 &&
     typeof o.savedAt === "number" &&
-    typeof o.title === "string"
+    typeof o.title === "string" &&
+    typeof o.streetAddress === "string"
   );
 }
 
@@ -73,7 +77,7 @@ export function writeSpaceFormDraft(draft: Omit<SpaceFormDraftV1, "v" | "savedAt
   if (typeof window === "undefined") return;
   try {
     const payload: SpaceFormDraftV1 = {
-      v: 1,
+      v: 2,
       savedAt: Date.now(),
       ...draft,
     };

@@ -21,6 +21,7 @@ import {
   ListingBookingQualityFormFields,
   ListingQualityScoreSummary,
 } from "@/app/components/listing-booking-quality-ui";
+import { ZA_PROVINCES } from "@/lib/za-provinces";
 
 type PageProps = {
   params: Promise<{ id: string }>;
@@ -54,6 +55,10 @@ type SpaceEditRow = {
   description: string | null;
   city: string | null;
   suburb: string | null;
+  street_address: string | null;
+  province: string | null;
+  postal_code: string | null;
+  country: string | null;
   address_line_1: string | null;
   space_type: string | null;
   booking_unit: string | null;
@@ -82,6 +87,10 @@ type SpaceUpdatePayload = {
   description: string;
   city: string;
   suburb: string;
+  street_address: string;
+  province: string;
+  postal_code: string;
+  country: string;
   address_line_1: string;
   space_type: string;
   booking_unit: string;
@@ -118,7 +127,10 @@ export default function EditListingPage({ params }: PageProps) {
   const [description, setDescription] = useState("");
   const [city, setCity] = useState("");
   const [suburb, setSuburb] = useState("");
-  const [addressLine1, setAddressLine1] = useState("");
+  const [streetAddress, setStreetAddress] = useState("");
+  const [province, setProvince] = useState("");
+  const [postalCode, setPostalCode] = useState("");
+  const [country, setCountry] = useState("South Africa");
   const [spaceType, setSpaceType] = useState("storage");
   const [bookingUnit, setBookingUnit] = useState("day");
   const [pricePerHour, setPricePerHour] = useState("");
@@ -211,7 +223,7 @@ export default function EditListingPage({ params }: PageProps) {
 
     const { data: rawData, error } = await (supabase.from("spaces") as any)
       .select(
-        "id, owner_id, title, description, city, suburb, address_line_1, space_type, booking_unit, price_per_hour, price_per_day, price_per_month, min_booking_hours, min_booking_days, min_booking_months, status, ownership_proof_status, deposit_type, deposit_months, monthly_payment_day"
+        "id, owner_id, title, description, city, suburb, street_address, province, postal_code, country, address_line_1, space_type, booking_unit, price_per_hour, price_per_day, price_per_month, min_booking_hours, min_booking_days, min_booking_months, status, ownership_proof_status, deposit_type, deposit_months, monthly_payment_day"
       )
       .eq("id", id)
       .eq("owner_id", user.id)
@@ -230,7 +242,10 @@ export default function EditListingPage({ params }: PageProps) {
     setDescription(data.description ?? "");
     setCity(data.city ?? "");
     setSuburb(data.suburb ?? "");
-    setAddressLine1(data.address_line_1 ?? "");
+    setStreetAddress(data.street_address ?? data.address_line_1 ?? "");
+    setProvince(data.province ?? "");
+    setPostalCode(data.postal_code ?? "");
+    setCountry(data.country ?? "South Africa");
     setSpaceType(data.space_type ?? "storage");
     setBookingUnit(data.booking_unit ?? "day");
     setPricePerHour(
@@ -719,7 +734,11 @@ export default function EditListingPage({ params }: PageProps) {
       description,
       city,
       suburb,
-      address_line_1: addressLine1,
+      street_address: streetAddress,
+      province,
+      postal_code: postalCode,
+      country,
+      address_line_1: streetAddress,
       space_type: spaceType,
       booking_unit: bookingUnit,
       price_per_hour:
@@ -1103,12 +1122,12 @@ export default function EditListingPage({ params }: PageProps) {
               <div className="grid gap-4 md:grid-cols-3">
                 <div>
                   <label className="mb-1 block text-xs font-medium text-gray-700">
-                    Address line 1
+                    Street address
                   </label>
                   <input
                     type="text"
-                    value={addressLine1}
-                    onChange={(e) => setAddressLine1(e.target.value)}
+                    value={streetAddress}
+                    onChange={(e) => setStreetAddress(e.target.value)}
                     placeholder="Street address"
                     className="w-full rounded-sm border border-gray-400 px-4 py-3 outline-none"
                   />
@@ -1136,6 +1155,46 @@ export default function EditListingPage({ params }: PageProps) {
                     value={city}
                     onChange={(e) => setCity(e.target.value)}
                     placeholder="City"
+                    className="w-full rounded-sm border border-gray-400 px-4 py-3 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-700">
+                    Province
+                  </label>
+                  <select
+                    value={province}
+                    onChange={(e) => setProvince(e.target.value)}
+                    className="w-full rounded-sm border border-gray-400 px-4 py-3 outline-none"
+                  >
+                    <option value="">Select province</option>
+                    {ZA_PROVINCES.map((p) => (
+                      <option key={p} value={p}>
+                        {p}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-700">
+                    Postal code
+                  </label>
+                  <input
+                    type="text"
+                    value={postalCode}
+                    onChange={(e) => setPostalCode(e.target.value)}
+                    placeholder="Postal code"
+                    className="w-full rounded-sm border border-gray-400 px-4 py-3 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-700">
+                    Country
+                  </label>
+                  <input
+                    type="text"
+                    value={country}
+                    onChange={(e) => setCountry(e.target.value)}
                     className="w-full rounded-sm border border-gray-400 px-4 py-3 outline-none"
                   />
                 </div>
