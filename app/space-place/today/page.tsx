@@ -5,14 +5,20 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { format } from "date-fns";
 import { supabase } from "@/lib/supabase";
 import { dueBucket } from "@/lib/space-place/format";
-import type { CrmTaskWithRelations } from "@/lib/space-place/types";
+import type {
+  CrmTaskWithRelations,
+  CrmProfile,
+  CrmOrganisation,
+  CrmContact,
+} from "@/lib/space-place/types";
 import { useSpacePlace } from "../SpacePlaceContext";
 import { PageTitle, SectionHeading } from "../components/SpacePlaceShell";
 import { TaskCard } from "../components/TaskCard";
+import { dedupeActiveSpacers } from "@/lib/space-place/spacers";
 
 const TASK_SELECT = `
   *,
-  crm_organisations ( id, name ),
+  crm_organisations ( id, name, pipeline_stage ),
   crm_contacts ( id, full_name, phone, whatsapp, email )
 `;
 
@@ -20,6 +26,9 @@ export default function TodayPage() {
   const { profile, isAdmin } = useSpacePlace();
   const [tasks, setTasks] = useState<CrmTaskWithRelations[]>([]);
   const [profiles, setProfiles] = useState<Record<string, string>>({});
+  const [spacers, setSpacers] = useState<CrmProfile[]>([]);
+  const [organisations, setOrganisations] = useState<CrmOrganisation[]>([]);
+  const [contacts, setContacts] = useState<CrmContact[]>([]);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
@@ -33,15 +42,27 @@ export default function TodayPage() {
       q = q.eq("owner_id", profile.id);
     }
 
-    const [{ data }, { data: profs }] = await Promise.all([
+    const [
+      { data },
+      { data: profs },
+      { data: activeProfiles },
+      { data: orgs },
+      { data: allContacts },
+    ] = await Promise.all([
       q,
       crmDb.profiles().select("id, full_name"),
+      crmDb.profiles().select("*").eq("active", true),
+      crmDb.organisations().select("*").order("name"),
+      crmDb.contacts().select("*").order("full_name"),
     ]);
     const nameMap: Record<string, string> = {};
     for (const p of profs || []) {
       if (p.id) nameMap[p.id] = p.full_name || "Spacer";
     }
     setProfiles(nameMap);
+    setSpacers((activeProfiles as CrmProfile[]) || []);
+    setOrganisations((orgs as CrmOrganisation[]) || []);
+    setContacts((allContacts as CrmContact[]) || []);
     const enriched = ((data as CrmTaskWithRelations[]) || []).map((t) => ({
       ...t,
       owner_profile: t.owner_id
@@ -68,6 +89,7 @@ export default function TodayPage() {
     }
     return { overdue, today, upcoming };
   }, [tasks]);
+  const roster = useMemo(() => dedupeActiveSpacers(spacers), [spacers]);
 
   const greeting = profile?.full_name?.split(" ")[0] || "there";
 
@@ -86,7 +108,15 @@ export default function TodayPage() {
             <p className="mb-4 text-neutral-500">Nothing overdue.</p>
           ) : (
             grouped.overdue.map((t) => (
-              <TaskCard key={t.id} task={t} onUpdated={load} />
+              <TaskCard
+                key={t.id}
+                task={t}
+                onUpdated={load}
+                assignees={roster}
+                profileId={profile?.id}
+                organisations={organisations}
+                contacts={contacts}
+              />
             ))
           )}
 
@@ -95,7 +125,15 @@ export default function TodayPage() {
             <p className="mb-4 text-neutral-500">Nothing due today.</p>
           ) : (
             grouped.today.map((t) => (
-              <TaskCard key={t.id} task={t} onUpdated={load} />
+              <TaskCard
+                key={t.id}
+                task={t}
+                onUpdated={load}
+                assignees={roster}
+                profileId={profile?.id}
+                organisations={organisations}
+                contacts={contacts}
+              />
             ))
           )}
 
@@ -104,7 +142,15 @@ export default function TodayPage() {
             <p className="text-neutral-500">No upcoming tasks.</p>
           ) : (
             grouped.upcoming.map((t) => (
-              <TaskCard key={t.id} task={t} onUpdated={load} />
+              <TaskCard
+                key={t.id}
+                task={t}
+                onUpdated={load}
+                assignees={roster}
+                profileId={profile?.id}
+                organisations={organisations}
+                contacts={contacts}
+              />
             ))
           )}
         </>

@@ -3,37 +3,53 @@ import { crmDb } from "@/lib/space-place/db";
 import { useState } from "react";
 
 import Link from "next/link";
-import { supabase } from "@/lib/supabase";
 import { formatDueDate } from "@/lib/space-place/format";
-import type { CrmProfile, CrmTaskWithRelations } from "@/lib/space-place/types";
+import type {
+  CrmContact,
+  CrmOrganisation,
+  CrmProfile,
+  CrmTaskWithRelations,
+} from "@/lib/space-place/types";
 import { Card } from "./SpacePlaceShell";
 import { ContactActionBar } from "./ContactActionBar";
 import { formatSpacerOptionLabel } from "@/lib/space-place/spacers";
+import { CompleteTaskPanel } from "./CompleteTaskPanel";
+import { EditTaskPanel } from "./EditTaskPanel";
 
 export function TaskCard({
   task,
   onUpdated,
   assignees = [],
+  profileId,
+  organisations = [],
+  contacts = [],
 }: {
   task: CrmTaskWithRelations;
   onUpdated?: () => void;
   assignees?: CrmProfile[];
+  profileId?: string;
+  organisations?: CrmOrganisation[];
+  contacts?: CrmContact[];
 }) {
   const orgName = task.crm_organisations?.name;
   const contact = task.crm_contacts;
   const owner = task.owner_profile?.full_name;
   const [reassigning, setReassigning] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [completeOpen, setCompleteOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
 
-  async function markDone() {
-    const { error } = await crmDb.tasks()
-      .update({
-        status: "done",
-        completed_at: new Date().toISOString(),
-      })
-      .eq("id", task.id);
-    if (!error) onUpdated?.();
-  }
+  const cardTask: CrmTaskWithRelations = {
+    ...task,
+    crm_organisations:
+      task.crm_organisations ||
+      (task.organisation_id
+        ? organisations.find((o) => o.id === task.organisation_id) || null
+        : null),
+    crm_contacts:
+      task.crm_contacts ||
+      (task.contact_id ? contacts.find((c) => c.id === task.contact_id) || null : null),
+  };
 
   async function reassign(ownerId: string) {
     if (!ownerId || ownerId === task.owner_id) return;
@@ -84,21 +100,59 @@ export function TaskCard({
             >
               {assignees.map((profile) => (
                 <option key={profile.id} value={profile.id}>
-                  {formatSpacerOptionLabel(profile, assignees)}
+                  {formatSpacerOptionLabel(profile, assignees)} ({profile.role})
                 </option>
               ))}
             </select>
             {message ? <p className="mt-1 text-xs text-red-600">{message}</p> : null}
           </div>
         ) : null}
+        <div className="mb-3 grid gap-2 sm:grid-cols-2">
+          {task.status === "open" ? (
+            <button
+              type="button"
+              onClick={() => setCompleteOpen(true)}
+              className="min-h-[44px] rounded-xl bg-[#c1121f] px-3 py-2 text-sm font-semibold text-white"
+            >
+              Done
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={() => setEditOpen(true)}
+            className="min-h-[44px] rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm font-semibold text-neutral-800"
+          >
+            Edit
+          </button>
+        </div>
         <ContactActionBar
           phone={contact?.phone}
           whatsapp={contact?.whatsapp}
           email={contact?.email}
-          showDone={task.status === "open"}
-          onDone={markDone}
+          showDone={false}
         />
       </div>
+
+      {task.status === "open" && profileId ? (
+        <CompleteTaskPanel
+          open={completeOpen}
+          task={cardTask}
+          profileId={profileId}
+          assignees={assignees}
+          onClose={() => setCompleteOpen(false)}
+          onSaved={() => onUpdated?.()}
+        />
+      ) : null}
+
+      <EditTaskPanel
+        open={editOpen}
+        task={cardTask}
+        organisations={organisations}
+        contacts={contacts}
+        assignees={assignees}
+        onClose={() => setEditOpen(false)}
+        onSaved={() => onUpdated?.()}
+      />
     </Card>
   );
 }

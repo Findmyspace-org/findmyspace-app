@@ -7,7 +7,12 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 import { supabase } from "@/lib/supabase";
 import { dueBucket } from "@/lib/space-place/format";
-import type { CrmTaskWithRelations, CrmProfile } from "@/lib/space-place/types";
+import type {
+  CrmTaskWithRelations,
+  CrmProfile,
+  CrmOrganisation,
+  CrmContact,
+} from "@/lib/space-place/types";
 import { useSpacePlace } from "../SpacePlaceContext";
 import { PageTitle } from "../components/SpacePlaceShell";
 import { TaskCard } from "../components/TaskCard";
@@ -28,21 +33,30 @@ function TasksPageContent() {
 
   const [tasks, setTasks] = useState<CrmTaskWithRelations[]>([]);
   const [spacers, setSpacers] = useState<CrmProfile[]>([]);
+  const [organisations, setOrganisations] = useState<CrmOrganisation[]>([]);
+  const [contacts, setContacts] = useState<CrmContact[]>([]);
 
   const load = useCallback(async () => {
     let q = crmDb
       .tasks()
       .select(
         `*,
-        crm_organisations ( id, name ),
+        crm_organisations ( id, name, pipeline_stage ),
         crm_contacts ( id, full_name, phone, whatsapp, email ),
         owner_profile:crm_profiles ( id, full_name, email, active, role )`
       )
       .order("due_date", { ascending: true });
-    const { data } = await q;
+    const [{ data }, { data: profs }, { data: orgs }, { data: allContacts }] =
+      await Promise.all([
+        q,
+        crmDb.profiles().select("*").eq("active", true),
+        crmDb.organisations().select("*").order("name"),
+        crmDb.contacts().select("*").order("full_name"),
+      ]);
     setTasks((data as CrmTaskWithRelations[]) || []);
-    const { data: profs } = await crmDb.profiles().select("*").eq("active", true);
     setSpacers((profs as CrmProfile[]) || []);
+    setOrganisations((orgs as CrmOrganisation[]) || []);
+    setContacts((allContacts as CrmContact[]) || []);
   }, [isAdmin, profile]);
 
   useEffect(() => {
@@ -114,7 +128,15 @@ function TasksPageContent() {
       ) : null}
 
       {filtered.map((t) => (
-        <TaskCard key={t.id} task={t} onUpdated={load} assignees={roster} />
+        <TaskCard
+          key={t.id}
+          task={t}
+          onUpdated={load}
+          assignees={roster}
+          profileId={profile?.id}
+          organisations={organisations}
+          contacts={contacts}
+        />
       ))}
     </div>
   );

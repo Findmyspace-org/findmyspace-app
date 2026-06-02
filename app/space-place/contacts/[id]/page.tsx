@@ -6,7 +6,13 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { Pencil } from "lucide-react";
 import { displayName, formatDateTime } from "@/lib/space-place/format";
-import type { CrmContact, CrmOrganisation, CrmEngagement, CrmTask } from "@/lib/space-place/types";
+import type {
+  CrmContact,
+  CrmOrganisation,
+  CrmEngagement,
+  CrmTask,
+  CrmProfile,
+} from "@/lib/space-place/types";
 import { useSpacePlace } from "../../SpacePlaceContext";
 import {
   Card,
@@ -16,6 +22,8 @@ import {
 } from "../../components/SpacePlaceShell";
 import { ContactActionBar } from "../../components/ContactActionBar";
 import { EditContactPanel } from "../../components/EditContactPanel";
+import { TaskCard } from "../../components/TaskCard";
+import { dedupeActiveSpacers } from "@/lib/space-place/spacers";
 
 export default function ContactDetailPage() {
   const params = useParams();
@@ -28,6 +36,7 @@ export default function ContactDetailPage() {
   const [org, setOrg] = useState<CrmOrganisation | null>(null);
   const [engagements, setEngagements] = useState<CrmEngagement[]>([]);
   const [tasks, setTasks] = useState<CrmTask[]>([]);
+  const [spacers, setSpacers] = useState<CrmProfile[]>([]);
 
   const load = useCallback(async () => {
     const { data: c } = await crmDb.contacts()
@@ -37,7 +46,7 @@ export default function ContactDetailPage() {
     const row = c as CrmContact | null;
     setContact(row);
     if (!row) return;
-    const [o, e, t] = await Promise.all([
+    const [o, e, t, p] = await Promise.all([
       crmDb.organisations()
         .select("*")
         .eq("id", row.organisation_id)
@@ -50,10 +59,12 @@ export default function ContactDetailPage() {
         .select("*")
         .eq("contact_id", id)
         .order("due_date"),
+      crmDb.profiles().select("*").eq("active", true).order("full_name"),
     ]);
     setOrg((o.data as CrmOrganisation) || null);
     setEngagements((e.data as CrmEngagement[]) || []);
     setTasks((t.data as CrmTask[]) || []);
+    setSpacers((p.data as CrmProfile[]) || []);
   }, [id]);
 
   useEffect(() => {
@@ -77,6 +88,7 @@ export default function ContactDetailPage() {
     setContact(updated);
     if (updatedOrg) setOrg(updatedOrg);
   }
+  const roster = dedupeActiveSpacers(spacers);
 
   return (
     <div>
@@ -162,10 +174,38 @@ export default function ContactDetailPage() {
 
       <SectionHeading>Tasks</SectionHeading>
       {tasks.map((t) => (
-        <Card key={t.id} className="mb-2">
-          <p className="font-semibold">{t.title}</p>
-          <p className="text-sm text-neutral-500">{t.due_date}</p>
-        </Card>
+        <TaskCard
+          key={t.id}
+          task={{
+            ...t,
+            crm_organisations: org
+              ? {
+                  id: org.id,
+                  name: org.name,
+                  pipeline_stage: org.pipeline_stage,
+                }
+              : null,
+            crm_contacts: {
+              id: contact.id,
+              full_name: contact.full_name,
+              phone: contact.phone,
+              whatsapp: contact.whatsapp,
+              email: contact.email,
+            },
+            owner_profile: t.owner_id
+              ? {
+                  id: t.owner_id,
+                  full_name:
+                    spacers.find((s) => s.id === t.owner_id)?.full_name || null,
+                }
+              : null,
+          }}
+          onUpdated={load}
+          assignees={roster}
+          profileId={profile?.id}
+          organisations={org ? [org] : []}
+          contacts={[contact]}
+        />
       ))}
 
       {org ? (

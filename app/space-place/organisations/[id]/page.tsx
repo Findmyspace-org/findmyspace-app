@@ -31,6 +31,7 @@ import {
 } from "../../components/SpaceActivityHistory";
 import { EditOrganisationPanel } from "../../components/EditOrganisationPanel";
 import { CreateContactPanel } from "../../components/CreateContactPanel";
+import { TaskCard } from "../../components/TaskCard";
 
 export default function OrganisationDetailPage() {
   const params = useParams();
@@ -65,9 +66,7 @@ export default function OrganisationDetailPage() {
         )
         .eq("organisation_id", id)
         .order("occurred_at", { ascending: false }),
-      isAdmin
-        ? crmDb.profiles().select("*").eq("active", true).order("full_name")
-        : Promise.resolve({ data: [] }),
+      crmDb.profiles().select("*").eq("active", true).order("full_name"),
     ]);
 
     const row = o.data as CrmOrganisation | null;
@@ -296,12 +295,32 @@ export default function OrganisationDetailPage() {
 
       <SectionHeading>Tasks</SectionHeading>
       {tasks.map((t) => (
-        <Card key={t.id} className="mb-2">
-          <p className="font-semibold">{t.title}</p>
-          <p className="text-sm text-neutral-500">
-            {t.due_date} · {t.status}
-          </p>
-        </Card>
+        <TaskCard
+          key={t.id}
+          task={{
+            ...t,
+            crm_organisations: {
+              id: org.id,
+              name: org.name,
+              pipeline_stage: org.pipeline_stage,
+            },
+            crm_contacts: t.contact_id
+              ? contacts.find((c) => c.id === t.contact_id) || null
+              : null,
+            owner_profile: t.owner_id
+              ? {
+                  id: t.owner_id,
+                  full_name:
+                    spacers.find((s) => s.id === t.owner_id)?.full_name || null,
+                }
+              : null,
+          }}
+          onUpdated={load}
+          assignees={roster}
+          profileId={profile?.id}
+          organisations={[org]}
+          contacts={contacts}
+        />
       ))}
       {isAdmin ? (
         <Link

@@ -82,7 +82,10 @@ export type CrmOrganisationWithRelations = CrmOrganisation & {
 };
 
 export type CrmTaskWithRelations = CrmTask & {
-  crm_organisations?: Pick<CrmOrganisation, "id" | "name"> | null;
+  crm_organisations?: Pick<
+    CrmOrganisation,
+    "id" | "name" | "pipeline_stage"
+  > | null;
   crm_contacts?: Pick<
     CrmContact,
     "id" | "full_name" | "phone" | "whatsapp" | "email"
