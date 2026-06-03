@@ -1,7 +1,7 @@
 "use client";
 import { crmDb } from "@/lib/space-place/db";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { format } from "date-fns";
 import { dueBucket } from "@/lib/space-place/format";
 import { FIELD_CLASS, LABEL_CLASS } from "@/lib/space-place/form-ui";
@@ -15,7 +15,6 @@ import { useSpacePlace } from "../SpacePlaceContext";
 import { PageTitle, SectionHeading } from "../components/SpacePlaceShell";
 import { TaskCard } from "../components/TaskCard";
 import type { TaskReassignResult } from "../components/TaskReassignControl";
-import { supabase } from "@/lib/supabase";
 import {
   dedupeActiveSpacers,
   findProfileAliasIds,
@@ -44,7 +43,7 @@ function viewFromSelectValue(value: string): TodayView {
 }
 
 export default function TodayPage() {
-  const { profile, isAdmin, canViewAllOrganisations } = useSpacePlace();
+  const { profile, canViewAllOrganisations } = useSpacePlace();
   const [view, setView] = useState<TodayView>("my");
   const [tasks, setTasks] = useState<CrmTaskWithRelations[]>([]);
   const [profiles, setProfiles] = useState<Record<string, string>>({});
@@ -53,10 +52,21 @@ export default function TodayPage() {
   const [contacts, setContacts] = useState<CrmContact[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const myOwnerIds = useMemo(
-    () => (profile ? findProfileAliasIds(profile, spacers) : []),
-    [profile, spacers]
+  const spacerIdsKey = useMemo(
+    () =>
+      spacers
+        .map((p) => p.id)
+        .sort()
+        .join(","),
+    [spacers]
   );
+
+  const myOwnerIds = useMemo(() => {
+    if (!profile) return [];
+    return findProfileAliasIds(profile, spacers);
+  }, [profile?.id, profile?.email, profile?.full_name, spacerIdsKey, spacers]);
+
+  const viewKey = useMemo(() => viewSelectValue(view), [view]);
 
   const assigneeRoster = useMemo(
     () => dedupeActiveSpacers(spacers, profile?.id),
@@ -87,12 +97,80 @@ export default function TodayPage() {
     return `${name} (${count})`;
   }, [view, tasks.length, assigneeRoster, viewingRoster, profiles]);
 
-  const load = useCallback(async () => {
+  const spacersRef = useRef(spacers);
+  spacersRef.current = spacers;
+
+  const profilesRef = useRef(profiles);
+  profilesRef.current = profiles;
+
+  const loadReferenceData = useCallback(async () => {
+    if (!profile) return;
+
+    const [
+      { data: profs },
+      { data: activeProfiles },
+      { data: orgs },
+      { data: allContacts },
+    ] = await Promise.all([
+      crmDb.profiles().select("id, full_name"),
+      crmDb.profiles().select("*").eq("active", true),
+      crmDb.organisations().select("*").order("name"),
+      crmDb.contacts().select("*").order("full_name"),
+    ]);
+
+    const nameMap: Record<string, string> = {};
+    for (const p of profs || []) {
+      if (p.id) nameMap[p.id] = p.full_name || "Spacer";
+    }
+    setProfiles((prev) => {
+      const keys = Object.keys(nameMap).sort();
+      const prevKeys = Object.keys(prev).sort();
+      if (
+        keys.length === prevKeys.length &&
+        keys.every((k, i) => k === prevKeys[i] && prev[k] === nameMap[k])
+      ) {
+        return prev;
+      }
+      return nameMap;
+    });
+
+    const nextSpacers = (activeProfiles as CrmProfile[]) || [];
+    const nextKey = nextSpacers
+      .map((p) => p.id)
+      .sort()
+      .join(",");
+    setSpacers((prev) => {
+      const prevKey = prev
+        .map((p) => p.id)
+        .sort()
+        .join(",");
+      return prevKey === nextKey ? prev : nextSpacers;
+    });
+    setOrganisations((orgs as CrmOrganisation[]) || []);
+    setContacts((allContacts as CrmContact[]) || []);
+  }, [profile?.id]);
+
+  const loadTasks = useCallback(async () => {
     if (!profile) {
       setLoading(false);
       return;
     }
     setLoading(true);
+
+    const roster =
+      spacersRef.current.length > 0
+        ? spacersRef.current
+        : ((await crmDb.profiles().select("*").eq("active", true))
+            .data as CrmProfile[]) || [];
+
+    const ownerIdsForMy = findProfileAliasIds(profile, roster);
+
+    const selectedOwnerIds =
+      viewKey === "my" || !canViewAllOrganisations
+        ? ownerIdsForMy
+        : viewKey === "all"
+          ? null
+          : [viewKey];
 
     let q = crmDb
       .tasks()
@@ -100,38 +178,12 @@ export default function TodayPage() {
       .eq("status", "open")
       .order("due_date", { ascending: true, nullsFirst: false });
 
-    const selectedOwnerIds =
-      view === "my" || !canViewAllOrganisations
-        ? myOwnerIds
-        : view === "all"
-          ? null
-          : [view.profileId];
-
     if (selectedOwnerIds?.length) {
       q = q.in("owner_id", selectedOwnerIds);
     }
 
-    const [
-      { data },
-      { data: profs },
-      { data: activeProfiles },
-      { data: orgs },
-      { data: allContacts },
-    ] = await Promise.all([
-      q,
-      crmDb.profiles().select("id, full_name"),
-      crmDb.profiles().select("*").eq("active", true),
-      crmDb.organisations().select("*").order("name"),
-      crmDb.contacts().select("*").order("full_name"),
-    ]);
-    const nameMap: Record<string, string> = {};
-    for (const p of profs || []) {
-      if (p.id) nameMap[p.id] = p.full_name || "Spacer";
-    }
-    setProfiles(nameMap);
-    setSpacers((activeProfiles as CrmProfile[]) || []);
-    setOrganisations((orgs as CrmOrganisation[]) || []);
-    setContacts((allContacts as CrmContact[]) || []);
+    const { data } = await q;
+    const nameMap = profilesRef.current;
     const enriched = ((data as CrmTaskWithRelations[]) || []).map((t) => ({
       ...t,
       owner_profile: t.owner_id
@@ -139,32 +191,17 @@ export default function TodayPage() {
         : null,
     }));
     setTasks(enriched);
-
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    const selectedOwnerId =
-      view === "my" || !canViewAllOrganisations
-        ? profile.id
-        : view === "all"
-          ? null
-          : view.profileId;
-
-    console.log("[Today] task filter", {
-      currentUserId: user?.id ?? null,
-      currentCrmProfileId: profile.id,
-      myOwnerIds,
-      selectedOwnerId,
-      view: viewSelectValue(view),
-      taskCount: (data as CrmTaskWithRelations[] | null)?.length ?? 0,
-    });
-
     setLoading(false);
-  }, [canViewAllOrganisations, profile, view, myOwnerIds]);
+  }, [canViewAllOrganisations, profile?.id, profile?.email, profile?.full_name, viewKey]);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    void loadReferenceData();
+  }, [loadReferenceData]);
+
+  useEffect(() => {
+    if (!profile) return;
+    void loadTasks();
+  }, [profile?.id, loadTasks]);
 
   const handleTaskReassigned = useCallback(
     ({ taskId, ownerId, ownerName }: TaskReassignResult) => {
@@ -214,7 +251,7 @@ export default function TodayPage() {
       <TaskCard
         key={t.id}
         task={t}
-        onUpdated={load}
+        onUpdated={loadTasks}
         onReassigned={handleTaskReassigned}
         assignees={assigneeRoster}
         profileId={profile?.id}
