@@ -47,7 +47,9 @@ export function CompleteTaskPanel({
   const [followUpDescription, setFollowUpDescription] = useState("");
   const [followUpDueDate, setFollowUpDueDate] = useState(tomorrowDateInput());
   const [followUpPriority, setFollowUpPriority] = useState(task.priority || "normal");
-  const [followUpOwnerId, setFollowUpOwnerId] = useState(task.owner_id || "");
+  const [followUpOwnerId, setFollowUpOwnerId] = useState(
+    task.owner_id || profileId || ""
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -81,10 +83,18 @@ export function CompleteTaskPanel({
     setFollowUpDescription("");
     setFollowUpDueDate(tomorrowDateInput());
     setFollowUpPriority(task.priority || "normal");
-    setFollowUpOwnerId(task.owner_id || "");
+    setFollowUpOwnerId(task.owner_id || profileId || "");
     setError(null);
     setSuccess(null);
-  }, [open, task, defaultFollowUpTitle]);
+  }, [open, task, defaultFollowUpTitle, profileId]);
+
+  function resolveFollowUpOwnerId(): string | null {
+    const selected = followUpOwnerId.trim();
+    if (selected) return selected;
+    if (task.owner_id) return task.owner_id;
+    if (profileId) return profileId;
+    return null;
+  }
 
   useEffect(() => {
     if (showPipelineSuggestion) {
@@ -95,6 +105,10 @@ export function CompleteTaskPanel({
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (createFollowUp) {
+      if (!task.organisation_id) {
+        setError("Follow-up requires an organisation on this task.");
+        return;
+      }
       if (!followUpTitle.trim()) {
         setError("Follow-up title is required.");
         return;
@@ -107,7 +121,7 @@ export function CompleteTaskPanel({
         setError("Priority must be low, normal or high.");
         return;
       }
-      if (!followUpOwnerId) {
+      if (!resolveFollowUpOwnerId()) {
         setError("Please select who this follow-up is assigned to.");
         return;
       }
@@ -167,16 +181,36 @@ export function CompleteTaskPanel({
     }
 
     if (createFollowUp) {
-      const { error: followUpErr } = await crmDb.tasks().insert({
+      const ownerId = resolveFollowUpOwnerId();
+      if (!task.organisation_id) {
+        setSaving(false);
+        setError("Follow-up requires an organisation on this task.");
+        return;
+      }
+      if (!followUpTitle.trim() || !followUpDueDate) {
+        setSaving(false);
+        setError("Follow-up title and due date are required.");
+        return;
+      }
+      if (!ownerId) {
+        setSaving(false);
+        setError("Please select who this follow-up is assigned to.");
+        return;
+      }
+
+      const followUpPayload = {
         organisation_id: task.organisation_id,
         contact_id: task.contact_id,
         title: followUpTitle.trim(),
         description: followUpDescription.trim() || null,
         due_date: followUpDueDate,
-        status: "open",
+        status: "open" as const,
         priority: followUpPriority,
-        owner_id: followUpOwnerId,
-      });
+        owner_id: ownerId,
+      };
+      console.log("[CompleteTaskPanel] follow-up insert", followUpPayload);
+
+      const { error: followUpErr } = await crmDb.tasks().insert(followUpPayload);
       if (followUpErr) {
         setSaving(false);
         setError(followUpErr.message);
