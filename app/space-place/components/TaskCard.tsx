@@ -1,8 +1,8 @@
 "use client";
-import { crmDb } from "@/lib/space-place/db";
 import { useState } from "react";
 
 import Link from "next/link";
+import { canReassignCrmTasks } from "@/lib/space-place/access";
 import { formatDueDate } from "@/lib/space-place/format";
 import type {
   CrmContact,
@@ -10,32 +10,42 @@ import type {
   CrmProfile,
   CrmTaskWithRelations,
 } from "@/lib/space-place/types";
+import { useSpacePlace } from "../SpacePlaceContext";
 import { Card } from "./SpacePlaceShell";
 import { ContactActionBar } from "./ContactActionBar";
-import { formatSpacerOptionLabel } from "@/lib/space-place/spacers";
 import { CompleteTaskPanel } from "./CompleteTaskPanel";
 import { EditTaskPanel } from "./EditTaskPanel";
+import {
+  TaskReassignControl,
+  type TaskReassignResult,
+} from "./TaskReassignControl";
 
 export function TaskCard({
   task,
   onUpdated,
+  onReassigned,
   assignees = [],
   profileId,
   organisations = [],
   contacts = [],
+  showOwner = true,
 }: {
   task: CrmTaskWithRelations;
   onUpdated?: () => void;
+  /** Optimistic list updates (e.g. Today view filters). Falls back to onUpdated. */
+  onReassigned?: (result: TaskReassignResult) => void;
   assignees?: CrmProfile[];
   profileId?: string;
   organisations?: CrmOrganisation[];
   contacts?: CrmContact[];
+  /** When false, hides assignee badge (e.g. Today → My activities). */
+  showOwner?: boolean;
 }) {
+  const { profile } = useSpacePlace();
+  const canReassign = profile ? canReassignCrmTasks(profile.role) : false;
   const orgName = task.crm_organisations?.name;
   const contact = task.crm_contacts;
   const owner = task.owner_profile?.full_name;
-  const [reassigning, setReassigning] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
   const [completeOpen, setCompleteOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
 
@@ -51,17 +61,12 @@ export function TaskCard({
       (task.contact_id ? contacts.find((c) => c.id === task.contact_id) || null : null),
   };
 
-  async function reassign(ownerId: string) {
-    if (!ownerId || ownerId === task.owner_id) return;
-    setReassigning(true);
-    setMessage(null);
-    const { error } = await crmDb.tasks().update({ owner_id: ownerId }).eq("id", task.id);
-    setReassigning(false);
-    if (error) {
-      setMessage(error.message);
-      return;
+  function handleReassigned(result: TaskReassignResult) {
+    if (onReassigned) {
+      onReassigned(result);
+    } else {
+      onUpdated?.();
     }
-    onUpdated?.();
   }
 
   return (
@@ -79,8 +84,19 @@ export function TaskCard({
         <span className="rounded-full bg-neutral-100 px-3 py-1 font-medium">
           {formatDueDate(task.due_date)}
         </span>
-        {owner ? (
-          <span className="rounded-full bg-neutral-100 px-3 py-1">
+        <span
+          className={`rounded-full px-3 py-1 capitalize ${
+            task.priority === "high"
+              ? "bg-red-100 font-semibold text-red-900"
+              : task.priority === "low"
+                ? "bg-neutral-50 text-neutral-600"
+                : "bg-neutral-100"
+          }`}
+        >
+          {task.priority}
+        </span>
+        {showOwner && owner ? (
+          <span className="rounded-full bg-blue-50 px-3 py-1 font-medium text-blue-900">
             {owner}
           </span>
         ) : null}
@@ -89,38 +105,29 @@ export function TaskCard({
         </span>
       </div>
       <div className="mt-3">
-        {task.status === "open" && assignees.length > 0 ? (
-          <div className="mb-3">
-            <label className="text-xs font-semibold text-neutral-600">Assigned to</label>
-            <select
-              value={task.owner_id || ""}
-              onChange={(e) => void reassign(e.target.value)}
-              disabled={reassigning}
-              className="mt-1 w-full rounded-xl border border-neutral-200 bg-white p-2.5 text-sm disabled:opacity-60"
-            >
-              {assignees.map((profile) => (
-                <option key={profile.id} value={profile.id}>
-                  {formatSpacerOptionLabel(profile, assignees)} ({profile.role})
-                </option>
-              ))}
-            </select>
-            {message ? <p className="mt-1 text-xs text-red-600">{message}</p> : null}
-          </div>
-        ) : null}
-        <div className="mb-3 grid gap-2 sm:grid-cols-2">
+        <div className="mb-3 flex flex-wrap gap-2">
           {task.status === "open" ? (
             <button
               type="button"
               onClick={() => setCompleteOpen(true)}
-              className="min-h-[44px] rounded-xl bg-[#c1121f] px-3 py-2 text-sm font-semibold text-white"
+              className="min-h-[44px] flex-1 rounded-xl bg-[#c1121f] px-3 py-2 text-sm font-semibold text-white sm:flex-none"
             >
               Done
             </button>
           ) : null}
+          {task.status === "open" && canReassign && profileId && assignees.length > 0 ? (
+            <TaskReassignControl
+              taskId={task.id}
+              currentOwnerId={task.owner_id}
+              assignees={assignees}
+              currentUserId={profileId}
+              onReassigned={handleReassigned}
+            />
+          ) : null}
           <button
             type="button"
             onClick={() => setEditOpen(true)}
-            className="min-h-[44px] rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm font-semibold text-neutral-800"
+            className="min-h-[44px] flex-1 rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm font-semibold text-neutral-800 sm:flex-none"
           >
             Edit
           </button>

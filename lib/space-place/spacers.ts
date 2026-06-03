@@ -86,3 +86,22 @@ export function countDuplicateProfileIds(profiles: CrmProfile[]): number {
   const ids = profiles.map((p) => p.id);
   return ids.length - new Set(ids).size;
 }
+
+const SCHALK_DISPLAY_NAME = "schalk van der merwe";
+
+/**
+ * Primary active admin profile for Schalk (deduped).
+ * Matches role admin + email contains "schalk" or full name "Schalk van der Merwe".
+ */
+export function findSchalkAdminProfile(
+  profiles: CrmProfile[]
+): CrmProfile | null {
+  const roster = dedupeActiveSpacers(profiles);
+  const matches = roster.filter(
+    (p) =>
+      p.role === "admin" &&
+      (normalizeDisplayName(p.full_name) === SCHALK_DISPLAY_NAME ||
+        normalizeSpacerEmail(p.email).includes("schalk"))
+  );
+  return matches[0] ?? null;
+}

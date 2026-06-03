@@ -1,6 +1,6 @@
 import type { PipelineStage } from "./constants";
 
-export type CrmRole = "admin" | "spacer";
+export type CrmRole = "admin" | "spacer" | "office_manager";
 
 export type CrmProfile = {
   id: string;

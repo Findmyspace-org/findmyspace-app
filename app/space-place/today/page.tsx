@@ -3,8 +3,8 @@ import { crmDb } from "@/lib/space-place/db";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { format } from "date-fns";
-import { supabase } from "@/lib/supabase";
 import { dueBucket } from "@/lib/space-place/format";
+import { FIELD_CLASS, LABEL_CLASS } from "@/lib/space-place/form-ui";
 import type {
   CrmTaskWithRelations,
   CrmProfile,
@@ -14,7 +14,13 @@ import type {
 import { useSpacePlace } from "../SpacePlaceContext";
 import { PageTitle, SectionHeading } from "../components/SpacePlaceShell";
 import { TaskCard } from "../components/TaskCard";
-import { dedupeActiveSpacers } from "@/lib/space-place/spacers";
+import type { TaskReassignResult } from "../components/TaskReassignControl";
+import {
+  dedupeActiveSpacers,
+  formatSpacerOptionLabel,
+} from "@/lib/space-place/spacers";
+
+export type TodayView = "my" | "all" | { profileId: string };
 
 const TASK_SELECT = `
   *,
@@ -22,8 +28,21 @@ const TASK_SELECT = `
   crm_contacts ( id, full_name, phone, whatsapp, email )
 `;
 
+function viewSelectValue(view: TodayView): string {
+  if (view === "my") return "my";
+  if (view === "all") return "all";
+  return view.profileId;
+}
+
+function viewFromSelectValue(value: string): TodayView {
+  if (value === "my") return "my";
+  if (value === "all") return "all";
+  return { profileId: value };
+}
+
 export default function TodayPage() {
   const { profile, isAdmin } = useSpacePlace();
+  const [view, setView] = useState<TodayView>("my");
   const [tasks, setTasks] = useState<CrmTaskWithRelations[]>([]);
   const [profiles, setProfiles] = useState<Record<string, string>>({});
   const [spacers, setSpacers] = useState<CrmProfile[]>([]);
@@ -31,15 +50,42 @@ export default function TodayPage() {
   const [contacts, setContacts] = useState<CrmContact[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const roster = useMemo(() => dedupeActiveSpacers(spacers), [spacers]);
+
+  const showOwnerOnCards = useMemo(() => {
+    if (!isAdmin) return false;
+    if (view === "my") return false;
+    return true;
+  }, [isAdmin, view]);
+
+  const viewingLabel = useMemo(() => {
+    const count = tasks.length;
+    if (view === "my") return `My activities (${count})`;
+    if (view === "all") return `All activities (${count})`;
+    const spacer = roster.find((p) => p.id === view.profileId);
+    const name = spacer
+      ? formatSpacerOptionLabel(spacer, roster)
+      : profiles[view.profileId] || "Spacer";
+    return `${name} (${count})`;
+  }, [view, tasks.length, roster, profiles]);
+
   const load = useCallback(async () => {
+    if (!profile) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
-    let q = crmDb.tasks()
+
+    let q = crmDb
+      .tasks()
       .select(TASK_SELECT)
       .eq("status", "open")
       .order("due_date", { ascending: true, nullsFirst: false });
 
-    if (!isAdmin && profile) {
+    if (!isAdmin || view === "my") {
       q = q.eq("owner_id", profile.id);
+    } else if (view !== "all") {
+      q = q.eq("owner_id", view.profileId);
     }
 
     const [
@@ -71,11 +117,39 @@ export default function TodayPage() {
     }));
     setTasks(enriched);
     setLoading(false);
-  }, [isAdmin, profile]);
+  }, [isAdmin, profile, view]);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  const handleTaskReassigned = useCallback(
+    ({ taskId, ownerId, ownerName }: TaskReassignResult) => {
+      setTasks((prev) => {
+        const removeFromList =
+          (view === "my" && ownerId !== profile?.id) ||
+          (view !== "my" &&
+            view !== "all" &&
+            ownerId !== view.profileId);
+
+        if (removeFromList) {
+          return prev.filter((t) => t.id !== taskId);
+        }
+
+        return prev.map((t) =>
+          t.id === taskId
+            ? {
+                ...t,
+                owner_id: ownerId,
+                owner_profile: { id: ownerId, full_name: ownerName },
+              }
+            : t
+        );
+      });
+      setProfiles((prev) => ({ ...prev, [ownerId]: ownerName }));
+    },
+    [view, profile?.id]
+  );
 
   const grouped = useMemo(() => {
     const overdue: CrmTaskWithRelations[] = [];
@@ -89,9 +163,23 @@ export default function TodayPage() {
     }
     return { overdue, today, upcoming };
   }, [tasks]);
-  const roster = useMemo(() => dedupeActiveSpacers(spacers), [spacers]);
 
   const greeting = profile?.full_name?.split(" ")[0] || "there";
+
+  const taskList = (list: CrmTaskWithRelations[]) =>
+    list.map((t) => (
+      <TaskCard
+        key={t.id}
+        task={t}
+        onUpdated={load}
+        onReassigned={handleTaskReassigned}
+        assignees={roster}
+        profileId={profile?.id}
+        organisations={organisations}
+        contacts={contacts}
+        showOwner={showOwnerOnCards}
+      />
+    ));
 
   return (
     <div>
@@ -99,6 +187,29 @@ export default function TodayPage() {
         title={`Good day, ${greeting}`}
         subtitle={format(new Date(), "EEEE, d MMMM")}
       />
+
+      {isAdmin ? (
+        <div className="mb-4">
+          <label className="block">
+            <span className={LABEL_CLASS}>Viewing</span>
+            <select
+              value={viewSelectValue(view)}
+              onChange={(e) => setView(viewFromSelectValue(e.target.value))}
+              className={FIELD_CLASS}
+            >
+              <option value="my">My activities</option>
+              <option value="all">All activities</option>
+              {roster.map((spacer) => (
+                <option key={spacer.id} value={spacer.id}>
+                  {formatSpacerOptionLabel(spacer, roster)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <p className="mt-1 text-sm text-neutral-600">{viewingLabel}</p>
+        </div>
+      ) : null}
+
       {loading ? (
         <p className="text-neutral-600">Loading tasks…</p>
       ) : (
@@ -107,51 +218,21 @@ export default function TodayPage() {
           {grouped.overdue.length === 0 ? (
             <p className="mb-4 text-neutral-500">Nothing overdue.</p>
           ) : (
-            grouped.overdue.map((t) => (
-              <TaskCard
-                key={t.id}
-                task={t}
-                onUpdated={load}
-                assignees={roster}
-                profileId={profile?.id}
-                organisations={organisations}
-                contacts={contacts}
-              />
-            ))
+            taskList(grouped.overdue)
           )}
 
           <SectionHeading>Due today</SectionHeading>
           {grouped.today.length === 0 ? (
             <p className="mb-4 text-neutral-500">Nothing due today.</p>
           ) : (
-            grouped.today.map((t) => (
-              <TaskCard
-                key={t.id}
-                task={t}
-                onUpdated={load}
-                assignees={roster}
-                profileId={profile?.id}
-                organisations={organisations}
-                contacts={contacts}
-              />
-            ))
+            taskList(grouped.today)
           )}
 
           <SectionHeading>Upcoming</SectionHeading>
           {grouped.upcoming.length === 0 ? (
             <p className="text-neutral-500">No upcoming tasks.</p>
           ) : (
-            grouped.upcoming.map((t) => (
-              <TaskCard
-                key={t.id}
-                task={t}
-                onUpdated={load}
-                assignees={roster}
-                profileId={profile?.id}
-                organisations={organisations}
-                contacts={contacts}
-              />
-            ))
+            taskList(grouped.upcoming)
           )}
         </>
       )}

@@ -11,8 +11,13 @@ export const SPACER_INVITE_DISCLAIMER =
 
 export function isSpacePlaceRole(
   role: string | null | undefined
-): role is "admin" | "spacer" {
-  return role === "admin" || role === "spacer";
+): role is "admin" | "spacer" | "office_manager" {
+  return role === "admin" || role === "spacer" || role === "office_manager";
+}
+
+/** Admins and office managers can reassign any task from the UI. */
+export function canReassignCrmTasks(role: string | null | undefined): boolean {
+  return role === "admin" || role === "office_manager";
 }
 
 export function hasSpacePlaceAccess(
