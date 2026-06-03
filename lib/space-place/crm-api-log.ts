@@ -1,9 +1,11 @@
+import type { CrmRole } from "@/lib/space-place/constants";
+
 type CrmWriteLogContext = {
   operation: string;
   table: string;
   userId: string;
   platformRole: string | null;
-  crmRole: string;
+  crmRole: CrmRole | string;
   error: { message?: string; code?: string; details?: string };
 };
 

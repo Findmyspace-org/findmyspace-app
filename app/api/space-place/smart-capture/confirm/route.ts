@@ -13,6 +13,7 @@ import {
   defaultPipelineStage,
   splitContactName,
 } from "@/lib/space-place/smart-capture-build";
+import type { CrmRole } from "@/lib/space-place/types";
 import type { SmartCaptureConfirmPayload } from "@/lib/space-place/smart-capture-types";
 
 export const runtime = "nodejs";
@@ -23,7 +24,7 @@ function isPipelineStage(value: string | null): value is PipelineStage {
 
 async function assertCanAccessOrganisation(
   db: SupabaseClient,
-  auth: { crmRole: "admin" | "spacer"; userId: string },
+  auth: { crmRole: CrmRole; userId: string },
   organisationId: string
 ): Promise<{ ok: true } | { ok: false; response: NextResponse }> {
   if (auth.crmRole === "admin") {

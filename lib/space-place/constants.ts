@@ -1,3 +1,7 @@
+export const CRM_ROLES = ["admin", "spacer", "office_manager"] as const;
+
+export type CrmRole = (typeof CRM_ROLES)[number];
+
 export const PIPELINE_STAGES = [
   "prospect",
   "first_contact",

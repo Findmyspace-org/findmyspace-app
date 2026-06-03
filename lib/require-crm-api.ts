@@ -4,11 +4,11 @@ import {
   hasSpacePlaceAccess,
   isSpacePlaceRole,
 } from "@/lib/space-place/access";
-import type { CrmProfile } from "@/lib/space-place/types";
+import type { CrmProfile, CrmRole } from "@/lib/space-place/types";
 
 export type CrmAuthOk = {
   userId: string;
-  crmRole: "admin" | "spacer";
+  crmRole: CrmRole;
   platformRole: string | null;
   userClient: SupabaseClient;
   adminClient: SupabaseClient;
