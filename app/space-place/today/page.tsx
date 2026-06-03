@@ -41,7 +41,7 @@ function viewFromSelectValue(value: string): TodayView {
 }
 
 export default function TodayPage() {
-  const { profile, isAdmin } = useSpacePlace();
+  const { profile, isAdmin, canViewAllOrganisations } = useSpacePlace();
   const [view, setView] = useState<TodayView>("my");
   const [tasks, setTasks] = useState<CrmTaskWithRelations[]>([]);
   const [profiles, setProfiles] = useState<Record<string, string>>({});
@@ -53,10 +53,10 @@ export default function TodayPage() {
   const roster = useMemo(() => dedupeActiveSpacers(spacers), [spacers]);
 
   const showOwnerOnCards = useMemo(() => {
-    if (!isAdmin) return false;
+    if (!canViewAllOrganisations) return false;
     if (view === "my") return false;
     return true;
-  }, [isAdmin, view]);
+  }, [canViewAllOrganisations, view]);
 
   const viewingLabel = useMemo(() => {
     const count = tasks.length;
@@ -82,7 +82,7 @@ export default function TodayPage() {
       .eq("status", "open")
       .order("due_date", { ascending: true, nullsFirst: false });
 
-    if (!isAdmin || view === "my") {
+    if (!canViewAllOrganisations || view === "my") {
       q = q.eq("owner_id", profile.id);
     } else if (view !== "all") {
       q = q.eq("owner_id", view.profileId);
@@ -117,7 +117,7 @@ export default function TodayPage() {
     }));
     setTasks(enriched);
     setLoading(false);
-  }, [isAdmin, profile, view]);
+  }, [canViewAllOrganisations, profile, view]);
 
   useEffect(() => {
     load();
@@ -188,7 +188,7 @@ export default function TodayPage() {
         subtitle={format(new Date(), "EEEE, d MMMM")}
       />
 
-      {isAdmin ? (
+      {canViewAllOrganisations ? (
         <div className="mb-4">
           <label className="block">
             <span className={LABEL_CLASS}>Viewing</span>

@@ -12,7 +12,7 @@ import { SpacerSelect } from "../../components/SpacerSelect";
 
 export default function NewContactPage() {
   const router = useRouter();
-  const { isAdmin, profile } = useSpacePlace();
+  const { isAdmin, canViewAllOrganisations, profile } = useSpacePlace();
 
   const [orgs, setOrgs] = useState<CrmOrganisation[]>([]);
   const [spacers, setSpacers] = useState<CrmProfile[]>([]);
@@ -30,20 +30,20 @@ export default function NewContactPage() {
 
   const load = useCallback(async () => {
     let oq = crmDb.organisations().select("*").order("name");
-    if (!isAdmin && profile) {
+    if (!canViewAllOrganisations && profile) {
       oq = oq.eq("assigned_to", profile.id);
     }
 
     const [oRes, sRes] = await Promise.all([
       oq,
-      isAdmin
+      canViewAllOrganisations
         ? crmDb.profiles().select("*").eq("active", true)
         : Promise.resolve({ data: [] }),
     ]);
 
     setOrgs((oRes.data as CrmOrganisation[]) || []);
     setSpacers((sRes.data as CrmProfile[]) || []);
-  }, [isAdmin, profile]);
+  }, [canViewAllOrganisations, profile]);
 
   useEffect(() => {
     void load();
@@ -74,7 +74,7 @@ export default function NewContactPage() {
     const assignee =
       assignedTo ||
       orgs.find((o) => o.id === organisationId)?.assigned_to ||
-      (isAdmin ? null : profile?.id) ||
+      (canViewAllOrganisations ? null : profile?.id) ||
       null;
 
     setSaving(true);
@@ -136,7 +136,7 @@ export default function NewContactPage() {
         </select>
       </label>
 
-      {isAdmin ? (
+      {canViewAllOrganisations ? (
         <label className="block">
           <span className={LABEL_CLASS}>Assigned Spacer</span>
           <SpacerSelect

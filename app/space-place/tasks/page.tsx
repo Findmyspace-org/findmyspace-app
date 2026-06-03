@@ -25,11 +25,13 @@ const FILTERS = ["all", "spacer", "overdue", "today", "upcoming", "done"] as con
 type Filter = (typeof FILTERS)[number];
 
 function TasksPageContent() {
-  const { isAdmin, profile } = useSpacePlace();
+  const { isAdmin, canViewAllOrganisations, profile } = useSpacePlace();
   const router = useRouter();
   const params = useSearchParams();
   const filter = (params.get("filter") as Filter) || "all";
-  const spacerId = isAdmin ? params.get("spacer") || "" : profile?.id || "";
+  const spacerId = canViewAllOrganisations
+    ? params.get("spacer") || ""
+    : profile?.id || "";
 
   const [tasks, setTasks] = useState<CrmTaskWithRelations[]>([]);
   const [spacers, setSpacers] = useState<CrmProfile[]>([]);
@@ -83,7 +85,11 @@ function TasksPageContent() {
     <div>
       <PageTitle
         title="Tasks"
-        subtitle={isAdmin ? "Assign and track follow-ups" : "Your follow-ups"}
+        subtitle={
+          canViewAllOrganisations
+            ? "Assign and track follow-ups"
+            : "Your follow-ups"
+        }
       />
       <Link
         href="/space-place/tasks/new"
@@ -93,10 +99,10 @@ function TasksPageContent() {
       </Link>
 
       <div className="mb-4 flex flex-wrap gap-2">
-        {(isAdmin ? FILTERS : spacerFilters).map((f) => (
+        {(canViewAllOrganisations ? FILTERS : spacerFilters).map((f) => (
           <Link
             key={f}
-            href={`/space-place/tasks?filter=${f}${isAdmin && spacerId ? `&spacer=${spacerId}` : ""}`}
+            href={`/space-place/tasks?filter=${f}${canViewAllOrganisations && spacerId ? `&spacer=${spacerId}` : ""}`}
             className={`rounded-full px-3 py-1.5 text-sm font-semibold capitalize ${
               filter === f
                 ? "bg-[#c1121f] text-white"
@@ -108,7 +114,7 @@ function TasksPageContent() {
         ))}
       </div>
 
-      {isAdmin && (filter === "spacer" || spacerId) ? (
+      {canViewAllOrganisations && (filter === "spacer" || spacerId) ? (
         <select
           value={spacerId}
           onChange={(e) =>

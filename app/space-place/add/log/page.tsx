@@ -13,7 +13,7 @@ import { PageTitle, PrimaryButton } from "../../components/SpacePlaceShell";
 
 export default function LogInteractionPage() {
   const router = useRouter();
-  const { isAdmin, profile } = useSpacePlace();
+  const { canViewAllOrganisations, profile } = useSpacePlace();
 
   const [orgs, setOrgs] = useState<CrmOrganisation[]>([]);
   const [contacts, setContacts] = useState<CrmContact[]>([]);
@@ -27,12 +27,12 @@ export default function LogInteractionPage() {
 
   const loadOrgs = useCallback(async () => {
     let oq = crmDb.organisations().select("*").order("name");
-    if (!isAdmin && profile) {
+    if (!canViewAllOrganisations && profile) {
       oq = oq.eq("assigned_to", profile.id);
     }
     const { data } = await oq;
     setOrgs((data as CrmOrganisation[]) || []);
-  }, [isAdmin, profile]);
+  }, [canViewAllOrganisations, profile]);
 
   useEffect(() => {
     const now = new Date();

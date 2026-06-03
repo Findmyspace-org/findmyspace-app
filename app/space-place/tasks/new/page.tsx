@@ -12,7 +12,7 @@ import { SpacerSelect } from "../../components/SpacerSelect";
 function NewTaskContent() {
   const router = useRouter();
   const params = useSearchParams();
-  const { isAdmin, profile } = useSpacePlace();
+  const { canViewAllOrganisations, profile } = useSpacePlace();
 
   const [orgs, setOrgs] = useState<CrmOrganisation[]>([]);
   const [contacts, setContacts] = useState<CrmContact[]>([]);
@@ -38,11 +38,11 @@ function NewTaskContent() {
   }, []);
 
   useEffect(() => {
-    if (!isAdmin && profile) {
+    if (!canViewAllOrganisations && profile) {
       setOwnerId(profile.id);
     }
     load();
-  }, [isAdmin, profile, load]);
+  }, [canViewAllOrganisations, profile, load]);
 
   useEffect(() => {
     if (!organisationId) {

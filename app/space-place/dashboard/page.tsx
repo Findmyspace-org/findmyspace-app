@@ -12,7 +12,7 @@ import { Card, PageTitle, SectionHeading } from "../components/SpacePlaceShell";
 import { dedupeActiveSpacers } from "@/lib/space-place/spacers";
 
 export default function DashboardPage() {
-  const { isAdmin, profile } = useSpacePlace();
+  const { isAdmin, canViewAllOrganisations, profile } = useSpacePlace();
   const [orgs, setOrgs] = useState<CrmOrganisation[]>([]);
   const [tasks, setTasks] = useState<CrmTask[]>([]);
   const [engagements, setEngagements] = useState<CrmEngagement[]>([]);
@@ -25,7 +25,7 @@ export default function DashboardPage() {
       .select("*")
       .gte("occurred_at", new Date(Date.now() - 7 * 86400000).toISOString());
 
-    if (!isAdmin && profile) {
+    if (!canViewAllOrganisations && profile) {
       oq = oq.eq("assigned_to", profile.id);
       tq = tq.eq("owner_id", profile.id);
       eq = eq.eq("created_by", profile.id);
@@ -35,7 +35,7 @@ export default function DashboardPage() {
       oq,
       tq,
       eq,
-      isAdmin
+      canViewAllOrganisations
         ? crmDb.profiles().select("*").eq("active", true)
         : Promise.resolve({ data: [] }),
     ]);
@@ -43,7 +43,7 @@ export default function DashboardPage() {
     setTasks((t.data as CrmTask[]) || []);
     setEngagements((e.data as CrmEngagement[]) || []);
     setSpacers((p.data as CrmProfile[]) || []);
-  }, [isAdmin, profile]);
+  }, [canViewAllOrganisations, profile]);
 
   useEffect(() => {
     load();

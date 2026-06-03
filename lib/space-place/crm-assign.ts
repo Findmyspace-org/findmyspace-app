@@ -1,9 +1,9 @@
-/** Assignment on create: Spacers always self; admins use selection or self. */
+/** Assignment on create: Spacers always self; admins/office managers use selection or self. */
 export function resolveAssignedToForCreate(
-  isAdmin: boolean,
+  canAssignToOthers: boolean,
   userId: string,
   selectedAssignedTo: string
 ): string {
-  if (!isAdmin) return userId;
+  if (!canAssignToOthers) return userId;
   return selectedAssignedTo.trim() || userId;
 }

@@ -17,7 +17,7 @@ type ContactRow = CrmContact & {
 };
 
 export default function ContactsPage() {
-  const { isAdmin, profile } = useSpacePlace();
+  const { isAdmin, canViewAllOrganisations, profile } = useSpacePlace();
   const [contacts, setContacts] = useState<ContactRow[]>([]);
   const [engagements, setEngagements] = useState<CrmEngagement[]>([]);
   const [tasks, setTasks] = useState<CrmTask[]>([]);
@@ -116,6 +116,7 @@ export default function ContactsPage() {
           onClose={() => setCreateOpen(false)}
           onCreated={handleContactCreated}
           isAdmin={isAdmin}
+          canViewAllOrganisations={canViewAllOrganisations}
           userId={profile.id}
         />
       ) : null}

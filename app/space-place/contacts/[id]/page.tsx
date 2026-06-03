@@ -32,7 +32,7 @@ export default function ContactDetailPage() {
   const params = useParams();
   const id = params.id as string;
   const router = useRouter();
-  const { isAdmin, profile } = useSpacePlace();
+  const { isAdmin, canViewAllOrganisations, profile } = useSpacePlace();
 
   const [contact, setContact] = useState<CrmContact | null>(null);
   const [editOpen, setEditOpen] = useState(false);
@@ -132,6 +132,7 @@ export default function ContactDetailPage() {
         onClose={() => setEditOpen(false)}
         onSaved={handleContactSaved}
         isAdmin={isAdmin}
+        canViewAllOrganisations={canViewAllOrganisations}
         userId={profile?.id || ""}
       />
 

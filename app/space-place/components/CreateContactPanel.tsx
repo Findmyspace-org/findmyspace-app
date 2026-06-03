@@ -23,7 +23,10 @@ type CreateContactPanelProps = {
   open: boolean;
   onClose: () => void;
   onCreated: (contact: CrmContact) => void;
+  /** True admin only (reserved for admin-only UI). */
   isAdmin: boolean;
+  /** Admin or office_manager — all orgs in dropdown. */
+  canViewAllOrganisations: boolean;
   userId: string;
   defaultOrganisationId?: string;
 };
@@ -33,6 +36,7 @@ export function CreateContactPanel({
   onClose,
   onCreated,
   isAdmin,
+  canViewAllOrganisations,
   userId,
   defaultOrganisationId = "",
 }: CreateContactPanelProps) {
@@ -63,20 +67,20 @@ export function CreateContactPanel({
 
   const loadOptions = useCallback(async () => {
     let oq = crmDb.organisations().select("*").order("name");
-    if (!isAdmin) {
+    if (!canViewAllOrganisations) {
       oq = oq.eq("assigned_to", userId);
     }
 
     const [oRes, sRes] = await Promise.all([
       oq,
-      isAdmin
+      canViewAllOrganisations
         ? crmDb.profiles().select("*").eq("active", true).order("full_name")
         : Promise.resolve({ data: [] }),
     ]);
 
     setOrganisations((oRes.data as CrmOrganisation[]) || []);
     setSpacers((sRes.data as CrmProfile[]) || []);
-  }, [isAdmin, userId]);
+  }, [canViewAllOrganisations, userId]);
 
   const resetForm = useCallback(() => {
     setOrganisationId(defaultOrganisationId);
@@ -129,7 +133,11 @@ export function CreateContactPanel({
     setError(null);
     setSuccess(null);
 
-    const assigned = resolveAssignedToForCreate(isAdmin, userId, assignedTo);
+    const assigned = resolveAssignedToForCreate(
+      canViewAllOrganisations,
+      userId,
+      assignedTo
+    );
 
     const { data, error: insertErr } = await crmDb
       .contacts()
@@ -292,7 +300,7 @@ export function CreateContactPanel({
           />
         </label>
 
-        {isAdmin ? (
+        {canViewAllOrganisations ? (
           <label className="block">
             <span className={LABEL_CLASS}>Assigned Spacer</span>
             <SpacerSelect

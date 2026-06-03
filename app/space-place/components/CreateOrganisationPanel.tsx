@@ -22,6 +22,7 @@ type CreateOrganisationPanelProps = {
   onClose: () => void;
   onCreated: (organisation: CrmOrganisation) => void;
   isAdmin: boolean;
+  canViewAllOrganisations: boolean;
   userId: string;
   spacers: CrmProfile[];
 };
@@ -31,6 +32,7 @@ export function CreateOrganisationPanel({
   onClose,
   onCreated,
   isAdmin,
+  canViewAllOrganisations,
   userId,
   spacers,
 }: CreateOrganisationPanelProps) {
@@ -83,7 +85,11 @@ export function CreateOrganisationPanel({
     setError(null);
     setSuccess(null);
 
-    const assigned = resolveAssignedToForCreate(isAdmin, userId, assignedTo);
+    const assigned = resolveAssignedToForCreate(
+      canViewAllOrganisations,
+      userId,
+      assignedTo
+    );
 
     const { data, error: insertErr } = await crmDb
       .organisations()
@@ -233,7 +239,7 @@ export function CreateOrganisationPanel({
           />
         </label>
 
-        {isAdmin ? (
+        {canViewAllOrganisations ? (
           <label className="block">
             <span className={LABEL_CLASS}>Assigned Spacer</span>
             <SpacerSelect

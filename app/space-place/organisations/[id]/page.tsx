@@ -41,7 +41,7 @@ export default function OrganisationDetailPage() {
   const params = useParams();
   const id = params.id as string;
   const router = useRouter();
-  const { isAdmin, profile } = useSpacePlace();
+  const { isAdmin, canViewAllOrganisations, profile } = useSpacePlace();
 
   const [org, setOrg] = useState<CrmOrganisation | null>(null);
   const [contacts, setContacts] = useState<CrmContact[]>([]);
@@ -304,6 +304,7 @@ export default function OrganisationDetailPage() {
           onClose={() => setCreateContactOpen(false)}
           onCreated={handleContactCreated}
           isAdmin={isAdmin}
+          canViewAllOrganisations={canViewAllOrganisations}
           userId={profile.id}
           defaultOrganisationId={org.id}
         />

@@ -28,7 +28,7 @@ type SpaceRow = CrmOrganisation & {
 };
 
 export default function SpacesPage() {
-  const { isAdmin, profile } = useSpacePlace();
+  const { isAdmin, canViewAllOrganisations, profile } = useSpacePlace();
   const [spaces, setSpaces] = useState<SpaceRow[]>([]);
   const [spacers, setSpacers] = useState<CrmProfile[]>([]);
   const [search, setSearch] = useState("");
@@ -38,7 +38,7 @@ export default function SpacesPage() {
   const load = useCallback(async () => {
     setLoading(true);
     let oq = crmDb.organisations().select("*").order("name");
-    if (!isAdmin && profile) {
+    if (!canViewAllOrganisations && profile) {
       oq = oq.eq("assigned_to", profile.id);
     }
 
@@ -96,7 +96,7 @@ export default function SpacesPage() {
 
     setSpaces(rows);
     setLoading(false);
-  }, [isAdmin, profile]);
+  }, [canViewAllOrganisations, profile]);
 
   useEffect(() => {
     load();
@@ -150,6 +150,7 @@ export default function SpacesPage() {
           onClose={() => setCreateOpen(false)}
           onCreated={() => void load()}
           isAdmin={isAdmin}
+          canViewAllOrganisations={canViewAllOrganisations}
           userId={profile.id}
           spacers={spacers}
         />

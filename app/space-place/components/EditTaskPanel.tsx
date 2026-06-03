@@ -11,6 +11,7 @@ import type {
   CrmTaskWithRelations,
 } from "@/lib/space-place/types";
 import { formatSpacerOptionLabel } from "@/lib/space-place/spacers";
+import { useSpacePlace } from "../SpacePlaceContext";
 import { EditSlideOver } from "./EditSlideOver";
 
 const FORM_ID = "edit-task-form";
@@ -34,6 +35,7 @@ export function EditTaskPanel({
   onClose,
   onSaved,
 }: EditTaskPanelProps) {
+  const { profile } = useSpacePlace();
   const [title, setTitle] = useState(task.title);
   const [description, setDescription] = useState(task.description || "");
   const [dueDate, setDueDate] = useState(task.due_date || "");
@@ -59,6 +61,15 @@ export function EditTaskPanel({
     setError(null);
     setSuccess(null);
   }, [open, task]);
+
+  useEffect(() => {
+    if (!open || !profile) return;
+    console.log({
+      role: profile.role,
+      organisationsLoaded: organisations.length,
+      contactsLoaded: contacts.length,
+    });
+  }, [open, profile, organisations.length, contacts.length]);
 
   const filteredContacts = useMemo(() => {
     if (!organisationId) return contacts;

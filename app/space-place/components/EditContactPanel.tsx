@@ -24,6 +24,7 @@ type EditContactPanelProps = {
   onClose: () => void;
   onSaved: (contact: CrmContact, organisation: CrmOrganisation | null) => void;
   isAdmin: boolean;
+  canViewAllOrganisations: boolean;
   userId: string;
 };
 
@@ -33,6 +34,7 @@ export function EditContactPanel({
   onClose,
   onSaved,
   isAdmin,
+  canViewAllOrganisations,
   userId,
 }: EditContactPanelProps) {
   const [organisations, setOrganisations] = useState<CrmOrganisation[]>([]);
@@ -62,20 +64,20 @@ export function EditContactPanel({
 
   const loadOptions = useCallback(async () => {
     let oq = crmDb.organisations().select("*").order("name");
-    if (!isAdmin) {
+    if (!canViewAllOrganisations) {
       oq = oq.eq("assigned_to", userId);
     }
 
     const [oRes, sRes] = await Promise.all([
       oq,
-      isAdmin
+      canViewAllOrganisations
         ? crmDb.profiles().select("*").eq("active", true).order("full_name")
         : Promise.resolve({ data: [] }),
     ]);
 
     setOrganisations((oRes.data as CrmOrganisation[]) || []);
     setSpacers((sRes.data as CrmProfile[]) || []);
-  }, [isAdmin, userId]);
+  }, [canViewAllOrganisations, userId]);
 
   useEffect(() => {
     if (!open) return;
@@ -132,7 +134,7 @@ export function EditContactPanel({
       notes: notes.trim() || null,
     };
 
-    if (isAdmin) {
+    if (canViewAllOrganisations) {
       patch.assigned_to = assignedTo.trim() || null;
     }
 
@@ -286,7 +288,7 @@ export function EditContactPanel({
           />
         </label>
 
-        {isAdmin ? (
+        {canViewAllOrganisations ? (
           <label className="block">
             <span className={LABEL_CLASS}>Assigned Spacer</span>
             <SpacerSelect

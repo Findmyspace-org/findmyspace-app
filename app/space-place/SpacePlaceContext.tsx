@@ -12,6 +12,7 @@ import {
 import { supabase } from "@/lib/supabase";
 import {
   canManageCrmEmail,
+  canViewAllCrmOrganisations,
   hasSpacePlaceAccess,
   SPACE_PLACE_ACCESS_DENIED_MESSAGE,
 } from "@/lib/space-place/access";
@@ -22,6 +23,8 @@ type SpacePlaceContextValue = {
   loading: boolean;
   error: string | null;
   isAdmin: boolean;
+  /** Admin or office_manager — all orgs/contacts, task views, etc. */
+  canViewAllOrganisations: boolean;
   canManageEmail: boolean;
   canBootstrapMainAdmin: boolean;
   refreshProfile: () => Promise<void>;
@@ -113,6 +116,7 @@ export function SpacePlaceProvider({ children }: { children: React.ReactNode }) 
       loading,
       error,
       isAdmin: profile?.role === "admin",
+      canViewAllOrganisations: canViewAllCrmOrganisations(profile?.role),
       canManageEmail: canManageCrmEmail(profile?.role),
       canBootstrapMainAdmin,
       refreshProfile,

@@ -21,7 +21,7 @@ type OrgRow = CrmOrganisation & {
 };
 
 export default function PipelinePage() {
-  const { isAdmin, profile } = useSpacePlace();
+  const { canViewAllOrganisations, profile } = useSpacePlace();
   const [orgs, setOrgs] = useState<OrgRow[]>([]);
   const [contacts, setContacts] = useState<CrmContact[]>([]);
   const [engagements, setEngagements] = useState<CrmEngagement[]>([]);
@@ -32,7 +32,7 @@ export default function PipelinePage() {
   const load = useCallback(async () => {
     setLoading(true);
     let oq = crmDb.organisations().select("*").order("name");
-    if (!isAdmin && profile) {
+    if (!canViewAllOrganisations && profile) {
       oq = oq.eq("assigned_to", profile.id);
     }
     const [oRes, cRes, eRes, tRes, pRes] = await Promise.all([
@@ -64,7 +64,7 @@ export default function PipelinePage() {
     setEngagements((eRes.data as CrmEngagement[]) || []);
     setTasks((tRes.data as CrmTask[]) || []);
     setLoading(false);
-  }, [isAdmin, profile]);
+  }, [canViewAllOrganisations, profile]);
 
   useEffect(() => {
     load();

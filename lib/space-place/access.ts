@@ -15,9 +15,21 @@ export function isSpacePlaceRole(
   return role === "admin" || role === "spacer" || role === "office_manager";
 }
 
+/** Admins and office managers (task managers). */
+export function isCrmTaskManager(role: string | null | undefined): boolean {
+  return role === "admin" || role === "office_manager";
+}
+
+/** Full organisation/contact visibility (not restricted to assigned_to). */
+export function canViewAllCrmOrganisations(
+  role: string | null | undefined
+): boolean {
+  return isCrmTaskManager(role);
+}
+
 /** Admins and office managers can reassign any task from the UI. */
 export function canReassignCrmTasks(role: string | null | undefined): boolean {
-  return role === "admin" || role === "office_manager";
+  return isCrmTaskManager(role);
 }
 
 /** Admins and office managers can import/link CRM emails. */
