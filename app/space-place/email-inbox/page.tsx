@@ -52,6 +52,11 @@ export default function EmailInboxPage() {
   const [linkContactId, setLinkContactId] = useState<Record<string, string>>({});
   const [message, setMessage] = useState<string | null>(null);
   const [filter, setFilter] = useState<"all" | "unlinked">("all");
+  const [importStatus, setImportStatus] = useState<{
+    configured: boolean;
+    host: string | null;
+    user: string | null;
+  } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -79,7 +84,16 @@ export default function EmailInboxPage() {
       router.replace("/space-place/today");
       return;
     }
-    load();
+    void load();
+    void crmApiFetch("/api/space-place/email-import")
+      .then((s) =>
+        setImportStatus({
+          configured: Boolean(s.configured),
+          host: s.host ?? null,
+          user: s.user ?? null,
+        })
+      )
+      .catch(() => setImportStatus({ configured: false, host: null, user: null }));
   }, [profile, canManage, load, router]);
 
   const filtered = useMemo(() => {
@@ -100,9 +114,12 @@ export default function EmailInboxPage() {
     try {
       const result = await crmApiFetch("/api/space-place/email-import", {
         method: "POST",
+        body: JSON.stringify({ daysBack: 30, unreadOnly: false }),
       });
+      const errSnippet =
+        result.errors?.length > 0 ? ` Errors: ${result.errors.slice(0, 2).join("; ")}` : "";
       setMessage(
-        `Imported ${result.imported}, ${result.duplicates} duplicates, marked ${result.markedRead} read.`
+        `Scanned ${result.scanned ?? 0}, imported ${result.imported} (${result.matched ?? 0} linked, ${result.unlinked ?? 0} unlinked), ${result.duplicates} duplicates.${errSnippet}`
       );
       await load();
     } catch (err) {
@@ -147,17 +164,31 @@ export default function EmailInboxPage() {
 
       <Card className="mb-4">
         <p className="text-sm text-neutral-600">
-          BCC outgoing emails to <strong>{getCrmCaptureEmail()}</strong> so they
-          appear here. Use the CRM Email button on contacts so the subject includes{" "}
-          <code className="text-xs">[CRM:contact-id]</code> for future auto-linking.
-          and on the matched contact or space.
+          BCC outgoing emails to <strong>{getCrmCaptureEmail()}</strong>. Use{" "}
+          <strong>Email</strong> on a contact so the subject includes{" "}
+          <code className="text-xs">[CRM:contact-id]</code> — the importer matches
+          that first, then To/CC against contact emails. Linked messages appear on
+          the contact and organisation pages.
         </p>
+        {importStatus && !importStatus.configured ? (
+          <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            IMAP is not configured on this server. Add{" "}
+            <code className="text-xs">CRM_EMAIL_HOST</code>,{" "}
+            <code className="text-xs">CRM_EMAIL_USER</code>, and{" "}
+            <code className="text-xs">CRM_EMAIL_PASSWORD</code> in Vercel (and
+            locally in <code className="text-xs">.env.local</code>), then redeploy.
+          </p>
+        ) : importStatus?.configured ? (
+          <p className="mt-2 text-xs text-neutral-500">
+            IMAP: {importStatus.host} as {importStatus.user}
+          </p>
+        ) : null}
         <PrimaryButton
           onClick={() => void runImport()}
-          disabled={importing}
+          disabled={importing || importStatus?.configured === false}
           className="mt-3"
         >
-          {importing ? "Importing…" : "Import unread from mailbox"}
+          {importing ? "Importing…" : "Import from mailbox (last 30 days)"}
         </PrimaryButton>
         {message ? (
           <p

@@ -15,9 +15,12 @@ import { useSpacePlace } from "../SpacePlaceContext";
 import { PageTitle, SectionHeading } from "../components/SpacePlaceShell";
 import { TaskCard } from "../components/TaskCard";
 import type { TaskReassignResult } from "../components/TaskReassignControl";
+import { supabase } from "@/lib/supabase";
 import {
   dedupeActiveSpacers,
+  findProfileAliasIds,
   formatSpacerOptionLabel,
+  rosterExcludingCurrentUser,
 } from "@/lib/space-place/spacers";
 
 export type TodayView = "my" | "all" | { profileId: string };
@@ -50,7 +53,20 @@ export default function TodayPage() {
   const [contacts, setContacts] = useState<CrmContact[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const roster = useMemo(() => dedupeActiveSpacers(spacers), [spacers]);
+  const myOwnerIds = useMemo(
+    () => (profile ? findProfileAliasIds(profile, spacers) : []),
+    [profile, spacers]
+  );
+
+  const assigneeRoster = useMemo(
+    () => dedupeActiveSpacers(spacers, profile?.id),
+    [spacers, profile?.id]
+  );
+
+  const viewingRoster = useMemo(
+    () => rosterExcludingCurrentUser(spacers, profile),
+    [spacers, profile]
+  );
 
   const showOwnerOnCards = useMemo(() => {
     if (!canViewAllOrganisations) return false;
@@ -62,12 +78,14 @@ export default function TodayPage() {
     const count = tasks.length;
     if (view === "my") return `My activities (${count})`;
     if (view === "all") return `All activities (${count})`;
-    const spacer = roster.find((p) => p.id === view.profileId);
+    const spacer =
+      assigneeRoster.find((p) => p.id === view.profileId) ||
+      viewingRoster.find((p) => p.id === view.profileId);
     const name = spacer
-      ? formatSpacerOptionLabel(spacer, roster)
+      ? formatSpacerOptionLabel(spacer, assigneeRoster)
       : profiles[view.profileId] || "Spacer";
     return `${name} (${count})`;
-  }, [view, tasks.length, roster, profiles]);
+  }, [view, tasks.length, assigneeRoster, viewingRoster, profiles]);
 
   const load = useCallback(async () => {
     if (!profile) {
@@ -82,10 +100,15 @@ export default function TodayPage() {
       .eq("status", "open")
       .order("due_date", { ascending: true, nullsFirst: false });
 
-    if (!canViewAllOrganisations || view === "my") {
-      q = q.eq("owner_id", profile.id);
-    } else if (view !== "all") {
-      q = q.eq("owner_id", view.profileId);
+    const selectedOwnerIds =
+      view === "my" || !canViewAllOrganisations
+        ? myOwnerIds
+        : view === "all"
+          ? null
+          : [view.profileId];
+
+    if (selectedOwnerIds?.length) {
+      q = q.in("owner_id", selectedOwnerIds);
     }
 
     const [
@@ -116,8 +139,28 @@ export default function TodayPage() {
         : null,
     }));
     setTasks(enriched);
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    const selectedOwnerId =
+      view === "my" || !canViewAllOrganisations
+        ? profile.id
+        : view === "all"
+          ? null
+          : view.profileId;
+
+    console.log("[Today] task filter", {
+      currentUserId: user?.id ?? null,
+      currentCrmProfileId: profile.id,
+      myOwnerIds,
+      selectedOwnerId,
+      view: viewSelectValue(view),
+      taskCount: (data as CrmTaskWithRelations[] | null)?.length ?? 0,
+    });
+
     setLoading(false);
-  }, [canViewAllOrganisations, profile, view]);
+  }, [canViewAllOrganisations, profile, view, myOwnerIds]);
 
   useEffect(() => {
     load();
@@ -127,7 +170,7 @@ export default function TodayPage() {
     ({ taskId, ownerId, ownerName }: TaskReassignResult) => {
       setTasks((prev) => {
         const removeFromList =
-          (view === "my" && ownerId !== profile?.id) ||
+          (view === "my" && !myOwnerIds.includes(ownerId)) ||
           (view !== "my" &&
             view !== "all" &&
             ownerId !== view.profileId);
@@ -148,7 +191,7 @@ export default function TodayPage() {
       });
       setProfiles((prev) => ({ ...prev, [ownerId]: ownerName }));
     },
-    [view, profile?.id]
+    [view, myOwnerIds]
   );
 
   const grouped = useMemo(() => {
@@ -173,7 +216,7 @@ export default function TodayPage() {
         task={t}
         onUpdated={load}
         onReassigned={handleTaskReassigned}
-        assignees={roster}
+        assignees={assigneeRoster}
         profileId={profile?.id}
         organisations={organisations}
         contacts={contacts}
@@ -199,9 +242,9 @@ export default function TodayPage() {
             >
               <option value="my">My activities</option>
               <option value="all">All activities</option>
-              {roster.map((spacer) => (
+              {viewingRoster.map((spacer) => (
                 <option key={spacer.id} value={spacer.id}>
-                  {formatSpacerOptionLabel(spacer, roster)}
+                  {formatSpacerOptionLabel(spacer, viewingRoster)}
                 </option>
               ))}
             </select>

@@ -9,8 +9,12 @@ export function normalizeDisplayName(name: string | null | undefined): string {
 }
 
 /** Prefer admin, rows with email, then newest. */
-function profilePreferenceScore(profile: CrmProfile): number {
+function profilePreferenceScore(
+  profile: CrmProfile,
+  preferredProfileId?: string | null
+): number {
   let score = 0;
+  if (preferredProfileId && profile.id === preferredProfileId) score += 1e12;
   if (profile.role === "admin") score += 1000;
   if (profile.email?.trim()) score += 100;
   const created = profile.created_at
@@ -20,33 +24,91 @@ function profilePreferenceScore(profile: CrmProfile): number {
 }
 
 /**
- * Active profiles only — one entry per id, email, and display name.
- * Resolves duplicate "Schalk van der Merwe" rows from multiple auth accounts.
+ * All active profile ids that represent the same person as `current`
+ * (same email, or same normalized name when emails differ or are missing).
  */
-export function dedupeActiveSpacers(profiles: CrmProfile[]): CrmProfile[] {
+export function findProfileAliasIds(
+  current: Pick<CrmProfile, "id" | "email" | "full_name">,
+  profiles: CrmProfile[]
+): string[] {
+  const ids = new Set<string>([current.id]);
+  const emailKey = normalizeSpacerEmail(current.email);
+  const nameKey = normalizeDisplayName(current.full_name);
+
+  for (const p of profiles) {
+    if (!p.active || p.id === current.id) continue;
+    const pEmail = normalizeSpacerEmail(p.email);
+    const pName = normalizeDisplayName(p.full_name);
+    if (emailKey && pEmail && pEmail === emailKey) {
+      ids.add(p.id);
+      continue;
+    }
+    if (nameKey && pName && pName === nameKey) {
+      ids.add(p.id);
+    }
+  }
+
+  return [...ids];
+}
+
+/**
+ * Active profiles only — one entry per email and display name.
+ * When `preferredProfileId` is set, that row wins over duplicate email/name rows.
+ */
+export function dedupeActiveSpacers(
+  profiles: CrmProfile[],
+  preferredProfileId?: string | null
+): CrmProfile[] {
   const active = profiles.filter((p) => p.active);
   const sorted = [...active].sort(
-    (a, b) => profilePreferenceScore(b) - profilePreferenceScore(a)
+    (a, b) =>
+      profilePreferenceScore(b, preferredProfileId) -
+      profilePreferenceScore(a, preferredProfileId)
   );
 
-  const seenIds = new Set<string>();
-  const seenEmails = new Set<string>();
-  const seenNames = new Set<string>();
-  const result: CrmProfile[] = [];
+  const byEmail = new Map<string, CrmProfile>();
+  const byName = new Map<string, CrmProfile>();
+
+  if (preferredProfileId) {
+    const preferred = active.find((p) => p.id === preferredProfileId);
+    if (preferred) {
+      const emailKey = normalizeSpacerEmail(preferred.email);
+      const nameKey = normalizeDisplayName(preferred.full_name);
+      if (emailKey) byEmail.set(emailKey, preferred);
+      if (nameKey) byName.set(nameKey, preferred);
+    }
+  }
 
   for (const profile of sorted) {
-    if (seenIds.has(profile.id)) continue;
-
     const emailKey = normalizeSpacerEmail(profile.email);
     const nameKey = normalizeDisplayName(profile.full_name);
 
-    if (emailKey && seenEmails.has(emailKey)) continue;
-    if (nameKey && seenNames.has(nameKey)) continue;
+    if (emailKey) {
+      if (!byEmail.has(emailKey)) byEmail.set(emailKey, profile);
+      else if (profile.id === preferredProfileId) byEmail.set(emailKey, profile);
+      continue;
+    }
 
+    if (nameKey) {
+      if (!byName.has(nameKey)) byName.set(nameKey, profile);
+      else if (profile.id === preferredProfileId) byName.set(nameKey, profile);
+    }
+  }
+
+  const seenIds = new Set<string>();
+  const result: CrmProfile[] = [];
+  for (const profile of [...byEmail.values(), ...byName.values()]) {
+    if (seenIds.has(profile.id)) continue;
     seenIds.add(profile.id);
-    if (emailKey) seenEmails.add(emailKey);
-    if (nameKey) seenNames.add(nameKey);
     result.push(profile);
+  }
+
+  for (const profile of sorted) {
+    if (seenIds.has(profile.id)) continue;
+    if (!profile.email?.trim() && !profile.full_name?.trim()) {
+      seenIds.add(profile.id);
+      result.push(profile);
+    }
   }
 
   return result.sort((a, b) =>
@@ -54,6 +116,17 @@ export function dedupeActiveSpacers(profiles: CrmProfile[]): CrmProfile[] {
       sensitivity: "base",
     })
   );
+}
+
+/** Roster for assignee/view selectors — excludes the signed-in user and their aliases. */
+export function rosterExcludingCurrentUser(
+  profiles: CrmProfile[],
+  current: Pick<CrmProfile, "id" | "email" | "full_name"> | null | undefined
+): CrmProfile[] {
+  if (!current) return dedupeActiveSpacers(profiles);
+  const deduped = dedupeActiveSpacers(profiles, current.id);
+  const aliasIds = new Set(findProfileAliasIds(current, profiles));
+  return deduped.filter((p) => !aliasIds.has(p.id));
 }
 
 function spacerSortKey(profile: CrmProfile): string {

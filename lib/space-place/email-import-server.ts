@@ -5,6 +5,7 @@ import {
   extractEmailsFromList,
   getCrmCaptureEmail,
   normalizeEmailAddress,
+  parseCrmContactIdFromSubject,
 } from "@/lib/space-place/crm-email";
 
 export type EmailImportEnv = {
@@ -14,6 +15,10 @@ export type EmailImportEnv = {
   password: string;
   secure: boolean;
 };
+
+export function isEmailImportConfigured(): boolean {
+  return readEmailImportEnv() !== null;
+}
 
 export function readEmailImportEnv(): EmailImportEnv | null {
   const host = process.env.CRM_EMAIL_HOST?.trim();
@@ -56,6 +61,21 @@ function resolveMessageId(parsed: ParsedMail, fallback: string): string {
   return fallback;
 }
 
+async function findContactById(
+  db: SupabaseClient,
+  contactId: string
+): Promise<ContactMatch | null> {
+  const { data, error } = await (db.from("crm_contacts") as ReturnType<
+    typeof db.from
+  >)
+    .select("id, organisation_id, email")
+    .eq("id", contactId)
+    .maybeSingle();
+
+  if (error || !data) return null;
+  return data as ContactMatch;
+}
+
 async function findContactByEmails(
   db: SupabaseClient,
   emails: string[]
@@ -76,6 +96,19 @@ async function findContactByEmails(
     if (norm && wanted.has(norm)) return row;
   }
   return null;
+}
+
+/** Prefer subject tag, then To/CC recipient email match. */
+async function resolveContactMatch(
+  db: SupabaseClient,
+  parsed: ParsedMail
+): Promise<ContactMatch | null> {
+  const fromSubject = parseCrmContactIdFromSubject(parsed.subject);
+  if (fromSubject) {
+    const bySubject = await findContactById(db, fromSubject);
+    if (bySubject) return bySubject;
+  }
+  return findContactByEmails(db, recipientEmails(parsed));
 }
 
 async function findProfileByEmail(
@@ -130,7 +163,11 @@ async function importParsedMessage(
   db: SupabaseClient,
   parsed: ParsedMail,
   fallbackMessageId: string
-): Promise<"imported" | "duplicate" | "skipped"> {
+): Promise<
+  | { status: "imported"; linked: boolean }
+  | { status: "duplicate" }
+  | { status: "skipped" }
+> {
   const messageId = resolveMessageId(parsed, fallbackMessageId);
 
   const { data: existing } = await (db.from("crm_email_messages") as ReturnType<
@@ -140,10 +177,9 @@ async function importParsedMessage(
     .eq("message_id", messageId)
     .maybeSingle();
 
-  if (existing) return "duplicate";
+  if (existing) return { status: "duplicate" };
 
-  const recipients = recipientEmails(parsed);
-  const contact = await findContactByEmails(db, recipients);
+  const contact = await resolveContactMatch(db, parsed);
   const fromList = extractEmailsFromList(parsed.from);
   const fromEmail = fromList[0] ?? null;
   const createdBy = await findProfileByEmail(db, fromEmail);
@@ -171,9 +207,9 @@ async function importParsedMessage(
     .single();
 
   if (insertErr) {
-    if (insertErr.code === "23505") return "duplicate";
+    if (insertErr.code === "23505") return { status: "duplicate" };
     console.error("[email-import] insert failed", insertErr.message);
-    return "skipped";
+    return { status: "skipped" };
   }
 
   const emailRow = inserted as {
@@ -200,26 +236,48 @@ async function importParsedMessage(
     }
   }
 
-  return "imported";
+  return {
+    status: "imported",
+    linked: Boolean(emailRow.contact_id && emailRow.organisation_id),
+  };
 }
 
 export type EmailImportResult = {
   imported: number;
+  matched: number;
+  unlinked: number;
   duplicates: number;
   skipped: number;
   markedRead: number;
+  scanned: number;
   errors: string[];
+};
+
+export type EmailImportOptions = {
+  /** Import messages since N days ago (default 30). */
+  daysBack?: number;
+  /** If true, only UNSEEN messages (default false — includes already-read BCC). */
+  unreadOnly?: boolean;
 };
 
 export async function runCrmEmailImport(
   db: SupabaseClient,
-  env: EmailImportEnv
+  env: EmailImportEnv,
+  options: EmailImportOptions = {}
 ): Promise<EmailImportResult> {
+  const daysBack = options.daysBack ?? 30;
+  const unreadOnly = options.unreadOnly ?? false;
+  const since = new Date();
+  since.setDate(since.getDate() - daysBack);
+
   const result: EmailImportResult = {
     imported: 0,
+    matched: 0,
+    unlinked: 0,
     duplicates: 0,
     skipped: 0,
     markedRead: 0,
+    scanned: 0,
     errors: [],
   };
 
@@ -235,18 +293,23 @@ export async function runCrmEmailImport(
 
   const lock = await client.getMailboxLock("INBOX");
   try {
-    for await (const msg of client.fetch({ seen: false }, { source: true, uid: true })) {
+    const query = unreadOnly ? { seen: false } : { since };
+    for await (const msg of client.fetch(query, { source: true, uid: true })) {
       if (!msg.uid || !msg.source) continue;
+      result.scanned += 1;
       try {
         const parsed = await simpleParser(msg.source);
-        const status = await importParsedMessage(
+        const importResult = await importParsedMessage(
           db,
           parsed,
           `imap-uid:${msg.uid}@${env.host}`
         );
 
-        if (status === "imported") result.imported += 1;
-        else if (status === "duplicate") result.duplicates += 1;
+        if (importResult.status === "imported") {
+          result.imported += 1;
+          if (importResult.linked) result.matched += 1;
+          else result.unlinked += 1;
+        } else if (importResult.status === "duplicate") result.duplicates += 1;
         else result.skipped += 1;
 
         await client.messageFlagsAdd({ uid: msg.uid }, ["\\Seen"], { uid: true });

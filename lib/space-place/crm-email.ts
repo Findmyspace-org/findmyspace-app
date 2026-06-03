@@ -5,11 +5,9 @@
  * - User clicks Email on a contact → default mail client opens with BCC to the capture mailbox
  *   and subject `[CRM:CONTACT_ID] FindMySpace`.
  *
- * Future (not implemented yet):
- * - The capture mailbox (crm@findmyspace.co.za by default) will be connected via Outlook/IMAP.
- * - Incoming messages BCC'd or sent to that mailbox will be imported.
- * - Subjects containing `[CRM:CONTACT_ID]` will be parsed to auto-create CRM engagements and
- *   link `crm_email_messages` to the correct contact without manual linking.
+ * IMAP import (`/api/space-place/email-import`) reads the capture mailbox and matches:
+ * - `[CRM:CONTACT_ID]` in the subject (preferred), then
+ * - To/CC recipient emails against `crm_contacts.email`.
  */
 
 /** Default trailing subject after the CRM contact tag. */
@@ -60,10 +58,7 @@ export function buildCrmMailtoLink({
   return `mailto:${addr}?${params.toString()}`;
 }
 
-/**
- * Extract CRM contact id from an email subject (for future IMAP/Outlook import).
- * Returns null until inbound parsing is implemented.
- */
+/** Extract CRM contact id from subject, e.g. `[CRM:uuid] FindMySpace`. */
 export function parseCrmContactIdFromSubject(
   subject: string | null | undefined
 ): string | null {
