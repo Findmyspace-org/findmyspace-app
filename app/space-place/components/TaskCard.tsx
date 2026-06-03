@@ -136,6 +136,7 @@ export function TaskCard({
           phone={contact?.phone}
           whatsapp={contact?.whatsapp}
           email={contact?.email}
+          contactId={task.contact_id || contact?.id}
           showDone={false}
         />
       </div>

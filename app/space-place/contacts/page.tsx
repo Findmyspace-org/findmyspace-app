@@ -9,6 +9,7 @@ import type { CrmContact, CrmEngagement, CrmOrganisation, CrmTask } from "@/lib/
 import { useSpacePlace } from "../SpacePlaceContext";
 import { Card, PageTitle } from "../components/SpacePlaceShell";
 import { ContactActionBar } from "../components/ContactActionBar";
+import { ContactEmailActions } from "../components/ContactEmailActions";
 import { CreateContactPanel } from "../components/CreateContactPanel";
 
 type ContactRow = CrmContact & {
@@ -140,9 +141,20 @@ export default function ContactsPage() {
             </Link>
             <p className="text-sm text-neutral-600">{c.organisation?.name}</p>
             {c.role ? <p className="text-sm text-neutral-500">{c.role}</p> : null}
-            <p className="mt-2 text-sm">
-              {c.phone || "—"} · {c.email || "—"}
-            </p>
+            <p className="mt-2 text-sm">{c.phone || "—"}</p>
+            {c.email ? (
+              <div className="mt-1">
+                <p className="text-sm text-neutral-800">{c.email}</p>
+                <ContactEmailActions
+                  email={c.email}
+                  contactId={c.id}
+                  className="mt-2"
+                  compact
+                />
+              </div>
+            ) : (
+              <p className="mt-1 text-sm text-neutral-500">No email</p>
+            )}
             {c.status ? (
               <span className="mt-2 inline-block rounded-full bg-neutral-100 px-3 py-1 text-xs font-medium capitalize">
                 {c.status}
@@ -152,11 +164,7 @@ export default function ContactsPage() {
               Last: {lastActivity(c.id)} · Next: {nextAction(c.id)}
             </p>
             <div className="mt-3">
-              <ContactActionBar
-                phone={c.phone}
-                whatsapp={c.whatsapp}
-                email={c.email}
-              />
+              <ContactActionBar phone={c.phone} whatsapp={c.whatsapp} />
             </div>
           </Card>
         ))

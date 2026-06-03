@@ -15,6 +15,7 @@ import type {
 import { useSpacePlace } from "../SpacePlaceContext";
 import { Card, PageTitle } from "../components/SpacePlaceShell";
 import { ContactActionBar } from "../components/ContactActionBar";
+import { ContactEmailActions } from "../components/ContactEmailActions";
 import { CreateOrganisationPanel } from "../components/CreateOrganisationPanel";
 import type { CrmProfile } from "@/lib/space-place/types";
 
@@ -197,10 +198,19 @@ export default function SpacesPage() {
               {contactLabel ? (
                 <p className="text-sm text-neutral-600">{contactLabel}</p>
               ) : null}
-              {contact?.phone || contact?.email ? (
-                <p className="mt-1 text-sm text-neutral-500">
-                  {[contact.phone, contact.email].filter(Boolean).join(" · ")}
-                </p>
+              {contact?.phone ? (
+                <p className="mt-1 text-sm text-neutral-500">{contact.phone}</p>
+              ) : null}
+              {contact?.email ? (
+                <div className="mt-1">
+                  <p className="text-sm text-neutral-600">{contact.email}</p>
+                  <ContactEmailActions
+                    email={contact.email}
+                    contactId={contact.id}
+                    className="mt-2"
+                    compact
+                  />
+                </div>
               ) : null}
 
               <p className="mt-2 text-xs text-neutral-500">
@@ -223,7 +233,6 @@ export default function SpacesPage() {
                 <ContactActionBar
                   phone={contact?.phone}
                   whatsapp={contact?.whatsapp}
-                  email={contact?.email}
                 />
               </div>
             </Card>

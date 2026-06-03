@@ -8,5 +8,6 @@ export const crmDb = {
   engagements: () => supabase.from("crm_engagements") as any,
   tasks: () => supabase.from("crm_tasks") as any,
   inbox: () => supabase.from("crm_inbox") as any,
+  emailMessages: () => supabase.from("crm_email_messages") as any,
   spacerInvites: () => supabase.from("crm_spacer_invites") as any,
 };

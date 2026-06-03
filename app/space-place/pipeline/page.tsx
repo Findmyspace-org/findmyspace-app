@@ -192,6 +192,7 @@ function OrgPipelineCard({
           phone={contact?.phone}
           whatsapp={contact?.whatsapp}
           email={contact?.email}
+          contactId={contact?.id}
         />
         <Link
           href={`/space-place/organisations/${org.id}`}

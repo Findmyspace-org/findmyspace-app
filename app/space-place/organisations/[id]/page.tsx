@@ -32,6 +32,10 @@ import {
 import { EditOrganisationPanel } from "../../components/EditOrganisationPanel";
 import { CreateContactPanel } from "../../components/CreateContactPanel";
 import { TaskCard } from "../../components/TaskCard";
+import { ContactEmailActions } from "../../components/ContactEmailActions";
+import { getCrmCaptureEmail } from "@/lib/space-place/crm-email";
+import { CrmEmailList } from "../../components/CrmEmailList";
+import type { CrmEmailMessageWithRelations } from "@/lib/space-place/types";
 
 export default function OrganisationDetailPage() {
   const params = useParams();
@@ -43,6 +47,7 @@ export default function OrganisationDetailPage() {
   const [contacts, setContacts] = useState<CrmContact[]>([]);
   const [tasks, setTasks] = useState<CrmTask[]>([]);
   const [engagements, setEngagements] = useState<SpaceEngagementRow[]>([]);
+  const [emails, setEmails] = useState<CrmEmailMessageWithRelations[]>([]);
   const [spacers, setSpacers] = useState<CrmProfile[]>([]);
   const [activityLoading, setActivityLoading] = useState(true);
   const [notes, setNotes] = useState("");
@@ -54,7 +59,7 @@ export default function OrganisationDetailPage() {
 
   const load = useCallback(async () => {
     setActivityLoading(true);
-    const [o, c, t, e, p] = await Promise.all([
+    const [o, c, t, e, em, p] = await Promise.all([
       crmDb.organisations().select("*").eq("id", id).single(),
       crmDb.contacts().select("*").eq("organisation_id", id),
       crmDb.tasks().select("*").eq("organisation_id", id).order("due_date"),
@@ -66,6 +71,16 @@ export default function OrganisationDetailPage() {
         )
         .eq("organisation_id", id)
         .order("occurred_at", { ascending: false }),
+      crmDb
+        .emailMessages()
+        .select(
+          `*,
+          crm_contacts ( id, full_name, email ),
+          crm_organisations ( id, name )`
+        )
+        .eq("organisation_id", id)
+        .order("sent_at", { ascending: false })
+        .limit(50),
       crmDb.profiles().select("*").eq("active", true).order("full_name"),
     ]);
 
@@ -97,6 +112,7 @@ export default function OrganisationDetailPage() {
       })
     );
     setEngagements(engagementRows);
+    setEmails((em.data as CrmEmailMessageWithRelations[]) || []);
     setActivityLoading(false);
   }, [id, isAdmin]);
 
@@ -267,6 +283,12 @@ export default function OrganisationDetailPage() {
         loading={activityLoading}
       />
 
+      <SectionHeading>Emails</SectionHeading>
+      <p className="mb-3 text-sm text-neutral-600">
+        Logged when team emails include BCC to {getCrmCaptureEmail()}.
+      </p>
+      <CrmEmailList emails={emails} />
+
       <SectionHeading>Contacts</SectionHeading>
       <button
         type="button"
@@ -288,9 +310,27 @@ export default function OrganisationDetailPage() {
       ) : null}
 
       {contacts.map((c) => (
-        <Link key={c.id} href={`/space-place/contacts/${c.id}`}>
-          <Card className="mb-2">{c.full_name || c.first_name}</Card>
-        </Link>
+        <Card key={c.id} className="mb-2">
+          <Link
+            href={`/space-place/contacts/${c.id}`}
+            className="font-semibold text-neutral-900"
+          >
+            {c.full_name || c.first_name}
+          </Link>
+          {c.email ? (
+            <div className="mt-2">
+              <p className="text-sm text-neutral-600">{c.email}</p>
+              <ContactEmailActions
+                email={c.email}
+                contactId={c.id}
+                className="mt-2"
+                compact
+              />
+            </div>
+          ) : (
+            <p className="mt-1 text-sm text-neutral-500">No email</p>
+          )}
+        </Card>
       ))}
 
       <SectionHeading>Tasks</SectionHeading>

@@ -20,6 +20,11 @@ export function canReassignCrmTasks(role: string | null | undefined): boolean {
   return role === "admin" || role === "office_manager";
 }
 
+/** Admins and office managers can import/link CRM emails. */
+export function canManageCrmEmail(role: string | null | undefined): boolean {
+  return canReassignCrmTasks(role);
+}
+
 export function hasSpacePlaceAccess(
   profile: Pick<CrmProfile, "active" | "role"> | null | undefined
 ): boolean {

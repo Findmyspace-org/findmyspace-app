@@ -98,3 +98,28 @@ export type CrmEngagementWithRelations = CrmEngagement & {
   crm_contacts?: Pick<CrmContact, "id" | "full_name"> | null;
   creator_profile?: Pick<CrmProfile, "id" | "full_name"> | null;
 };
+
+export type CrmEmailMessage = {
+  id: string;
+  organisation_id: string | null;
+  contact_id: string | null;
+  engagement_id: string | null;
+  message_id: string;
+  from_email: string | null;
+  to_emails: string[];
+  cc_emails: string[];
+  bcc_emails: string[];
+  subject: string | null;
+  body_text: string | null;
+  body_html: string | null;
+  direction: string;
+  sent_at: string | null;
+  imported_at: string;
+  created_by: string | null;
+  created_at: string;
+};
+
+export type CrmEmailMessageWithRelations = CrmEmailMessage & {
+  crm_contacts?: Pick<CrmContact, "id" | "full_name" | "email"> | null;
+  crm_organisations?: Pick<CrmOrganisation, "id" | "name"> | null;
+};

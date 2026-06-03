@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useSpacePlace } from "../SpacePlaceContext";
+import { canManageCrmEmail } from "@/lib/space-place/access";
 import { Card, PageTitle } from "../components/SpacePlaceShell";
 import { SPACER_INVITE_DISCLAIMER } from "@/lib/space-place/access";
 
@@ -9,7 +10,8 @@ const LINK_CLASS =
   "flex min-h-[52px] items-center rounded-2xl border border-neutral-200 bg-white px-5 text-lg font-semibold shadow-sm active:bg-neutral-50";
 
 export default function MorePage() {
-  const { isAdmin } = useSpacePlace();
+  const { isAdmin, profile } = useSpacePlace();
+  const canManageEmail = profile ? canManageCrmEmail(profile.role) : false;
 
   return (
     <div>
@@ -35,6 +37,12 @@ export default function MorePage() {
               Team
             </Link>
           </>
+        ) : null}
+
+        {canManageEmail ? (
+          <Link href="/space-place/email-inbox" className={LINK_CLASS}>
+            Email inbox
+          </Link>
         ) : null}
 
         <Link href="/space-place/tasks" className={LINK_CLASS}>

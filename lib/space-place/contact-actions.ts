@@ -1,3 +1,5 @@
+import { buildCrmMailtoLink } from "@/lib/space-place/crm-email";
+
 export function telHref(phone: string | null | undefined): string | null {
   if (!phone?.trim()) return null;
   const digits = phone.replace(/[^\d+]/g, "");
@@ -15,7 +17,16 @@ export function whatsappHref(
   return `https://wa.me/${digits}`;
 }
 
-export function mailHref(email: string | null | undefined): string | null {
-  if (!email?.trim()) return null;
-  return `mailto:${email.trim()}`;
+/** CRM mailto with capture BCC and [CRM:contactId] subject tag. */
+export function crmContactMailHref(
+  email: string | null | undefined,
+  contactId: string | null | undefined,
+  options?: { subject?: string }
+): string | null {
+  if (!email?.trim() || !contactId?.trim()) return null;
+  return buildCrmMailtoLink({
+    email,
+    contactId,
+    subject: options?.subject,
+  });
 }

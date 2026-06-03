@@ -21,8 +21,11 @@ import {
   SectionHeading,
 } from "../../components/SpacePlaceShell";
 import { ContactActionBar } from "../../components/ContactActionBar";
+import { ContactEmailActions } from "../../components/ContactEmailActions";
 import { EditContactPanel } from "../../components/EditContactPanel";
 import { TaskCard } from "../../components/TaskCard";
+import { CrmEmailList } from "../../components/CrmEmailList";
+import type { CrmEmailMessageWithRelations } from "@/lib/space-place/types";
 import { dedupeActiveSpacers } from "@/lib/space-place/spacers";
 
 export default function ContactDetailPage() {
@@ -36,6 +39,7 @@ export default function ContactDetailPage() {
   const [org, setOrg] = useState<CrmOrganisation | null>(null);
   const [engagements, setEngagements] = useState<CrmEngagement[]>([]);
   const [tasks, setTasks] = useState<CrmTask[]>([]);
+  const [emails, setEmails] = useState<CrmEmailMessageWithRelations[]>([]);
   const [spacers, setSpacers] = useState<CrmProfile[]>([]);
 
   const load = useCallback(async () => {
@@ -46,7 +50,7 @@ export default function ContactDetailPage() {
     const row = c as CrmContact | null;
     setContact(row);
     if (!row) return;
-    const [o, e, t, p] = await Promise.all([
+    const [o, e, em, t, p] = await Promise.all([
       crmDb.organisations()
         .select("*")
         .eq("id", row.organisation_id)
@@ -55,6 +59,16 @@ export default function ContactDetailPage() {
         .select("*")
         .eq("contact_id", id)
         .order("occurred_at", { ascending: false }),
+      crmDb
+        .emailMessages()
+        .select(
+          `*,
+          crm_contacts ( id, full_name, email ),
+          crm_organisations ( id, name )`
+        )
+        .eq("contact_id", id)
+        .order("sent_at", { ascending: false })
+        .limit(50),
       crmDb.tasks()
         .select("*")
         .eq("contact_id", id)
@@ -63,6 +77,7 @@ export default function ContactDetailPage() {
     ]);
     setOrg((o.data as CrmOrganisation) || null);
     setEngagements((e.data as CrmEngagement[]) || []);
+    setEmails((em.data as CrmEmailMessageWithRelations[]) || []);
     setTasks((t.data as CrmTask[]) || []);
     setSpacers((p.data as CrmProfile[]) || []);
   }, [id]);
@@ -125,7 +140,18 @@ export default function ContactDetailPage() {
           <p className="text-neutral-600">{contact.role}</p>
         ) : null}
         <p className="mt-2">{contact.phone || "No phone"}</p>
-        <p>{contact.email || "No email"}</p>
+        {contact.email ? (
+          <div className="mt-1">
+            <p className="text-neutral-800">{contact.email}</p>
+            <ContactEmailActions
+              email={contact.email}
+              contactId={contact.id}
+              className="mt-2"
+            />
+          </div>
+        ) : (
+          <p className="mt-1">No email</p>
+        )}
         {contact.status ? (
           <span className="mt-2 inline-block rounded-full bg-neutral-100 px-3 py-1 text-sm capitalize">
             {contact.status}
@@ -150,13 +176,12 @@ export default function ContactDetailPage() {
           </Link>
         </div>
         <div className="mt-3">
-          <ContactActionBar
-            phone={contact.phone}
-            whatsapp={contact.whatsapp}
-            email={contact.email}
-          />
+          <ContactActionBar phone={contact.phone} whatsapp={contact.whatsapp} />
         </div>
       </Card>
+
+      <SectionHeading>Emails</SectionHeading>
+      <CrmEmailList emails={emails} />
 
       <SectionHeading>Activity with this contact</SectionHeading>
       {engagements.length === 0 ? (
