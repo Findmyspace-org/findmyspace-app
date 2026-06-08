@@ -5,6 +5,12 @@ import { UNCLAIMED_LISTING_STATUS } from "@/lib/listing-lifecycle";
 export const ADMIN_UNCLAIMED_STATUSES = ["draft", "unclaimed"] as const;
 export type AdminUnclaimedStatus = (typeof ADMIN_UNCLAIMED_STATUSES)[number];
 
+export const ADMIN_CREATED_VIEW_STATUSES = [
+  "draft",
+  "unclaimed",
+  "owner_claimed",
+] as const;
+
 const SPACE_TYPE_VALUES = new Set(LISTING_SPACE_TYPE_OPTIONS.map((o) => o.value));
 const BOOKING_UNITS = new Set(["hour", "day", "month"]);
 
@@ -201,9 +207,10 @@ export async function syncSpaceAttributes(
   return insErr?.message ?? null;
 }
 
-export async function fetchAdminUnclaimedSpace(
+export async function fetchAdminCreatedListing(
   admin: SupabaseClient,
-  spaceId: string
+  spaceId: string,
+  options: { allowOwnerClaimed?: boolean } = {}
 ) {
   const { data, error } = await admin
     .from("spaces")
@@ -215,15 +222,27 @@ export async function fetchAdminUnclaimedSpace(
 
   const row = data as { status: string | null; created_by_admin?: boolean };
   if (!row.created_by_admin) {
-    return { error: "Not an admin-created unclaimed listing." };
+    return { error: "Not an admin-created listing." };
   }
-  if (!ADMIN_UNCLAIMED_STATUSES.includes(row.status as AdminUnclaimedStatus)) {
+
+  const allowed: readonly string[] = options.allowOwnerClaimed
+    ? ADMIN_CREATED_VIEW_STATUSES
+    : ADMIN_UNCLAIMED_STATUSES;
+
+  if (!allowed.includes(row.status || "")) {
     return {
-      error: "Listing is no longer in draft/unclaimed workflow.",
+      error: "Listing is no longer in the admin unclaimed workflow.",
     };
   }
 
-  return { space: data };
+  return { space: data, readOnly: row.status === "owner_claimed" };
+}
+
+export async function fetchAdminUnclaimedSpace(
+  admin: SupabaseClient,
+  spaceId: string
+) {
+  return fetchAdminCreatedListing(admin, spaceId, { allowOwnerClaimed: false });
 }
 
 export type PublishValidationResult =

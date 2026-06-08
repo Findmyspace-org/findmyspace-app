@@ -7,6 +7,8 @@ export const BOOKABLE_LISTING_STATUS = "active" as const;
 
 export const UNCLAIMED_LISTING_STATUS = "unclaimed" as const;
 
+export const OWNER_CLAIMED_STATUS = "owner_claimed" as const;
+
 export const LISTING_ENQUIRY_STATUSES = [
   "new",
   "contacted",

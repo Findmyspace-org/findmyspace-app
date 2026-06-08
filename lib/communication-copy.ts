@@ -1035,3 +1035,76 @@ export function buildListingEnquiryRequesterCopy(
     notificationMessage: `Thanks — we received your request for ${listing}. FindMySpace will follow up and confirm availability.`,
   };
 }
+
+export type ListingClaimInviteInput = {
+  listingTitle: string;
+  claimUrl: string;
+};
+
+export function buildListingClaimInviteCopy(
+  input: ListingClaimInviteInput
+): CommunicationCopy {
+  const listing = input.listingTitle.trim() || "your listing";
+
+  return {
+    notificationTitle: "Claim your listing",
+    notificationMessage: `FindMySpace prepared a listing profile for ${listing}. Claim it to review details and complete verification.`,
+    emailSubject: "Claim your FindMySpace listing",
+    emailPreheader: "Review and claim your prepared listing profile.",
+    emailTitle: "Claim your FindMySpace listing",
+    emailBodyLines: [
+      "FindMySpace has prepared a space profile for you to review and claim.",
+      {
+        html: `Listing: ${emailStrong(listing).html}`,
+      },
+      "Claiming does not make your listing live or bookable. After you claim, you'll need to complete verification, pricing, availability, and admin approval.",
+      "Use the button below to sign in and claim this listing.",
+    ],
+    ctaLabel: "Claim listing",
+    emailFooterRole: "host",
+  };
+}
+
+export type ListingClaimedAdminInput = {
+  listingTitle: string;
+  ownerEmail?: string | null;
+};
+
+export function buildListingClaimedAdminCopy(
+  input: ListingClaimedAdminInput
+): CommunicationCopy {
+  const listing = input.listingTitle.trim() || "A listing";
+
+  return {
+    notificationTitle: "Listing claimed",
+    notificationMessage: `${listing} was claimed by an owner.`,
+    emailSubject: `Listing claimed — ${listing}`,
+    emailPreheader: `${listing} was claimed by an owner.`,
+    emailTitle: "Listing claimed",
+    emailBodyLines: [
+      "An owner has claimed an admin-prepared FindMySpace listing.",
+      { html: `Listing: ${emailStrong(listing).html}` },
+      input.ownerEmail
+        ? { html: `Invited email: ${emailStrong(input.ownerEmail).html}` }
+        : "The owner signed in with their account to claim the listing.",
+      "The listing is now owner_claimed and hidden from public browse until verification and approval.",
+    ],
+    ctaLabel: "View listing",
+    emailFooterRole: "admin",
+  };
+}
+
+export type ListingClaimedOwnerInput = {
+  listingTitle: string;
+};
+
+export function buildListingClaimedOwnerCopy(
+  input: ListingClaimedOwnerInput
+): Pick<CommunicationCopy, "notificationTitle" | "notificationMessage"> {
+  const listing = input.listingTitle.trim() || "your listing";
+
+  return {
+    notificationTitle: "Listing claimed",
+    notificationMessage: `You claimed ${listing}. Complete verification, pricing, and availability before submitting for review.`,
+  };
+}
