@@ -253,6 +253,13 @@ export default function AdminPage() {
             Listings
           </Link>
           <Link
+            href="/admin/unclaimed-listings"
+            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
+          >
+            <Building2 className="h-4 w-4" />
+            Unclaimed listings
+          </Link>
+          <Link
             href="/admin/listing-enquiries"
             className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
           >
