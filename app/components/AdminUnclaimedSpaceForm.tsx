@@ -1,6 +1,5 @@
 "use client";
 
-import dynamic from "next/dynamic";
 import Image from "next/image";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -15,12 +14,8 @@ import SpaceCategoryFields from "@/app/components/SpaceCategoryFields";
 import { LISTING_SPACE_TYPE_OPTIONS } from "@/app/data/spaceFeatureConfig";
 import { adminApiFetch } from "@/lib/admin-api-client";
 import { ADMIN_SPACE_IMAGE_MAX_BYTES } from "@/lib/admin-space-image-upload";
+import { AdminLocationSection } from "@/app/components/AdminLocationSection";
 import { sortSpaceImages } from "@/lib/sort-space-images";
-import { ZA_PROVINCES } from "@/lib/za-provinces";
-
-const MapPicker = dynamic(() => import("@/app/components/MapPicker"), {
-  ssr: false,
-});
 
 type SpaceImage = {
   id: string;
@@ -173,6 +168,17 @@ export function AdminUnclaimedSpaceForm({
     if (readOnly) return;
     if (!spaceId) {
       setMessage("Save as draft first, then add photos and publish.");
+      return;
+    }
+    if (
+      state.latitude === null ||
+      state.longitude === null ||
+      !Number.isFinite(state.latitude) ||
+      !Number.isFinite(state.longitude)
+    ) {
+      setMessage(
+        "This listing does not have a map pin yet. Find the address on the map or place the pin manually before publishing."
+      );
       return;
     }
     setPublishing(true);
@@ -417,73 +423,20 @@ export function AdminUnclaimedSpaceForm({
         </fieldset>
       </section>
 
-      <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-        <h2 className="text-lg font-semibold text-gray-900">Location</h2>
-        <div className="mt-4 grid gap-4 sm:grid-cols-2">
-          <label className="block sm:col-span-2">
-            <span className="mb-1 block text-sm font-medium text-gray-700">
-              Street address
-            </span>
-            <input
-              value={state.streetAddress}
-              onChange={(e) =>
-                setState((s) => ({ ...s, streetAddress: e.target.value }))
-              }
-              className={FIELD_CLASS}
-            />
-          </label>
-          <label className="block">
-            <span className="mb-1 block text-sm font-medium text-gray-700">Suburb</span>
-            <input
-              value={state.suburb}
-              onChange={(e) => setState((s) => ({ ...s, suburb: e.target.value }))}
-              className={FIELD_CLASS}
-            />
-          </label>
-          <label className="block">
-            <span className="mb-1 block text-sm font-medium text-gray-700">City</span>
-            <input
-              value={state.city}
-              onChange={(e) => setState((s) => ({ ...s, city: e.target.value }))}
-              className={FIELD_CLASS}
-            />
-          </label>
-          <label className="block">
-            <span className="mb-1 block text-sm font-medium text-gray-700">Province</span>
-            <select
-              value={state.province}
-              onChange={(e) => setState((s) => ({ ...s, province: e.target.value }))}
-              className={FIELD_CLASS}
-            >
-              <option value="">Select province</option>
-              {ZA_PROVINCES.map((p) => (
-                <option key={p} value={p}>
-                  {p}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="block">
-            <span className="mb-1 block text-sm font-medium text-gray-700">
-              Postal code
-            </span>
-            <input
-              value={state.postalCode}
-              onChange={(e) => setState((s) => ({ ...s, postalCode: e.target.value }))}
-              className={FIELD_CLASS}
-            />
-          </label>
-        </div>
-        <div className="mt-4">
-          <MapPicker
-            latitude={state.latitude ?? -33.9249}
-            longitude={state.longitude ?? 18.4241}
-            onChange={(latitude, longitude) =>
-              setState((s) => ({ ...s, latitude, longitude }))
-            }
-          />
-        </div>
-      </section>
+      <AdminLocationSection
+        readOnly={readOnly}
+        value={{
+          streetAddress: state.streetAddress,
+          suburb: state.suburb,
+          city: state.city,
+          province: state.province,
+          postalCode: state.postalCode,
+          country: state.country,
+          latitude: state.latitude,
+          longitude: state.longitude,
+        }}
+        onChange={(patch) => setState((s) => ({ ...s, ...patch }))}
+      />
 
       <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
         <h2 className="text-lg font-semibold text-gray-900">Features &amp; size</h2>

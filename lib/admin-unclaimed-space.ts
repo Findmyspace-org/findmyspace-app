@@ -263,6 +263,8 @@ export async function validateReadyToPublishUnclaimed(
     space_type: string | null;
     city: string | null;
     suburb: string | null;
+    latitude: number | null;
+    longitude: number | null;
   };
 
   if (!row.title?.trim() || row.title.trim() === "Untitled listing") {
@@ -273,6 +275,19 @@ export async function validateReadyToPublishUnclaimed(
   }
   if (!row.city?.trim() && !row.suburb?.trim()) {
     return { ok: false, error: "City or suburb is required before publishing." };
+  }
+
+  if (
+    row.latitude === null ||
+    row.longitude === null ||
+    !Number.isFinite(row.latitude) ||
+    !Number.isFinite(row.longitude)
+  ) {
+    return {
+      ok: false,
+      error:
+        "This listing does not have a map pin yet. Find the address on the map or place the pin manually before publishing.",
+    };
   }
 
   const { count, error: imgErr } = await admin
