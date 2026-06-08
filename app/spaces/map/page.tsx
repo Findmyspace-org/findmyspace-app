@@ -5,6 +5,7 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { PUBLIC_LISTING_STATUSES } from "@/lib/listing-lifecycle";
 
 const SpacesMap = dynamic(() => import("@/app/components/SpacesMap"), {
   ssr: false,
@@ -84,7 +85,7 @@ function SpacesMapPageContent({ searchParamsString }: { searchParamsString: stri
       .select(
         "id, title, description, city, suburb, address_line_1, price_per_hour, price_per_day, price_per_month, booking_unit, space_type, status, latitude, longitude, created_at"
       )
-      .eq("status", "active")
+      .in("status", [...PUBLIC_LISTING_STATUSES])
       .order("created_at", { ascending: false });
 
     if (error) {

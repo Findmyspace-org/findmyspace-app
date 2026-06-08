@@ -8,6 +8,10 @@ import {
 import { useRouter } from "next/navigation";
 import { formatSpaceTypeLabel } from "@/app/data/spaceFeatureConfig";
 import type { CardAvailabilityHint } from "@/lib/browse-availability-signals";
+import {
+  isUnclaimedListing,
+  UNCLAIMED_PRICING_LABEL,
+} from "@/lib/listing-lifecycle";
 
 type Space = {
   id: string;
@@ -58,7 +62,10 @@ export default function SpaceCard({
     return "/ day";
   }
 
+  const isUnclaimed = isUnclaimedListing(space.status);
+
   function getPriceLabel() {
+    if (isUnclaimed) return UNCLAIMED_PRICING_LABEL;
     const price = getPriceValue();
     return price ? `R${price}` : "Price not set";
   }
@@ -125,8 +132,17 @@ export default function SpaceCard({
           {space.title}
         </h3>
 
+        {isUnclaimed ? (
+          <p className="mt-2 inline-flex rounded-full bg-amber-50 px-2.5 py-0.5 text-[11px] font-medium text-amber-900 ring-1 ring-amber-200">
+            Availability to be confirmed
+          </p>
+        ) : null}
+
         <p className="mt-3 text-base font-semibold text-[#0f172a]">
-          {getPriceLabel()} <span className="font-normal text-[#475569]">{getPriceSuffix()}</span>
+          {getPriceLabel()}{" "}
+          {!isUnclaimed ? (
+            <span className="font-normal text-[#475569]">{getPriceSuffix()}</span>
+          ) : null}
         </p>
 
         {availabilityHint ? (

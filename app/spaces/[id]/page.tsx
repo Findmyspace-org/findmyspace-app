@@ -10,6 +10,13 @@ import SpaceGallerySection from "./space-gallery-section";
 import SpaceMapSection from "./space-map-section";
 import { formatSpaceTypeLabel } from "@/app/data/spaceFeatureConfig";
 import { formatListingAddress } from "@/lib/za-provinces";
+import {
+  isPublicListingStatus,
+  isUnclaimedListing,
+  UNCLAIMED_LISTING_BADGE,
+} from "@/lib/listing-lifecycle";
+import { UnclaimedListingMobileSheet } from "@/app/components/UnclaimedListingMobileSheet";
+import { UnclaimedListingSidebar } from "@/app/components/UnclaimedListingSidebar";
 
 import {
   ArrowLeft,
@@ -25,9 +32,10 @@ import {
 
 type Space = {
   id: string;
-  owner_id: string;
+  owner_id: string | null;
   title: string;
   description: string | null;
+  status: string | null;
   city: string | null;
   suburb: string | null;
   street_address: string | null;
@@ -137,6 +145,12 @@ export default async function Page({
     );
   }
 
+  if (!isPublicListingStatus(space.status)) {
+    notFound();
+  }
+
+  const unclaimed = isUnclaimedListing(space.status);
+
   const price =
     space.booking_unit === "hour"
       ? space.price_per_hour
@@ -160,7 +174,9 @@ export default async function Page({
     country: space.country,
     address_line_1: space.address_line_1,
   });
-  const hostProfile = await getHostProfile(space.owner_id);
+  const hostProfile = space.owner_id
+    ? await getHostProfile(space.owner_id)
+    : null;
   const hostName =
     [hostProfile?.first_name, hostProfile?.last_name].filter(Boolean).join(" ").trim() ||
     hostProfile?.full_name ||
@@ -257,7 +273,11 @@ export default async function Page({
                     {space.title}
                   </h1>
 
-                  {isVerifiedSpace ? (
+                  {unclaimed ? (
+                    <p className="mt-3 inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-950">
+                      {UNCLAIMED_LISTING_BADGE}
+                    </p>
+                  ) : isVerifiedSpace ? (
                     <p className="mt-3 inline-flex items-center gap-2 rounded-full border border-[#f0d5d8] bg-[#fff6f7] px-3 py-1 text-xs font-medium text-[#9f1239]">
                       <BadgeCheck className="h-4 w-4" />
                       Verified space
@@ -302,6 +322,12 @@ export default async function Page({
             </section>
           </div>
 
+          {unclaimed ? (
+            <UnclaimedListingSidebar
+              listingId={space.id}
+              listingTitle={space.title}
+            />
+          ) : (
           <aside className="space-y-4 lg:sticky lg:top-24">
             <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-[0_14px_40px_rgba(15,23,42,0.10)]">
               <p className="text-xs font-medium uppercase tracking-[0.08em] text-gray-500">
@@ -367,9 +393,17 @@ export default async function Page({
               </p>
             </section>
           </aside>
+          )}
         </div>
       </div>
 
+      {unclaimed ? (
+        <UnclaimedListingMobileSheet
+          listingId={space.id}
+          listingTitle={space.title}
+        />
+      ) : (
+        <>
       <input id="space-booking-toggle" type="checkbox" className="peer sr-only" />
       <label
         htmlFor="space-booking-toggle"
@@ -407,7 +441,7 @@ export default async function Page({
             <div className="rounded-lg border border-gray-200 bg-white p-3 shadow-sm sm:p-4">
               <BookingRequestForm
                 spaceId={space.id}
-                ownerId={space.owner_id}
+                ownerId={space.owner_id!}
                 bookingUnit={space.booking_unit}
                 pricePerHour={space.price_per_hour}
                 pricePerDay={space.price_per_day}
@@ -445,6 +479,8 @@ export default async function Page({
         spaceType={space.space_type}
         bookingUnit={space.booking_unit}
       />
+        </>
+      )}
     </main>
   );
 }

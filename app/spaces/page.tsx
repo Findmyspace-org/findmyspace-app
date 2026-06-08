@@ -5,6 +5,10 @@ import Image from "next/image";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import SpaceCard from "@/app/components/SpaceCard";
+import {
+  isUnclaimedListing,
+  PUBLIC_LISTING_STATUSES,
+} from "@/lib/listing-lifecycle";
 import PriceRangeFilter from "@/app/components/PriceRangeFilter";
 import {
   Search,
@@ -270,7 +274,7 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
       const { data, error } = await supabase
         .from("spaces")
         .select("*")
-        .eq("status", "active")
+        .in("status", [...PUBLIC_LISTING_STATUSES])
         .order("created_at", { ascending: false });
 
       if (error) {
@@ -426,6 +430,10 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
 
       if (appliedWhen && !spaceMatchesWhenMinBooking(space, appliedWhen)) {
         return false;
+      }
+
+      if (isUnclaimedListing(space.status)) {
+        return true;
       }
 
       const price =
