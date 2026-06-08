@@ -10,6 +10,7 @@ import {
   ChevronUp,
   ClipboardList,
   History,
+  Inbox,
   LayoutDashboard,
   MessageSquare,
   Mail,
@@ -250,6 +251,13 @@ export default function AdminPage() {
           >
             <ClipboardList className="h-4 w-4" />
             Listings
+          </Link>
+          <Link
+            href="/admin/listing-enquiries"
+            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
+          >
+            <Inbox className="h-4 w-4" />
+            Listing enquiries
           </Link>
           <Link
             href="/admin/verification"

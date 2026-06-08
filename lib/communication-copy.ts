@@ -987,3 +987,51 @@ export function buildOwnershipProofVerifiedCopy(
     emailFooterRole: "host",
   };
 }
+
+export type ListingEnquiryAdminInput = {
+  listingTitle: string;
+  requesterName: string;
+  requesterEmail: string;
+};
+
+export function buildListingEnquiryAdminCopy(
+  input: ListingEnquiryAdminInput
+): CommunicationCopy {
+  const listing = input.listingTitle.trim() || "Untitled listing";
+  const requester = input.requesterName.trim() || "Someone";
+
+  return {
+    notificationTitle: "New space request",
+    notificationMessage: `${requester} requested ${listing}. Review the enquiry in admin.`,
+    emailSubject: `New space request — ${listing}`,
+    emailPreheader: `${requester} requested an unclaimed listing.`,
+    emailTitle: "New space request",
+    emailBodyLines: [
+      "Someone submitted a request for an unclaimed FindMySpace listing.",
+      {
+        html: `Listing: ${emailStrong(listing).html}`,
+      },
+      {
+        html: `Requester: ${emailStrong(requester).html} (${input.requesterEmail})`,
+      },
+    ],
+    ctaLabel: "View enquiries",
+    emailFooterRole: "admin",
+  };
+}
+
+export type ListingEnquiryRequesterInput = {
+  listingTitle: string;
+  listingUrl: string;
+};
+
+export function buildListingEnquiryRequesterCopy(
+  input: ListingEnquiryRequesterInput
+): Pick<CommunicationCopy, "notificationTitle" | "notificationMessage"> {
+  const listing = input.listingTitle.trim() || "this space";
+
+  return {
+    notificationTitle: "Request received",
+    notificationMessage: `Thanks — we received your request for ${listing}. FindMySpace will follow up and confirm availability.`,
+  };
+}
