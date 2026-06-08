@@ -14,6 +14,7 @@ import {
   HousePlus,
   Building2,
   ShieldCheck,
+  Compass,
   LogIn,
   LogOut,
   UserPlus,
@@ -830,6 +831,11 @@ export default function Header() {
             label: "Admin dashboard",
             href: "/admin",
             icon: ShieldCheck,
+          },
+          {
+            label: "Venue Scout",
+            href: "/admin/venue-scout",
+            icon: Compass,
           },
         ],
       });

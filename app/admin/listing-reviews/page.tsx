@@ -11,6 +11,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { AdminNav } from "@/app/components/AdminNav";
 
 type ReviewRow = {
   id: string;
@@ -126,50 +127,7 @@ export default function AdminListingReviewsPage() {
   return (
     <main className="min-h-screen bg-gray-50 p-6 md:p-8">
       <div className="mx-auto max-w-5xl">
-        <div className="mb-6 flex flex-wrap gap-2">
-          <Link
-            href="/admin"
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
-          >
-            <LayoutDashboard className="h-4 w-4" />
-            Dashboard
-          </Link>
-          <Link
-            href="/admin/spaces"
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
-          >
-            <Building2 className="h-4 w-4" />
-            Spaces
-          </Link>
-          <Link
-            href="/admin/listings"
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
-          >
-            <ClipboardList className="h-4 w-4" />
-            Listings
-          </Link>
-          <Link
-            href="/admin/unclaimed-listings"
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
-          >
-            <Building2 className="h-4 w-4" />
-            Unclaimed
-          </Link>
-          <Link
-            href="/admin/listing-enquiries"
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
-          >
-            <Inbox className="h-4 w-4" />
-            Enquiries
-          </Link>
-          <Link
-            href="/admin/verification"
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
-          >
-            <ShieldCheck className="h-4 w-4" />
-            Verification
-          </Link>
-        </div>
+        <AdminNav current="listing-reviews" />
 
         <h1 className="text-2xl font-semibold text-gray-900">Listing reviews</h1>
         <p className="mt-1 text-sm text-gray-600">

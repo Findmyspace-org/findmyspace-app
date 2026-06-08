@@ -6,6 +6,7 @@ import {
   getOptionLabel,
   getSpaceFeatureLayout,
   normalizeFeatureAttributes,
+  sectionFields,
   toCanonicalFeatureKey,
 } from "@/app/data/spaceFeatureConfig";
 import {
@@ -185,7 +186,7 @@ function summariseFeatures(
 
   for (const sec of layout.sections) {
     const labels: string[] = [];
-    for (const f of sec.fields) {
+    for (const f of sectionFields(sec)) {
       const canonical = toCanonicalFeatureKey(f.key);
       const vals = norm[canonical] || [];
       if (vals.length === 0) continue;

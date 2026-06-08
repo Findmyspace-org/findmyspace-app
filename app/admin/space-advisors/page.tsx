@@ -14,6 +14,7 @@ import {
   Users,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { AdminNav } from "@/app/components/AdminNav";
 import {
   getCanonicalAdvisorReferralUrl,
   normalizeAdvisorCode,
@@ -401,42 +402,7 @@ export default function AdminSpaceAdvisorsPage() {
           <code className="rounded bg-gray-100 px-1">bookings.created_at</code>).
         </p>
 
-        <div className="mb-6 flex flex-wrap gap-3">
-          <Link
-            href="/admin"
-            className="inline-flex items-center gap-2 rounded-md border border-[#192a3a] bg-[#192a3a] px-4 py-2 text-sm text-white"
-          >
-            <LayoutDashboard className="h-4 w-4" />
-            Dashboard
-          </Link>
-          <Link
-            href="/admin/activity"
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
-          >
-            <History className="h-4 w-4" />
-            Activity
-          </Link>
-          <Link
-            href="/admin/users"
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
-          >
-            <Users className="h-4 w-4" />
-            Users
-          </Link>
-          <Link
-            href="/admin/listings"
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
-          >
-            <ClipboardList className="h-4 w-4" />
-            Listings
-          </Link>
-          <Link
-            href="/admin/space-advisors"
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-4 py-2 text-sm"
-          >
-            Space Advisors
-          </Link>
-        </div>
+        <AdminNav current="space-advisors" />
 
         {message && (
           <div

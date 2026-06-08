@@ -26,7 +26,10 @@ import {
   SlidersHorizontal,
 } from "lucide-react";
 import MapView from "@/app/components/MapView";
-import { LISTING_SPACE_TYPE_OPTIONS } from "@/app/data/spaceFeatureConfig";
+import {
+  LISTING_SPACE_TYPE_OPTIONS,
+  buildAttributeSearchText,
+} from "@/app/data/spaceFeatureConfig";
 import { BrowseWhenFilter } from "@/app/components/BrowseWhenFilter";
 import {
   parseAppliedWhenFromParams,
@@ -67,6 +70,7 @@ type Space = {
   min_booking_days: number | null;
   min_booking_months: number | null;
   image_urls?: string[];
+  attributes?: Record<string, string[]>;
   status?: string | null;
 };
 
@@ -74,6 +78,12 @@ type SpaceImageRow = {
   space_id: string;
   image_url: string;
   sort_order: number | null;
+};
+
+type SpaceAttributeRow = {
+  space_id: string;
+  attribute_key: string;
+  attribute_value: string | null;
 };
 
 type UserFavouriteRow = {
@@ -305,6 +315,7 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
       }
 
       const imageMap = new Map<string, string[]>();
+      const attributeMap = new Map<string, Record<string, string[]>>();
 
       ((imageRows || []) as SpaceImageRow[]).forEach((row) => {
         const current = imageMap.get(row.space_id) || [];
@@ -312,9 +323,31 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
         imageMap.set(row.space_id, current);
       });
 
+      const { data: attributeRows, error: attributeError } = await supabase
+        .from("space_attributes")
+        .select("space_id, attribute_key, attribute_value")
+        .in("space_id", spaceIds);
+
+      if (attributeError) {
+        setMessage(attributeError.message);
+        setLoading(false);
+        return;
+      }
+
+      ((attributeRows || []) as SpaceAttributeRow[]).forEach((row) => {
+        if (!row.attribute_value) return;
+        const current = attributeMap.get(row.space_id) || {};
+        if (!current[row.attribute_key]) {
+          current[row.attribute_key] = [];
+        }
+        current[row.attribute_key].push(row.attribute_value);
+        attributeMap.set(row.space_id, current);
+      });
+
       const mergedSpaces = baseSpaces.map((space) => ({
         ...space,
         image_urls: imageMap.get(space.id) || [],
+        attributes: attributeMap.get(space.id) || {},
       }));
 
       setSpaces(mergedSpaces);
@@ -395,6 +428,7 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
           space.address_line_1,
           space.suburb,
           space.city,
+          buildAttributeSearchText(space.space_type, space.attributes || {}),
         ]
           .filter(Boolean)
           .join(" ")

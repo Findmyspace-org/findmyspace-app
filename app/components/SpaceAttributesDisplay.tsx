@@ -5,6 +5,7 @@ import {
   getSpaceFeatureLayout,
   normalizeFeatureAttributes,
   toCanonicalFeatureKey,
+  type SpaceFeatureSection,
 } from "@/app/data/spaceFeatureConfig";
 import { spaceFieldConfig, type SpaceField } from "@/app/data/spaceFieldConfig";
 import { SpaceFeatureIcon } from "@/app/components/space-feature-icons";
@@ -29,6 +30,8 @@ import type { LucideIcon } from "lucide-react";
 type Props = {
   spaceType: string | null;
   attributes: Record<string, string[]>;
+  /** Omit sections rendered elsewhere (e.g. suitable_for on public event listings). */
+  excludeSectionIds?: string[];
 };
 
 const legacyIconMap: Record<string, LucideIcon> = {
@@ -135,6 +138,14 @@ function FeatureGlyph({
   return null;
 }
 
+function SuitableForChip({ label }: { label: string }) {
+  return (
+    <span className="inline-flex items-center rounded-full border border-[#d7dde3] bg-white px-3 py-1.5 text-xs font-medium text-[#334155]">
+      {label}
+    </span>
+  );
+}
+
 function FeatureCard({ item }: { item: FeatureItem }) {
   if (item.isBoolean) {
     return (
@@ -166,13 +177,22 @@ function FeatureCard({ item }: { item: FeatureItem }) {
   );
 }
 
+function sectionFields(sec: SpaceFeatureSection) {
+  return [
+    ...sec.fields,
+    ...(sec.subsections?.flatMap((sub) => sub.fields) ?? []),
+  ];
+}
+
 export default function SpaceAttributesDisplay({
   spaceType,
   attributes,
+  excludeSectionIds = [],
 }: Props) {
   if (!spaceType) return null;
 
   const normalizedAttributes = normalizeFeatureAttributes(attributes);
+  const excluded = new Set(excludeSectionIds);
 
   const allKeys = Object.keys(normalizedAttributes).filter(
     (k) => (normalizedAttributes[k] || []).length > 0
@@ -185,9 +205,11 @@ export default function SpaceAttributesDisplay({
   const groups: FeatureGroup[] = [];
 
   for (const sec of layout.sections) {
+    if (excluded.has(sec.id)) continue;
+
     const items: FeatureItem[] = [];
 
-    for (const field of sec.fields) {
+    for (const field of sectionFields(sec)) {
       const canonical = toCanonicalFeatureKey(field.key);
       const values = normalizedAttributes[canonical] || [];
       if (values.length === 0) continue;
@@ -260,11 +282,19 @@ export default function SpaceAttributesDisplay({
           <h3 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#64748b] sm:text-sm sm:tracking-normal sm:normal-case sm:text-[#0f172a]">
             {group.title}
           </h3>
-          <div className="grid grid-cols-2 gap-2">
-            {group.items.map((item) => (
-              <FeatureCard key={item.key} item={item} />
-            ))}
-          </div>
+          {group.id === "suitable_for" ? (
+            <div className="flex flex-wrap gap-2">
+              {group.items.map((item) => (
+                <SuitableForChip key={item.key} label={item.label} />
+              ))}
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-2">
+              {group.items.map((item) => (
+                <FeatureCard key={item.key} item={item} />
+              ))}
+            </div>
+          )}
         </div>
       ))}
     </div>

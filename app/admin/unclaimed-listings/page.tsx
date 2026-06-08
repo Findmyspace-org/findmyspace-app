@@ -5,17 +5,9 @@ import Link from "next/link";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { format } from "date-fns";
-import {
-  Building2,
-  ClipboardList,
-  ImageIcon,
-  Inbox,
-  LayoutDashboard,
-  Plus,
-  Search,
-  ShieldCheck,
-} from "lucide-react";
+import { Compass, ImageIcon, Plus, Search } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { AdminNav } from "@/app/components/AdminNav";
 import { adminApiFetch } from "@/lib/admin-api-client";
 import { formatSpaceTypeLabel } from "@/app/data/spaceFeatureConfig";
 import {
@@ -125,55 +117,7 @@ function AdminUnclaimedListingsPageContent({
   return (
     <main className="min-h-screen bg-gray-50 p-6 md:p-8">
       <div className="mx-auto max-w-6xl">
-        <div className="mb-6 flex flex-wrap gap-2">
-          <Link
-            href="/admin"
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
-          >
-            <LayoutDashboard className="h-4 w-4" />
-            Dashboard
-          </Link>
-          <Link
-            href="/admin/venue-scout"
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
-          >
-            Venue scout
-          </Link>
-          <Link
-            href="/admin/unclaimed-listings"
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium"
-          >
-            Unclaimed listings
-          </Link>
-          <Link
-            href="/admin/listing-enquiries"
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
-          >
-            <Inbox className="h-4 w-4" />
-            Listing enquiries
-          </Link>
-          <Link
-            href="/admin/spaces"
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
-          >
-            <Building2 className="h-4 w-4" />
-            Spaces
-          </Link>
-          <Link
-            href="/admin/listings"
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
-          >
-            <ClipboardList className="h-4 w-4" />
-            Listings
-          </Link>
-          <Link
-            href="/admin/verification"
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
-          >
-            <ShieldCheck className="h-4 w-4" />
-            Verification
-          </Link>
-        </div>
+        <AdminNav current="unclaimed-listings" />
 
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -182,13 +126,22 @@ function AdminUnclaimedListingsPageContent({
               Admin-created venues — scout, publish, and track through claim and review.
             </p>
           </div>
-          <Link
-            href="/admin/unclaimed-listings/new"
-            className="inline-flex items-center gap-2 rounded-lg bg-[#0f2740] px-4 py-2 text-sm font-semibold text-white"
-          >
-            <Plus className="h-4 w-4" />
-            New unclaimed listing
-          </Link>
+          <div className="flex flex-wrap items-center gap-2">
+            <Link
+              href="/admin/venue-scout"
+              className="inline-flex items-center gap-2 rounded-lg border-2 border-[#0f2740] bg-white px-4 py-2 text-sm font-semibold text-[#0f2740] hover:bg-[#0f2740]/5"
+            >
+              <Compass className="h-4 w-4" />
+              Venue Scout
+            </Link>
+            <Link
+              href="/admin/unclaimed-listings/new"
+              className="inline-flex items-center gap-2 rounded-lg bg-[#0f2740] px-4 py-2 text-sm font-semibold text-white"
+            >
+              <Plus className="h-4 w-4" />
+              New Unclaimed Listing
+            </Link>
+          </div>
         </div>
 
         {successMessage ? (

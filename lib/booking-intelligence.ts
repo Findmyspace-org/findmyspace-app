@@ -10,6 +10,7 @@
 
 import {
   getSpaceFeatureLayout,
+  sectionFields,
   normalizeFeatureAttributes,
 } from "@/app/data/spaceFeatureConfig";
 
@@ -220,7 +221,7 @@ export function amenitiesQualitySignal(
   const norm = normalizeFeatureAttributes(attributes || {});
   const layout = getSpaceFeatureLayout(spaceType);
   for (const sec of layout.sections) {
-    for (const f of sec.fields) {
+    for (const f of sectionFields(sec)) {
       if (f.kind === "checkbox") {
         if ((norm[f.key] || []).includes("yes")) return true;
       } else if ((norm[f.key] || []).length > 0) {

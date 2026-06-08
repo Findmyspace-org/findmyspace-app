@@ -13,6 +13,7 @@ import {
   Users,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { AdminNav } from "@/app/components/AdminNav";
 import {
   getCanonicalAdvisorReferralUrl,
   normalizeAdvisorCode,
@@ -218,28 +219,7 @@ export default function AdminSpaceAdvisorDetailPage() {
           Back to Space Advisors
         </button>
 
-        <div className="mb-6 flex flex-wrap gap-3">
-          <Link
-            href="/admin"
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
-          >
-            <LayoutDashboard className="h-4 w-4" />
-            Dashboard
-          </Link>
-          <Link
-            href="/admin/activity"
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
-          >
-            <History className="h-4 w-4" />
-            Activity
-          </Link>
-          <Link
-            href="/admin/space-advisors"
-            className="inline-flex items-center gap-2 rounded-md border border-[#192a3a] bg-[#192a3a] px-4 py-2 text-sm text-white"
-          >
-            Space Advisors
-          </Link>
-        </div>
+        <AdminNav current="space-advisors" />
 
         <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>

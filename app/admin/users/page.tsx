@@ -18,6 +18,7 @@ import {
   X,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { AdminNav } from "@/app/components/AdminNav";
 
 type AdminUserRow = {
   id: string;
@@ -234,69 +235,7 @@ export default function AdminUsersPage() {
           User directory with safe edits for name and phone (admin API + audit log).
         </p>
 
-        <div className="mb-6 flex flex-wrap gap-3">
-          <Link
-            href="/admin"
-            className="inline-flex items-center gap-2 rounded-md border border-[#192a3a] bg-[#192a3a] px-4 py-2 text-sm text-white"
-          >
-            <LayoutDashboard className="h-4 w-4" />
-            Dashboard
-          </Link>
-          <Link
-            href="/admin/activity"
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
-          >
-            <History className="h-4 w-4" />
-            Activity
-          </Link>
-          <Link
-            href="/admin/users"
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-4 py-2 text-sm"
-          >
-            <Users className="h-4 w-4" />
-            Users
-          </Link>
-          <Link
-            href="/admin/bookings"
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
-          >
-            Bookings
-          </Link>
-          <Link
-            href="/admin/spaces"
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
-          >
-            <Building2 className="h-4 w-4" />
-            Spaces
-          </Link>
-          <Link
-            href="/admin/listings"
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
-          >
-            <ClipboardList className="h-4 w-4" />
-            Listings
-          </Link>
-          <Link
-            href="/admin/verification"
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
-          >
-            <ShieldCheck className="h-4 w-4" />
-            Verification
-          </Link>
-          <Link
-            href="/admin/messages"
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
-          >
-            <MessageSquare className="h-4 w-4" />
-            Messages
-          </Link>
-          <Link
-            href="/admin/finance"
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
-          >
-            Finance
-          </Link>
-        </div>
+        <AdminNav current="users" />
 
         <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end">
           <div className="flex-1 rounded-md border border-gray-300 bg-white p-4 shadow-sm">

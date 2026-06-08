@@ -17,6 +17,11 @@ import {
   LISTING_PENDING_SHORT,
   hostProfileStatusSuggestion,
 } from "@/lib/host-onboarding-copy";
+import {
+  BANK_PROOFS_BUCKET,
+  createVerificationSignedUrl,
+  OWNER_VERIFICATION_BUCKET,
+} from "@/lib/verification-storage";
 
 type OwnerVerificationDocument = {
   id: string;
@@ -221,6 +226,15 @@ function VerificationPageContent({ step }: { step: string }) {
   const [bankUploadSuccessOpen, setBankUploadSuccessOpen] = useState(false);
   const [bankUploadPreview, setBankUploadPreview] = useState<string | null>(null);
   const [redirectToOverviewTimer, setRedirectToOverviewTimer] = useState<number | null>(null);
+  const [documentPreviewUrls, setDocumentPreviewUrls] = useState<{
+    id_front: string | null;
+    id_back: string | null;
+    bank_proof: string | null;
+  }>({
+    id_front: null,
+    id_back: null,
+    bank_proof: null,
+  });
 
   useEffect(() => {
     return () => {
@@ -427,6 +441,13 @@ function VerificationPageContent({ step }: { step: string }) {
     }
 
     setListingProofs(listingProofRows);
+
+    const bankRow = bankData ? (bankData as OwnerBankDetails) : null;
+    await resolveDocumentPreviewUrls(
+      (docsData || []) as OwnerVerificationDocument[],
+      bankRow
+    );
+
     setLoading(false);
   }
 
@@ -450,24 +471,55 @@ function VerificationPageContent({ step }: { step: string }) {
       throw new Error(uploadError.message);
     }
 
-    const signedUrlResponse = await supabase.storage
-      .from(bucket)
-      .createSignedUrl(filePath, 60 * 60);
-
-    if (signedUrlResponse.error) {
-      throw new Error(signedUrlResponse.error.message);
-    }
-
-    const signedUrl = signedUrlResponse.data?.signedUrl;
-
-    if (!signedUrl) {
-      throw new Error("Could not create signed URL.");
-    }
-
     return {
       filePath,
-      fileUrl: signedUrl,
+      /** Stable storage key — previews use fresh signed URLs from `file_path`. */
+      fileUrl: filePath,
     };
+  }
+
+  async function resolveDocumentPreviewUrls(
+    docs: OwnerVerificationDocument[],
+    bank: OwnerBankDetails | null
+  ) {
+    const idFront = docs.find((doc) => doc.document_type === "id_front");
+    const idBack = docs.find((doc) => doc.document_type === "id_back");
+
+    const [idFrontUrl, idBackUrl, bankProofUrl] = await Promise.all([
+      createVerificationSignedUrl(
+        supabase,
+        OWNER_VERIFICATION_BUCKET,
+        idFront?.file_path
+      ),
+      createVerificationSignedUrl(
+        supabase,
+        OWNER_VERIFICATION_BUCKET,
+        idBack?.file_path
+      ),
+      createVerificationSignedUrl(
+        supabase,
+        BANK_PROOFS_BUCKET,
+        bank?.proof_of_bank_path
+      ),
+    ]);
+
+    if (process.env.NODE_ENV === "development") {
+      console.info("[verification] preview URLs resolved", {
+        bucket: OWNER_VERIFICATION_BUCKET,
+        idFrontPath: idFront?.file_path ?? null,
+        idFrontPreview: idFrontUrl ? "ok" : "missing",
+        idBackPath: idBack?.file_path ?? null,
+        idBackPreview: idBackUrl ? "ok" : "missing",
+        bankProofPath: bank?.proof_of_bank_path ?? null,
+        bankProofPreview: bankProofUrl ? "ok" : "missing",
+      });
+    }
+
+    setDocumentPreviewUrls({
+      id_front: idFrontUrl,
+      id_back: idBackUrl,
+      bank_proof: bankProofUrl,
+    });
   }
 
   async function ensureProfileRow(user: AuthUserLite) {
@@ -802,31 +854,20 @@ function VerificationPageContent({ step }: { step: string }) {
 
   async function buildViewUrl(
     bucket: "owner-verification" | "bank-proofs" | "listing-ownership",
-    filePath?: string | null,
-    fallbackUrl?: string | null
+    filePath?: string | null
   ) {
-    if (filePath) {
-      const { data, error } = await supabase.storage
-        .from(bucket)
-        .createSignedUrl(filePath, 60 * 60);
-
-      if (!error && data?.signedUrl) {
-        return data.signedUrl;
-      }
-    }
-
-    return fallbackUrl || null;
+    return createVerificationSignedUrl(supabase, bucket, filePath);
   }
 
   async function handleViewDocument(row: WorkflowRow) {
     let url: string | null = null;
 
     if (row.key === "id_front" || row.key === "id_back") {
-      url = await buildViewUrl("owner-verification", row.filePath, row.fileUrl);
+      url = await buildViewUrl("owner-verification", row.filePath);
     } else if (row.key === "bank_proof") {
-      url = await buildViewUrl("bank-proofs", row.filePath, row.fileUrl);
+      url = await buildViewUrl("bank-proofs", row.filePath);
     } else if (row.key.startsWith("listing_")) {
-      url = await buildViewUrl("listing-ownership", row.filePath, row.fileUrl);
+      url = await buildViewUrl("listing-ownership", row.filePath);
     }
 
     if (!url) {
@@ -1187,10 +1228,7 @@ function VerificationPageContent({ step }: { step: string }) {
                         hasUploaded={Boolean(
                           existingDocs.find((doc) => doc.document_type === "id_front")
                         )}
-                        previewUrl={
-                          existingDocs.find((doc) => doc.document_type === "id_front")
-                            ?.file_url || null
-                        }
+                        previewUrl={documentPreviewUrls.id_front}
                         uploadedLabel="Front uploaded"
                         statusHint={
                           idFrontFile
@@ -1209,10 +1247,7 @@ function VerificationPageContent({ step }: { step: string }) {
                         hasUploaded={Boolean(
                           existingDocs.find((doc) => doc.document_type === "id_back")
                         )}
-                        previewUrl={
-                          existingDocs.find((doc) => doc.document_type === "id_back")
-                            ?.file_url || null
-                        }
+                        previewUrl={documentPreviewUrls.id_back}
                         uploadedLabel="Back uploaded"
                         statusHint={
                           idBackFile
@@ -1345,7 +1380,7 @@ function VerificationPageContent({ step }: { step: string }) {
                             existingBankDetails?.proof_of_bank_url ||
                               existingBankDetails?.proof_of_bank_path
                           )}
-                          previewUrl={existingBankDetails?.proof_of_bank_url || null}
+                          previewUrl={documentPreviewUrls.bank_proof}
                           uploadedLabel="Proof uploaded"
                           statusHint={
                             bankProofFile

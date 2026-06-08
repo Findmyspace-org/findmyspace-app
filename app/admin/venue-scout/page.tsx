@@ -7,13 +7,13 @@ import {
   ClipboardList,
   Compass,
   Inbox,
-  LayoutDashboard,
   Link2,
   MapPin,
   Plus,
   ShieldCheck,
   Users,
 } from "lucide-react";
+import { AdminNav } from "@/app/components/AdminNav";
 import { adminApiFetch } from "@/lib/admin-api-client";
 import { useAdminRole } from "@/lib/use-admin-role";
 
@@ -78,28 +78,7 @@ export default function VenueScoutDashboardPage() {
   return (
     <main className="min-h-screen bg-gray-50 p-6 md:p-8">
       <div className="mx-auto max-w-5xl">
-        <div className="mb-6 flex flex-wrap gap-2">
-          <Link
-            href="/admin"
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
-          >
-            <LayoutDashboard className="h-4 w-4" />
-            Dashboard
-          </Link>
-          <Link
-            href="/admin/venue-scout"
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium"
-          >
-            <Compass className="h-4 w-4" />
-            Venue scout
-          </Link>
-          <Link
-            href="/admin/unclaimed-listings"
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
-          >
-            Unclaimed listings
-          </Link>
-        </div>
+        <AdminNav current="venue-scout" />
 
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>

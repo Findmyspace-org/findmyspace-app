@@ -28,6 +28,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { AdminNav } from "@/app/components/AdminNav";
 
 type ProfileRow = {
   id: string;
@@ -590,70 +591,7 @@ function AdminVerificationPageContent({
           Review owner identity and bank verification details.
         </p>
 
-        <div className="mb-5 flex flex-wrap gap-3">
-          <Link
-            href="/admin"
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
-          >
-            <LayoutDashboard className="h-4 w-4" />
-            Dashboard
-          </Link>
-          <Link
-            href="/admin/activity"
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
-          >
-            <History className="h-4 w-4" />
-            Activity
-          </Link>
-          <Link
-            href="/admin/users"
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
-          >
-            <Users className="h-4 w-4" />
-            Users
-          </Link>
-          <Link
-            href="/admin/bookings"
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
-          >
-            Bookings
-          </Link>
-          <Link
-            href="/admin/spaces"
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
-          >
-            <Building2 className="h-4 w-4" />
-            Spaces
-          </Link>
-          <Link
-            href="/admin/listings"
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
-          >
-            <ClipboardList className="h-4 w-4" />
-            Listings
-          </Link>
-          <Link
-            href="/admin/verification"
-            className="inline-flex items-center gap-2 rounded-md border border-[#192a3a] bg-[#192a3a] px-4 py-2 text-sm text-white"
-          >
-            <CheckCircle2 className="h-4 w-4" />
-            Verification
-          </Link>
-          <Link
-            href="/admin/messages"
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
-          >
-            <MessageSquare className="h-4 w-4" />
-            Messages
-          </Link>
-          <Link
-            href="/admin/finance"
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
-          >
-            <Wallet className="h-4 w-4" />
-            Finance
-          </Link>
-        </div>
+        <AdminNav current="verification" />
 
         <div className="mb-5 grid gap-3 md:grid-cols-3">
           <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 shadow-sm">

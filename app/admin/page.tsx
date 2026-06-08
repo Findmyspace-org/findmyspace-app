@@ -6,20 +6,19 @@ import Link from "next/link";
 import {
   Building2,
   ChevronDown,
-  ChevronRight,
   ChevronUp,
-  ClipboardList,
-  History,
+  Compass,
   Inbox,
-  LayoutDashboard,
-  MessageSquare,
+  Link2,
   Mail,
+  MapPin,
   Phone,
   Search,
-  Share2,
   ShieldCheck,
   Users,
 } from "lucide-react";
+import { AdminNav } from "@/app/components/AdminNav";
+import { adminApiFetch } from "@/lib/admin-api-client";
 
 type AdminProfileRow = {
   id?: string;
@@ -55,6 +54,14 @@ export default function AdminPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [spacesByOwner, setSpacesByOwner] = useState<Record<string, OwnerSpaceRow[]>>({});
   const [expandedUsers, setExpandedUsers] = useState<Record<string, boolean>>({});
+  const [scoutStats, setScoutStats] = useState<{
+    draftScoutListings: number;
+    publishedUnclaimed: number;
+    claimInterests: number;
+    enquiries: number;
+    claimedListings: number;
+    activeListings: number;
+  } | null>(null);
 
   useEffect(() => {
     checkRole();
@@ -120,6 +127,20 @@ export default function AdminPage() {
         );
 
         setSpacesByOwner(groupedSpaces);
+      }
+
+      try {
+        const stats = await adminApiFetch("/api/admin/venue-scout/stats");
+        setScoutStats({
+          draftScoutListings: (stats.draftScoutListings as number) ?? 0,
+          publishedUnclaimed: (stats.publishedUnclaimed as number) ?? 0,
+          claimInterests: (stats.claimInterests as number) ?? 0,
+          enquiries: (stats.enquiries as number) ?? 0,
+          claimedListings: (stats.claimedListings as number) ?? 0,
+          activeListings: (stats.activeListings as number) ?? 0,
+        });
+      } catch {
+        setScoutStats(null);
       }
     }
 
@@ -210,96 +231,76 @@ export default function AdminPage() {
           Internal management area for FindMySpace.
         </p>
 
-        <div className="mb-6 flex flex-wrap gap-3">
-          <Link
-            href="/admin"
-            className="inline-flex items-center gap-2 rounded-md border border-[#192a3a] bg-[#192a3a] px-4 py-2 text-sm text-white"
-          >
-            <LayoutDashboard className="h-4 w-4" />
-            Dashboard
-          </Link>
-          <Link
-            href="/admin/activity"
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
-          >
-            <History className="h-4 w-4" />
-            Activity
-          </Link>
-          <Link
-            href="/admin/users"
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
-          >
-            <Users className="h-4 w-4" />
-            Users
-          </Link>
-          <Link
-            href="/admin/bookings"
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
-          >
-            Bookings
-          </Link>
-          <Link
-            href="/admin/spaces"
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
-          >
-            <Building2 className="h-4 w-4" />
-            Spaces
-          </Link>
-          <Link
-            href="/admin/listings"
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
-          >
-            <ClipboardList className="h-4 w-4" />
-            Listings
-          </Link>
-          <Link
-            href="/admin/unclaimed-listings"
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
-          >
-            <Building2 className="h-4 w-4" />
-            Unclaimed listings
-          </Link>
-          <Link
-            href="/admin/listing-reviews"
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
-          >
-            <ClipboardList className="h-4 w-4" />
-            Listing reviews
-          </Link>
-          <Link
-            href="/admin/listing-enquiries"
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
-          >
-            <Inbox className="h-4 w-4" />
-            Listing enquiries
-          </Link>
-          <Link
-            href="/admin/verification"
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
-          >
-            <ShieldCheck className="h-4 w-4" />
-            Verification
-          </Link>
-          <Link
-            href="/admin/messages"
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
-          >
-            <MessageSquare className="h-4 w-4" />
-            Messages
-          </Link>
-          <Link
-            href="/admin/finance"
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
-          >
-            Finance
-          </Link>
-          <Link
-            href="/admin/space-advisors"
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
-          >
-            <Share2 className="h-4 w-4" />
-            Space Advisors
-          </Link>
+        <AdminNav current="dashboard" />
+
+        <div className="mb-6 space-y-4">
+          <div className="rounded-md border border-gray-300 bg-white p-5 shadow-sm">
+            <div className="flex items-start gap-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#192a3a]/10 text-[#192a3a]">
+                <Compass className="h-5 w-5" />
+              </span>
+              <div>
+                <h2 className="text-lg font-semibold text-[#192a3a]">Venue Scout</h2>
+                <p className="mt-1 text-sm text-gray-600">
+                  Quickly capture and publish venues and spaces.
+                </p>
+                <Link
+                  href="/admin/venue-scout"
+                  className="mt-4 inline-flex items-center gap-2 rounded-md bg-[#192a3a] px-4 py-2 text-sm font-medium text-white hover:bg-[#243a4f]"
+                >
+                  Open Venue Scout
+                </Link>
+              </div>
+            </div>
+          </div>
+
+          {scoutStats ? (
+            <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
+              {[
+                {
+                  label: "Draft scout listings",
+                  value: scoutStats.draftScoutListings,
+                  icon: MapPin,
+                },
+                {
+                  label: "Unclaimed listings",
+                  value: scoutStats.publishedUnclaimed,
+                  icon: Building2,
+                },
+                {
+                  label: "Claim interests",
+                  value: scoutStats.claimInterests,
+                  icon: Link2,
+                },
+                { label: "Enquiries", value: scoutStats.enquiries, icon: Inbox },
+                {
+                  label: "Claimed listings",
+                  value: scoutStats.claimedListings,
+                  icon: Users,
+                },
+                {
+                  label: "Active listings",
+                  value: scoutStats.activeListings,
+                  icon: ShieldCheck,
+                },
+              ].map(({ label, value, icon: Icon }) => (
+                <div
+                  key={label}
+                  className="rounded-md border border-gray-300 bg-white p-4 shadow-sm"
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gray-100 text-[#192a3a]">
+                      <Icon className="h-4 w-4" />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-xl font-semibold text-[#192a3a]">{value}</p>
+                      <p className="text-xs text-gray-600">{label}</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : null}
         </div>
 
         <div className="mb-6 rounded-md border border-gray-300 bg-white p-4 shadow-sm">
@@ -328,6 +329,9 @@ export default function AdminPage() {
             </Link>
             <Link href="/admin/listings" className="rounded-full bg-gray-100 px-3 py-1 hover:bg-gray-200">
               Listings admin
+            </Link>
+            <Link href="/admin/venue-scout" className="rounded-full bg-gray-100 px-3 py-1 hover:bg-gray-200">
+              Venue Scout
             </Link>
             <Link href="/admin/verification" className="rounded-full bg-gray-100 px-3 py-1 hover:bg-gray-200">
               Go to Verification

@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
-import { CheckCircle2, FileUp } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { CheckCircle2, FileUp, X } from "lucide-react";
 
 type FileUploadFieldProps = {
   label: string;
@@ -29,9 +29,22 @@ export default function FileUploadField({
 }: FileUploadFieldProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [localPreviewUrl, setLocalPreviewUrl] = useState<string | null>(null);
 
   const displayName = selectedFile?.name || null;
   const showConfirmedState = hasUploaded && !selectedFile;
+  const effectivePreviewUrl = localPreviewUrl || previewUrl || null;
+
+  useEffect(() => {
+    if (!selectedFile || !selectedFile.type.startsWith("image/")) {
+      setLocalPreviewUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(selectedFile);
+    setLocalPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [selectedFile]);
 
   const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -98,13 +111,24 @@ export default function FileUploadField({
         />
         {showConfirmedState ? (
           <div className="flex w-full items-center gap-3 text-left">
-            {previewUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={previewUrl}
-                alt={`${label} preview`}
-                className="h-12 w-12 shrink-0 rounded-md border border-emerald-200 object-cover"
-              />
+            {effectivePreviewUrl ? (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setLightboxOpen(true);
+                }}
+                className="shrink-0 rounded-md border border-emerald-200 focus:outline-none focus:ring-2 focus:ring-[#192a3a]/30"
+                aria-label={`View ${label}`}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={effectivePreviewUrl}
+                  alt={`${label} preview`}
+                  className="h-12 w-12 rounded-md object-cover"
+                />
+              </button>
             ) : (
               <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
                 <CheckCircle2 className="h-5 w-5" aria-hidden />
@@ -131,7 +155,27 @@ export default function FileUploadField({
           </div>
         ) : (
           <>
-            <FileUp className="h-5 w-5 text-gray-400" aria-hidden />
+            {effectivePreviewUrl ? (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setLightboxOpen(true);
+                }}
+                className="rounded-md border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#192a3a]/30"
+                aria-label={`Preview ${label}`}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={effectivePreviewUrl}
+                  alt={`${label} preview`}
+                  className="h-16 w-16 rounded-md object-cover"
+                />
+              </button>
+            ) : (
+              <FileUp className="h-5 w-5 text-gray-400" aria-hidden />
+            )}
             <span className="text-sm text-gray-600">
               {displayName ? (
                 <span className="font-medium text-[#192a3a]">{displayName}</span>
@@ -143,6 +187,37 @@ export default function FileUploadField({
           </>
         )}
       </div>
+
+      {lightboxOpen && effectivePreviewUrl ? (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-4"
+          role="presentation"
+          onClick={() => setLightboxOpen(false)}
+        >
+          <div
+            className="relative max-h-[90vh] max-w-4xl"
+            role="dialog"
+            aria-modal="true"
+            aria-label={`${label} full preview`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => setLightboxOpen(false)}
+              className="absolute -top-10 right-0 rounded-md p-1 text-white hover:bg-white/10"
+              aria-label="Close preview"
+            >
+              <X className="h-6 w-6" />
+            </button>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={effectivePreviewUrl}
+              alt={`${label} full size`}
+              className="max-h-[85vh] w-auto max-w-full rounded-md object-contain"
+            />
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

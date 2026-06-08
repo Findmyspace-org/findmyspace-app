@@ -19,13 +19,14 @@ import {
   Users,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { AdminNav } from "@/app/components/AdminNav";
 import { adminApiFetch } from "@/lib/admin-api-client";
 import {
   adminListingReviewHref,
   isLiveListingStatus,
   needsReviewWorkflow,
 } from "@/lib/admin-listing-routing";
-import { getDisplayName } from "@/lib/utils";
+import { getDisplayName, isValidUuid } from "@/lib/utils";
 import { LISTING_SPACE_TYPE_OPTIONS } from "@/app/data/spaceFeatureConfig";
 
 type AdminProfileRow = {
@@ -36,7 +37,7 @@ type DepositType = "none" | "one_month" | "two_months" | null;
 
 type SpaceRow = {
   id: string;
-  owner_id: string;
+  owner_id: string | null;
   title: string | null;
   description: string | null;
   city: string | null;
@@ -165,7 +166,13 @@ export default function AdminListingsPage() {
     }
 
     const spaces = (rawSpaces || []) as SpaceRow[];
-    const ownerIds = Array.from(new Set(spaces.map((space) => space.owner_id)));
+    const ownerIds = Array.from(
+      new Set(
+        spaces
+          .map((space) => space.owner_id)
+          .filter((id): id is string => isValidUuid(id))
+      )
+    );
 
     let ownerProfilesMap = new Map<string, OwnerProfileRow>();
 
@@ -192,9 +199,12 @@ export default function AdminListingsPage() {
     }
 
     const merged: ListingRecord[] = spaces.map((space) => {
-      const ownerProfile = ownerProfilesMap.get(space.owner_id) || null;
+      const ownerProfile = isValidUuid(space.owner_id)
+        ? ownerProfilesMap.get(space.owner_id) || null
+        : null;
 
       const canActivate =
+        Boolean(space.owner_id) &&
         ownerProfile?.owner_verification_status === "verified" &&
         ownerProfile?.bank_verification_status === "verified" &&
         space.ownership_proof_status === "verified";
@@ -571,69 +581,7 @@ export default function AdminListingsPage() {
           .
         </p>
 
-        <div className="mb-5 flex flex-wrap gap-3">
-          <Link
-            href="/admin"
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
-          >
-            <LayoutDashboard className="h-4 w-4" />
-            Dashboard
-          </Link>
-          <Link
-            href="/admin/activity"
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
-          >
-            <History className="h-4 w-4" />
-            Activity
-          </Link>
-          <Link
-            href="/admin/users"
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
-          >
-            <Users className="h-4 w-4" />
-            Users
-          </Link>
-          <Link
-            href="/admin/bookings"
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
-          >
-            Bookings
-          </Link>
-          <Link
-            href="/admin/spaces"
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
-          >
-            <Building2 className="h-4 w-4" />
-            Spaces
-          </Link>
-          <Link
-            href="/admin/listings"
-            className="inline-flex items-center gap-2 rounded-md border border-[#192a3a] bg-[#192a3a] px-4 py-2 text-sm text-white"
-          >
-            <ClipboardList className="h-4 w-4" />
-            Listings
-          </Link>
-          <Link
-            href="/admin/verification"
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
-          >
-            <ShieldCheck className="h-4 w-4" />
-            Verification
-          </Link>
-          <Link
-            href="/admin/messages"
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
-          >
-            <MessageSquare className="h-4 w-4" />
-            Messages
-          </Link>
-          <Link
-            href="/admin/finance"
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
-          >
-            Finance
-          </Link>
-        </div>
+        <AdminNav current="listings" />
 
         <div className="mb-4 flex flex-wrap gap-3">
           {["all", "pending", "active", "paused"].map((filter) => (
@@ -667,7 +615,13 @@ export default function AdminListingsPage() {
         </div>
 
         {message && (
-          <div className="mb-6 rounded-md bg-green-100 p-3 text-sm text-green-800">
+          <div
+            className={`mb-6 rounded-md p-3 text-sm ${
+              /invalid|error|denied|failed|could not|not found/i.test(message)
+                ? "bg-red-100 text-red-800"
+                : "bg-green-100 text-green-800"
+            }`}
+          >
             {message}
           </div>
         )}
@@ -704,7 +658,10 @@ export default function AdminListingsPage() {
                             .join(", ") || "Address not set"}
                         </p>
                         <p className="mt-1 text-sm text-gray-500">
-                          Owner: {getDisplayName(record.ownerProfile)}
+                          Owner:{" "}
+                          {isValidUuid(record.space.owner_id)
+                            ? getDisplayName(record.ownerProfile)
+                            : "No owner (admin-created)"}
                           {record.ownerProfile?.email
                             ? ` | ${record.ownerProfile.email}`
                             : ""}

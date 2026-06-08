@@ -8,7 +8,10 @@ import SpaceAssistant from "@/app/components/SpaceAssistant";
 import SpaceAttributesDisplay from "@/app/components/SpaceAttributesDisplay";
 import SpaceGallerySection from "./space-gallery-section";
 import SpaceMapSection from "./space-map-section";
-import { formatSpaceTypeLabel } from "@/app/data/spaceFeatureConfig";
+import {
+  formatSpaceTypeLabel,
+  getSectionCheckboxLabels,
+} from "@/app/data/spaceFeatureConfig";
 import { formatListingAddress } from "@/lib/za-provinces";
 import {
   isPublicListingStatus,
@@ -156,6 +159,10 @@ export default async function Page({
   const unclaimed = isUnclaimedListing(space.status);
   const bookable = isBookableListingStatus(space.status);
   const enquiryCount = unclaimed ? await getListingEnquiryCount(space.id) : 0;
+  const suitableForLabels =
+    space.space_type === "event_space"
+      ? getSectionCheckboxLabels(space.space_type, space.attributes, "suitable_for")
+      : [];
 
   const price =
     space.booking_unit === "hour"
@@ -318,6 +325,22 @@ export default async function Page({
               </p>
             </section>
 
+            {suitableForLabels.length > 0 ? (
+              <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+                <h2 className="text-xl font-semibold text-[#192a3a]">Suitable for</h2>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {suitableForLabels.map((label) => (
+                    <span
+                      key={label}
+                      className="inline-flex items-center rounded-full border border-[#d7dde3] bg-white px-3 py-1.5 text-xs font-medium text-[#334155]"
+                    >
+                      {label}
+                    </span>
+                  ))}
+                </div>
+              </section>
+            ) : null}
+
             <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
               <h2 className="mb-3 text-lg font-semibold text-[#192a3a] sm:mb-4 sm:text-xl">
                 Features &amp; amenities
@@ -326,6 +349,9 @@ export default async function Page({
                 <SpaceAttributesDisplay
                   spaceType={space.space_type}
                   attributes={space.attributes}
+                  excludeSectionIds={
+                    space.space_type === "event_space" ? ["suitable_for"] : []
+                  }
                 />
               </div>
             </section>

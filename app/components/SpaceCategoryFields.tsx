@@ -8,6 +8,7 @@ import {
   toCanonicalFeatureKey,
   getFeatureAliasKeys,
   type SpaceFeatureField,
+  type SpaceFeatureSection,
 } from "@/app/data/spaceFeatureConfig";
 import { SpaceFeatureIcon } from "@/app/components/space-feature-icons";
 
@@ -168,6 +169,50 @@ export default function SpaceCategoryFields({
     return null;
   }
 
+  function renderCheckboxGrid(fields: SpaceFeatureField[]) {
+    const checkboxes = fields.filter((f) => f.kind === "checkbox");
+    if (checkboxes.length === 0) return null;
+
+    return (
+      <div className="grid grid-cols-1 gap-x-3 gap-y-1 sm:grid-cols-2 lg:grid-cols-3">
+        {checkboxes.map((field) => renderField(field))}
+      </div>
+    );
+  }
+
+  function renderSection(section: SpaceFeatureSection) {
+    const others = section.fields.filter((f) => f.kind !== "checkbox");
+    const topCheckboxes = section.fields.filter((f) => f.kind === "checkbox");
+    const hasSubsections = (section.subsections?.length ?? 0) > 0;
+
+    return (
+      <div
+        key={section.id}
+        className="rounded-xl border border-[#e8edf2] bg-[#f8fafc] p-3 md:p-4"
+      >
+        <p className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-[#64748b]">
+          {section.title}
+        </p>
+        <div className="space-y-4">
+          {topCheckboxes.length > 0 && renderCheckboxGrid(topCheckboxes)}
+          {hasSubsections
+            ? section.subsections!.map((sub) => (
+                <div key={sub.id} className="space-y-2">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#94a3b8]">
+                    {sub.title}
+                  </p>
+                  {renderCheckboxGrid(sub.fields)}
+                </div>
+              ))
+            : null}
+          {others.map((field) => (
+            <div key={field.key}>{renderField(field)}</div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   if (layout.sections.length === 0) {
     return null;
   }
@@ -189,31 +234,7 @@ export default function SpaceCategoryFields({
       </div>
 
       <div className="space-y-4">
-        {layout.sections.map((section) => {
-          const checkboxes = section.fields.filter((f) => f.kind === "checkbox");
-          const others = section.fields.filter((f) => f.kind !== "checkbox");
-
-          return (
-            <div
-              key={section.id}
-              className="rounded-xl border border-[#e8edf2] bg-[#f8fafc] p-3 md:p-4"
-            >
-              <p className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-[#64748b]">
-                {section.title}
-              </p>
-              <div className="space-y-4">
-                {checkboxes.length > 0 && (
-                  <div className="grid grid-cols-1 gap-x-3 gap-y-1 sm:grid-cols-2 lg:grid-cols-3">
-                    {checkboxes.map((field) => renderField(field))}
-                  </div>
-                )}
-                {others.map((field) => (
-                  <div key={field.key}>{renderField(field)}</div>
-                ))}
-              </div>
-            </div>
-          );
-        })}
+        {layout.sections.map((section) => renderSection(section))}
       </div>
     </>
   );

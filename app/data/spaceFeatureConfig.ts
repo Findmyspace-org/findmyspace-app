@@ -33,10 +33,17 @@ export type SpaceFeatureField =
   | SpaceFeatureRadio
   | SpaceFeatureMultiselect;
 
+export type SpaceFeatureSubsection = {
+  id: string;
+  title: string;
+  fields: SpaceFeatureField[];
+};
+
 export type SpaceFeatureSection = {
   id: string;
   title: string;
   fields: SpaceFeatureField[];
+  subsections?: SpaceFeatureSubsection[];
 };
 
 export type SpaceFeatureLayout = {
@@ -285,6 +292,58 @@ const EVENT_ACCESS_LOGISTICS_CHECKS: SpaceFeatureCheckbox[] = [
   cb("sf_elevator", "Elevator access", "ArrowUpFromLine"),
 ];
 
+const EVENT_SUITABLE_BUSINESS_CHECKS: SpaceFeatureCheckbox[] = [
+  cb("sf_ev_suit_meetings", "Meetings", "Users"),
+  cb("sf_ev_suit_presentations", "Presentations", "Presentation"),
+  cb("sf_ev_suit_workshops", "Workshops", "Lightbulb"),
+  cb("sf_ev_suit_training", "Training sessions", "Laptop"),
+  cb("sf_ev_suit_team_building", "Team building", "Users"),
+  cb("sf_ev_suit_networking", "Networking events", "RadioReceiver"),
+  cb("sf_ev_suit_product_launch", "Product launches", "Sparkles"),
+  cb("sf_ev_suit_interviews", "Interviews", "Phone"),
+  cb("sf_ev_suit_coworking", "Co-working", "Laptop"),
+];
+
+const EVENT_SUITABLE_CONTENT_CHECKS: SpaceFeatureCheckbox[] = [
+  cb("sf_ev_suit_podcast", "Podcast recording", "Mic"),
+  cb("sf_ev_suit_video", "Video recording", "Video"),
+  cb("sf_ev_suit_photography", "Photography shoot", "Camera"),
+  cb("sf_ev_suit_content_creation", "Content creation", "FileText"),
+  cb("sf_ev_suit_live_streaming", "Live streaming", "RadioReceiver"),
+  cb("sf_ev_suit_youtube", "YouTube production", "Tv"),
+];
+
+const EVENT_SUITABLE_SOCIAL_CHECKS: SpaceFeatureCheckbox[] = [
+  cb("sf_ev_suit_private_functions", "Private functions", "Wine"),
+  cb("sf_ev_suit_birthdays", "Birthday celebrations", "CalendarDays"),
+  cb("sf_ev_suit_baby_showers", "Baby showers", "Gift"),
+  cb("sf_ev_suit_bridal_showers", "Bridal showers", "Sparkles"),
+  cb("sf_ev_suit_small_weddings", "Small weddings", "Heart"),
+  cb("sf_ev_suit_family_gatherings", "Family gatherings", "Users"),
+];
+
+const EVENT_SUITABLE_COMMUNITY_CHECKS: SpaceFeatureCheckbox[] = [
+  cb("sf_ev_suit_talks", "Talks & speakers", "Mic"),
+  cb("sf_ev_suit_church", "Church gatherings", "Building2"),
+  cb("sf_ev_suit_community_meetings", "Community meetings", "Users"),
+  cb("sf_ev_suit_book_clubs", "Book clubs", "BookOpen"),
+  cb("sf_ev_suit_classes", "Classes", "Presentation"),
+];
+
+const EVENT_CONNECTIVITY_BUSINESS_CHECKS: SpaceFeatureCheckbox[] = [
+  cb("sf_ev_conn_wifi_free", "Free WiFi", "Wifi"),
+  cb("sf_ev_conn_wifi_high_speed", "High-speed WiFi", "Wifi"),
+  cb("sf_ev_conn_fibre", "Fibre internet", "Cable"),
+  cb("sf_ev_conn_guest_wifi", "Guest network", "Wifi"),
+  cb("sf_ev_conn_power", "Power points available", "Plug"),
+  cb("sf_ev_conn_screen", "Presentation screen", "Tv"),
+  cb("sf_ev_conn_projector", "Projector", "Projector"),
+  cb("sf_ev_conn_whiteboard", "Whiteboard", "StretchHorizontal"),
+  cb("sf_ev_conn_flipchart", "Flipchart", "FileText"),
+  cb("sf_ev_conn_microphone", "Microphone", "Mic"),
+  cb("sf_ev_conn_sound_system", "Sound system", "Speaker"),
+];
+
 const WORKSHOP_CHECKS: SpaceFeatureCheckbox[] = [
   cb("sf_ws_power", "Power outlets", "Plug"),
   cb("sf_ws_high_ceilings", "High ceilings", "ArrowUpToLine"),
@@ -296,7 +355,20 @@ const WORKSHOP_CHECKS: SpaceFeatureCheckbox[] = [
   cb("sf_ws_industrial_access", "Industrial access", "Truck"),
 ];
 
-function section(id: string, title: string, fields: SpaceFeatureField[]): SpaceFeatureSection {
+function section(
+  id: string,
+  title: string,
+  fields: SpaceFeatureField[],
+  subsections?: SpaceFeatureSubsection[]
+): SpaceFeatureSection {
+  return subsections ? { id, title, fields, subsections } : { id, title, fields };
+}
+
+function subsection(
+  id: string,
+  title: string,
+  fields: SpaceFeatureField[]
+): SpaceFeatureSubsection {
   return { id, title, fields };
 }
 
@@ -359,7 +431,14 @@ export const spaceFeatureLayouts: Record<string, SpaceFeatureLayout> = {
 
   event_space: {
     sections: [
+      section("suitable_for", "Suitable for", [], [
+        subsection("business", "Business", EVENT_SUITABLE_BUSINESS_CHECKS),
+        subsection("content_creation", "Content creation", EVENT_SUITABLE_CONTENT_CHECKS),
+        subsection("social_private", "Social & private", EVENT_SUITABLE_SOCIAL_CHECKS),
+        subsection("community", "Community", EVENT_SUITABLE_COMMUNITY_CHECKS),
+      ]),
       section("venue_features", "Venue features", [EVENT_VENUE_RADIO, EVENT_CAPACITY_RADIO, ...EVENT_CHECKS]),
+      section("connectivity_business", "Connectivity & business facilities", EVENT_CONNECTIVITY_BUSINESS_CHECKS),
       section("facilities", "Facilities", EVENT_FACILITIES_CHECKS),
       section("services", "Services", EVENT_SERVICES_CHECKS),
       section("access_logistics", "Access & logistics", EVENT_ACCESS_LOGISTICS_CHECKS),
@@ -436,9 +515,16 @@ export function getSpaceFeatureLayout(spaceType: string | null | undefined): Spa
 /** Flat registry of all field keys → definition (for display). */
 const fieldRegistry: Map<string, SpaceFeatureField> = new Map();
 
+export function sectionFields(sec: SpaceFeatureSection): SpaceFeatureField[] {
+  return [
+    ...sec.fields,
+    ...(sec.subsections?.flatMap((sub) => sub.fields) ?? []),
+  ];
+}
+
 function registerFields(layout: SpaceFeatureLayout) {
   for (const sec of layout.sections) {
-    for (const f of sec.fields) {
+    for (const f of sectionFields(sec)) {
       fieldRegistry.set(f.key, f);
     }
   }
@@ -452,7 +538,7 @@ function validateLayoutNoDuplicates(layoutKey: string, layout: SpaceFeatureLayou
   const seen = new Set<string>();
   const duplicates: string[] = [];
   for (const sec of layout.sections) {
-    for (const f of sec.fields) {
+    for (const f of sectionFields(sec)) {
       const canonicalKey = toCanonicalFeatureKey(f.key);
       if (seen.has(canonicalKey)) {
         duplicates.push(canonicalKey);
@@ -481,6 +567,54 @@ export function getOptionLabel(field: SpaceFeatureField, value: string): string 
     return field.options.find((o) => o.value === value)?.label || value;
   }
   return value;
+}
+
+/** Active checkbox labels for a layout section (e.g. suitable_for on event spaces). */
+export function getSectionCheckboxLabels(
+  spaceType: string | null | undefined,
+  attributes: Record<string, string[]>,
+  sectionId: string
+): string[] {
+  const layout = getSpaceFeatureLayout(spaceType);
+  const normalized = normalizeFeatureAttributes(attributes);
+  const section = layout.sections.find((sec) => sec.id === sectionId);
+  if (!section) return [];
+
+  return sectionFields(section)
+    .filter((field): field is SpaceFeatureCheckbox => field.kind === "checkbox")
+    .filter((field) =>
+      (normalized[toCanonicalFeatureKey(field.key)] || []).includes("yes")
+    )
+    .map((field) => field.label);
+}
+
+/** Human-readable attribute text for browse / map keyword search. */
+export function buildAttributeSearchText(
+  spaceType: string | null | undefined,
+  attributes: Record<string, string[]>
+): string {
+  const layout = getSpaceFeatureLayout(spaceType);
+  const normalized = normalizeFeatureAttributes(attributes);
+  const parts: string[] = [];
+
+  for (const sec of layout.sections) {
+    for (const field of sectionFields(sec)) {
+      const canonical = toCanonicalFeatureKey(field.key);
+      const values = normalized[canonical] || [];
+      if (values.length === 0) continue;
+
+      if (field.kind === "checkbox") {
+        if (values.includes("yes")) parts.push(field.label);
+      } else if (field.kind === "radio" || field.kind === "multiselect") {
+        for (const value of values) {
+          const label = getOptionLabel(field, value);
+          if (label) parts.push(label);
+        }
+      }
+    }
+  }
+
+  return parts.join(" ");
 }
 
 /** Options for listing create/edit & browse filters (includes legacy DB values). */

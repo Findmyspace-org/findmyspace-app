@@ -6,6 +6,7 @@ import dynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { PUBLIC_LISTING_STATUSES } from "@/lib/listing-lifecycle";
+import { buildAttributeSearchText } from "@/app/data/spaceFeatureConfig";
 
 const SpacesMap = dynamic(() => import("@/app/components/SpacesMap"), {
   ssr: false,
@@ -152,13 +153,17 @@ function SpacesMapPageContent({ searchParamsString }: { searchParamsString: stri
 
   const filteredSpaces = useMemo(() => {
     return spaces.filter((space) => {
+      const attributeHaystack = normalize(
+        buildAttributeSearchText(space.space_type, space.attributes)
+      );
       const matchesSearch =
         !search ||
         normalize(space.title).includes(search) ||
         normalize(space.description).includes(search) ||
         normalize(space.address_line_1).includes(search) ||
         normalize(space.suburb).includes(search) ||
-        normalize(space.city).includes(search);
+        normalize(space.city).includes(search) ||
+        attributeHaystack.includes(search);
 
       const matchesType =
         typeFilter === "all" || normalize(space.space_type) === typeFilter;
