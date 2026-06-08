@@ -7,6 +7,7 @@ import { ArrowLeft, ExternalLink } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { adminApiFetch } from "@/lib/admin-api-client";
 import { AdminUnclaimedSpaceForm } from "@/app/components/AdminUnclaimedSpaceForm";
+import { AdminListingClaimPanel } from "@/app/components/AdminListingClaimPanel";
 
 type SpaceRow = {
   id: string;
@@ -38,6 +39,7 @@ export default function EditUnclaimedListingPage() {
     { id: string; image_url: string; sort_order: number | null }[]
   >([]);
   const [enquiryCount, setEnquiryCount] = useState(0);
+  const [readOnly, setReadOnly] = useState(false);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -51,6 +53,7 @@ export default function EditUnclaimedListingPage() {
           []
       );
       setEnquiryCount((result.enquiry_count as number) || 0);
+      setReadOnly(Boolean(result.readOnly));
       setMessage("");
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Failed to load listing.");
@@ -141,13 +144,21 @@ export default function EditUnclaimedListingPage() {
 
         <h1 className="text-2xl font-semibold text-gray-900">Edit unclaimed listing</h1>
 
-        <div className="mt-6">
+        <div className="mt-6 space-y-6">
+          <AdminListingClaimPanel
+            spaceId={space.id}
+            listingTitle={space.title || "Untitled listing"}
+            spaceStatus={space.status}
+            disabled={readOnly}
+          />
+
           <AdminUnclaimedSpaceForm
             key={space.id}
             mode="edit"
             spaceId={space.id}
             initialStatus={space.status}
             enquiryCount={enquiryCount}
+            readOnly={readOnly}
             initialImages={images}
             initial={{
               title: space.title || "",
