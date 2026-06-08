@@ -11,8 +11,10 @@ const MapPicker = dynamic(() => import("@/app/components/MapPicker"), {
   ssr: false,
 });
 
-const DEFAULT_LAT = -33.9249;
-const DEFAULT_LNG = 18.4241;
+/** Paarl town centre — default for new admin unclaimed listings without coordinates. */
+const DEFAULT_LAT = -33.7342;
+const DEFAULT_LNG = 18.962;
+const DEFAULT_ZOOM = 14;
 
 const FIELD_CLASS =
   "w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-[#0f2740] focus:ring-1 focus:ring-[#0f2740]";
@@ -333,6 +335,7 @@ export function AdminLocationSection({
         <MapPicker
           latitude={mapLat}
           longitude={mapLng}
+          zoom={DEFAULT_ZOOM}
           onChange={(latitude, longitude) => {
             if (readOnly) return;
             void reverseGeocodePin(latitude, longitude);
@@ -344,7 +347,7 @@ export function AdminLocationSection({
           </p>
         ) : (
           <p className="mt-2 text-sm text-amber-800">
-            This listing does not have a map pin yet.
+            Map centred on Paarl. Search for an address or move the pin.
           </p>
         )}
         {reverseGeocoding ? (

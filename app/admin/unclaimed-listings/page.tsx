@@ -134,6 +134,12 @@ function AdminUnclaimedListingsPageContent({
             Dashboard
           </Link>
           <Link
+            href="/admin/venue-scout"
+            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
+          >
+            Venue scout
+          </Link>
+          <Link
             href="/admin/unclaimed-listings"
             className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium"
           >

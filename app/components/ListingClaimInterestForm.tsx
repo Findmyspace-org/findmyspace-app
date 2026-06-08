@@ -137,7 +137,7 @@ export function ListingClaimInterestForm({
           value={message}
           onChange={(e) => setMessage(e.target.value)}
           rows={3}
-          placeholder="Anything that helps us verify ownership"
+          placeholder="Your message..."
           className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
         />
       </label>

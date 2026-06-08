@@ -12,6 +12,7 @@ import {
 type MapPickerProps = {
   latitude: number;
   longitude: number;
+  zoom?: number;
   onChange: (lat: number, lng: number) => void;
 };
 
@@ -48,6 +49,7 @@ function RecenterMap({
 export default function MapPicker({
   latitude,
   longitude,
+  zoom = 13,
   onChange,
 }: MapPickerProps) {
   useEffect(() => {
@@ -69,7 +71,7 @@ export default function MapPicker({
     <div className="overflow-hidden rounded-xl border border-gray-300">
       <MapContainer
         center={[latitude, longitude]}
-        zoom={13}
+        zoom={zoom}
         scrollWheelZoom={true}
         className="h-[320px] w-full"
       >
