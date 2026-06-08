@@ -216,21 +216,24 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const eligibility = validateBookingForPayFastInitiate(booking);
+    const { data: spaceData } = await supabaseAdmin
+      .from("spaces")
+      .select("id, title, status")
+      .eq("id", booking.space_id)
+      .single();
+
+    const space = (spaceData || null) as (SpaceRow & { status: string | null }) | null;
+
+    const eligibility = validateBookingForPayFastInitiate(
+      booking,
+      space?.status ?? null
+    );
     if (!eligibility.ok) {
       return NextResponse.json(
         { error: eligibility.error },
         { status: eligibility.status }
       );
     }
-
-    const { data: spaceData } = await supabaseAdmin
-      .from("spaces")
-      .select("id, title")
-      .eq("id", booking.space_id)
-      .single();
-
-    const space = (spaceData || null) as SpaceRow | null;
 
     const { processUrl, fields } = buildSignedPayFastCheckoutPayload({
       appBaseUrl,

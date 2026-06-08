@@ -24,6 +24,13 @@ import {
   XCircle,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { adminApiFetch } from "@/lib/admin-api-client";
+import {
+  adminListingReviewHref,
+  adminUnclaimedEditHref,
+  isLiveListingStatus,
+  needsReviewWorkflow,
+} from "@/lib/admin-listing-routing";
 import DecisionSuggestion from "@/app/components/DecisionSuggestion";
 
 type Space = {
@@ -316,10 +323,17 @@ export default function AdminSpacesPage() {
     adminComment?: string | null
   ) {
     try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) return;
+
       const response = await fetch("/api/notifications/listing-event", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
           spaceId,
@@ -337,68 +351,24 @@ export default function AdminSpacesPage() {
     }
   }
 
-  async function updateSpaceStatus(
-    spaceId: string,
-    nextStatus: "active" | "paused" | "rejected" | "pending"
-  ) {
-    const targetSpace = spaces.find((space) => space.id === spaceId);
-
-    if (!targetSpace) {
-      setMessage("Listing not found.");
-      return;
+  async function updateLiveStatus(spaceId: string, nextStatus: "active" | "paused") {
+    setMessage("");
+    try {
+      await adminApiFetch(`/api/admin/spaces/${spaceId}/live-status`, {
+        method: "POST",
+        body: JSON.stringify({ status: nextStatus }),
+      });
+      setSpaces((current) =>
+        current.map((space) =>
+          space.id === spaceId ? { ...space, status: nextStatus } : space
+        )
+      );
+      setMessage(
+        nextStatus === "paused" ? "Listing paused." : "Listing resumed."
+      );
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Could not update status.");
     }
-
-    if (nextStatus === "active") {
-      const missingChecks = getMissingChecks(targetSpace);
-
-      if (missingChecks.length > 0) {
-        setMessage(
-          `This listing cannot be activated yet. Missing: ${missingChecks.join(", ")}.`
-        );
-        return;
-      }
-    }
-
-    const adminComment = (listingComments[spaceId] || "").trim() || null;
-
-    const { error } = await (supabase.from("spaces") as any)
-      .update({ status: nextStatus, listing_admin_comment: adminComment })
-      .eq("id", spaceId);
-
-    if (error) {
-      setMessage(error.message);
-      return;
-    }
-
-    setSpaces((current) =>
-      current.map((space) =>
-        space.id === spaceId
-          ? { ...space, status: nextStatus, listing_admin_comment: adminComment }
-          : space
-      )
-    );
-
-    if (nextStatus === "pending") {
-      await fireListingEvent(spaceId, "listing_pending", adminComment);
-    }
-
-    if (nextStatus === "rejected") {
-      await fireListingEvent(spaceId, "listing_rejected", adminComment);
-    }
-
-    if (nextStatus === "active") {
-      await fireListingEvent(spaceId, "listing_activated", adminComment);
-    }
-
-    setMessage(
-      nextStatus === "rejected"
-        ? "Listing rejected with comment saved."
-        : nextStatus === "pending"
-          ? "Listing kept pending with comment saved."
-          : nextStatus === "paused"
-            ? "Listing paused."
-            : "Listing activated."
-    );
   }
 
   async function updateOwnershipProofStatus(
@@ -406,104 +376,40 @@ export default function AdminSpacesPage() {
     nextStatus: "verified" | "pending" | "rejected"
   ) {
     setMessage("");
-
-    const targetSpace = spaces.find((space) => space.id === spaceId);
-
-    if (!targetSpace) {
-      setMessage("Listing not found.");
-      return;
-    }
-
     const adminComment = (listingComments[spaceId] || "").trim() || null;
 
-    const { error: spaceError } = await (supabase.from("spaces") as any)
-      .update({
-        ownership_proof_status: nextStatus,
-        listing_admin_comment: adminComment,
-      })
-      .eq("id", spaceId);
-
-    if (spaceError) {
-      setMessage(spaceError.message);
-      return;
-    }
-
-    const { error: docError } = await (supabase
-      .from("listing_ownership_documents") as any)
-      .update({ status: nextStatus })
-      .eq("space_id", spaceId);
-
-    if (docError) {
-      setMessage(docError.message);
-      return;
-    }
-
-    const ownerVerified = (targetSpace.owner_verification_status || "pending") === "verified";
-    const bankVerified = (targetSpace.bank_verification_status || "pending") === "verified";
-    const shouldAutoActivate =
-      nextStatus === "verified" &&
-      ownerVerified &&
-      bankVerified &&
-      (targetSpace.status || "pending") === "pending";
-
-    if (shouldAutoActivate) {
-      const { error: activateError } = await (supabase.from("spaces") as any)
-        .update({
-          ownership_proof_status: nextStatus,
-          status: "active",
-          listing_admin_comment: adminComment,
-        })
-        .eq("id", spaceId);
-
-      if (activateError) {
-        setMessage(activateError.message);
-        return;
-      }
+    try {
+      const result = await adminApiFetch(
+        `/api/admin/spaces/${spaceId}/ownership-proof`,
+        {
+          method: "POST",
+          body: JSON.stringify({ status: nextStatus, comment: adminComment }),
+        }
+      );
 
       setSpaces((current) =>
         current.map((space) =>
           space.id === spaceId
             ? {
-              ...space,
-              ownership_proof_status: nextStatus,
-              status: "active",
-              listing_admin_comment: adminComment,
-            }
+                ...space,
+                ownership_proof_status: nextStatus,
+                listing_admin_comment: adminComment,
+              }
             : space
         )
       );
 
-      await fireListingEvent(spaceId, "listing_activated", adminComment);
-
       setMessage(
-        "Ownership proof marked as verified. Listing activated automatically."
+        (result as { message?: string }).message ||
+          (nextStatus === "verified"
+            ? "Ownership proof marked as verified."
+            : nextStatus === "rejected"
+              ? "Ownership proof marked as rejected."
+              : "Ownership proof marked as pending.")
       );
-      return;
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Update failed.");
     }
-
-    setSpaces((current) =>
-      current.map((space) =>
-        space.id === spaceId
-          ? {
-            ...space,
-            ownership_proof_status: nextStatus,
-            listing_admin_comment: adminComment,
-          }
-          : space
-      )
-    );
-
-    if (nextStatus === "verified") {
-      await fireListingEvent(spaceId, "ownership_proof_verified", adminComment);
-    }
-
-    setMessage(
-      nextStatus === "verified"
-        ? "Ownership proof marked as verified. Listing is still pending until all checks are approved."
-        : nextStatus === "rejected"
-          ? "Ownership proof marked as rejected."
-          : "Ownership proof marked as pending."
-    );
   }
 
   async function savePlatformFee(spaceId: string) {
@@ -526,9 +432,19 @@ export default function AdminSpacesPage() {
       return;
     }
 
-    const { error } = await (supabase.from("spaces") as any)
-      .update({ platform_fee_percent: parsedValue })
-      .eq("id", spaceId);
+    const { error } = await (async () => {
+      try {
+        await adminApiFetch(`/api/admin/spaces/${spaceId}/listing-meta`, {
+          method: "PATCH",
+          body: JSON.stringify({ platform_fee_percent: parsedValue }),
+        });
+        return { error: null };
+      } catch (err) {
+        return {
+          error: { message: err instanceof Error ? err.message : "Save failed." },
+        };
+      }
+    })();
 
     if (error) {
       setMessage(error.message);
@@ -607,17 +523,16 @@ export default function AdminSpacesPage() {
     setSendingMessage(true);
     setMessage("");
 
-    const { error } = await (supabase.from("spaces") as any)
-      .update({ listing_admin_comment: trimmed })
-      .eq("id", space.id);
-
-    if (error) {
+    try {
+      await adminApiFetch(`/api/admin/spaces/${space.id}/listing-meta`, {
+        method: "PATCH",
+        body: JSON.stringify({ listing_admin_comment: trimmed }),
+      });
+    } catch (err) {
       setSendingMessage(false);
-      setMessage(error.message);
+      setMessage(err instanceof Error ? err.message : "Could not save message.");
       return;
     }
-
-    await fireListingEvent(space.id, "listing_pending", trimmed);
 
     setSpaces((current) =>
       current.map((item) =>
@@ -773,7 +688,12 @@ export default function AdminSpacesPage() {
       <div className="mx-auto max-w-7xl">
         <h1 className="mb-2 text-4xl font-bold">Admin - Spaces</h1>
         <p className="mb-8 text-gray-600">
-          Review, approve, pause, reject listings, and set platform fee.
+          Browse listings, verify ownership proof, and manage live pause/resume.
+          Approve or reject listings from{" "}
+          <Link href="/admin/listing-reviews" className="font-medium underline">
+            Listing reviews
+          </Link>
+          .
         </p>
 
         <div className="mb-5 flex flex-wrap gap-3">
@@ -817,6 +737,13 @@ export default function AdminSpacesPage() {
           >
             <ClipboardList className="h-4 w-4" />
             Listings
+          </Link>
+          <Link
+            href="/admin/listing-reviews"
+            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
+          >
+            <ClipboardList className="h-4 w-4" />
+            Listing reviews
           </Link>
           <Link
             href="/admin/verification"
@@ -1149,27 +1076,68 @@ export default function AdminSpacesPage() {
 
                             <div className="rounded-sm border border-gray-200 bg-white p-2">
                               <div className="flex flex-wrap items-center justify-end gap-1.5">
-                                <Link
-                                  href={`/spaces/${space.id}`}
-                                  className={buttonNeutral}
-                                >
-                                  <Eye className="h-3.5 w-3.5" />
-                                  View listing
-                                </Link>
+                                {needsReviewWorkflow(space.status) ? (
+                                  <Link
+                                    href={adminListingReviewHref(space.id)}
+                                    className={buttonPrimary}
+                                  >
+                                    <ClipboardList className="h-3.5 w-3.5" />
+                                    Review listing
+                                  </Link>
+                                ) : null}
 
-                                <button
-                                  type="button"
-                                  onClick={() => updateSpaceStatus(space.id, "active")}
-                                  disabled={!canActivate}
-                                  className={
-                                    canActivate
-                                      ? buttonPrimary
-                                      : `${buttonBase} border-gray-200 bg-gray-200 px-3 py-1.5 text-gray-500`
-                                  }
-                                >
-                                  <CheckCircle2 className="h-3.5 w-3.5" />
-                                  Approve / Activate
-                                </button>
+                                {space.status === "unclaimed" ? (
+                                  <Link
+                                    href={adminUnclaimedEditHref(space.id)}
+                                    className={buttonNeutral}
+                                  >
+                                    <Building2 className="h-3.5 w-3.5" />
+                                    Manage unclaimed
+                                  </Link>
+                                ) : null}
+
+                                {isLiveListingStatus(space.status) ? (
+                                  <>
+                                    <Link
+                                      href={`/spaces/${space.id}`}
+                                      className={buttonNeutral}
+                                    >
+                                      <Eye className="h-3.5 w-3.5" />
+                                      View listing
+                                    </Link>
+                                    {space.status === "active" ? (
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          void updateLiveStatus(space.id, "paused")
+                                        }
+                                        className={buttonNeutral}
+                                      >
+                                        <PauseCircle className="h-3.5 w-3.5" />
+                                        Pause
+                                      </button>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          void updateLiveStatus(space.id, "active")
+                                        }
+                                        className={buttonPrimary}
+                                      >
+                                        <CheckCircle2 className="h-3.5 w-3.5" />
+                                        Resume
+                                      </button>
+                                    )}
+                                  </>
+                                ) : needsReviewWorkflow(space.status) ? null : (
+                                  <Link
+                                    href={`/spaces/${space.id}`}
+                                    className={buttonNeutral}
+                                  >
+                                    <Eye className="h-3.5 w-3.5" />
+                                    View listing
+                                  </Link>
+                                )}
                               </div>
                             </div>
                           </div>

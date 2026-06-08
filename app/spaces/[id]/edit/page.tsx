@@ -22,6 +22,13 @@ import {
   ListingQualityScoreSummary,
 } from "@/app/components/listing-booking-quality-ui";
 import { ZA_PROVINCES } from "@/lib/za-provinces";
+import {
+  canOwnerEditListing,
+  getOwnerListingCompletionHref,
+  getOwnerListingStatusBadgeClass,
+  getOwnerListingStatusLabel,
+  isOwnerListingLockedForEdit,
+} from "@/lib/listing-lifecycle";
 
 type PageProps = {
   params: Promise<{ id: string }>;
@@ -100,7 +107,6 @@ type SpaceUpdatePayload = {
   min_booking_hours: number | null;
   min_booking_days: number | null;
   min_booking_months: number | null;
-  status: string;
   deposit_type: DepositType;
   deposit_months: number;
   monthly_payment_day: number;
@@ -589,7 +595,6 @@ export default function EditListingPage({ params }: PageProps) {
       const { error: spaceUpdateError } = await (supabase.from("spaces") as any)
         .update({
           ownership_proof_status: "pending",
-          status: "pending",
         })
         .eq("id", listingId);
 
@@ -600,7 +605,6 @@ export default function EditListingPage({ params }: PageProps) {
       }
 
       setOwnershipProofStatus("pending");
-      setStatus("pending");
       setNewOwnershipProofFile(null);
       setMessage("Ownership proof uploaded successfully and sent for review.");
       await loadListing(listingId);
@@ -729,6 +733,20 @@ export default function EditListingPage({ params }: PageProps) {
       }
     }
 
+    if (isOwnerListingLockedForEdit(status)) {
+      setMessage(
+        "This listing cannot be edited while it is under review. Open the completion checklist for next steps."
+      );
+      setSaving(false);
+      return;
+    }
+
+    if (!canOwnerEditListing(status)) {
+      setMessage("You cannot edit this listing in its current status.");
+      setSaving(false);
+      return;
+    }
+
     const payload: SpaceUpdatePayload = {
       title,
       description,
@@ -753,7 +771,6 @@ export default function EditListingPage({ params }: PageProps) {
         bookingUnit === "day" ? Number(minBookingDays || 1) : null,
       min_booking_months:
         bookingUnit === "month" ? Number(minBookingMonths || 1) : null,
-      status,
       deposit_type: finalDepositType,
       deposit_months: parsedDepositMonths,
       monthly_payment_day: parsedMonthlyPaymentDay,
@@ -832,10 +849,14 @@ export default function EditListingPage({ params }: PageProps) {
   }
 
   function getStatusBadgeClass(statusValue: string | null | undefined) {
-    if (statusValue === "active") return "bg-green-100 text-green-800";
-    if (statusValue === "paused") return "bg-gray-200 text-gray-800";
-    return "bg-blue-100 text-blue-800";
+    return getOwnerListingStatusBadgeClass(statusValue);
   }
+
+  const editingLocked = isOwnerListingLockedForEdit(status);
+  const canEditContent = canOwnerEditListing(status);
+  const completionHref = listingId
+    ? getOwnerListingCompletionHref(listingId)
+    : "/dashboard/listings";
 
   return (
     <RequireAuth>
@@ -859,10 +880,32 @@ export default function EditListingPage({ params }: PageProps) {
                     status
                   )}`}
                 >
-                  {status || "pending"}
+                  {getOwnerListingStatusLabel(status)}
                 </span>
               </div>
             </div>
+
+            {editingLocked ? (
+              <div className="mb-6 rounded-md border border-blue-200 bg-blue-50 p-4 text-sm text-blue-950">
+                <p className="font-medium">Listing under review</p>
+                <p className="mt-1">
+                  This listing is not editable while FindMySpace reviews it. Check
+                  the completion page for status and admin notes.
+                </p>
+                <Link
+                  href={completionHref}
+                  className="mt-3 inline-block font-semibold text-[#0f2740] underline"
+                >
+                  Open completion checklist
+                </Link>
+              </div>
+            ) : null}
+
+            {!canEditContent && !editingLocked ? (
+              <div className="mb-6 rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+                This listing cannot be edited in its current status.
+              </div>
+            ) : null}
 
             <div className="mb-6">
               <OwnerVerificationAlerts />
@@ -880,49 +923,6 @@ export default function EditListingPage({ params }: PageProps) {
                 .
               </p>
             ) : null}
-
-            <div className="mb-6 rounded-md border border-gray-300 bg-white p-4 shadow-sm">
-              <p className="mb-3 text-sm font-medium text-gray-700">
-                Quick status change
-              </p>
-              <div className="flex flex-wrap gap-3">
-                <button
-                  type="button"
-                  onClick={() => setStatus("active")}
-                  className={`rounded-md border px-4 py-2 text-sm ${
-                    status === "active"
-                      ? "border-green-600 bg-green-600 text-white"
-                      : "border-green-300 text-green-700"
-                  }`}
-                >
-                  Active
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setStatus("pending")}
-                  className={`rounded-md border px-4 py-2 text-sm ${
-                    status === "pending"
-                      ? "border-blue-600 bg-blue-600 text-white"
-                      : "border-blue-300 text-blue-700"
-                  }`}
-                >
-                  Pending
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setStatus("paused")}
-                  className={`rounded-md border px-4 py-2 text-sm ${
-                    status === "paused"
-                      ? "border-gray-700 bg-gray-700 text-white"
-                      : "border-gray-300 text-gray-700"
-                  }`}
-                >
-                  Paused
-                </button>
-              </div>
-            </div>
           </div>
 
           {message && (
@@ -940,6 +940,10 @@ export default function EditListingPage({ params }: PageProps) {
               onSubmit={handleSave}
               className="space-y-5 rounded-md border border-gray-300 bg-white p-6 shadow-sm"
             >
+              <fieldset
+                disabled={saving || editingLocked || !canEditContent}
+                className="space-y-5 disabled:opacity-60"
+              >
               <div>
                 <label className="mb-1 block text-xs font-medium text-gray-700">
                   Title
@@ -1417,11 +1421,12 @@ export default function EditListingPage({ params }: PageProps) {
 
               <button
                 type="submit"
-                disabled={saving}
+                disabled={saving || editingLocked || !canEditContent}
                 className="w-full rounded-sm bg-black px-4 py-3 text-white disabled:opacity-60"
               >
                 {saving ? "Saving..." : "Save changes"}
               </button>
+              </fieldset>
             </form>
           )}
         </div>

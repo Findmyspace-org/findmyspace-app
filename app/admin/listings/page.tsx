@@ -19,6 +19,12 @@ import {
   Users,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { adminApiFetch } from "@/lib/admin-api-client";
+import {
+  adminListingReviewHref,
+  isLiveListingStatus,
+  needsReviewWorkflow,
+} from "@/lib/admin-listing-routing";
 import { getDisplayName } from "@/lib/utils";
 import { LISTING_SPACE_TYPE_OPTIONS } from "@/app/data/spaceFeatureConfig";
 
@@ -227,39 +233,49 @@ export default function AdminListingsPage() {
       return;
     }
 
-    if (nextStatus === "active" && !record.canActivate) {
+    if (!isLiveListingStatus(record.space.status) && nextStatus === "paused") {
+      setMessage("Only live listings can be paused.");
+      setUpdatingId(null);
+      return;
+    }
+
+    if (
+      nextStatus === "active" &&
+      !isLiveListingStatus(record.space.status) &&
+      needsReviewWorkflow(record.space.status)
+    ) {
       setMessage(
-        "This listing cannot be activated until owner verification, bank verification, and ownership proof are all verified."
+        "Use the listing review queue to approve this listing before it goes live."
       );
       setUpdatingId(null);
       return;
     }
 
-    const { error } = await (supabase.from("spaces") as any)
-      .update({ status: nextStatus })
-      .eq("id", spaceId);
+    try {
+      await adminApiFetch(`/api/admin/spaces/${spaceId}/live-status`, {
+        method: "POST",
+        body: JSON.stringify({ status: nextStatus }),
+      });
 
-    if (error) {
-      setMessage(error.message);
-      setUpdatingId(null);
-      return;
+      setRecords((current) =>
+        current.map((item) =>
+          item.space.id === spaceId
+            ? {
+                ...item,
+                space: {
+                  ...item.space,
+                  status: nextStatus,
+                },
+              }
+            : item
+        )
+      );
+
+      setMessage(`Listing status updated to ${nextStatus}.`);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Could not update status.");
     }
 
-    setRecords((current) =>
-      current.map((item) =>
-        item.space.id === spaceId
-          ? {
-              ...item,
-              space: {
-                ...item.space,
-                status: nextStatus,
-              },
-            }
-          : item
-      )
-    );
-
-    setMessage(`Listing status updated to ${nextStatus}.`);
     setUpdatingId(null);
   }
 
@@ -283,12 +299,13 @@ export default function AdminListingsPage() {
       return;
     }
 
-    const { error } = await (supabase.from("spaces") as any)
-      .update({ platform_fee_percent: parsedValue })
-      .eq("id", spaceId);
-
-    if (error) {
-      setMessage(error.message);
+    try {
+      await adminApiFetch(`/api/admin/spaces/${spaceId}/listing-meta`, {
+        method: "PATCH",
+        body: JSON.stringify({ platform_fee_percent: parsedValue }),
+      });
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Could not save fee.");
       setSavingFeeId(null);
       return;
     }
@@ -547,8 +564,11 @@ export default function AdminListingsPage() {
       <div className="mx-auto max-w-7xl">
         <h1 className="mb-2 text-4xl font-bold">Admin - Listings</h1>
         <p className="mb-6 text-gray-600">
-          Review listing readiness, control activation, and set platform fee per
-          listing.
+          Review listing readiness and manage platform fees. Approve listings from{" "}
+          <Link href="/admin/listing-reviews" className="font-medium underline">
+            Listing reviews
+          </Link>
+          .
         </p>
 
         <div className="mb-5 flex flex-wrap gap-3">
@@ -1171,41 +1191,64 @@ export default function AdminListingsPage() {
                       </div>
 
                       <div className="flex flex-wrap gap-3">
-                        <Link
-                          href={`/spaces/${record.space.id}`}
-                          className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm"
-                        >
-                          <Eye className="h-4 w-4" />
-                          View listing
-                        </Link>
+                        {needsReviewWorkflow(record.space.status) ? (
+                          <Link
+                            href={adminListingReviewHref(record.space.id)}
+                            className="inline-flex items-center gap-2 rounded-md bg-black px-4 py-2 text-sm text-white"
+                          >
+                            <ClipboardList className="h-4 w-4" />
+                            Review listing
+                          </Link>
+                        ) : null}
 
-                        <button
-                          type="button"
-                          onClick={() => updateListingStatus(record.space.id, "active")}
-                          disabled={!record.canActivate || updatingId === record.space.id}
-                          className={`inline-flex items-center gap-2 rounded-md px-4 py-2 text-sm ${
-                            record.canActivate
-                              ? "bg-black text-white"
-                              : "cursor-not-allowed bg-gray-200 text-gray-500"
-                          }`}
-                        >
-                          <CheckCircle2 className="h-4 w-4" />
-                          {updatingId === record.space.id && record.space.status !== "active"
-                            ? "Updating..."
-                            : "Activate"}
-                        </button>
+                        {isLiveListingStatus(record.space.status) ? (
+                          <>
+                            <Link
+                              href={`/spaces/${record.space.id}`}
+                              className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm"
+                            >
+                              <Eye className="h-4 w-4" />
+                              View listing
+                            </Link>
 
-                        <button
-                          type="button"
-                          onClick={() => updateListingStatus(record.space.id, "paused")}
-                          disabled={updatingId === record.space.id}
-                          className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm text-gray-800 disabled:opacity-50"
-                        >
-                          <PauseCircle className="h-4 w-4" />
-                          {updatingId === record.space.id && record.space.status === "active"
-                            ? "Updating..."
-                            : "Pause"}
-                        </button>
+                            {record.space.status === "active" ? (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  void updateListingStatus(record.space.id, "paused")
+                                }
+                                disabled={updatingId === record.space.id}
+                                className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm text-gray-800 disabled:opacity-50"
+                              >
+                                <PauseCircle className="h-4 w-4" />
+                                {updatingId === record.space.id
+                                  ? "Updating..."
+                                  : "Pause"}
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  void updateListingStatus(record.space.id, "active")
+                                }
+                                disabled={updatingId === record.space.id}
+                                className="inline-flex items-center gap-2 rounded-md bg-black px-4 py-2 text-sm text-white disabled:opacity-50"
+                              >
+                                <CheckCircle2 className="h-4 w-4" />
+                                {updatingId === record.space.id
+                                  ? "Updating..."
+                                  : "Resume"}
+                              </button>
+                            )}
+                          </>
+                        ) : record.space.status === "unclaimed" ? (
+                          <Link
+                            href={`/admin/unclaimed-listings/${record.space.id}/edit`}
+                            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm"
+                          >
+                            Manage unclaimed
+                          </Link>
+                        ) : null}
                       </div>
                     </div>
                   </div>

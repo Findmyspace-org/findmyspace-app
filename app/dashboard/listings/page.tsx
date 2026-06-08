@@ -14,6 +14,14 @@ import {
   useFocusHighlight,
 } from "@/lib/use-focus-highlight";
 import {
+  getOwnerListingNextAction,
+  getOwnerListingStatusBadgeClass,
+  getOwnerListingStatusLabel,
+  isBookableListingStatus,
+  isOwnerCompletionFlowStatus,
+} from "@/lib/listing-lifecycle";
+import {
+  ArrowRight,
   MapPin,
   Tag,
   CalendarDays,
@@ -141,6 +149,7 @@ function MyListingsPageContent({
             types: [
               "listing_submitted",
               "listing_pending",
+              "listing_needs_changes",
               "listing_rejected",
               "listing_activated",
               "ownership_proof_verified",
@@ -284,12 +293,21 @@ function MyListingsPageContent({
   }
 
   function getStatusBadgeClass(status: string | null) {
-    if (status === "active") return "bg-green-100 text-green-800";
-    if (status === "paused") return "bg-gray-200 text-gray-800";
-    if (status === "rejected") return "bg-red-100 text-red-800";
-    if (status === "deleted") return "bg-red-100 text-red-800";
-    if (status === "pending") return "bg-blue-100 text-blue-800";
-    return "bg-yellow-100 text-yellow-800";
+    return getOwnerListingStatusBadgeClass(status);
+  }
+
+  function getStatusLabel(status: string | null) {
+    return getOwnerListingStatusLabel(status);
+  }
+
+  function nextActionButtonClass(action: NonNullable<ReturnType<typeof getOwnerListingNextAction>>) {
+    if (action.muted) {
+      return "border border-blue-200 bg-blue-50 text-blue-900 hover:bg-blue-100";
+    }
+    if (action.urgent) {
+      return "bg-amber-600 text-white hover:bg-amber-700";
+    }
+    return "bg-[#192a3a] text-white hover:opacity-90";
   }
 
   function getVerificationBadgeClass(status: string | null | undefined) {
@@ -331,6 +349,13 @@ function MyListingsPageContent({
     }
 
     if (nextStatus === "active") {
+      if (isOwnerCompletionFlowStatus(targetSpace.status)) {
+        setMessage(
+          "Complete the listing setup and submit for admin review before it can go live."
+        );
+        return;
+      }
+
       const missingChecks = getMissingChecks(targetSpace);
 
       if (missingChecks.length > 0) {
@@ -369,8 +394,11 @@ function MyListingsPageContent({
     const normalizedSearch = searchText.trim().toLowerCase();
 
     return spaces.filter((space) => {
+      const status = space.status || "pending";
       const matchesStatus =
-        statusFilter === "all" || (space.status || "pending") === statusFilter;
+        statusFilter === "all" ||
+        (statusFilter === "setup" && isOwnerCompletionFlowStatus(status)) ||
+        status === statusFilter;
 
       if (!matchesStatus) return false;
 
@@ -396,10 +424,18 @@ function MyListingsPageContent({
     return {
       all: spaces.length,
       active: spaces.filter((s) => s.status === "active").length,
+      setup: spaces.filter((s) => isOwnerCompletionFlowStatus(s.status)).length,
       pending: spaces.filter((s) => !s.status || s.status === "pending").length,
       paused: spaces.filter((s) => s.status === "paused").length,
     };
   }, [spaces]);
+
+  const selectedPanelNextAction = selectedSpace
+    ? getOwnerListingNextAction(selectedSpace.id, selectedSpace.status)
+    : null;
+  const selectedPanelIsLive = selectedSpace
+    ? selectedSpace.status === "active" || selectedSpace.status === "paused"
+    : false;
 
   return (
     <RequireAuth>
@@ -443,6 +479,7 @@ function MyListingsPageContent({
               <div className="flex flex-wrap gap-3">
                 {[
                   { key: "all", label: "All", count: counts.all },
+                  { key: "setup", label: "Setup", count: counts.setup },
                   { key: "active", label: "Active", count: counts.active },
                   { key: "pending", label: "Pending", count: counts.pending },
                   { key: "paused", label: "Paused", count: counts.paused },
@@ -496,8 +533,9 @@ function MyListingsPageContent({
           ) : (
             <div className="space-y-4">
               {filteredSpaces.map((space) => {
-                const missingChecks = getMissingChecks(space);
-                const canActivate = missingChecks.length === 0;
+                const nextAction = getOwnerListingNextAction(space.id, space.status);
+                const isLiveListing =
+                  space.status === "active" || space.status === "paused";
                 return (
                   <div
                     key={space.id}
@@ -576,16 +614,27 @@ function MyListingsPageContent({
                         </div>
                       </div>
 
-                      <div className="flex flex-col items-end justify-center gap-2 md:min-w-[92px] md:items-center">
+                      <div className="flex flex-col items-end justify-center gap-2 md:min-w-[140px] md:items-end">
                         <span
                           className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${getStatusBadgeClass(
                             space.status
                           )}`}
                         >
-                          {space.status || "pending"}
+                          {getStatusLabel(space.status)}
                         </span>
 
-                        {(space.status === "active" || space.status === "paused") && (
+                        {nextAction ? (
+                          <Link
+                            href={nextAction.href}
+                            onClick={(e) => e.stopPropagation()}
+                            className={`inline-flex items-center gap-1 rounded-md px-3 py-1.5 text-xs font-semibold ${nextActionButtonClass(nextAction)}`}
+                          >
+                            {nextAction.label}
+                            <ArrowRight className="h-3.5 w-3.5" />
+                          </Link>
+                        ) : null}
+
+                        {isLiveListing && (
                           <label
                             className="inline-flex items-center"
                             onClick={(e) => e.stopPropagation()}
@@ -691,15 +740,48 @@ function MyListingsPageContent({
                               selectedSpace.status
                             )}`}
                           >
-                            {selectedSpace.status || "pending"}
+                            {getStatusLabel(selectedSpace.status)}
                           </span>
                         </div>
 
-                        {(selectedSpace.status || "pending") === "pending" && (
+                        {selectedPanelNextAction ? (
+                          <div
+                            className={`mb-4 rounded-md border p-4 text-sm ${
+                              selectedSpace.status === "needs_changes"
+                                ? "border-amber-200 bg-amber-50 text-amber-950"
+                                : selectedSpace.status === "rejected"
+                                  ? "border-red-200 bg-red-50 text-red-950"
+                                  : selectedSpace.status === "pending_verification"
+                                    ? "border-blue-200 bg-blue-50 text-blue-950"
+                                    : "border-violet-200 bg-violet-50 text-violet-950"
+                            }`}
+                          >
+                            <p className="font-medium">{selectedPanelNextAction.label}</p>
+                            <p className="mt-1">
+                              {selectedSpace.status === "pending_verification"
+                                ? "Your listing has been submitted. FindMySpace will review your verification, ownership proof, and listing details before it goes live."
+                                : selectedSpace.status === "needs_changes"
+                                  ? "FindMySpace needs a few updates before your listing can go live."
+                                  : selectedSpace.status === "rejected"
+                                    ? "This listing was not approved. Review the admin note on the completion page."
+                                    : "Finish the setup checklist and submit for admin review."}
+                            </p>
+                            <Link
+                              href={selectedPanelNextAction.href}
+                              className={`mt-3 inline-flex items-center gap-1 rounded-md px-3 py-1.5 text-xs font-semibold ${nextActionButtonClass(selectedPanelNextAction)}`}
+                            >
+                              {selectedPanelNextAction.label}
+                              <ArrowRight className="h-3.5 w-3.5" />
+                            </Link>
+                          </div>
+                        ) : null}
+
+                        {!isOwnerCompletionFlowStatus(selectedSpace.status) &&
+                        (selectedSpace.status || "pending") === "pending" ? (
                           <div className="mb-4 rounded-md border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
                             This listing is under admin review and is not yet visible to the public.
                           </div>
-                        )}
+                        ) : null}
 
                         <div className="mb-4 rounded-md border border-gray-200 bg-gray-50 p-3.5">
                           <p className="mb-2 text-sm font-medium text-gray-700">
@@ -809,13 +891,15 @@ function MyListingsPageContent({
                         </div>
 
                         <div className="mt-4 flex flex-wrap gap-2">
-                          <Link
-                            href={`/spaces/${selectedSpace.id}`}
-                            className="inline-flex items-center gap-2 rounded-md border px-2.5 py-0.5 text-sm text-[#192a3a] hover:bg-gray-50"
-                          >
-                            <Eye className="h-4 w-4" />
-                            <span>View</span>
-                          </Link>
+                          {isBookableListingStatus(selectedSpace.status) ? (
+                            <Link
+                              href={`/spaces/${selectedSpace.id}`}
+                              className="inline-flex items-center gap-2 rounded-md border px-2.5 py-0.5 text-sm text-[#192a3a] hover:bg-gray-50"
+                            >
+                              <Eye className="h-4 w-4" />
+                              <span>View</span>
+                            </Link>
+                          ) : null}
 
                           <Link
                             href={`/spaces/${selectedSpace.id}/edit`}
@@ -825,6 +909,16 @@ function MyListingsPageContent({
                             <span>Edit</span>
                           </Link>
 
+                          {selectedPanelNextAction ? (
+                            <Link
+                              href={selectedPanelNextAction.href}
+                              className={`inline-flex items-center gap-2 rounded-md px-2.5 py-0.5 text-sm ${nextActionButtonClass(selectedPanelNextAction)}`}
+                            >
+                              <ArrowRight className="h-4 w-4" />
+                              <span>{selectedPanelNextAction.label}</span>
+                            </Link>
+                          ) : null}
+
                           <Link
                             href="/dashboard/verification"
                             className="inline-flex items-center gap-2 rounded-md border px-2.5 py-0.5 text-sm text-[#192a3a] hover:bg-gray-50"
@@ -833,34 +927,38 @@ function MyListingsPageContent({
                             <span>Verification center</span>
                           </Link>
 
-                          {selectedSpace.status === "paused" ? (
-                            <button
-                              onClick={() => updateListingStatus(selectedSpace.id, "active")}
-                              disabled={getMissingChecks(selectedSpace).length > 0}
-                              className={`inline-flex items-center gap-2 rounded-md px-2.5 py-0.5 text-sm ${getMissingChecks(selectedSpace).length === 0
-                                ? "bg-[#192a3a] text-white hover:opacity-90"
-                                : "cursor-not-allowed bg-gray-200 text-gray-500"}`}
-                            >
-                              <PlayCircle className="h-4 w-4" />
-                              <span>Activate</span>
-                            </button>
-                          ) : (
-                            <button
-                              onClick={() => updateListingStatus(selectedSpace.id, "paused")}
-                              className="inline-flex items-center gap-2 rounded-md border px-2.5 py-0.5 text-sm text-[#192a3a] hover:bg-gray-50"
-                            >
-                              <PauseCircle className="h-4 w-4" />
-                              <span>Pause</span>
-                            </button>
-                          )}
+                          {selectedPanelIsLive ? (
+                            selectedSpace.status === "paused" ? (
+                              <button
+                                onClick={() => updateListingStatus(selectedSpace.id, "active")}
+                                disabled={getMissingChecks(selectedSpace).length > 0}
+                                className={`inline-flex items-center gap-2 rounded-md px-2.5 py-0.5 text-sm ${getMissingChecks(selectedSpace).length === 0
+                                  ? "bg-[#192a3a] text-white hover:opacity-90"
+                                  : "cursor-not-allowed bg-gray-200 text-gray-500"}`}
+                              >
+                                <PlayCircle className="h-4 w-4" />
+                                <span>Activate</span>
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => updateListingStatus(selectedSpace.id, "paused")}
+                                className="inline-flex items-center gap-2 rounded-md border px-2.5 py-0.5 text-sm text-[#192a3a] hover:bg-gray-50"
+                              >
+                                <PauseCircle className="h-4 w-4" />
+                                <span>Pause</span>
+                              </button>
+                            )
+                          ) : null}
 
-                          <button
-                            onClick={() => updateListingStatus(selectedSpace.id, "deleted")}
-                            className="inline-flex items-center gap-2 rounded-md border border-red-300 px-2.5 py-0.5 text-sm text-red-700 hover:bg-red-50"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                            <span>Delete</span>
-                          </button>
+                          {selectedPanelIsLive ? (
+                            <button
+                              onClick={() => updateListingStatus(selectedSpace.id, "deleted")}
+                              className="inline-flex items-center gap-2 rounded-md border border-red-300 px-2.5 py-0.5 text-sm text-red-700 hover:bg-red-50"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                              <span>Delete</span>
+                            </button>
+                          ) : null}
                         </div>
                       </div>
                     </div>

@@ -12,6 +12,7 @@ import { formatSpaceTypeLabel } from "@/app/data/spaceFeatureConfig";
 import { formatListingAddress } from "@/lib/za-provinces";
 import {
   isPublicListingStatus,
+  isBookableListingStatus,
   isUnclaimedListing,
   UNCLAIMED_LISTING_BADGE,
 } from "@/lib/listing-lifecycle";
@@ -150,6 +151,7 @@ export default async function Page({
   }
 
   const unclaimed = isUnclaimedListing(space.status);
+  const bookable = isBookableListingStatus(space.status);
 
   const price =
     space.booking_unit === "hour"
@@ -402,7 +404,7 @@ export default async function Page({
           listingId={space.id}
           listingTitle={space.title}
         />
-      ) : (
+      ) : bookable ? (
         <>
       <input id="space-booking-toggle" type="checkbox" className="peer sr-only" />
       <label
@@ -480,7 +482,7 @@ export default async function Page({
         bookingUnit={space.booking_unit}
       />
         </>
-      )}
+      ) : null}
     </main>
   );
 }

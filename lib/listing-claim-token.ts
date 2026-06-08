@@ -68,6 +68,7 @@ export type ClaimableSpaceRow = {
 export function isSpaceClaimable(space: ClaimableSpaceRow): boolean {
   if (!space.created_by_admin) return false;
   if (space.owner_id) return false;
+  if (space.status === "active") return false;
   return CLAIMABLE_SPACE_STATUSES.includes(
     (space.status || "") as (typeof CLAIMABLE_SPACE_STATUSES)[number]
   );

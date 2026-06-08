@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test:admin-patch": "node scripts/test-admin-user-patch.mjs"
+    "test:admin-patch": "node scripts/test-admin-user-patch.mjs",
+    "test:lifecycle-guards": "node scripts/test-lifecycle-guards.mjs"
   },
   "dependencies": {
     "@sparticuz/chromium": "^131.0.0",

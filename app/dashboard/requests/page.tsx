@@ -24,6 +24,7 @@ import {
   Wallet,
   XCircle,
 } from "lucide-react";
+import { isSpaceBookable } from "@/lib/listing-lifecycle";
 import { supabase } from "@/lib/supabase";
 import RequireAuth from "@/app/components/RequireAuth";
 import DashboardShell from "@/app/components/DashboardShell";
@@ -92,6 +93,7 @@ type Space = {
   suburb: string | null;
   address_line_1: string | null;
   booking_unit?: string | null;
+  status?: string | null;
   cover_image_url?: string | null;
 };
 
@@ -1336,7 +1338,7 @@ function OwnerBookingRequestsPageContent({
       if (spaceIds.length > 0) {
         const { data: spacesData, error: spacesError } = await supabase
           .from("spaces")
-          .select("id, title, city, suburb, address_line_1, booking_unit")
+          .select("id, title, city, suburb, address_line_1, booking_unit, status")
           .in("id", spaceIds);
 
         if (spacesError) {
@@ -1690,6 +1692,14 @@ function OwnerBookingRequestsPageContent({
     }> = [];
 
     if (nextStatus === "approved") {
+      if (!isSpaceBookable(bookingToUpdate.space?.status)) {
+        setMessage(
+          "This listing is not active. Approve the listing before accepting bookings."
+        );
+        setBusyBookingId(null);
+        return;
+      }
+
       const { data: rawBlockingBookings, error: blockingError } = await supabase
         .from("bookings")
         .select("id, booking_unit, start_at, end_at")

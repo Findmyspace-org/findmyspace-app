@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import RequireAuth from "@/app/components/RequireAuth";
 import { shouldShowBookingRequestNotes } from "@/lib/booking-notes-visibility";
+import { isSpaceBookable } from "@/lib/listing-lifecycle";
 
 type PageProps = {
   params: Promise<{ id: string }>;
@@ -33,6 +34,7 @@ type SpaceRow = {
   city: string | null;
   suburb: string | null;
   address_line_1: string | null;
+  status: string | null;
 };
 
 type PaymentInsertRow = {
@@ -101,7 +103,7 @@ export default function BookingPaymentPage({ params }: PageProps) {
 
     const { data: rawSpace, error: spaceError } = await supabase
       .from("spaces")
-      .select("id, title, city, suburb, address_line_1")
+      .select("id, title, city, suburb, address_line_1, status")
       .eq("id", bookingData.space_id)
       .single();
 
@@ -184,6 +186,18 @@ export default function BookingPaymentPage({ params }: PageProps) {
 
       if (!canPay) {
         setMessage("This booking is not ready for payment.");
+        setPaying(false);
+        return;
+      }
+
+      const { data: liveSpace } = await supabase
+        .from("spaces")
+        .select("status")
+        .eq("id", booking.space_id)
+        .maybeSingle();
+
+      if (!isSpaceBookable((liveSpace as { status: string | null } | null)?.status)) {
+        setMessage("Payment is not available because this listing is no longer active.");
         setPaying(false);
         return;
       }

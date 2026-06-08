@@ -806,7 +806,8 @@ export function buildListingSubmittedCopy(
 
   return {
     notificationTitle: "Listing submitted",
-    notificationMessage: `${space} has been submitted for admin review.`,
+    notificationMessage:
+      "Your listing has been submitted. FindMySpace will review your verification, ownership proof, and listing details before it goes live.",
     emailSubject: "Listing submitted for review - FindMySpace",
     emailPreheader: `${space} is queued for admin review.`,
     emailTitle: "Your listing was submitted",
@@ -817,9 +818,52 @@ export function buildListingSubmittedCopy(
           emailStrong(space).html
         } has been submitted to the FindMySpace admin team for review.`,
       },
-      "We’ll let you know as soon as a decision has been made. You can keep editing the listing while it’s pending.",
+      "Your listing has been submitted. FindMySpace will review your verification, ownership proof, and listing details before it goes live.",
     ],
-    ctaLabel: "View my listings",
+    ctaLabel: "View completion checklist",
+    emailFooterRole: "host",
+  };
+}
+
+export type ListingNeedsChangesInput = {
+  ownerFirstName?: string | null;
+  spaceTitle: string;
+  adminComment?: string | null;
+};
+
+export function buildListingNeedsChangesCopy(
+  input: ListingNeedsChangesInput
+): CommunicationCopy {
+  const ownerName = safeName(input.ownerFirstName);
+  const space = input.spaceTitle || "Your listing";
+  const note = (input.adminComment || "").trim();
+
+  const bodyLines: RenderEmailLayoutInput["bodyLines"] = [
+    `Hi ${ownerName},`,
+    "FindMySpace needs a few updates before your listing can go live.",
+    {
+      html: `Please review ${
+        emailStrong(space).html
+      } and the checklist, then resubmit when you’re ready.`,
+    },
+  ];
+  if (note.length > 0) {
+    bodyLines.push(
+      emailCallout({ label: "Admin note", body: note, tone: "warning" })
+    );
+  }
+
+  return {
+    notificationTitle: "Updates needed",
+    notificationMessage:
+      note.length > 0
+        ? `FindMySpace needs a few updates before your listing can go live. Admin note: ${truncate(note, 120)}`
+        : "FindMySpace needs a few updates before your listing can go live.",
+    emailSubject: "Updates needed on your listing - FindMySpace",
+    emailPreheader: `${space} needs a few updates before it can go live.`,
+    emailTitle: "Updates needed on your listing",
+    emailBodyLines: bodyLines,
+    ctaLabel: "View completion checklist",
     emailFooterRole: "host",
   };
 }
@@ -935,9 +979,10 @@ export function buildListingActivatedCopy(
 
   return {
     notificationTitle: "Listing live",
-    notificationMessage: `${space} is now live on FindMySpace.`,
+    notificationMessage:
+      "Your listing is now live and bookable on FindMySpace.",
     emailSubject: "Your listing is live - FindMySpace",
-    emailPreheader: `${space} is now live and ready for bookings.`,
+    emailPreheader: `${space} is now live and bookable on FindMySpace.`,
     emailTitle: "Your listing is live",
     emailBodyLines: [
       `Hi ${ownerName},`,
@@ -946,7 +991,7 @@ export function buildListingActivatedCopy(
           emailStrong(space).html
         } has been approved and is now live on FindMySpace.`,
       },
-      "Renters can browse and book it right away. You can view it from your dashboard or share the listing link directly.",
+      "Your listing is now live and bookable on FindMySpace.",
     ],
     ctaLabel: "View listing",
     emailFooterRole: "host",

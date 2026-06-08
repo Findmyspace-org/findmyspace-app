@@ -260,6 +260,13 @@ export default function AdminPage() {
             Unclaimed listings
           </Link>
           <Link
+            href="/admin/listing-reviews"
+            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
+          >
+            <ClipboardList className="h-4 w-4" />
+            Listing reviews
+          </Link>
+          <Link
             href="/admin/listing-enquiries"
             className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50"
           >

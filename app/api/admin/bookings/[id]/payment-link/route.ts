@@ -115,21 +115,28 @@ export async function POST(
       );
     }
 
-    const eligibility = validateBookingForPayFastInitiate(booking);
+    const { data: spaceData } = await admin
+      .from("spaces")
+      .select("id, title, status")
+      .eq("id", booking.space_id)
+      .single();
+
+    const space = (spaceData || null) as {
+      id: string;
+      title: string | null;
+      status: string | null;
+    } | null;
+
+    const eligibility = validateBookingForPayFastInitiate(
+      booking,
+      space?.status ?? null
+    );
     if (!eligibility.ok) {
       return NextResponse.json(
         { error: eligibility.error },
         { status: eligibility.status }
       );
     }
-
-    const { data: spaceData } = await admin
-      .from("spaces")
-      .select("id, title")
-      .eq("id", booking.space_id)
-      .single();
-
-    const space = (spaceData || null) as { id: string; title: string | null } | null;
 
     const rp = booking.renter;
     if (!rp) {

@@ -109,7 +109,7 @@ export async function acceptListingClaim(
   const { token, space } = validation;
   const nowIso = new Date().toISOString();
 
-  const { error: spaceErr } = await admin
+  const { data: updatedSpace, error: spaceErr } = await admin
     .from("spaces")
     .update({
       owner_id: userId,
@@ -117,13 +117,23 @@ export async function acceptListingClaim(
       status: OWNER_CLAIMED_STATUS,
     })
     .eq("id", space.id)
-    .is("owner_id", null);
+    .is("owner_id", null)
+    .select("id")
+    .maybeSingle();
 
   if (spaceErr) {
     return { ok: false, error: spaceErr.message, status: 500 };
   }
 
-  const { error: tokenErr } = await admin
+  if (!updatedSpace) {
+    return {
+      ok: false,
+      error: "This listing was already claimed.",
+      status: 409,
+    };
+  }
+
+  const { data: claimedToken, error: tokenErr } = await admin
     .from("listing_claim_tokens")
     .update({
       status: "claimed",
@@ -131,11 +141,21 @@ export async function acceptListingClaim(
       used_at: nowIso,
     })
     .eq("id", token.id)
-    .eq("status", "pending");
+    .eq("status", "pending")
+    .select("id")
+    .maybeSingle();
 
   if (tokenErr) {
     console.error("[listing-claim] token update failed after space claim", tokenErr);
     return { ok: false, error: tokenErr.message, status: 500 };
+  }
+
+  if (!claimedToken) {
+    return {
+      ok: false,
+      error: "This claim link is no longer valid.",
+      status: 409,
+    };
   }
 
   await admin

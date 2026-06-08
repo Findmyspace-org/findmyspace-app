@@ -349,8 +349,6 @@ function AdminVerificationPageContent({
       return;
     }
 
-    await checkAndActivateListings(ownerId);
-
     setMessage(`Owner verification updated to ${nextStatus}.`);
     if (nextStatus === "verified" || nextStatus === "rejected") {
       const { data: sessionData } = await supabase.auth.getSession();
@@ -418,8 +416,6 @@ function AdminVerificationPageContent({
       return;
     }
 
-    await checkAndActivateListings(ownerId);
-
     setMessage(`Bank verification updated to ${nextStatus}.`);
     if (nextStatus === "verified" || nextStatus === "rejected") {
       const { data: sessionData } = await supabase.auth.getSession();
@@ -456,42 +452,6 @@ function AdminVerificationPageContent({
       }
     }
     await loadVerificationRecords();
-  }
-
-  async function checkAndActivateListings(ownerId: string) {
-    const { data: profile } = await (supabase.from("profiles") as any)
-      .select("owner_verification_status, bank_verification_status")
-      .eq("id", ownerId)
-      .single();
-
-    if (!profile) return;
-
-    if (
-      profile.owner_verification_status !== "verified" ||
-      profile.bank_verification_status !== "verified"
-    ) {
-      return;
-    }
-
-    const { data: spaces } = await (supabase.from("spaces") as any)
-      .select("id, ownership_proof_status, status")
-      .eq("owner_id", ownerId);
-
-    if (!spaces) return;
-
-    const eligible = spaces.filter(
-      (space: { id: string; ownership_proof_status: string | null; status: string | null }) =>
-        (space.status || "pending") === "pending" &&
-        (space.ownership_proof_status || "pending") === "verified"
-    );
-
-    if (eligible.length === 0) return;
-
-    const ids = eligible.map((space: { id: string }) => space.id);
-
-    await (supabase.from("spaces") as any)
-      .update({ status: "active" })
-      .in("id", ids);
   }
 
   function getBadgeClass(status: string | null | undefined) {

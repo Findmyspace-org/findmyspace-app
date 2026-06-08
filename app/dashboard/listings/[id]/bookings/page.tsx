@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { isSpaceBookable } from "@/lib/listing-lifecycle";
 import { supabase } from "@/lib/supabase";
 import RequireAuth from "@/app/components/RequireAuth";
 import { getDisplayName } from "@/lib/utils";
@@ -52,6 +53,7 @@ export default function OwnerBookingsPage({
   const [message, setMessage] = useState("");
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [blockingBookings, setBlockingBookings] = useState<BlockingBooking[]>([]);
+  const [spaceStatus, setSpaceStatus] = useState<string | null>(null);
 
   useEffect(() => {
     loadBookings();
@@ -70,6 +72,15 @@ export default function OwnerBookingsPage({
       setLoading(false);
       return;
     }
+
+    const { data: spaceRow } = await supabase
+      .from("spaces")
+      .select("status")
+      .eq("id", spaceId)
+      .eq("owner_id", user.id)
+      .maybeSingle();
+
+    setSpaceStatus((spaceRow as { status: string | null } | null)?.status ?? null);
 
     const { data: bookingsData, error } = await supabase
       .from("bookings")
@@ -204,6 +215,14 @@ export default function OwnerBookingsPage({
 
     if (!booking) {
       setMessage("Booking not found.");
+      setProcessingId(null);
+      return;
+    }
+
+    if (!isSpaceBookable(spaceStatus)) {
+      setMessage(
+        "This listing is not active. You cannot approve bookings until the listing is live."
+      );
       setProcessingId(null);
       return;
     }

@@ -7,12 +7,14 @@ import {
 } from "@/lib/email-templates/EmailLayout";
 import {
   buildListingActivatedCopy,
+  buildListingNeedsChangesCopy,
   buildListingPendingCopy,
   buildListingRejectedCopy,
   buildListingSubmittedCopy,
   buildOwnershipProofVerifiedCopy,
 } from "@/lib/communication-copy";
 import { getCanonicalPublicSiteUrl } from "@/lib/site-url";
+import { requireListingEventAuth } from "@/lib/require-listing-event-auth";
 
 type BasicProfile = {
   first_name?: string | null;
@@ -23,6 +25,7 @@ type BasicProfile = {
 type ListingEventType =
   | "listing_submitted"
   | "listing_pending"
+  | "listing_needs_changes"
   | "listing_rejected"
   | "listing_activated"
   | "ownership_proof_verified";
@@ -97,6 +100,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const auth = await requireListingEventAuth(req, spaceId);
+    if ("response" in auth) return auth.response;
+
     const {
       NEXT_PUBLIC_SUPABASE_URL,
       SUPABASE_SERVICE_ROLE_KEY,
@@ -145,7 +151,8 @@ export async function POST(req: NextRequest) {
     const appBaseUrl = getCanonicalPublicSiteUrl();
     const listingsUrl = `${appBaseUrl}/dashboard/listings?focus=${space.id}`;
     const publicListingUrl = `${appBaseUrl}/spaces/${space.id}`;
-    const adminListingsUrl = `${appBaseUrl}/admin/listings`;
+    const adminReviewUrl = `${appBaseUrl}/admin/listing-reviews/${space.id}`;
+    const ownerCompleteUrl = `${appBaseUrl}/dashboard/listings/${space.id}/complete`;
     const resolvedComment = (adminComment || space.listing_admin_comment || "").trim() || null;
 
     if (eventType === "listing_submitted") {
@@ -168,7 +175,7 @@ export async function POST(req: NextRequest) {
           ],
           primaryCTA: {
             label: "Review listing",
-            href: adminListingsUrl,
+            href: adminReviewUrl,
           },
           footerRole: "admin",
         });
@@ -193,7 +200,44 @@ export async function POST(req: NextRequest) {
         title: ownerCopy.notificationTitle,
         message: ownerCopy.notificationMessage,
         type: "listing_submitted",
-        href: "/dashboard/listings",
+        href: `/dashboard/listings/${space.id}/complete`,
+        spaceId: space.id,
+      });
+
+      return NextResponse.json({ ok: true });
+    }
+
+    if (eventType === "listing_needs_changes") {
+      const copy = buildListingNeedsChangesCopy({
+        ownerFirstName: ownerProfile?.first_name ?? null,
+        spaceTitle,
+        adminComment: resolvedComment,
+      });
+
+      if (ownerProfile?.email) {
+        const rendered = renderEmailLayout({
+          preheader: copy.emailPreheader,
+          title: copy.emailTitle,
+          bodyLines: copy.emailBodyLines,
+          primaryCTA: { label: copy.ctaLabel, href: ownerCompleteUrl },
+          footerRole: copy.emailFooterRole,
+        });
+        await sendEmail({
+          to: ownerProfile.email,
+          subject: copy.emailSubject,
+          html: rendered.html,
+          text: rendered.text,
+        });
+      }
+
+      await createInAppNotification({
+        supabaseAdmin,
+        userId: space.owner_id,
+        role: "owner",
+        title: copy.notificationTitle,
+        message: copy.notificationMessage,
+        type: "listing_needs_changes",
+        href: `/dashboard/listings/${space.id}/complete`,
         spaceId: space.id,
       });
 

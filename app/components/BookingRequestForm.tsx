@@ -16,6 +16,7 @@ import {
   readBookingDraft,
   writeBookingDraft,
 } from "@/lib/bookingDraftStorage";
+import { isSpaceBookable } from "@/lib/listing-lifecycle";
 import {
   ACCESS_FREQUENCY_OPTIONS,
   BookingRequestDetailPayload,
@@ -911,6 +912,23 @@ export default function BookingRequestForm({
 
       if (user.id === ownerId) {
         setStatusMessage("You cannot book your own listing.");
+        setLoading(false);
+        return;
+      }
+
+      const { data: spaceStatusRow, error: spaceStatusError } = await (
+        supabase.from("spaces") as any
+      )
+        .select("status")
+        .eq("id", spaceId)
+        .single();
+
+      if (
+        spaceStatusError ||
+        !spaceStatusRow ||
+        !isSpaceBookable((spaceStatusRow as { status: string | null }).status)
+      ) {
+        setStatusMessage("This listing is not available for booking.");
         setLoading(false);
         return;
       }
