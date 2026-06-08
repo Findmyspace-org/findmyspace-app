@@ -3,6 +3,7 @@ import { requireAdminApi } from "@/lib/require-admin-api";
 import { adminAudit } from "@/lib/admin-audit";
 import {
   createServiceAdminClient,
+  fetchAdminCreatedListing,
   fetchAdminUnclaimedSpace,
   parseUnclaimedSpaceInput,
   syncSpaceAttributes,
@@ -28,10 +29,13 @@ export async function GET(
     return NextResponse.json({ error: "Server configuration error." }, { status: 500 });
   }
 
-  const { space, error } = await fetchAdminUnclaimedSpace(admin, id);
-  if (error || !space) {
-    return NextResponse.json({ error: error || "Not found." }, { status: 404 });
+  const result = await fetchAdminCreatedListing(admin, id, {
+    allowOwnerClaimed: true,
+  });
+  if (result.error || !result.space) {
+    return NextResponse.json({ error: result.error || "Not found." }, { status: 404 });
   }
+  const space = result.space;
 
   const [{ data: images }, { data: attributes }, { count: enquiryCount }] =
     await Promise.all([
@@ -59,6 +63,7 @@ export async function GET(
 
   return NextResponse.json({
     space,
+    readOnly: result.readOnly ?? false,
     images: images || [],
     attributes: grouped,
     enquiry_count: enquiryCount ?? 0,
@@ -82,7 +87,9 @@ export async function PATCH(
     return NextResponse.json({ error: "Server configuration error." }, { status: 500 });
   }
 
-  const existing = await fetchAdminUnclaimedSpace(admin, id);
+  const existing = await fetchAdminCreatedListing(admin, id, {
+    allowOwnerClaimed: true,
+  });
   if (existing.error || !existing.space) {
     return NextResponse.json({ error: existing.error || "Not found." }, { status: 404 });
   }
