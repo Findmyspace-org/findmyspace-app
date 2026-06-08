@@ -18,7 +18,17 @@ export async function adminApiFetch(path: string, init?: RequestInit) {
 
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new Error(json.error || res.statusText || "Request failed.");
+    const message =
+      (typeof json.error === "string" && json.error) ||
+      res.statusText ||
+      "Request failed.";
+    if (res.status === 401) {
+      throw new Error("Not signed in. Sign in again as admin.");
+    }
+    if (res.status === 403) {
+      throw new Error("Admin access required.");
+    }
+    throw new Error(message);
   }
   return json;
 }

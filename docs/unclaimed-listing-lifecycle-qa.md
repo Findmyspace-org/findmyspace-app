@@ -9,7 +9,7 @@ Use this script after deploying migrations `014`–`017` (`supabase db push`).
 - [ ] Test renter account (non-admin, not the owner)
 - [ ] `ADMIN_NOTIFICATION_EMAIL` configured (optional, for email checks)
 - [ ] `INTERNAL_API_SECRET` set in server env (for server-to-server listing notifications)
-- [ ] Migrations `014`–`018` applied (`supabase db push`)
+- [ ] Migrations `014`–`019` applied (`supabase db push`)
 
 ---
 

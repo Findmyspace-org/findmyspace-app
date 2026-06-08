@@ -56,7 +56,13 @@ export async function POST(req: NextRequest) {
 
   const admin = createServiceAdminClient();
   if (!admin) {
-    return NextResponse.json({ error: "Server configuration error." }, { status: 500 });
+    console.error(
+      "[admin/unclaimed/create] Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY."
+    );
+    return NextResponse.json(
+      { error: "Server configuration error. Service role is not configured." },
+      { status: 500 }
+    );
   }
 
   let body: Record<string, unknown>;
@@ -75,6 +81,11 @@ export async function POST(req: NextRequest) {
 
   const insertRow = buildUnclaimedSpaceRow(parsed.data, auth.userId, status);
 
+  console.info(
+    "[admin/unclaimed/create] Creating draft",
+    JSON.stringify({ adminUserId: auth.userId, title: insertRow.title })
+  );
+
   const { data: inserted, error: insertErr } = await admin
     .from("spaces")
     .insert(insertRow)
@@ -82,9 +93,29 @@ export async function POST(req: NextRequest) {
     .single();
 
   if (insertErr || !inserted) {
+    console.error(
+      "[admin/unclaimed/create] spaces insert failed:",
+      JSON.stringify({
+        adminUserId: auth.userId,
+        code: insertErr?.code,
+        message: insertErr?.message,
+        hint: insertErr?.hint,
+      })
+    );
+    const message = insertErr?.message || "Could not create listing.";
+    const statusCode =
+      message.includes("permission denied") ||
+      message.includes("spaces_status_change_forbidden")
+        ? 503
+        : 500;
     return NextResponse.json(
-      { error: insertErr?.message || "Could not create listing." },
-      { status: 500 }
+      {
+        error:
+          statusCode === 503
+            ? "Server cannot write to listings. Apply migration 019 (spaces service_role grants) and ensure SUPABASE_SERVICE_ROLE_KEY is set."
+            : message,
+      },
+      { status: statusCode }
     );
   }
 
@@ -92,6 +123,10 @@ export async function POST(req: NextRequest) {
 
   const attrErr = await syncSpaceAttributes(admin, spaceId, parsed.data.attributes);
   if (attrErr) {
+    console.error(
+      "[admin/unclaimed/create] space_attributes sync failed:",
+      JSON.stringify({ spaceId, message: attrErr })
+    );
     return NextResponse.json({ error: attrErr }, { status: 500 });
   }
 
@@ -102,6 +137,11 @@ export async function POST(req: NextRequest) {
     targetId: spaceId,
     meta: { status },
   });
+
+  console.info(
+    "[admin/unclaimed/create] Draft created",
+    JSON.stringify({ spaceId, adminUserId: auth.userId })
+  );
 
   return NextResponse.json({
     ok: true,
