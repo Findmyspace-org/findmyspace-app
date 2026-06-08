@@ -2,15 +2,19 @@
 
 import { X } from "lucide-react";
 import { ListingEnquiryForm } from "@/app/components/ListingEnquiryForm";
+import { UnclaimedListingEnquirySocialProof } from "@/app/components/UnclaimedListingEnquirySocialProof";
+import { UNCLAIMED_REQUEST_INTRO } from "@/lib/listing-lifecycle";
 
 type UnclaimedListingMobileSheetProps = {
   listingId: string;
   listingTitle: string;
+  enquiryCount?: number;
 };
 
 export function UnclaimedListingMobileSheet({
   listingId,
   listingTitle,
+  enquiryCount = 0,
 }: UnclaimedListingMobileSheetProps) {
   return (
     <>
@@ -53,6 +57,12 @@ export function UnclaimedListingMobileSheet({
 
         <div className="max-h-[calc(85vh-74px)] overflow-y-auto px-4 py-5 sm:px-6">
           <div className="mx-auto max-w-2xl rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+            <p className="mb-4 text-sm text-gray-600">{UNCLAIMED_REQUEST_INTRO}</p>
+            {enquiryCount > 0 ? (
+              <div className="mb-4">
+                <UnclaimedListingEnquirySocialProof count={enquiryCount} />
+              </div>
+            ) : null}
             <ListingEnquiryForm listingId={listingId} listingTitle={listingTitle} />
           </div>
         </div>

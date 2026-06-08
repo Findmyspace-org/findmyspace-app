@@ -1081,6 +1081,40 @@ export function buildListingEnquiryRequesterCopy(
   };
 }
 
+export type ListingClaimInterestAdminInput = {
+  listingTitle: string;
+  contactName: string;
+  contactEmail: string;
+  role?: string | null;
+};
+
+export function buildListingClaimInterestAdminCopy(
+  input: ListingClaimInterestAdminInput
+): CommunicationCopy {
+  const listing = input.listingTitle.trim() || "Untitled listing";
+  const name = input.contactName.trim() || "Someone";
+
+  return {
+    notificationTitle: "Owner claim interest",
+    notificationMessage: `${name} is interested in claiming ${listing}. Review and send a secure claim link if appropriate.`,
+    emailSubject: `Owner claim interest — ${listing}`,
+    emailPreheader: `${name} wants to claim an unclaimed listing.`,
+    emailTitle: "Owner claim interest",
+    emailBodyLines: [
+      "Someone says they own or manage an unclaimed listing and wants to claim it.",
+      { html: `Listing: ${emailStrong(listing).html}` },
+      {
+        html: `Contact: ${emailStrong(name).html} (${input.contactEmail})${
+          input.role ? ` — ${input.role}` : ""
+        }`,
+      },
+      "Verify ownership before sending a secure claim link from the admin unclaimed listing editor.",
+    ],
+    ctaLabel: "Edit unclaimed listing",
+    emailFooterRole: "admin",
+  };
+}
+
 export type ListingClaimInviteInput = {
   listingTitle: string;
   claimUrl: string;

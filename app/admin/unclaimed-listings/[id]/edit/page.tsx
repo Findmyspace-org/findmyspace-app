@@ -1,13 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { ArrowLeft, Eye } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { adminApiFetch } from "@/lib/admin-api-client";
 import { AdminUnclaimedSpaceForm } from "@/app/components/AdminUnclaimedSpaceForm";
 import { AdminListingClaimPanel } from "@/app/components/AdminListingClaimPanel";
+import { UnclaimedListingEnquirySocialProof } from "@/app/components/UnclaimedListingEnquirySocialProof";
 import { sortSpaceImages } from "@/lib/sort-space-images";
 
 type SpaceRow = {
@@ -29,6 +30,7 @@ type SpaceRow = {
 
 export default function EditUnclaimedListingPage() {
   const params = useParams();
+  const router = useRouter();
   const id = typeof params.id === "string" ? params.id : "";
 
   const [role, setRole] = useState<string | null>(null);
@@ -154,9 +156,14 @@ export default function EditUnclaimedListingPage() {
 
         <h1 className="text-2xl font-semibold text-gray-900">Edit unclaimed listing</h1>
         <p className="mt-2 text-sm text-gray-600">
-          This is the public-facing version prepared by FindMySpace. The owner can update
-          details after claiming.
+          Use Preview listing to see the public page. The owner can update details after
+          claiming.
         </p>
+        {enquiryCount > 0 ? (
+          <div className="mt-4">
+            <UnclaimedListingEnquirySocialProof count={enquiryCount} />
+          </div>
+        ) : null}
 
         <div className="mt-6 space-y-6">
           <AdminListingClaimPanel
@@ -173,6 +180,9 @@ export default function EditUnclaimedListingPage() {
             initialStatus={space.status}
             enquiryCount={enquiryCount}
             readOnly={readOnly}
+            onSavedAndExit={() =>
+              router.push("/admin/unclaimed-listings?saved=1")
+            }
             initialImages={images}
             initial={{
               title: space.title || "",

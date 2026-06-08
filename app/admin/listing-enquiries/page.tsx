@@ -18,7 +18,7 @@ import { LISTING_ENQUIRY_STATUSES } from "@/lib/listing-lifecycle";
 type EnquiryRow = {
   id: string;
   listing_id: string;
-  requester_id: string;
+  requester_id: string | null;
   name: string;
   email: string;
   phone: string | null;

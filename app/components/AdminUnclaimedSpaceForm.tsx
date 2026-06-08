@@ -4,8 +4,8 @@ import dynamic from "next/dynamic";
 import Image from "next/image";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  ChevronLeft,
-  ChevronRight,
+  ChevronDown,
+  ChevronUp,
   Loader2,
   Star,
   Trash2,
@@ -74,6 +74,7 @@ type AdminUnclaimedSpaceFormProps = {
   enquiryCount?: number;
   readOnly?: boolean;
   onCreated?: (id: string) => void;
+  onSavedAndExit?: () => void;
 };
 
 export function AdminUnclaimedSpaceForm({
@@ -85,6 +86,7 @@ export function AdminUnclaimedSpaceForm({
   enquiryCount = 0,
   readOnly = false,
   onCreated,
+  onSavedAndExit,
 }: AdminUnclaimedSpaceFormProps) {
   const [state, setState] = useState<FormState>({
     title: initial?.title ?? "",
@@ -129,36 +131,43 @@ export function AdminUnclaimedSpaceForm({
     setStatus(initialStatus || "draft");
   }, [initial, initialImages, initialStatus]);
 
-  const saveDraft = useCallback(async () => {
-    if (readOnly) return;
-    setSaving(true);
-    setMessage(null);
-    try {
-      const body = payloadFromState(state);
+  const saveDraft = useCallback(
+    async (stayOnPage: boolean) => {
+      if (readOnly) return;
+      setSaving(true);
+      setMessage(null);
+      try {
+        const body = payloadFromState(state);
 
-      if (mode === "create") {
-        const result = await adminApiFetch("/api/admin/spaces/unclaimed", {
-          method: "POST",
-          body: JSON.stringify(body),
-        });
-        setStatus("draft");
-        setMessage("Draft saved.");
-        onCreated?.(result.id as string);
-      } else if (spaceId) {
-        await adminApiFetch(`/api/admin/spaces/${spaceId}/unclaimed`, {
-          method: "PATCH",
-          body: JSON.stringify(
-            status === "draft" ? { ...body, status: "draft" as const } : body
-          ),
-        });
-        setMessage("Saved.");
+        if (mode === "create") {
+          const result = await adminApiFetch("/api/admin/spaces/unclaimed", {
+            method: "POST",
+            body: JSON.stringify(body),
+          });
+          setStatus("draft");
+          setMessage("Draft saved.");
+          onCreated?.(result.id as string);
+        } else if (spaceId) {
+          await adminApiFetch(`/api/admin/spaces/${spaceId}/unclaimed`, {
+            method: "PATCH",
+            body: JSON.stringify(
+              status === "draft" ? { ...body, status: "draft" as const } : body
+            ),
+          });
+          if (stayOnPage) {
+            setMessage("Saved.");
+          } else {
+            onSavedAndExit?.();
+          }
+        }
+      } catch (err) {
+        setMessage(err instanceof Error ? err.message : "Save failed.");
+      } finally {
+        setSaving(false);
       }
-    } catch (err) {
-      setMessage(err instanceof Error ? err.message : "Save failed.");
-    } finally {
-      setSaving(false);
-    }
-  }, [mode, onCreated, readOnly, spaceId, state, status]);
+    },
+    [mode, onCreated, onSavedAndExit, readOnly, spaceId, state, status]
+  );
 
   const publish = useCallback(async () => {
     if (readOnly) return;
@@ -530,13 +539,20 @@ export function AdminUnclaimedSpaceForm({
                         </span>
                       ) : null}
                     </div>
-                    <div className="min-w-0 flex-1 text-sm text-gray-600">
-                      Photo {index + 1}
+                    <div className="min-w-0 flex-1">
                       {index === 0 ? (
-                        <span className="ml-1 text-xs text-gray-500">
-                          (shown on browse cards)
-                        </span>
-                      ) : null}
+                        <>
+                          <p className="text-sm font-medium text-gray-900">
+                            Cover image
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            Shown on search results, browse cards, map results, and
+                            the public listing.
+                          </p>
+                        </>
+                      ) : (
+                        <p className="text-sm text-gray-600">Photo {index + 1}</p>
+                      )}
                     </div>
                     {!readOnly ? (
                       <div className="flex shrink-0 items-center gap-1">
@@ -545,9 +561,9 @@ export function AdminUnclaimedSpaceForm({
                           disabled={index === 0 || reordering || uploading}
                           onClick={() => void moveImage(img.id, -1)}
                           className="rounded border border-gray-300 bg-white p-1.5 text-gray-700 disabled:opacity-40"
-                          aria-label="Move photo earlier"
+                          aria-label="Move photo up"
                         >
-                          <ChevronLeft className="h-4 w-4" />
+                          <ChevronUp className="h-4 w-4" />
                         </button>
                         <button
                           type="button"
@@ -558,9 +574,9 @@ export function AdminUnclaimedSpaceForm({
                           }
                           onClick={() => void moveImage(img.id, 1)}
                           className="rounded border border-gray-300 bg-white p-1.5 text-gray-700 disabled:opacity-40"
-                          aria-label="Move photo later"
+                          aria-label="Move photo down"
                         >
-                          <ChevronRight className="h-4 w-4" />
+                          <ChevronDown className="h-4 w-4" />
                         </button>
                         {confirmDeleteId === img.id ? (
                           <div className="ml-1 flex items-center gap-1">
@@ -638,26 +654,47 @@ export function AdminUnclaimedSpaceForm({
       ) : null}
 
       {!readOnly ? (
-      <div className="flex flex-wrap gap-3">
-        <button
-          type="button"
-          disabled={saving || publishing}
-          onClick={() => void saveDraft()}
-          className="rounded-lg border border-gray-300 bg-white px-5 py-2.5 text-sm font-semibold text-gray-800 hover:bg-gray-50 disabled:opacity-60"
-        >
-          {saving ? "Saving…" : status === "draft" ? "Save draft" : "Save changes"}
-        </button>
-        {spaceId ? (
-          <button
-            type="button"
-            disabled={saving || publishing || uploading || reordering}
-            onClick={() => void publish()}
-            className="rounded-lg bg-[#0f2740] px-5 py-2.5 text-sm font-semibold text-white hover:opacity-95 disabled:opacity-60"
-          >
-            {publishing ? "Publishing…" : "Publish as unclaimed"}
-          </button>
-        ) : null}
-      </div>
+        <div className="flex flex-wrap gap-3">
+          {mode === "edit" ? (
+            <>
+              <button
+                type="button"
+                disabled={saving || publishing || uploading || reordering}
+                onClick={() => void saveDraft(false)}
+                className="rounded-lg bg-[#0f2740] px-5 py-2.5 text-sm font-semibold text-white hover:opacity-95 disabled:opacity-60"
+              >
+                {saving ? "Saving…" : "Save"}
+              </button>
+              <button
+                type="button"
+                disabled={saving || publishing || uploading || reordering}
+                onClick={() => void saveDraft(true)}
+                className="rounded-lg border border-gray-300 bg-white px-5 py-2.5 text-sm font-semibold text-gray-800 hover:bg-gray-50 disabled:opacity-60"
+              >
+                Save &amp; continue editing
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              disabled={saving || publishing}
+              onClick={() => void saveDraft(true)}
+              className="rounded-lg border border-gray-300 bg-white px-5 py-2.5 text-sm font-semibold text-gray-800 hover:bg-gray-50 disabled:opacity-60"
+            >
+              {saving ? "Saving…" : "Save draft"}
+            </button>
+          )}
+          {spaceId ? (
+            <button
+              type="button"
+              disabled={saving || publishing || uploading || reordering}
+              onClick={() => void publish()}
+              className="rounded-lg border border-[#0f2740] bg-white px-5 py-2.5 text-sm font-semibold text-[#0f2740] hover:bg-gray-50 disabled:opacity-60"
+            >
+              {publishing ? "Publishing…" : "Publish as unclaimed"}
+            </button>
+          ) : null}
+        </div>
       ) : null}
     </div>
   );

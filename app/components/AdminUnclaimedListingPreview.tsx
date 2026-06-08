@@ -3,11 +3,13 @@
 import Image from "next/image";
 import { MapPin } from "lucide-react";
 import SpaceAttributesDisplay from "@/app/components/SpaceAttributesDisplay";
+import { UnclaimedListingClaimSection } from "@/app/components/UnclaimedListingClaimSection";
 import { formatSpaceTypeLabel } from "@/app/data/spaceFeatureConfig";
 import { formatListingAddress } from "@/lib/za-provinces";
 import {
   UNCLAIMED_LISTING_BADGE,
   UNCLAIMED_PRICING_LABEL,
+  UNCLAIMED_REQUEST_INTRO,
 } from "@/lib/listing-lifecycle";
 
 export type AdminUnclaimedPreviewData = {
@@ -53,11 +55,6 @@ export function AdminUnclaimedListingPreview({
           <code className="text-xs">/spaces/{listing.id}</code>.
         </p>
       ) : null}
-
-      <p className="mb-6 rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900">
-        This is the public-facing version prepared by FindMySpace. The owner can update
-        details after claiming.
-      </p>
 
       <div className="grid gap-7 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start">
         <div className="space-y-6">
@@ -123,6 +120,14 @@ export function AdminUnclaimedListingPreview({
               attributes={listing.attributes}
             />
           </section>
+
+          <div className="lg:hidden">
+            <UnclaimedListingClaimSection
+              listingId={listing.id}
+              listingTitle={listing.title || "Untitled listing"}
+              previewOnly
+            />
+          </div>
         </div>
 
         <aside className="space-y-4 lg:sticky lg:top-24">
@@ -140,13 +145,17 @@ export function AdminUnclaimedListingPreview({
 
           <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
             <h3 className="text-base font-semibold text-[#192a3a]">Request this space</h3>
-            <p className="mt-1 text-sm text-gray-600">
-              Tell us what you need and FindMySpace will confirm availability.
-            </p>
+            <p className="mt-1 text-sm text-gray-600">{UNCLAIMED_REQUEST_INTRO}</p>
             <div className="mt-4 rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-center text-sm text-gray-500">
-              Enquiry form (preview only — disabled in admin preview)
+              Request form (preview only — no contact fields shown to visitors)
             </div>
           </section>
+
+          <UnclaimedListingClaimSection
+            listingId={listing.id}
+            listingTitle={listing.title || "Untitled listing"}
+            previewOnly
+          />
         </aside>
       </div>
     </div>

@@ -1,14 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { Loader2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import { sanitizeNextPath } from "@/lib/auth-redirect";
-import {
-  LISTING_ENQUIRY_DURATION_TYPES,
-  UNCLAIMED_LISTING_BADGE,
-} from "@/lib/listing-lifecycle";
+import { LISTING_ENQUIRY_DURATION_TYPES } from "@/lib/listing-lifecycle";
 
 type ListingEnquiryFormProps = {
   listingId: string;
@@ -33,10 +28,6 @@ export function ListingEnquiryForm({
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
-  const returnPath = sanitizeNextPath(`/spaces/${listingId}`, `/spaces/${listingId}`);
-  const loginUrl = `/login?next=${encodeURIComponent(returnPath)}`;
-  const signupUrl = `/signup?next=${encodeURIComponent(returnPath)}`;
-
   useEffect(() => {
     let active = true;
 
@@ -46,34 +37,7 @@ export function ListingEnquiryForm({
       } = await supabase.auth.getUser();
 
       if (!active) return;
-
       setUserId(user?.id ?? null);
-
-      if (user) {
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("first_name, last_name, full_name, email, phone")
-          .eq("id", user.id)
-          .maybeSingle();
-
-        const row = profile as {
-          first_name?: string | null;
-          last_name?: string | null;
-          full_name?: string | null;
-          email?: string | null;
-          phone?: string | null;
-        } | null;
-
-        const fullName =
-          row?.full_name?.trim() ||
-          [row?.first_name, row?.last_name].filter(Boolean).join(" ").trim();
-
-        if (fullName) setName(fullName);
-        if (row?.email) setEmail(row.email);
-        if (user.email && !row?.email) setEmail(user.email);
-        if (row?.phone) setPhone(row.phone);
-      }
-
       setLoadingSession(false);
     }
 
@@ -88,17 +52,16 @@ export function ListingEnquiryForm({
     setError(null);
 
     if (!userId) {
-      setError("Please sign in to submit a request.");
-      return;
+      if (!name.trim()) {
+        setError("Please enter your name.");
+        return;
+      }
+      if (!email.trim()) {
+        setError("Please enter your email.");
+        return;
+      }
     }
-    if (!name.trim()) {
-      setError("Name is required.");
-      return;
-    }
-    if (!email.trim()) {
-      setError("Email is required.");
-      return;
-    }
+
     if (!requestedDate) {
       setError("Please choose a preferred date.");
       return;
@@ -110,14 +73,21 @@ export function ListingEnquiryForm({
 
     setSubmitting(true);
 
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-    const token = session?.access_token;
-    if (!token) {
-      setSubmitting(false);
-      setError("Session expired. Please sign in again.");
-      return;
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+
+    if (userId) {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) {
+        setSubmitting(false);
+        setError("Session expired. Please sign in again.");
+        return;
+      }
+      headers.Authorization = `Bearer ${token}`;
     }
 
     let requestedStart: string | null = null;
@@ -128,22 +98,24 @@ export function ListingEnquiryForm({
       requestedStart = new Date(iso).toISOString();
     }
 
+    const payload: Record<string, unknown> = {
+      listingId,
+      requestedStart,
+      durationType,
+      purpose: purpose.trim() || null,
+      message: message.trim() || null,
+    };
+
+    if (!userId) {
+      payload.name = name.trim();
+      payload.email = email.trim();
+      payload.phone = phone.trim() || null;
+    }
+
     const res = await fetch("/api/listing-enquiries", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        listingId,
-        name: name.trim(),
-        email: email.trim(),
-        phone: phone.trim() || null,
-        requestedStart,
-        durationType,
-        purpose: purpose.trim() || null,
-        message: message.trim() || null,
-      }),
+      headers,
+      body: JSON.stringify(payload),
     });
 
     const json = await res.json().catch(() => ({}));
@@ -166,40 +138,12 @@ export function ListingEnquiryForm({
     );
   }
 
-  if (!userId) {
-    return (
-      <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
-        <p className="font-semibold">Sign in to request this space</p>
-        <p className="mt-1 text-amber-900/90">
-          This space is not yet fully bookable. Sign in or create an account to
-          tell us what you need — FindMySpace will follow up and confirm
-          availability.
-        </p>
-        <div className="mt-4 flex flex-wrap gap-2">
-          <Link
-            href={loginUrl}
-            className="inline-flex rounded-lg bg-[#0f2740] px-4 py-2 text-sm font-semibold text-white"
-          >
-            Sign in
-          </Link>
-          <Link
-            href={signupUrl}
-            className="inline-flex rounded-lg border border-amber-300 bg-white px-4 py-2 text-sm font-semibold text-amber-950"
-          >
-            Create account
-          </Link>
-        </div>
-      </div>
-    );
-  }
-
   if (success) {
     return (
       <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-950">
         <p className="font-semibold">Thanks, we received your request.</p>
         <p className="mt-2 leading-relaxed">
-          This space is not yet fully bookable, but FindMySpace will follow up
-          and confirm availability for{" "}
+          We will follow up and confirm availability for{" "}
           <span className="font-medium">{listingTitle}</span>.
         </p>
       </div>
@@ -208,40 +152,45 @@ export function ListingEnquiryForm({
 
   return (
     <form onSubmit={(e) => void onSubmit(e)} className="space-y-4">
-      <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-950 ring-1 ring-amber-100">
-        {UNCLAIMED_LISTING_BADGE}
-      </p>
-
-      <label className="block">
-        <span className="mb-1 block text-sm font-medium text-gray-700">Name</span>
-        <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          required
-          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-        />
-      </label>
-
-      <label className="block">
-        <span className="mb-1 block text-sm font-medium text-gray-700">Email</span>
-        <input
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-        />
-      </label>
-
-      <label className="block">
-        <span className="mb-1 block text-sm font-medium text-gray-700">Phone</span>
-        <input
-          type="tel"
-          value={phone}
-          onChange={(e) => setPhone(e.target.value)}
-          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-        />
-      </label>
+      {!userId ? (
+        <div className="space-y-3 rounded-lg border border-gray-200 bg-gray-50 p-3">
+          <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
+            Your details
+          </p>
+          <label className="block">
+            <span className="mb-1 block text-sm font-medium text-gray-700">Name</span>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+              autoComplete="name"
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-sm font-medium text-gray-700">Email</span>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              autoComplete="email"
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-sm font-medium text-gray-700">Phone</span>
+            <input
+              type="tel"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              autoComplete="tel"
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+            />
+          </label>
+        </div>
+      ) : null}
 
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="block">

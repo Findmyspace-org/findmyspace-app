@@ -16,8 +16,11 @@ import {
   isUnclaimedListing,
   UNCLAIMED_LISTING_BADGE,
 } from "@/lib/listing-lifecycle";
+import { UnclaimedListingClaimSection } from "@/app/components/UnclaimedListingClaimSection";
+import { UnclaimedListingEnquirySocialProof } from "@/app/components/UnclaimedListingEnquirySocialProof";
 import { UnclaimedListingMobileSheet } from "@/app/components/UnclaimedListingMobileSheet";
 import { UnclaimedListingSidebar } from "@/app/components/UnclaimedListingSidebar";
+import { getListingEnquiryCount } from "@/lib/listing-enquiry-count";
 
 import {
   ArrowLeft,
@@ -152,6 +155,7 @@ export default async function Page({
 
   const unclaimed = isUnclaimedListing(space.status);
   const bookable = isBookableListingStatus(space.status);
+  const enquiryCount = unclaimed ? await getListingEnquiryCount(space.id) : 0;
 
   const price =
     space.booking_unit === "hour"
@@ -276,9 +280,12 @@ export default async function Page({
                   </h1>
 
                   {unclaimed ? (
-                    <p className="mt-3 inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-950">
-                      {UNCLAIMED_LISTING_BADGE}
-                    </p>
+                    <div className="mt-3 flex flex-col items-start gap-2">
+                      <p className="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-950">
+                        {UNCLAIMED_LISTING_BADGE}
+                      </p>
+                      <UnclaimedListingEnquirySocialProof count={enquiryCount} />
+                    </div>
                   ) : isVerifiedSpace ? (
                     <p className="mt-3 inline-flex items-center gap-2 rounded-full border border-[#f0d5d8] bg-[#fff6f7] px-3 py-1 text-xs font-medium text-[#9f1239]">
                       <BadgeCheck className="h-4 w-4" />
@@ -322,12 +329,22 @@ export default async function Page({
                 />
               </div>
             </section>
+
+            {unclaimed ? (
+              <div className="lg:hidden">
+                <UnclaimedListingClaimSection
+                  listingId={space.id}
+                  listingTitle={space.title}
+                />
+              </div>
+            ) : null}
           </div>
 
           {unclaimed ? (
             <UnclaimedListingSidebar
               listingId={space.id}
               listingTitle={space.title}
+              enquiryCount={enquiryCount}
             />
           ) : (
           <aside className="space-y-4 lg:sticky lg:top-24">
@@ -403,6 +420,7 @@ export default async function Page({
         <UnclaimedListingMobileSheet
           listingId={space.id}
           listingTitle={space.title}
+          enquiryCount={enquiryCount}
         />
       ) : bookable ? (
         <>

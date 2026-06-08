@@ -1,10 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { sendEmail } from "@/lib/email";
-import {
-  emailStrong,
-  renderEmailLayout,
-} from "@/lib/email-templates/EmailLayout";
+import { renderEmailLayout } from "@/lib/email-templates/EmailLayout";
 import {
   buildListingEnquiryAdminCopy,
   buildListingEnquiryRequesterCopy,
@@ -27,19 +24,52 @@ type EnquiryBody = {
   message?: string | null;
 };
 
-function getServerClients(req: NextRequest) {
+function resolveRequesterContact(
+  user: { id: string; email?: string | null },
+  profile: {
+    first_name?: string | null;
+    last_name?: string | null;
+    full_name?: string | null;
+    email?: string | null;
+    phone?: string | null;
+  } | null
+): { name: string; email: string; phone: string | null } {
+  const fullName =
+    profile?.full_name?.trim() ||
+    [profile?.first_name, profile?.last_name].filter(Boolean).join(" ").trim();
+  const email = profile?.email?.trim() || user.email?.trim() || "";
+  const name = fullName || (email ? email.split("@")[0] : "User");
+  return {
+    name,
+    email,
+    phone: profile?.phone?.trim() || null,
+  };
+}
+
+function createServiceClient() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-  if (!supabaseUrl || !anonKey || !serviceKey) {
-    return { error: "Server configuration error." as const };
+  if (!supabaseUrl || !serviceKey) {
+    return null;
   }
 
+  return createClient(supabaseUrl, serviceKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+    },
+  });
+}
+
+async function getAuthenticatedUser(req: NextRequest) {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!supabaseUrl || !anonKey) return null;
+
   const authHeader = req.headers.get("authorization");
-  if (!authHeader?.startsWith("Bearer ")) {
-    return { error: "Unauthorized." as const };
-  }
+  if (!authHeader?.startsWith("Bearer ")) return null;
 
   const accessToken = authHeader.replace("Bearer ", "");
   const userClient = createClient(supabaseUrl, anonKey, {
@@ -47,15 +77,13 @@ function getServerClients(req: NextRequest) {
     auth: { persistSession: false },
   });
 
-  const admin = createClient(supabaseUrl, serviceKey, {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-      detectSessionInUrl: false,
-    },
-  });
+  const {
+    data: { user },
+    error,
+  } = await userClient.auth.getUser();
 
-  return { userClient, admin, supabaseUrl, serviceKey, anonKey };
+  if (error || !user) return null;
+  return user;
 }
 
 async function notifyListingEnquiry(
@@ -65,7 +93,7 @@ async function notifyListingEnquiry(
     enquiryId: string;
     listingId: string;
     listingTitle: string;
-    requesterId: string;
+    requesterId: string | null;
     requesterName: string;
     requesterEmail: string;
   }
@@ -116,6 +144,8 @@ async function notifyListingEnquiry(
     });
   }
 
+  if (!params.requesterId) return;
+
   const requesterCopy = buildListingEnquiryRequesterCopy({
     listingTitle: params.listingTitle,
     listingUrl,
@@ -135,20 +165,9 @@ async function notifyListingEnquiry(
 }
 
 export async function POST(req: NextRequest) {
-  const clients = getServerClients(req);
-  if ("error" in clients) {
-    return NextResponse.json({ error: clients.error }, { status: 401 });
-  }
-
-  const { userClient, admin } = clients;
-
-  const {
-    data: { user },
-    error: userError,
-  } = await userClient.auth.getUser();
-
-  if (userError || !user) {
-    return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+  const admin = createServiceClient();
+  if (!admin) {
+    return NextResponse.json({ error: "Server configuration error." }, { status: 500 });
   }
 
   let body: EnquiryBody;
@@ -159,13 +178,11 @@ export async function POST(req: NextRequest) {
   }
 
   const listingId = body.listingId?.trim();
-  const name = body.name?.trim();
-  const email = body.email?.trim();
   const durationType = body.durationType?.trim();
 
-  if (!listingId || !name || !email || !durationType) {
+  if (!listingId || !durationType) {
     return NextResponse.json(
-      { error: "listingId, name, email, and durationType are required." },
+      { error: "listingId and durationType are required." },
       { status: 400 }
     );
   }
@@ -174,9 +191,66 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid duration type." }, { status: 400 });
   }
 
-  const { data: listing, error: listingErr } = await (
-    admin.from("spaces") as ReturnType<typeof admin.from>
-  )
+  const user = await getAuthenticatedUser(req);
+
+  let name: string;
+  let email: string;
+  let phone: string | null;
+  let requesterId: string | null = null;
+
+  if (user) {
+    requesterId = user.id;
+
+    const { data: profile, error: profileErr } = await admin
+      .from("profiles")
+      .select("first_name, last_name, full_name, email, phone")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    if (profileErr) {
+      return NextResponse.json({ error: profileErr.message }, { status: 500 });
+    }
+
+    const contact = resolveRequesterContact(
+      user,
+      profile as {
+        first_name?: string | null;
+        last_name?: string | null;
+        full_name?: string | null;
+        email?: string | null;
+        phone?: string | null;
+      } | null
+    );
+
+    name = contact.name;
+    email = contact.email;
+    phone = contact.phone;
+
+    if (!email) {
+      return NextResponse.json(
+        { error: "Your account must have an email address to submit a request." },
+        { status: 400 }
+      );
+    }
+  } else {
+    name = body.name?.trim() || "";
+    email = body.email?.trim() || "";
+    phone = body.phone?.trim() || null;
+
+    if (!name || !email) {
+      return NextResponse.json(
+        { error: "Name and email are required." },
+        { status: 400 }
+      );
+    }
+
+    if (!email.includes("@")) {
+      return NextResponse.json({ error: "Invalid email address." }, { status: 400 });
+    }
+  }
+
+  const { data: listing, error: listingErr } = await admin
+    .from("spaces")
     .select("id, title, status")
     .eq("id", listingId)
     .maybeSingle();
@@ -193,15 +267,14 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const { data: inserted, error: insertErr } = await (
-    admin.from("listing_enquiries") as ReturnType<typeof admin.from>
-  )
+  const { data: inserted, error: insertErr } = await admin
+    .from("listing_enquiries")
     .insert({
       listing_id: listingId,
-      requester_id: user.id,
+      requester_id: requesterId,
       name,
       email,
-      phone: body.phone?.trim() || null,
+      phone,
       requested_start: body.requestedStart || null,
       requested_end: body.requestedEnd || null,
       duration_type: durationType,
@@ -227,7 +300,7 @@ export async function POST(req: NextRequest) {
       enquiryId,
       listingId,
       listingTitle: listingRow.title || "Untitled listing",
-      requesterId: user.id,
+      requesterId,
       requesterName: name,
       requesterEmail: email,
     });

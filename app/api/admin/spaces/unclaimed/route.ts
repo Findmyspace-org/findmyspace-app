@@ -17,11 +17,23 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Server configuration error." }, { status: 500 });
   }
 
+  const overviewStatuses = [
+    "draft",
+    "unclaimed",
+    "owner_claimed",
+    "pending_verification",
+    "pending",
+    "needs_changes",
+    "rejected",
+    "active",
+    "paused",
+  ];
+
   const { data: spaces, error } = await admin
     .from("spaces")
     .select("id, title, city, suburb, space_type, status, created_at")
     .eq("created_by_admin", true)
-    .in("status", ["draft", "unclaimed"])
+    .in("status", overviewStatuses)
     .order("created_at", { ascending: false });
 
   if (error) {
@@ -30,21 +42,37 @@ export async function GET(req: NextRequest) {
 
   const ids = ((spaces as { id: string }[]) || []).map((s) => s.id);
   const enquiryCounts: Record<string, number> = {};
+  const coverImages: Record<string, string> = {};
 
   if (ids.length > 0) {
-    const { data: enquiries } = await admin
-      .from("listing_enquiries")
-      .select("listing_id")
-      .in("listing_id", ids);
+    const [{ data: enquiries }, { data: images }] = await Promise.all([
+      admin.from("listing_enquiries").select("listing_id").in("listing_id", ids),
+      admin
+        .from("space_images")
+        .select("space_id, image_url, sort_order")
+        .in("space_id", ids)
+        .order("sort_order", { ascending: true }),
+    ]);
 
     for (const row of (enquiries as { listing_id: string }[]) || []) {
       enquiryCounts[row.listing_id] = (enquiryCounts[row.listing_id] || 0) + 1;
+    }
+
+    for (const row of (images as {
+      space_id: string;
+      image_url: string;
+      sort_order: number | null;
+    }[]) || []) {
+      if (!coverImages[row.space_id]) {
+        coverImages[row.space_id] = row.image_url;
+      }
     }
   }
 
   const rows = ((spaces as Record<string, unknown>[]) || []).map((space) => ({
     ...space,
     enquiry_count: enquiryCounts[(space.id as string) || ""] || 0,
+    cover_image_url: coverImages[(space.id as string) || ""] || null,
   }));
 
   return NextResponse.json({ listings: rows });

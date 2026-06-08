@@ -201,7 +201,9 @@ export function shouldHideListingPricing(status: string | null | undefined): boo
   return isUnclaimedListing(status);
 }
 
-export const UNCLAIMED_LISTING_BADGE =
-  "Space profile prepared by FindMySpace. Availability to be confirmed.";
+export const UNCLAIMED_LISTING_BADGE = "Availability to be confirmed";
+
+export const UNCLAIMED_REQUEST_INTRO =
+  "Tell us how you need this space. Availability will be confirmed when you submit this request.";
 
 export const UNCLAIMED_PRICING_LABEL = "Pricing to be confirmed";
