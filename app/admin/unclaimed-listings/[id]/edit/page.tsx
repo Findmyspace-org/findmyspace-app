@@ -3,11 +3,12 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { ArrowLeft, ExternalLink } from "lucide-react";
+import { ArrowLeft, Eye } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { adminApiFetch } from "@/lib/admin-api-client";
 import { AdminUnclaimedSpaceForm } from "@/app/components/AdminUnclaimedSpaceForm";
 import { AdminListingClaimPanel } from "@/app/components/AdminListingClaimPanel";
+import { sortSpaceImages } from "@/lib/sort-space-images";
 
 type SpaceRow = {
   id: string;
@@ -49,8 +50,13 @@ export default function EditUnclaimedListingPage() {
       setSpace(result.space as SpaceRow);
       setAttributes((result.attributes as Record<string, string[]>) || {});
       setImages(
-        (result.images as { id: string; image_url: string; sort_order: number | null }[]) ||
-          []
+        sortSpaceImages(
+          (result.images as {
+            id: string;
+            image_url: string;
+            sort_order: number | null;
+          }[]) || []
+        )
       );
       setEnquiryCount((result.enquiry_count as number) || 0);
       setReadOnly(Boolean(result.readOnly));
@@ -122,14 +128,18 @@ export default function EditUnclaimedListingPage() {
             <ArrowLeft className="h-4 w-4" />
             Back to unclaimed listings
           </Link>
-          {space.status === "unclaimed" ? (
+          {space.status === "draft" || space.status === "unclaimed" ? (
             <Link
-              href={`/spaces/${space.id}`}
+              href={
+                space.status === "unclaimed"
+                  ? `/spaces/${space.id}`
+                  : `/admin/unclaimed-listings/${space.id}/preview`
+              }
               target="_blank"
-              className="inline-flex items-center gap-1.5 text-sm font-medium text-[#0f2740] hover:underline"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-[#0f2740] hover:bg-gray-50"
             >
-              View public page
-              <ExternalLink className="h-3.5 w-3.5" />
+              <Eye className="h-4 w-4" />
+              Preview listing
             </Link>
           ) : null}
           {enquiryCount > 0 ? (
@@ -143,6 +153,10 @@ export default function EditUnclaimedListingPage() {
         </div>
 
         <h1 className="text-2xl font-semibold text-gray-900">Edit unclaimed listing</h1>
+        <p className="mt-2 text-sm text-gray-600">
+          This is the public-facing version prepared by FindMySpace. The owner can update
+          details after claiming.
+        </p>
 
         <div className="mt-6 space-y-6">
           <AdminListingClaimPanel

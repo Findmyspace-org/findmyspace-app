@@ -305,7 +305,9 @@ export async function loadClaimPreview(
 
   const { data: space, error: spaceErr } = await admin
     .from("spaces")
-    .select("id, title, description, city, suburb, space_type, status")
+    .select(
+      "id, title, description, city, suburb, space_type, status, owner_id, created_by_admin, claimed_at"
+    )
     .eq("id", token.listing_id)
     .maybeSingle();
 

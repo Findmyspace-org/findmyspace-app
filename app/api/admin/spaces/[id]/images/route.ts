@@ -122,6 +122,7 @@ export async function POST(
 
     const startOrder = existingCount ?? 0;
     const inserted: { id: string; image_url: string; sort_order: number }[] = [];
+    const failed: { name: string; error: string }[] = [];
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
@@ -131,10 +132,11 @@ export async function POST(
           spaceId: id,
           fileName: file.name,
         });
-        return jsonError(validation.error, 400, "invalid_file");
+        failed.push({ name: file.name, error: validation.error });
+        continue;
       }
 
-      const filePath = `admin-unclaimed/${id}/${Date.now()}-${i}.${validation.ext}`;
+      const filePath = `admin-unclaimed/${id}/${Date.now()}-${i}-${Math.random().toString(36).slice(2, 8)}.${validation.ext}`;
       const buffer = Buffer.from(await file.arrayBuffer());
 
       const { error: uploadErr } = await admin.storage
@@ -146,6 +148,7 @@ export async function POST(
         });
 
       if (uploadErr) {
+        const errMsg = classifyStorageUploadError(uploadErr.message);
         console.error(
           logPrefix,
           "Storage upload failed:",
@@ -156,18 +159,15 @@ export async function POST(
             message: uploadErr.message,
           })
         );
-        return jsonError(
-          classifyStorageUploadError(uploadErr.message),
-          500,
-          "storage_upload_failed"
-        );
+        failed.push({ name: file.name, error: errMsg });
+        continue;
       }
 
       const { data: publicUrl } = admin.storage
         .from("space-images")
         .getPublicUrl(filePath);
 
-      const sortOrder = startOrder + i;
+      const sortOrder = startOrder + inserted.length;
       const { data: row, error: insertErr } = await admin
         .from("space_images")
         .insert({
@@ -192,11 +192,13 @@ export async function POST(
           })
         );
         await admin.storage.from("space-images").remove([filePath]);
-        return jsonError(
-          classifySpaceImagesInsertError(insertErr?.message || "Unknown database error."),
-          500,
-          "space_images_insert_denied"
-        );
+        failed.push({
+          name: file.name,
+          error: classifySpaceImagesInsertError(
+            insertErr?.message || "Unknown database error."
+          ),
+        });
+        continue;
       }
 
       inserted.push(row as { id: string; image_url: string; sort_order: number });
@@ -205,10 +207,30 @@ export async function POST(
     console.info(
       logPrefix,
       "Upload complete",
-      JSON.stringify({ spaceId: id, uploaded: inserted.length })
+      JSON.stringify({
+        spaceId: id,
+        uploaded: inserted.length,
+        failed: failed.length,
+      })
     );
 
-    return NextResponse.json({ ok: true, images: inserted });
+    if (inserted.length === 0 && failed.length > 0) {
+      return NextResponse.json(
+        {
+          error: `All ${failed.length} photo(s) failed to upload.`,
+          failed,
+          images: [],
+        },
+        { status: 400 }
+      );
+    }
+
+    return NextResponse.json({
+      ok: true,
+      images: inserted,
+      failed,
+      partial: failed.length > 0,
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(
