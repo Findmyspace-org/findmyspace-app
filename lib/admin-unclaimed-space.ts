@@ -1,0 +1,280 @@
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { LISTING_SPACE_TYPE_OPTIONS } from "@/app/data/spaceFeatureConfig";
+import { UNCLAIMED_LISTING_STATUS } from "@/lib/listing-lifecycle";
+
+export const ADMIN_UNCLAIMED_STATUSES = ["draft", "unclaimed"] as const;
+export type AdminUnclaimedStatus = (typeof ADMIN_UNCLAIMED_STATUSES)[number];
+
+const SPACE_TYPE_VALUES = new Set(LISTING_SPACE_TYPE_OPTIONS.map((o) => o.value));
+const BOOKING_UNITS = new Set(["hour", "day", "month"]);
+
+const MAX_TITLE = 200;
+const MAX_DESC = 50_000;
+const MAX_ADDR = 300;
+
+export type UnclaimedSpaceInput = {
+  title?: string | null;
+  description?: string | null;
+  space_type?: string | null;
+  booking_unit?: string | null;
+  city?: string | null;
+  suburb?: string | null;
+  street_address?: string | null;
+  province?: string | null;
+  postal_code?: string | null;
+  country?: string | null;
+  address_line_1?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  attributes?: Record<string, string[]>;
+};
+
+export function createServiceAdminClient(): SupabaseClient | null {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl || !serviceKey) return null;
+
+  return createClient(supabaseUrl, serviceKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+    },
+  });
+}
+
+function trimOrNull(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed === "" ? null : trimmed;
+}
+
+function parseCoord(value: unknown): number | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim() === "") return null;
+  if (typeof value === "string") {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : undefined;
+  }
+  return undefined;
+}
+
+export function parseUnclaimedSpaceInput(
+  body: Record<string, unknown>
+): { ok: true; data: UnclaimedSpaceInput } | { ok: false; error: string } {
+  const data: UnclaimedSpaceInput = {};
+
+  if ("title" in body) {
+    const v = trimOrNull(body.title);
+    if (v && v.length > MAX_TITLE) return { ok: false, error: "Title is too long." };
+    data.title = v;
+  }
+  if ("description" in body) {
+    const v = trimOrNull(body.description);
+    if (v && v.length > MAX_DESC) return { ok: false, error: "Description is too long." };
+    data.description = v;
+  }
+  if ("space_type" in body) {
+    const v = trimOrNull(body.space_type);
+    if (v && !SPACE_TYPE_VALUES.has(v)) return { ok: false, error: "Invalid space type." };
+    data.space_type = v;
+  }
+  if ("booking_unit" in body) {
+    const v = trimOrNull(body.booking_unit);
+    if (v && !BOOKING_UNITS.has(v)) return { ok: false, error: "Invalid booking unit." };
+    data.booking_unit = v;
+  }
+
+  for (const key of [
+    "city",
+    "suburb",
+    "street_address",
+    "province",
+    "postal_code",
+    "country",
+    "address_line_1",
+  ] as const) {
+    if (key in body) {
+      const v = trimOrNull(body[key]);
+      if (v && v.length > MAX_ADDR) {
+        return { ok: false, error: `${key} is too long.` };
+      }
+      data[key] = v;
+    }
+  }
+
+  if ("latitude" in body) {
+    const v = parseCoord(body.latitude);
+    if (v === undefined) return { ok: false, error: "Invalid latitude." };
+    data.latitude = v;
+  }
+  if ("longitude" in body) {
+    const v = parseCoord(body.longitude);
+    if (v === undefined) return { ok: false, error: "Invalid longitude." };
+    data.longitude = v;
+  }
+
+  if ("attributes" in body) {
+    const raw = body.attributes;
+    if (raw === null) {
+      data.attributes = {};
+    } else if (typeof raw === "object" && raw !== null && !Array.isArray(raw)) {
+      const attrs: Record<string, string[]> = {};
+      for (const [key, val] of Object.entries(raw as Record<string, unknown>)) {
+        if (!key.trim()) continue;
+        if (Array.isArray(val)) {
+          attrs[key] = val
+            .map((item) => String(item).trim())
+            .filter(Boolean);
+        } else if (typeof val === "string" && val.trim()) {
+          attrs[key] = [val.trim()];
+        }
+      }
+      data.attributes = attrs;
+    } else {
+      return { ok: false, error: "Invalid attributes." };
+    }
+  }
+
+  return { ok: true, data };
+}
+
+export function buildUnclaimedSpaceRow(
+  input: UnclaimedSpaceInput,
+  adminUserId: string,
+  status: AdminUnclaimedStatus
+): Record<string, unknown> {
+  const street = input.street_address ?? input.address_line_1 ?? null;
+  return {
+    owner_id: null,
+    created_by_admin: true,
+    created_by_admin_id: adminUserId,
+    status,
+    title: input.title?.trim() || "Untitled listing",
+    description: input.description ?? null,
+    space_type: input.space_type ?? null,
+    booking_unit: input.booking_unit ?? "day",
+    city: input.city ?? null,
+    suburb: input.suburb ?? null,
+    street_address: street,
+    province: input.province ?? null,
+    postal_code: input.postal_code ?? null,
+    country: input.country ?? "South Africa",
+    address_line_1: street,
+    latitude: input.latitude ?? null,
+    longitude: input.longitude ?? null,
+    price_per_hour: null,
+    price_per_day: null,
+    price_per_month: null,
+    verification_status: "pending",
+    ownership_proof_status: "pending",
+  };
+}
+
+export async function syncSpaceAttributes(
+  admin: SupabaseClient,
+  spaceId: string,
+  attributes: Record<string, string[]> | undefined
+) {
+  if (attributes === undefined) return null;
+
+  const { error: delErr } = await admin
+    .from("space_attributes")
+    .delete()
+    .eq("space_id", spaceId);
+  if (delErr) return delErr.message;
+
+  const rows = Object.entries(attributes).flatMap(([attribute_key, values]) =>
+    values.map((attribute_value) => ({
+      space_id: spaceId,
+      attribute_key,
+      attribute_value,
+    }))
+  );
+
+  if (rows.length === 0) return null;
+
+  const { error: insErr } = await admin.from("space_attributes").insert(rows);
+  return insErr?.message ?? null;
+}
+
+export async function fetchAdminUnclaimedSpace(
+  admin: SupabaseClient,
+  spaceId: string
+) {
+  const { data, error } = await admin
+    .from("spaces")
+    .select("*")
+    .eq("id", spaceId)
+    .maybeSingle();
+
+  if (error || !data) return { error: error?.message || "Listing not found." };
+
+  const row = data as { status: string | null; created_by_admin?: boolean };
+  if (!row.created_by_admin) {
+    return { error: "Not an admin-created unclaimed listing." };
+  }
+  if (!ADMIN_UNCLAIMED_STATUSES.includes(row.status as AdminUnclaimedStatus)) {
+    return {
+      error: "Listing is no longer in draft/unclaimed workflow.",
+    };
+  }
+
+  return { space: data };
+}
+
+export type PublishValidationResult =
+  | { ok: true }
+  | { ok: false; error: string };
+
+export async function validateReadyToPublishUnclaimed(
+  admin: SupabaseClient,
+  spaceId: string
+): Promise<PublishValidationResult> {
+  const { space, error } = await fetchAdminUnclaimedSpace(admin, spaceId);
+  if (error || !space) {
+    return { ok: false, error: error || "Listing not found." };
+  }
+
+  const row = space as {
+    title: string | null;
+    space_type: string | null;
+    city: string | null;
+    suburb: string | null;
+  };
+
+  if (!row.title?.trim() || row.title.trim() === "Untitled listing") {
+    return { ok: false, error: "Title is required before publishing." };
+  }
+  if (!row.space_type?.trim()) {
+    return { ok: false, error: "Category is required before publishing." };
+  }
+  if (!row.city?.trim() && !row.suburb?.trim()) {
+    return { ok: false, error: "City or suburb is required before publishing." };
+  }
+
+  const { count, error: imgErr } = await admin
+    .from("space_images")
+    .select("id", { count: "exact", head: true })
+    .eq("space_id", spaceId);
+
+  if (imgErr) {
+    return { ok: false, error: imgErr.message };
+  }
+  if (!count || count < 1) {
+    return { ok: false, error: "Add at least one photo before publishing." };
+  }
+
+  return { ok: true };
+}
+
+export function isAdminUnclaimedStatus(
+  status: string | null | undefined
+): status is AdminUnclaimedStatus {
+  return ADMIN_UNCLAIMED_STATUSES.includes(status as AdminUnclaimedStatus);
+}
+
+export { UNCLAIMED_LISTING_STATUS };
