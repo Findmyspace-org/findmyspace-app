@@ -7,6 +7,7 @@ import { Loader2, Trash2, Upload } from "lucide-react";
 import SpaceCategoryFields from "@/app/components/SpaceCategoryFields";
 import { LISTING_SPACE_TYPE_OPTIONS } from "@/app/data/spaceFeatureConfig";
 import { adminApiFetch } from "@/lib/admin-api-client";
+import { ADMIN_SPACE_IMAGE_MAX_BYTES } from "@/lib/admin-space-image-upload";
 import { ZA_PROVINCES } from "@/lib/za-provinces";
 
 const MapPicker = dynamic(() => import("@/app/components/MapPicker"), {
@@ -169,6 +170,27 @@ export function AdminUnclaimedSpaceForm({
 
   async function uploadImages(fileList: FileList | null) {
     if (readOnly || !spaceId || !fileList?.length) return;
+
+    const allowed = new Set(["image/jpeg", "image/png", "image/webp"]);
+    const allowedExt = new Set(["jpg", "jpeg", "png", "webp"]);
+    const maxMb = (ADMIN_SPACE_IMAGE_MAX_BYTES / (1024 * 1024)).toFixed(0);
+
+    for (const file of Array.from(fileList)) {
+      const ext = (file.name.split(".").pop() || "").toLowerCase();
+      if (!allowed.has(file.type) && !allowedExt.has(ext)) {
+        setMessage(
+          `Invalid file type "${file.name}". Use JPG, PNG, or WebP only.`
+        );
+        return;
+      }
+      if (file.size > ADMIN_SPACE_IMAGE_MAX_BYTES) {
+        setMessage(
+          `"${file.name}" is too large. Maximum size is ${maxMb} MB per image.`
+        );
+        return;
+      }
+    }
+
     setUploading(true);
     setMessage(null);
     try {
@@ -432,7 +454,9 @@ export function AdminUnclaimedSpaceForm({
       {message ? (
         <p
           className={`text-sm ${
-            message.includes("failed") || message.includes("Publish failed")
+            /failed|denied|too large|invalid|error|required|not found|could not/i.test(
+              message
+            ) && !message.includes("uploaded")
               ? "text-red-600"
               : "text-green-700"
           }`}

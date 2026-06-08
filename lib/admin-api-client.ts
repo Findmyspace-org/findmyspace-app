@@ -16,12 +16,37 @@ export async function adminApiFetch(path: string, init?: RequestInit) {
     },
   });
 
-  const json = await res.json().catch(() => ({}));
+  const raw = await res.text();
+  let json: Record<string, unknown> = {};
+  if (raw) {
+    try {
+      json = JSON.parse(raw) as Record<string, unknown>;
+    } catch {
+      if (!res.ok) {
+        if (res.status === 413) {
+          throw new Error(
+            "Upload too large. Use images under 4 MB each (JPG, PNG, or WebP)."
+          );
+        }
+        const snippet = raw.replace(/\s+/g, " ").slice(0, 180);
+        throw new Error(
+          snippet
+            ? `Request failed (${res.status}): ${snippet}`
+            : `Request failed (${res.status} ${res.statusText || "unknown error"}).`
+        );
+      }
+    }
+  }
+
   if (!res.ok) {
     const message =
       (typeof json.error === "string" && json.error) ||
-      res.statusText ||
-      "Request failed.";
+      (typeof json.message === "string" && json.message) ||
+      (res.status === 413
+        ? "Upload too large. Use images under 4 MB each (JPG, PNG, or WebP)."
+        : null) ||
+      (res.statusText ? `${res.statusText} (${res.status})` : null) ||
+      `Request failed (${res.status}).`;
     if (res.status === 401) {
       throw new Error("Not signed in. Sign in again as admin.");
     }
