@@ -24,9 +24,11 @@ import {
 import { ZA_PROVINCES } from "@/lib/za-provinces";
 import {
   canOwnerEditListing,
+  getOwnerListingClaimHref,
   getOwnerListingCompletionHref,
   getOwnerListingStatusBadgeClass,
   getOwnerListingStatusLabel,
+  isOwnerClaimOnboardingStatus,
   isOwnerListingLockedForEdit,
 } from "@/lib/listing-lifecycle";
 
@@ -280,8 +282,15 @@ export default function EditListingPage({ params }: PageProps) {
     );
     setDepositType(data.deposit_type ?? "none");
     setMonthlyPaymentDay(String(data.monthly_payment_day ?? 1));
-    setStatus(data.status ?? "pending");
+    const loadedStatus = data.status ?? "pending";
+    setStatus(loadedStatus);
     setOwnershipProofStatus(data.ownership_proof_status ?? "pending");
+
+    if (isOwnerClaimOnboardingStatus(loadedStatus)) {
+      setLoading(false);
+      router.replace(getOwnerListingClaimHref(id));
+      return;
+    }
 
     const { data: attributesData, error: attributesError } = await supabase
       .from("space_attributes")
@@ -1251,6 +1260,7 @@ export default function EditListingPage({ params }: PageProps) {
                       onPatchRoot={patchBookingIntelRoot}
                       requirements={bookingRequirements}
                       onRequirementsChange={setBookingRequirements}
+                      spaceType={spaceType}
                     />
                   </div>
                 </details>

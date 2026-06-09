@@ -2000,6 +2000,7 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
                 onPatchRoot={patchBookingIntelRoot}
                 requirements={bookingRequirements}
                 onRequirementsChange={setBookingRequirements}
+                spaceType={spaceType}
               />
             </div>
           </div>

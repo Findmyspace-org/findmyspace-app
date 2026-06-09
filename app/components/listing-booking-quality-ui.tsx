@@ -142,6 +142,8 @@ export type ListingBookingQualityFormFieldsProps = {
   renterRequirementsSubtitle?: string;
   /** Omit outer card — parent provides the surface (e.g. unified listing step). */
   embedded?: boolean;
+  /** When event_space, Suitable for lives in Features & amenities only. */
+  spaceType?: string | null;
 };
 
 export function ListingBookingQualityFormFields({
@@ -153,7 +155,10 @@ export function ListingBookingQualityFormFields({
   onRequirementsChange: setRequirements,
   renterRequirementsSubtitle = "Better details help you approve the right requests faster.",
   embedded = false,
+  spaceType = null,
 }: ListingBookingQualityFormFieldsProps) {
+  const hideUseSuitability =
+    spaceType === "event_space" && intelCategory === "office_event";
   const renterKeys = renterRequirementKeysForCategory(intelCategory);
 
   const storageAccess = (data.access as Record<string, boolean>) || {};
@@ -451,32 +456,40 @@ export function ListingBookingQualityFormFields({
               </div>
             </BqSection>
 
-            <BqSection title="Use & suitability">
-              <p className="mb-3 text-xs text-gray-600">
-                What the space is well suited for — Wi‑Fi, AV, and wheelchair access stay in Features &amp; amenities.
-              </p>
-              <div className="grid grid-cols-1 gap-x-3 gap-y-1 sm:grid-cols-2 lg:grid-cols-3">
-                {(
-                  [
-                    ["meetings", "Meetings"],
-                    ["workshops", "Workshops"],
-                    ["training", "Training"],
-                    ["small_events", "Small events"],
-                    ["photography_content", "Photography / content"],
-                    ["noise_sensitive", "Noise-sensitive use"],
-                    ["catering_allowed", "Catering allowed"],
-                    ["alcohol_where_legal", "Alcohol (where legal)"],
-                  ] as const
-                ).map(([k, label]) => (
-                  <BqCheckboxRow
-                    key={k}
-                    label={label}
-                    checked={Boolean(useSuit[k])}
-                    onChange={(v) => patchSection("use_suitability", { [k]: v })}
-                  />
-                ))}
-              </div>
-            </BqSection>
+            {hideUseSuitability ? (
+              <BqSection title="Suitable for">
+                <p className="text-xs text-gray-600">
+                  Suitable for options are set under <strong>Features &amp; amenities</strong>.
+                </p>
+              </BqSection>
+            ) : (
+              <BqSection title="Use & suitability">
+                <p className="mb-3 text-xs text-gray-600">
+                  What the space is well suited for — Wi‑Fi, AV, and wheelchair access stay in Features &amp; amenities.
+                </p>
+                <div className="grid grid-cols-1 gap-x-3 gap-y-1 sm:grid-cols-2 lg:grid-cols-3">
+                  {(
+                    [
+                      ["meetings", "Meetings"],
+                      ["workshops", "Workshops"],
+                      ["training", "Training"],
+                      ["small_events", "Small events"],
+                      ["photography_content", "Photography / content"],
+                      ["noise_sensitive", "Noise-sensitive use"],
+                      ["catering_allowed", "Catering allowed"],
+                      ["alcohol_where_legal", "Alcohol (where legal)"],
+                    ] as const
+                  ).map(([k, label]) => (
+                    <BqCheckboxRow
+                      key={k}
+                      label={label}
+                      checked={Boolean(useSuit[k])}
+                      onChange={(v) => patchSection("use_suitability", { [k]: v })}
+                    />
+                  ))}
+                </div>
+              </BqSection>
+            )}
 
             <BqSection title="Setup & operational notes">
               <div className="grid gap-3">

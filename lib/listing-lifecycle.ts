@@ -15,11 +15,16 @@ export const PENDING_VERIFICATION_STATUS = "pending_verification" as const;
 
 /** Statuses where owners may save listing content (not lifecycle transitions). */
 export const OWNER_EDITABLE_LISTING_STATUSES = [
-  OWNER_CLAIMED_STATUS,
   NEEDS_CHANGES_STATUS,
   BOOKABLE_LISTING_STATUS,
   "paused",
   "pending",
+] as const;
+
+/** Claim onboarding — verification steps only, no full listing edit. */
+export const OWNER_CLAIM_ONBOARDING_STATUSES = [
+  OWNER_CLAIMED_STATUS,
+  PENDING_VERIFICATION_STATUS,
 ] as const;
 
 export function canOwnerEditListing(
@@ -30,15 +35,27 @@ export function canOwnerEditListing(
   );
 }
 
+export function isOwnerClaimOnboardingStatus(
+  status: string | null | undefined
+): boolean {
+  return OWNER_CLAIM_ONBOARDING_STATUSES.includes(
+    (status || "") as (typeof OWNER_CLAIM_ONBOARDING_STATUSES)[number]
+  );
+}
+
 export function isOwnerListingLockedForEdit(
   status: string | null | undefined
 ): boolean {
   return (
-    status === PENDING_VERIFICATION_STATUS ||
+    isOwnerClaimOnboardingStatus(status) ||
     status === "rejected" ||
     status === "draft" ||
     status === UNCLAIMED_LISTING_STATUS
   );
+}
+
+export function getOwnerListingClaimHref(spaceId: string): string {
+  return `/dashboard/listings/${spaceId}/claim`;
 }
 
 export function isSpaceBookable(status: string | null | undefined): boolean {
@@ -131,29 +148,30 @@ export function getOwnerListingNextAction(
   spaceId: string,
   status: string | null | undefined
 ): OwnerListingNextAction | null {
-  const href = getOwnerListingCompletionHref(spaceId);
+  const claimHref = getOwnerListingClaimHref(spaceId);
+  const completionHref = getOwnerListingCompletionHref(spaceId);
 
   switch (status) {
     case OWNER_CLAIMED_STATUS:
-      return { label: "Complete listing", href, urgent: false, muted: false };
+      return { label: "Complete your claim", href: claimHref, urgent: false, muted: false };
     case NEEDS_CHANGES_STATUS:
       return {
         label: "Review requested changes",
-        href,
+        href: `/spaces/${spaceId}/edit`,
         urgent: true,
         muted: false,
       };
     case PENDING_VERIFICATION_STATUS:
       return {
-        label: "Submitted for review",
-        href,
+        label: "Complete your claim",
+        href: claimHref,
         urgent: false,
         muted: true,
       };
     case "rejected":
       return {
         label: "Rejected — view details",
-        href,
+        href: claimHref,
         urgent: true,
         muted: false,
       };

@@ -174,6 +174,9 @@ export async function computeListingCompletion(
     : profileState(prof?.bank_verification_status);
   const ownershipState = docState(hasOwnershipFile, ownershipStatus);
 
+  const isClaimOnboarding = row.status === "owner_claimed";
+  const claimHref = `/dashboard/listings/${spaceId}/claim`;
+
   const items: ChecklistItem[] = [
     {
       id: "basics",
@@ -181,7 +184,7 @@ export async function computeListingCompletion(
       description: "Title, category, description, and location.",
       href: `/spaces/${spaceId}/edit`,
       state: basicsDone ? "done" : "missing",
-      requiredForSubmit: true,
+      requiredForSubmit: !isClaimOnboarding,
       requiredForApproval: true,
     },
     {
@@ -190,7 +193,7 @@ export async function computeListingCompletion(
       description: "At least one listing photo.",
       href: `/spaces/${spaceId}/edit`,
       state: photosDone ? "done" : "missing",
-      requiredForSubmit: true,
+      requiredForSubmit: !isClaimOnboarding,
       requiredForApproval: true,
     },
     {
@@ -199,7 +202,7 @@ export async function computeListingCompletion(
       description: "Set a rate for your booking unit (hour, day, or month).",
       href: `/spaces/${spaceId}/edit`,
       state: pricingDone ? "done" : "missing",
-      requiredForSubmit: true,
+      requiredForSubmit: !isClaimOnboarding,
       requiredForApproval: true,
     },
     {
@@ -233,7 +236,7 @@ export async function computeListingCompletion(
       id: "ownership",
       title: "Ownership proof",
       description: "Proof of right to list this space.",
-      href: `/spaces/${spaceId}/edit`,
+      href: isClaimOnboarding ? `${claimHref}?step=ownership` : `/spaces/${spaceId}/edit`,
       state: ownershipState,
       requiredForSubmit: true,
       requiredForApproval: true,

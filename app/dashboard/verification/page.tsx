@@ -192,7 +192,13 @@ function mapStatus(
   return "Uploaded";
 }
 
-function VerificationPageContent({ step }: { step: string }) {
+function VerificationPageContent({
+  step,
+  returnUrl,
+}: {
+  step: string;
+  returnUrl: string | null;
+}) {
   const currentStep: VerificationStepKey =
     step === "bank" ? "bank" : step === "overview" ? "overview" : "identity";
 
@@ -1095,6 +1101,11 @@ function VerificationPageContent({ step }: { step: string }) {
   const header = renderStepHeader();
 
 
+  const safeReturnUrl =
+    returnUrl && returnUrl.startsWith("/") && !returnUrl.startsWith("//")
+      ? returnUrl
+      : null;
+
   return (
     <RequireAuth>
       <DashboardShell
@@ -1105,6 +1116,16 @@ function VerificationPageContent({ step }: { step: string }) {
         activeHref="/dashboard/verification"
       >
         <>
+          {safeReturnUrl ? (
+            <div className="mb-4 rounded-lg border border-[#0f2740]/15 bg-[#f8fafc] px-4 py-3 text-sm text-gray-700">
+              <Link
+                href={safeReturnUrl}
+                className="font-semibold text-[#0f2740] hover:underline"
+              >
+                ← Return to claim checklist
+              </Link>
+            </div>
+          ) : null}
 
           <div className="mb-6 grid gap-2 sm:grid-cols-2 lg:grid-cols-4 lg:gap-3">
             {VERIFICATION_STEPS.map((item) => {
@@ -1662,8 +1683,11 @@ function VerificationPageContent({ step }: { step: string }) {
 function VerificationSearchParamsClient() {
   const searchParams = useSearchParams();
   const step = searchParams.get("step") || "identity";
+  const returnUrl = searchParams.get("return");
 
-  return <VerificationPageContent step={step} />;
+  return (
+    <VerificationPageContent step={step} returnUrl={returnUrl} />
+  );
 }
 
 export default function VerificationPage() {

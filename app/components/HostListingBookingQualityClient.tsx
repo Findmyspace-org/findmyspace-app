@@ -264,6 +264,7 @@ export default function HostListingBookingQualityClient({ spaceId }: Props) {
         requirements={requirements}
         onRequirementsChange={setRequirements}
         renterRequirementsSubtitle="Hosts who ask for the right details get fewer back-and-forth messages."
+        spaceType={spaceType ?? undefined}
       />
 
       <p className="text-center text-xs text-gray-500">
