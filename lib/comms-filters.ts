@@ -3,6 +3,11 @@ import {
   isNotificationUnread,
   type NotificationLifecycleRow,
 } from "@/lib/notification-state";
+import {
+  isListingClaimInterestWorkflowOpen,
+  isListingEnquiryRequesterWorkflowOpen,
+  isListingEnquiryWorkflowOpen,
+} from "@/lib/listing-lifecycle";
 
 export type CommsStatusFilter =
   | "all"
@@ -17,6 +22,7 @@ export type CommsFilterableCard = {
   kind: string;
   status: string;
   notificationType?: string;
+  workflowStatus?: string | null;
   questionStatus?: "pending" | "answered" | "dismissed";
   unreadCount?: number;
 };
@@ -52,6 +58,19 @@ export function cardMatchesCommsStatusFilter(
     }
     if (card.kind === "notification") {
       const type = card.notificationType || "";
+      if (type === "listing_enquiry" || type === "listing_claim_interest") {
+        const openWorkflow =
+          type === "listing_enquiry"
+            ? isListingEnquiryWorkflowOpen(card.workflowStatus)
+            : isListingClaimInterestWorkflowOpen(card.workflowStatus);
+        return card.unread && openWorkflow;
+      }
+      if (type === "listing_enquiry_received") {
+        return (
+          card.unread &&
+          isListingEnquiryRequesterWorkflowOpen(card.workflowStatus)
+        );
+      }
       if (
         ACTION_REQUIRED_NOTIFICATION_TYPES.has(type) &&
         card.unread

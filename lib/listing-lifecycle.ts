@@ -182,6 +182,99 @@ export const LISTING_CLAIM_INTEREST_STATUSES = [
 export type ListingClaimInterestStatus =
   (typeof LISTING_CLAIM_INTEREST_STATUSES)[number];
 
+/** Human-readable admin workflow label for listing enquiry status. */
+export function getListingEnquiryStatusLabel(
+  status: string | null | undefined
+): string {
+  switch (status) {
+    case "new":
+      return "New";
+    case "contacted":
+      return "Contacted";
+    case "owner_contacted":
+      return "Owner Contacted";
+    case "converted":
+      return "Converted";
+    case "closed":
+      return "Closed";
+    default:
+      return status ? status.replace(/_/g, " ") : "Unknown";
+  }
+}
+
+/** Human-readable admin workflow label for claim interest status. */
+export function getListingClaimInterestStatusLabel(
+  status: string | null | undefined
+): string {
+  switch (status) {
+    case "new":
+      return "New";
+    case "contacted":
+      return "Contacted";
+    case "claim_link_sent":
+      return "Claim Link Sent";
+    case "closed":
+      return "Closed";
+    default:
+      return status ? status.replace(/_/g, " ") : "Unknown";
+  }
+}
+
+export function listingEnquiryStatusPillClass(
+  status: string | null | undefined
+): string {
+  switch (status) {
+    case "new":
+      return "border-[#bfdbfe] bg-[#eff6ff] text-[#1d4ed8]";
+    case "contacted":
+      return "border-[#fde68a] bg-[#fef9c3] text-[#854d0e]";
+    case "owner_contacted":
+      return "border-[#ddd6fe] bg-[#f5f3ff] text-[#6d28d9]";
+    case "converted":
+      return "border-[#bbf7d0] bg-[#f0fdf4] text-[#166534]";
+    case "closed":
+      return "border-[#e2e8f0] bg-[#f8fafb] text-[#64748b]";
+    default:
+      return "border-[#e2e8f0] bg-[#f8fafb] text-[#64748b]";
+  }
+}
+
+export function listingClaimInterestStatusPillClass(
+  status: string | null | undefined
+): string {
+  switch (status) {
+    case "new":
+      return "border-[#bfdbfe] bg-[#eff6ff] text-[#1d4ed8]";
+    case "contacted":
+      return "border-[#fde68a] bg-[#fef9c3] text-[#854d0e]";
+    case "claim_link_sent":
+      return "border-[#ddd6fe] bg-[#f5f3ff] text-[#6d28d9]";
+    case "closed":
+      return "border-[#e2e8f0] bg-[#f8fafb] text-[#64748b]";
+    default:
+      return "border-[#e2e8f0] bg-[#f8fafb] text-[#64748b]";
+  }
+}
+
+export function isListingEnquiryWorkflowOpen(
+  status: string | null | undefined
+): boolean {
+  return (status || "new") === "new";
+}
+
+export function isListingClaimInterestWorkflowOpen(
+  status: string | null | undefined
+): boolean {
+  return (status || "new") === "new";
+}
+
+export function isListingEnquiryRequesterWorkflowOpen(
+  status: string | null | undefined
+): boolean {
+  const s = status || "new";
+  return s === "new" || s === "contacted" || s === "owner_contacted";
+}
+
 export const LISTING_ENQUIRY_DURATION_TYPES = [
   "hourly",
   "daily",

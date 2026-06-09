@@ -10,6 +10,7 @@ import {
   ShieldCheck,
   Wallet,
 } from "lucide-react";
+import { formatOldestWaiting } from "@/lib/days-waiting";
 
 export type AdminActionQueue = {
   newListingEnquiries: number;
@@ -18,6 +19,12 @@ export type AdminActionQueue = {
   pendingIdentityVerification: number;
   pendingBankVerification: number;
   pendingBookingPayments: number;
+  oldestListingReviewDays?: number | null;
+  oldestListingEnquiryDays?: number | null;
+  oldestClaimInterestDays?: number | null;
+  oldestIdentityVerificationDays?: number | null;
+  oldestBankVerificationDays?: number | null;
+  oldestVerificationDays?: number | null;
 };
 
 type ActionCard = {
@@ -28,6 +35,7 @@ type ActionCard = {
   href: string;
   cta: string;
   icon: typeof Inbox;
+  oldestWaitingDays?: number | null;
 };
 
 export function AdminActionRequiredPanel({ queue }: { queue: AdminActionQueue }) {
@@ -40,6 +48,7 @@ export function AdminActionRequiredPanel({ queue }: { queue: AdminActionQueue })
       href: "/admin/listing-enquiries?status=new",
       cta: "Review enquiries",
       icon: Inbox,
+      oldestWaitingDays: queue.oldestListingEnquiryDays,
     },
     {
       key: "claims",
@@ -49,6 +58,7 @@ export function AdminActionRequiredPanel({ queue }: { queue: AdminActionQueue })
       href: "/admin/listing-claim-interests?status=new",
       cta: "Review claims",
       icon: Link2,
+      oldestWaitingDays: queue.oldestClaimInterestDays,
     },
     {
       key: "reviews",
@@ -58,6 +68,7 @@ export function AdminActionRequiredPanel({ queue }: { queue: AdminActionQueue })
       href: "/admin/listing-reviews",
       cta: "Open review queue",
       icon: ClipboardList,
+      oldestWaitingDays: queue.oldestListingReviewDays,
     },
     {
       key: "identity",
@@ -67,6 +78,8 @@ export function AdminActionRequiredPanel({ queue }: { queue: AdminActionQueue })
       href: "/admin/verification",
       cta: "Review verification",
       icon: ShieldCheck,
+      oldestWaitingDays:
+        queue.oldestIdentityVerificationDays ?? queue.oldestVerificationDays,
     },
     {
       key: "bank",
@@ -76,6 +89,8 @@ export function AdminActionRequiredPanel({ queue }: { queue: AdminActionQueue })
       href: "/admin/verification",
       cta: "Review bank details",
       icon: Landmark,
+      oldestWaitingDays:
+        queue.oldestBankVerificationDays ?? queue.oldestVerificationDays,
     },
   ];
 
@@ -122,6 +137,7 @@ export function AdminActionRequiredPanel({ queue }: { queue: AdminActionQueue })
           {cards.map((card) => {
             if (card.count === 0) return null;
             const Icon = card.icon;
+            const oldestLabel = formatOldestWaiting(card.oldestWaitingDays);
             return (
               <div
                 key={card.key}
@@ -135,6 +151,11 @@ export function AdminActionRequiredPanel({ queue }: { queue: AdminActionQueue })
                     <p className="text-2xl font-semibold text-[#192a3a]">{card.count}</p>
                     <p className="font-medium text-gray-900">{card.label}</p>
                     <p className="mt-1 text-xs text-gray-600">{card.helper}</p>
+                    {oldestLabel ? (
+                      <p className="mt-2 text-xs font-medium text-amber-800">
+                        {oldestLabel}
+                      </p>
+                    ) : null}
                   </div>
                 </div>
                 <Link

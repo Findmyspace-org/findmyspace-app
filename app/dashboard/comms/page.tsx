@@ -85,6 +85,12 @@ import {
   cardMatchesCommsStatusFilter,
   type CommsStatusFilter,
 } from "@/lib/comms-filters";
+import {
+  getListingClaimInterestStatusLabel,
+  getListingEnquiryStatusLabel,
+  listingClaimInterestStatusPillClass,
+  listingEnquiryStatusPillClass,
+} from "@/lib/listing-lifecycle";
 import { broadcastInboxRefresh } from "@/lib/inbox-refresh";
 
 // ---------------------------------------------------------------------------
@@ -184,6 +190,8 @@ type CardIcon =
   | "approved"
   | "declined";
 
+type NotificationWorkflowKind = "listing_enquiry" | "listing_claim_interest";
+
 type NotificationCard = BaseCardChrome & {
   kind: "notification";
   notificationId: string;
@@ -193,6 +201,9 @@ type NotificationCard = BaseCardChrome & {
   relatedEntityType: string | null;
   relatedEntityId: string | null;
   archived: boolean;
+  /** Live workflow status from listing_enquiries / listing_claim_interests. */
+  workflowStatus?: string | null;
+  workflowKind?: NotificationWorkflowKind | null;
 };
 
 type OwnerQuestionCard = BaseCardChrome & {
@@ -503,14 +514,14 @@ function notificationToCard(n: NotificationRow): NotificationCard | null {
     case "listing_enquiry_received":
       from = "FindMySpace";
       regarding = "Listing enquiry";
-      status = "action_required";
+      status = "info";
       iconType = "booking";
       ctaLabel = "View enquiry";
       break;
     case "listing_claim_interest":
       from = "FindMySpace";
       regarding = "Claim request";
-      status = "action_required";
+      status = "info";
       iconType = "listing";
       ctaLabel = "View claim";
       break;
@@ -547,6 +558,128 @@ function notificationToCard(n: NotificationRow): NotificationCard | null {
     searchBlob: `${title} ${summary} ${regarding} ${from}`.toLowerCase(),
   };
 }
+
+type WorkflowStatusMaps = {
+  enquiryById: Map<string, string>;
+  claimInterestById: Map<string, string>;
+};
+
+async function fetchWorkflowStatusMaps(
+  notifications: NotificationRow[]
+): Promise<WorkflowStatusMaps> {
+  const enquiryById = new Map<string, string>();
+  const claimInterestById = new Map<string, string>();
+
+  const enquiryIds = Array.from(
+    new Set(
+      notifications
+        .filter(
+          (n) =>
+            (n.type === "listing_enquiry" ||
+              n.type === "listing_enquiry_received") &&
+            n.related_entity_type === "listing_enquiry" &&
+            n.related_entity_id
+        )
+        .map((n) => n.related_entity_id as string)
+    )
+  );
+
+  const claimIds = Array.from(
+    new Set(
+      notifications
+        .filter(
+          (n) =>
+            n.type === "listing_claim_interest" &&
+            n.related_entity_type === "listing_claim_interest" &&
+            n.related_entity_id
+        )
+        .map((n) => n.related_entity_id as string)
+    )
+  );
+
+  if (enquiryIds.length > 0) {
+    const { data } = await supabase
+      .from("listing_enquiries" as never)
+      .select("id, status")
+      .in("id", enquiryIds);
+    for (const row of (data as { id: string; status: string }[]) || []) {
+      enquiryById.set(row.id, row.status);
+    }
+  }
+
+  if (claimIds.length > 0) {
+    const { data } = await supabase
+      .from("listing_claim_interests" as never)
+      .select("id, status")
+      .in("id", claimIds);
+    for (const row of (data as { id: string; status: string }[]) || []) {
+      claimInterestById.set(row.id, row.status);
+    }
+  }
+
+  return { enquiryById, claimInterestById };
+}
+
+function attachWorkflowStatus(
+  card: NotificationCard,
+  maps: WorkflowStatusMaps
+): NotificationCard {
+  if (
+    (card.notificationType === "listing_enquiry" ||
+      card.notificationType === "listing_enquiry_received") &&
+    card.relatedEntityType === "listing_enquiry" &&
+    card.relatedEntityId
+  ) {
+    const workflowStatus =
+      maps.enquiryById.get(card.relatedEntityId) ?? null;
+    const workflowLabel = workflowStatus
+      ? getListingEnquiryStatusLabel(workflowStatus)
+      : "";
+    return {
+      ...card,
+      workflowKind: "listing_enquiry",
+      workflowStatus,
+      searchBlob: `${card.searchBlob} ${workflowLabel}`.toLowerCase(),
+    };
+  }
+
+  if (
+    card.notificationType === "listing_claim_interest" &&
+    card.relatedEntityType === "listing_claim_interest" &&
+    card.relatedEntityId
+  ) {
+    const workflowStatus =
+      maps.claimInterestById.get(card.relatedEntityId) ?? null;
+    const workflowLabel = workflowStatus
+      ? getListingClaimInterestStatusLabel(workflowStatus)
+      : "";
+    return {
+      ...card,
+      workflowKind: "listing_claim_interest",
+      workflowStatus,
+      searchBlob: `${card.searchBlob} ${workflowLabel}`.toLowerCase(),
+    };
+  }
+
+  return card;
+}
+
+function getNotificationLifecycleLabel(
+  card: NotificationCard
+): "Unread" | "Read" | "Archived" {
+  if (card.archived) return "Archived";
+  if (card.unread) return "Unread";
+  return "Read";
+}
+
+const NOTIFICATION_LIFECYCLE_PILL: Record<
+  "Unread" | "Read" | "Archived",
+  string
+> = {
+  Unread: "border-[#fecaca] bg-[#fff5f5] text-[#c1121f]",
+  Read: "border-[#e2e8f0] bg-[#f8fafb] text-[#64748b]",
+  Archived: "border-[#cbd5e1] bg-[#f1f5f9] text-[#475569]",
+};
 
 // ---------------------------------------------------------------------------
 // Listing-question → card mappers
@@ -693,8 +826,9 @@ function CommsCenterContent() {
   // Mapping is one-shot: once the user clicks a different tab we lock and
   // never override again, so URL params don't fight manual navigation.
   const viewParam = (searchParams.get("view") || "").toLowerCase();
+  const adminContext = searchParams.get("context") === "admin";
   const initialTabFromView: CommsTab | null =
-    viewParam === "platform"
+    viewParam === "platform" || adminContext
       ? "platform"
       : viewParam === "bookings"
         ? "bookings"
@@ -705,7 +839,9 @@ function CommsCenterContent() {
   const [tab, setTab] = useState<CommsTab>(
     initialTabFromView ?? "platform"
   );
-  const [tabLocked, setTabLocked] = useState(Boolean(initialTabFromView));
+  const [tabLocked, setTabLocked] = useState(
+    Boolean(initialTabFromView) || adminContext
+  );
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
@@ -797,10 +933,14 @@ function CommsCenterContent() {
       const threads: MessageThread[] =
         threadsRes && threadsRes.ok ? (await threadsRes.json()).threads || [] : [];
 
+      const workflowMaps = await fetchWorkflowStatusMaps(notifications);
+      const enrichNotif = (card: NotificationCard | null) =>
+        card ? attachWorkflowStatus(card, workflowMaps) : null;
+
       // Platform tab cards
       const platform = notifications
         .filter((n) => PLATFORM_NOTIF_TYPES.has(n.type))
-        .map(notificationToCard)
+        .map((n) => enrichNotif(notificationToCard(n)))
         .filter((c): c is NotificationCard => Boolean(c))
         .slice(0, PAGE_LIMIT);
 
@@ -825,7 +965,7 @@ function CommsCenterContent() {
       }
       for (const n of notifications) {
         if (!BOOKING_STATUS_NOTIF_TYPES.has(n.type)) continue;
-        const card = notificationToCard(n);
+        const card = enrichNotif(notificationToCard(n));
         if (card) bookingsList.push(card);
       }
       bookingsList.sort(
@@ -1042,6 +1182,8 @@ function CommsCenterContent() {
         status: c.status,
         notificationType:
           c.kind === "notification" ? c.notificationType : undefined,
+        workflowStatus:
+          c.kind === "notification" ? c.workflowStatus : undefined,
         questionStatus:
           c.kind === "owner_question" || c.kind === "renter_question"
             ? c.questionStatus
@@ -1084,18 +1226,34 @@ function CommsCenterContent() {
   const navItems = isHostWorkspace ? HOST_NAV : RENTER_NAV;
   const navActiveHref = isHostWorkspace
     ? "/dashboard/comms?view=hosting"
-    : "/dashboard/comms?view=bookings";
+    : adminContext
+      ? "/dashboard/comms?context=admin"
+      : "/dashboard/comms?view=bookings";
 
   return (
     <RequireAuth>
       <DashboardShell
         workspaceLabel={isHostWorkspace ? "Hosting" : "My account"}
         pageTitle="Comms Center"
-        pageSubtitle="Platform updates, listing questions, booking messages, and actions in one place."
+        pageSubtitle={
+          adminContext
+            ? "Admin notifications with live enquiry and claim workflow status."
+            : "Platform updates, listing questions, booking messages, and actions in one place."
+        }
         navItems={navItems}
         activeHref={navActiveHref}
       >
         <>
+          {adminContext ? (
+            <div className="mb-4 rounded-lg border border-[#192a3a]/15 bg-[#f8fafc] px-4 py-3 text-sm text-gray-700">
+              <Link
+                href="/admin"
+                className="font-semibold text-[#192a3a] hover:underline"
+              >
+                ← Back to admin dashboard
+              </Link>
+            </div>
+          ) : null}
           {/* Refresh action lives inline so it stays near the content while
               the shell owns the page title. */}
           <div className="-mt-1 flex justify-end">
@@ -1429,7 +1587,7 @@ function CardChrome({ card }: { card: CommsCard }) {
           >
             {card.title}
           </p>
-          {card.unread ? (
+          {card.kind === "notification" ? null : card.unread ? (
             <span
               className="inline-block h-2 w-2 rounded-full bg-[#c1121f]"
               aria-label="Unread"
@@ -1448,13 +1606,44 @@ function CardChrome({ card }: { card: CommsCard }) {
           </p>
         ) : null}
 
-        {/* Status pill */}
+        {/* Status pills */}
         <div className="mt-2 flex flex-wrap items-center gap-2">
-          <span
-            className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium ${STATUS_PILL[card.status]}`}
-          >
-            {STATUS_LABEL[card.status]}
-          </span>
+          {card.kind === "notification" ? (
+            <>
+              <span
+                className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium ${NOTIFICATION_LIFECYCLE_PILL[getNotificationLifecycleLabel(card)]}`}
+              >
+                {getNotificationLifecycleLabel(card)}
+              </span>
+              {card.workflowKind === "listing_enquiry" ? (
+                <span
+                  className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium ${listingEnquiryStatusPillClass(card.workflowStatus)}`}
+                >
+                  {getListingEnquiryStatusLabel(card.workflowStatus)}
+                </span>
+              ) : null}
+              {card.workflowKind === "listing_claim_interest" ? (
+                <span
+                  className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium ${listingClaimInterestStatusPillClass(card.workflowStatus)}`}
+                >
+                  {getListingClaimInterestStatusLabel(card.workflowStatus)}
+                </span>
+              ) : null}
+              {!card.workflowKind ? (
+                <span
+                  className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium ${STATUS_PILL[card.status]}`}
+                >
+                  {STATUS_LABEL[card.status]}
+                </span>
+              ) : null}
+            </>
+          ) : (
+            <span
+              className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium ${STATUS_PILL[card.status]}`}
+            >
+              {STATUS_LABEL[card.status]}
+            </span>
+          )}
         </div>
       </div>
     </div>

@@ -16,7 +16,11 @@ import {
 import { supabase } from "@/lib/supabase";
 import { AdminNav } from "@/app/components/AdminNav";
 import { adminApiFetch } from "@/lib/admin-api-client";
-import { LISTING_CLAIM_INTEREST_STATUSES } from "@/lib/listing-lifecycle";
+import {
+  LISTING_CLAIM_INTEREST_STATUSES,
+  getListingClaimInterestStatusLabel,
+  listingClaimInterestStatusPillClass,
+} from "@/lib/listing-lifecycle";
 import type { SpaceCrmLinkSummary } from "@/lib/space-crm-link";
 import {
   markNotificationsReadByRelatedClient,
@@ -61,33 +65,11 @@ type ClaimTokenRow = {
 type StatusFilter = "all" | (typeof LISTING_CLAIM_INTEREST_STATUSES)[number];
 
 function statusBadgeClass(status: string) {
-  switch (status) {
-    case "new":
-      return "bg-blue-100 text-blue-800";
-    case "contacted":
-      return "bg-amber-100 text-amber-900";
-    case "claim_link_sent":
-      return "bg-violet-100 text-violet-800";
-    case "closed":
-      return "bg-gray-100 text-gray-700";
-    default:
-      return "bg-gray-100 text-gray-700";
-  }
+  return listingClaimInterestStatusPillClass(status);
 }
 
 function statusLabel(status: string) {
-  switch (status) {
-    case "new":
-      return "New";
-    case "contacted":
-      return "Contacted";
-    case "claim_link_sent":
-      return "Claim link sent";
-    case "closed":
-      return "Closed";
-    default:
-      return status;
-  }
+  return getListingClaimInterestStatusLabel(status);
 }
 
 function ClaimInterestDetailDrawer({

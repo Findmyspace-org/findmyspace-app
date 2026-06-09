@@ -7,7 +7,11 @@ import { format } from "date-fns";
 import { supabase } from "@/lib/supabase";
 import { AdminNav } from "@/app/components/AdminNav";
 import { adminApiFetch } from "@/lib/admin-api-client";
-import { LISTING_ENQUIRY_STATUSES } from "@/lib/listing-lifecycle";
+import {
+  LISTING_ENQUIRY_STATUSES,
+  getListingEnquiryStatusLabel,
+  listingEnquiryStatusPillClass,
+} from "@/lib/listing-lifecycle";
 import type { SpaceCrmLinkSummary } from "@/lib/space-crm-link";
 import { markNotificationsReadByRelatedClient } from "@/lib/mark-notifications-read-client";
 import {
@@ -34,21 +38,7 @@ type EnquiryRow = {
 };
 
 function statusBadge(status: string) {
-  const base = "inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold";
-  switch (status) {
-    case "new":
-      return `${base} bg-blue-100 text-blue-800`;
-    case "contacted":
-      return `${base} bg-amber-100 text-amber-900`;
-    case "owner_contacted":
-      return `${base} bg-violet-100 text-violet-800`;
-    case "converted":
-      return `${base} bg-green-100 text-green-800`;
-    case "closed":
-      return `${base} bg-gray-100 text-gray-700`;
-    default:
-      return `${base} bg-gray-100 text-gray-700`;
-  }
+  return `inline-flex rounded-full border px-2.5 py-0.5 text-xs font-semibold ${listingEnquiryStatusPillClass(status)}`;
 }
 
 function isValidEnquiryStatus(value: string | null): value is string {
@@ -267,7 +257,7 @@ function AdminListingEnquiriesPageContent() {
               <option value="all">All</option>
               {LISTING_ENQUIRY_STATUSES.map((s) => (
                 <option key={s} value={s}>
-                  {s}
+                  {getListingEnquiryStatusLabel(s)}
                 </option>
               ))}
             </select>
@@ -342,7 +332,9 @@ function AdminListingEnquiriesPageContent() {
                         </p>
                       ) : null}
                     </div>
-                    <span className={statusBadge(row.status)}>{row.status}</span>
+                    <span className={statusBadge(row.status)}>
+                      {getListingEnquiryStatusLabel(row.status)}
+                    </span>
                   </div>
 
                   <dl className="mt-3 grid gap-2 text-sm text-gray-700 sm:grid-cols-2">
