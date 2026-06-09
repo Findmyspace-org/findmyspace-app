@@ -58,11 +58,14 @@ function docState(
   return "pending_review";
 }
 
-function profileState(status: string | null | undefined): ChecklistItemState {
-  if (status === "verified") return "done";
-  if (status === "rejected") return "rejected";
-  if (status === "pending") return "pending_review";
-  return "missing";
+function uploadedVerificationState(
+  uploaded: boolean,
+  profileStatus: string | null | undefined
+): ChecklistItemState {
+  if (!uploaded) return "missing";
+  if (profileStatus === "verified") return "done";
+  if (profileStatus === "rejected") return "rejected";
+  return "pending_review";
 }
 
 function hasPricing(space: SpaceRow): boolean {
@@ -119,7 +122,6 @@ export async function computeListingCompletion(
       .from("listing_ownership_documents")
       .select("id, status")
       .eq("space_id", spaceId)
-      .eq("document_type", "ownership_proof")
       .order("uploaded_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
@@ -166,12 +168,14 @@ export async function computeListingCompletion(
   const pricingDone = hasPricing(row);
   const availabilityDone = (blockedCount ?? 0) > 0;
 
-  const identityState: ChecklistItemState = !identitySubmitted
-    ? "missing"
-    : profileState(prof?.owner_verification_status);
-  const bankState: ChecklistItemState = !bankSubmitted
-    ? "missing"
-    : profileState(prof?.bank_verification_status);
+  const identityState = uploadedVerificationState(
+    identitySubmitted,
+    prof?.owner_verification_status
+  );
+  const bankState = uploadedVerificationState(
+    bankSubmitted,
+    prof?.bank_verification_status
+  );
   const ownershipState = docState(hasOwnershipFile, ownershipStatus);
 
   const isClaimOnboarding = row.status === "owner_claimed";

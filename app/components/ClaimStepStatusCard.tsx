@@ -44,11 +44,14 @@ export function ClaimStepStatusCard({
   title,
   description,
   state,
+  statusLabel,
   action,
 }: {
   title: string;
   description?: string;
   state: ClaimStepUiState;
+  /** Override default pill label (e.g. custom awaiting-verification copy). */
+  statusLabel?: string;
   action?: React.ReactNode;
 }) {
   return (
@@ -60,7 +63,7 @@ export function ClaimStepStatusCard({
           <span
             className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${PILL[state]}`}
           >
-            {LABEL[state]}
+            {statusLabel ?? LABEL[state]}
           </span>
         </div>
         {description ? (

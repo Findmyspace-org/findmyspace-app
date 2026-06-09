@@ -10,14 +10,20 @@ import {
   type ClaimStepProgress,
   type ClaimWizardStep,
 } from "@/app/components/ClaimOnboardingShell";
-import {
-  ClaimStepStatusCard,
-  type ClaimStepUiState,
-} from "@/app/components/ClaimStepStatusCard";
+import { ClaimStepStatusCard } from "@/app/components/ClaimStepStatusCard";
 import { ClaimIdentityUpload } from "@/app/components/ClaimIdentityUpload";
 import { OwnershipProofUpload } from "@/app/components/OwnershipProofUpload";
 import type { ListingCompletionResult } from "@/lib/listing-completion";
 import type { ChecklistItemState } from "@/lib/listing-completion";
+import {
+  claimStepProgress,
+  claimSubmitBlockers,
+  contactClaimDisplay,
+  identityClaimDisplay,
+  isClaimReadyToSubmit,
+  ownershipClaimDisplay,
+  type ClaimReadiness,
+} from "@/lib/claim-readiness";
 import {
   isOwnerClaimOnboardingStatus,
   OWNER_CLAIMED_STATUS,
@@ -33,17 +39,44 @@ const VALID_STEPS: ClaimWizardStep[] = [
   "submit",
 ];
 
-function checklistToUi(state: ChecklistItemState): ClaimStepUiState {
-  switch (state) {
-    case "done":
-      return "completed";
-    case "pending_review":
-      return "pending_review";
-    case "rejected":
-      return "needs_attention";
-    default:
-      return "required";
-  }
+function ClaimSubmittedConfirmation({ spaceId }: { spaceId: string }) {
+  return (
+    <section className="space-y-5 rounded-2xl border border-blue-200 bg-white p-6 shadow-sm">
+      <div className="rounded-xl border border-blue-100 bg-blue-50 p-4">
+        <h2 className="text-lg font-semibold text-blue-950">
+          Claim submitted for review
+        </h2>
+        <p className="mt-2 text-sm leading-relaxed text-blue-900">
+          Your ownership proof and identity documents have been submitted.
+          FindMySpace will review your claim before listing editing is unlocked.
+        </p>
+      </div>
+
+      <div>
+        <p className="text-sm font-medium text-gray-900">What happens next</p>
+        <ul className="mt-2 space-y-2 text-sm text-gray-600">
+          <li>• Ownership proof will be verified by admin</li>
+          <li>• Identity will be verified by admin</li>
+          <li>• You&apos;ll be notified when your claim is approved</li>
+        </ul>
+      </div>
+
+      <div className="flex flex-wrap gap-3 pt-1">
+        <Link
+          href="/dashboard/listings"
+          className="inline-flex rounded-lg bg-[#0f2740] px-4 py-2 text-sm font-semibold text-white"
+        >
+          Back to my listings
+        </Link>
+        <Link
+          href={`/spaces/${spaceId}`}
+          className="inline-flex rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-[#0f2740] hover:bg-gray-50"
+        >
+          View prepared listing
+        </Link>
+      </div>
+    </section>
+  );
 }
 
 function ClaimPageContent() {
@@ -152,6 +185,19 @@ function ClaimPageContent() {
         (ownershipData as typeof ownershipProof) || null
       );
       setOwnershipProofStatus(comp.ownership_proof_status);
+
+      const { data: idDocRows } = await supabase
+        .from("owner_verification_documents")
+        .select("document_type")
+        .eq("owner_id", user.id);
+      const types =
+        ((idDocRows as { document_type: string }[]) || []).map(
+          (d) => d.document_type
+        );
+      setIdDocsReady({
+        hasIdFront: types.includes("id_front"),
+        hasIdBack: types.includes("id_back"),
+      });
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Failed to load claim.");
       setCompletion(null);
@@ -175,43 +221,56 @@ function ClaimPageContent() {
   const canEditSteps =
     completion?.status === OWNER_CLAIMED_STATUS || completion?.status === "rejected";
 
-  const ownershipUploaded = Boolean(ownershipProof);
-  const identityUploaded =
-    (idDocsReady.hasIdFront && idDocsReady.hasIdBack) ||
-    identityItem?.state === "done" ||
-    identityItem?.state === "pending_review";
-
-  const stepProgress = useMemo((): Partial<Record<ClaimWizardStep, ClaimStepProgress>> => {
-    const ownershipProgress: ClaimStepProgress = !ownershipUploaded
-      ? "incomplete"
-      : ownershipItem?.state === "done" || ownershipProofStatus === "verified"
-        ? "complete"
-        : "pending_review";
-    const identityProgress: ClaimStepProgress = !identityUploaded
-      ? "incomplete"
-      : identityItem?.state === "done"
-        ? "complete"
-        : "pending_review";
+  const claimReadiness = useMemo((): ClaimReadiness => {
+    const ownershipUploaded = Boolean(ownershipProof);
+    const identitySubmitted =
+      (idDocsReady.hasIdFront && idDocsReady.hasIdBack) ||
+      identityItem?.state === "done" ||
+      identityItem?.state === "pending_review";
     return {
-      details: contactComplete ? "complete" : "incomplete",
-      ownership: ownershipProgress,
-      identity: identityProgress,
-      submit: underReview
-        ? "pending_review"
-        : completion?.canSubmit && contactComplete
-          ? "complete"
-          : "incomplete",
+      contactComplete,
+      ownershipUploaded,
+      identitySubmitted,
+      ownershipVerified:
+        ownershipProofStatus === "verified" || ownershipItem?.state === "done",
+      identityVerified:
+        completion?.owner.owner_verification_status === "verified" ||
+        identityItem?.state === "done",
+      ownershipRejected:
+        ownershipProofStatus === "rejected" || ownershipItem?.state === "rejected",
+      identityRejected:
+        completion?.owner.owner_verification_status === "rejected" ||
+        identityItem?.state === "rejected",
     };
   }, [
     contactComplete,
-    ownershipUploaded,
+    ownershipProof,
+    idDocsReady,
+    identityItem?.state,
     ownershipItem?.state,
     ownershipProofStatus,
-    identityUploaded,
-    identityItem?.state,
-    underReview,
-    completion?.canSubmit,
+    completion?.owner.owner_verification_status,
   ]);
+
+  const readyToSubmit = isClaimReadyToSubmit(claimReadiness);
+  const submitBlockers = claimSubmitBlockers(claimReadiness);
+  const contactDisplay = contactClaimDisplay(claimReadiness.contactComplete);
+  const ownershipDisplay = ownershipClaimDisplay(claimReadiness);
+  const identityDisplay = identityClaimDisplay(claimReadiness);
+  const stepStates = claimStepProgress(claimReadiness);
+
+  const stepProgress = useMemo((): Partial<Record<ClaimWizardStep, ClaimStepProgress>> => {
+    return {
+      details: stepStates.details,
+      ownership: stepStates.ownership,
+      identity: stepStates.identity,
+      submit: underReview
+        ? "pending_review"
+        : readyToSubmit
+          ? "complete"
+          : "incomplete",
+    };
+  }, [stepStates, underReview, readyToSubmit]);
 
   const refreshCompletion = useCallback(async () => {
     if (!spaceId) return;
@@ -270,7 +329,7 @@ function ClaimPageContent() {
   }
 
   async function handleSubmit() {
-    if (!spaceId || !completion?.canSubmit) return;
+    if (!spaceId || !readyToSubmit) return;
     setSubmitting(true);
     setMessage("");
     try {
@@ -318,7 +377,7 @@ function ClaimPageContent() {
           currentStep={currentStep}
           stepProgress={stepProgress}
         >
-          {underReview ? (
+          {underReview && currentStep !== "submit" ? (
             <div className="mb-6 rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-950">
               <p className="font-medium">Claim submitted — under review</p>
               <p className="mt-1">
@@ -416,11 +475,8 @@ function ClaimPageContent() {
               <h2 className="text-lg font-semibold text-gray-900">Ownership proof</h2>
               <ClaimStepStatusCard
                 title="Proof of ownership or right to manage"
-                state={
-                  ownershipItem
-                    ? checklistToUi(ownershipItem.state)
-                    : "required"
-                }
+                state={ownershipDisplay.uiState}
+                statusLabel={ownershipDisplay.statusLabel}
               />
               <OwnershipProofUpload
                 spaceId={spaceId}
@@ -462,15 +518,14 @@ function ClaimPageContent() {
               <ClaimStepStatusCard
                 title="ID front and back"
                 description={
-                  identityItem?.state === "pending_review"
+                  identityDisplay.uiState === "pending_review"
                     ? "Your ID is with FindMySpace for review."
-                    : identityItem?.state === "done"
+                    : identityDisplay.uiState === "completed"
                       ? "Identity verified."
                       : "Upload both sides of your ID below."
                 }
-                state={
-                  identityItem ? checklistToUi(identityItem.state) : "required"
-                }
+                state={identityDisplay.uiState}
+                statusLabel={identityDisplay.statusLabel}
               />
               <ClaimIdentityUpload
                 ownerId={ownerId}
@@ -500,99 +555,94 @@ function ClaimPageContent() {
           ) : null}
 
           {currentStep === "submit" ? (
-            <section className="space-y-4 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-              <h2 className="text-lg font-semibold text-gray-900">
-                Submit for review
-              </h2>
-              <p className="text-sm text-gray-600">
-                Submit your claim for review. Once approved, you&apos;ll be able to
-                edit the listing, add pricing, and complete payout setup.
-              </p>
-
-              <div className="space-y-3">
-                <ClaimStepStatusCard
-                  title="Contact details"
-                  state={contactComplete ? "completed" : "required"}
-                />
-                <ClaimStepStatusCard
-                  title="Ownership proof uploaded"
-                  state={
-                    ownershipItem
-                      ? checklistToUi(ownershipItem.state)
-                      : "required"
-                  }
-                />
-                <ClaimStepStatusCard
-                  title="Identity documents submitted"
-                  state={
-                    identityItem
-                      ? checklistToUi(identityItem.state)
-                      : "required"
-                  }
-                />
-              </div>
-
-              {completion.submitBlockers.length > 0 && canEditSteps ? (
+            underReview ? (
+              <ClaimSubmittedConfirmation spaceId={spaceId} />
+            ) : (
+              <section className="space-y-4 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+                <h2 className="text-lg font-semibold text-gray-900">
+                  Submit for review
+                </h2>
                 <p className="text-sm text-gray-600">
-                  Still needed: {completion.submitBlockers.join(", ")}.
+                  Submit your claim for review. Once approved, you&apos;ll be able to
+                  edit the listing, add pricing, and complete payout setup.
                 </p>
-              ) : null}
 
-              {completion.listing_admin_comment &&
-              (completion.status === "rejected") ? (
-                <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm">
-                  <p className="font-semibold text-gray-900">Admin note</p>
-                  <p className="mt-1 whitespace-pre-wrap text-gray-700">
-                    {completion.listing_admin_comment}
-                  </p>
+                <div className="space-y-3">
+                  <ClaimStepStatusCard
+                    title="Contact details"
+                    state={contactDisplay.uiState}
+                    statusLabel={contactDisplay.statusLabel}
+                  />
+                  <ClaimStepStatusCard
+                    title="Ownership proof"
+                    state={ownershipDisplay.uiState}
+                    statusLabel={ownershipDisplay.statusLabel}
+                  />
+                  <ClaimStepStatusCard
+                    title="Identity documents"
+                    state={identityDisplay.uiState}
+                    statusLabel={identityDisplay.statusLabel}
+                  />
                 </div>
-              ) : null}
 
-              {message ? (
-                <p className="text-sm text-red-600">{message}</p>
-              ) : null}
+                {submitBlockers.length > 0 && canEditSteps ? (
+                  <p className="text-sm text-gray-600">
+                    Still needed: {submitBlockers.join(", ")}.
+                  </p>
+                ) : null}
 
-              <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => goToStep("identity")}
-                  className="inline-flex items-center gap-1 text-sm font-medium text-gray-600"
-                >
-                  <ArrowLeft className="h-4 w-4" />
-                  Back
-                </button>
-                {completion.canSubmit && canEditSteps ? (
+                {completion.listing_admin_comment &&
+                completion.status === "rejected" ? (
+                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm">
+                    <p className="font-semibold text-gray-900">Admin note</p>
+                    <p className="mt-1 whitespace-pre-wrap text-gray-700">
+                      {completion.listing_admin_comment}
+                    </p>
+                  </div>
+                ) : null}
+
+                {message ? (
+                  <p className="text-sm text-red-600">{message}</p>
+                ) : null}
+
+                <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
                   <button
                     type="button"
-                    disabled={submitting || !contactComplete}
-                    onClick={() => void handleSubmit()}
-                    className="inline-flex items-center gap-2 rounded-lg bg-[#0f2740] px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                    onClick={() => goToStep("identity")}
+                    className="inline-flex items-center gap-1 text-sm font-medium text-gray-600"
                   >
-                    {submitting ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Send className="h-4 w-4" />
-                    )}
-                    Submit claim for review
+                    <ArrowLeft className="h-4 w-4" />
+                    Back
                   </button>
-                ) : underReview ? (
-                  <span className="text-sm font-medium text-blue-800">
-                    Submitted — awaiting FindMySpace review
-                  </span>
-                ) : null}
-              </div>
+                  {readyToSubmit && canEditSteps ? (
+                    <button
+                      type="button"
+                      disabled={submitting}
+                      onClick={() => void handleSubmit()}
+                      className="inline-flex items-center gap-2 rounded-lg bg-[#0f2740] px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                    >
+                      {submitting ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Send className="h-4 w-4" />
+                      )}
+                      Submit claim for review
+                    </button>
+                  ) : null}
+                </div>
 
-              <p className="text-xs text-gray-500">
-                <Link
-                  href={`/spaces/${spaceId}`}
-                  className="font-medium text-[#0f2740] hover:underline"
-                >
-                  Preview prepared listing
-                </Link>
-                {" "}
-                (read-only until approved)
-              </p>
-            </section>
+                <p className="text-xs text-gray-500">
+                  <Link
+                    href={`/spaces/${spaceId}`}
+                    className="font-medium text-[#0f2740] hover:underline"
+                  >
+                    Preview prepared listing
+                  </Link>
+                  {" "}
+                  (read-only until approved)
+                </p>
+              </section>
+            )
           ) : null}
         </ClaimOnboardingShell>
       </main>
