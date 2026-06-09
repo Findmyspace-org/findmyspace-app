@@ -22,6 +22,7 @@ import {
 import { UnclaimedListingClaimSection } from "@/app/components/UnclaimedListingClaimSection";
 import { UnclaimedListingEnquirySocialProof } from "@/app/components/UnclaimedListingEnquirySocialProof";
 import { UnclaimedListingMobileSheet } from "@/app/components/UnclaimedListingMobileSheet";
+import { UnclaimedListingPricingSection } from "@/app/components/UnclaimedListingPricingSection";
 import { UnclaimedListingSidebar } from "@/app/components/UnclaimedListingSidebar";
 import { getListingEnquiryCount } from "@/lib/listing-enquiry-count";
 
@@ -357,7 +358,8 @@ export default async function Page({
             </section>
 
             {unclaimed ? (
-              <div className="lg:hidden">
+              <div className="space-y-4 lg:hidden">
+                <UnclaimedListingPricingSection className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm" />
                 <UnclaimedListingClaimSection
                   listingId={space.id}
                   listingTitle={space.title}

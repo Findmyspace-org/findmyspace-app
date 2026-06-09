@@ -1,21 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { markNotificationReadPayload } from "@/lib/notification-state";
 
 /**
  * POST /api/notifications/mark-all-read
  *
- * Marks every unread notification belonging to the AUTHENTICATED user as
- * read. Optionally scoped to a list of `types` so a category filter
- * (e.g. "Bookings") can be cleared without touching unrelated notifications.
- *
- * Body (all fields optional):
- *   {
- *     types?: string[]   // when present, only rows matching `type IN (...)`
- *                        // are updated.
- *   }
- *
- * Used by the `/dashboard/notifications` archive page's "Mark all as read"
- * button.
+ * Marks every unread notification belonging to the AUTHENTICATED user as read.
+ * Optionally scoped to a list of `types`.
  */
 
 export const runtime = "nodejs";
@@ -75,9 +66,9 @@ export async function POST(req: NextRequest) {
     });
 
     let query = (admin.from("notifications") as any)
-      .update({ is_read: true })
+      .update(markNotificationReadPayload())
       .eq("user_id", user.id)
-      .eq("is_read", false);
+      .is("read_at", null);
 
     if (types.length > 0) {
       query = query.in("type", types);

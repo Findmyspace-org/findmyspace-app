@@ -163,9 +163,10 @@ export default function RenterDashboardPage() {
       // 3) Recent activity — most-recent unread notifications.
       try {
         const { data } = await (supabase.from("notifications") as any)
-          .select("id, type, title, message, href, is_read, created_at")
+          .select("id, type, title, message, href, is_read, read_at, created_at")
           .eq("user_id", user.id)
-          .eq("is_read", false)
+          .is("read_at", null)
+          .is("archived_at", null)
           .order("created_at", { ascending: false })
           .limit(4);
         if (mounted) setRecentActivity((data as RecentNotificationRow[]) || []);
@@ -179,7 +180,8 @@ export default function RenterDashboardPage() {
           .from("notifications")
           .select("id", { count: "exact", head: true })
           .eq("user_id", user.id)
-          .eq("is_read", false);
+          .is("read_at", null)
+          .is("archived_at", null);
         if (mounted && typeof count === "number") {
           setUnreadCommsCount(count);
         }

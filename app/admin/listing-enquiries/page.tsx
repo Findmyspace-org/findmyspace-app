@@ -15,6 +15,7 @@ import {
 import { supabase } from "@/lib/supabase";
 import { AdminNav } from "@/app/components/AdminNav";
 import { LISTING_ENQUIRY_STATUSES } from "@/lib/listing-lifecycle";
+import { markNotificationsReadByTypesClient } from "@/lib/mark-notifications-read-client";
 
 type EnquiryRow = {
   id: string;
@@ -103,6 +104,9 @@ export default function AdminListingEnquiriesPage() {
       setRole((profile as { role?: string } | null)?.role ?? null);
       if ((profile as { role?: string } | null)?.role === "admin") {
         await load();
+        void markNotificationsReadByTypesClient({
+          types: ["listing_enquiry", "listing_enquiry_received"],
+        });
       } else {
         setLoading(false);
       }

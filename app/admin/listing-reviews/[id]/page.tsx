@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { adminApiFetch } from "@/lib/admin-api-client";
+import { markNotificationsReadByRelatedClient } from "@/lib/mark-notifications-read-client";
 import ListingCompletionChecklist from "@/app/components/ListingCompletionChecklist";
 import type { ListingCompletionResult } from "@/lib/listing-completion";
 
@@ -88,6 +89,13 @@ export default function AdminListingReviewDetailPage() {
       setRole(r);
       if (r === "admin") {
         await load();
+        if (spaceId) {
+          void markNotificationsReadByRelatedClient({
+            relatedEntityType: "space",
+            relatedEntityId: spaceId,
+            types: ["listing_pending", "listing_submitted"],
+          });
+        }
       } else {
         setLoading(false);
       }

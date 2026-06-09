@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import RequireAuth from "@/app/components/RequireAuth";
+import { isNotificationUnread } from "@/lib/notification-state";
 
 type NotificationRow = {
   id: string;
@@ -33,6 +34,8 @@ type NotificationRow = {
   message: string | null;
   href: string | null;
   is_read: boolean;
+  read_at: string | null;
+  archived_at: string | null;
   created_at: string;
   related_entity_type: string | null;
   related_entity_id: string | null;
@@ -41,6 +44,8 @@ type NotificationRow = {
 type CategoryKey =
   | "all"
   | "unread"
+  | "read"
+  | "archived"
   | "bookings"
   | "listing_questions"
   | "listings"
@@ -48,7 +53,10 @@ type CategoryKey =
   | "payments"
   | "messages";
 
-const CATEGORY_TYPES: Record<Exclude<CategoryKey, "all" | "unread">, string[]> =
+const CATEGORY_TYPES: Record<
+  Exclude<CategoryKey, "all" | "unread" | "read" | "archived">,
+  string[]
+> =
   {
     bookings: [
       "booking_request",
@@ -86,6 +94,8 @@ const CATEGORY_TYPES: Record<Exclude<CategoryKey, "all" | "unread">, string[]> =
 const CATEGORIES: { key: CategoryKey; label: string }[] = [
   { key: "all", label: "All" },
   { key: "unread", label: "Unread" },
+  { key: "read", label: "Read" },
+  { key: "archived", label: "Archived" },
   { key: "bookings", label: "Bookings" },
   { key: "listing_questions", label: "Listing questions" },
   { key: "listings", label: "Listings" },
@@ -222,16 +232,22 @@ export default function NotificationsArchivePage() {
 
         let query = (supabase.from("notifications") as any)
           .select(
-            "id, user_id, role, type, title, message, href, is_read, created_at, related_entity_type, related_entity_id"
+            "id, user_id, role, type, title, message, href, is_read, read_at, archived_at, created_at, related_entity_type, related_entity_id"
           )
           .eq("user_id", user.id)
           .order("created_at", { ascending: false })
           .limit(PAGE_SIZE);
 
         if (category === "unread") {
-          query = query.eq("is_read", false);
-        } else if (category !== "all") {
-          query = query.in("type", CATEGORY_TYPES[category]);
+          query = query.is("read_at", null).is("archived_at", null);
+        } else if (category === "read") {
+          query = query.not("read_at", "is", null).is("archived_at", null);
+        } else if (category === "archived") {
+          query = query.not("archived_at", "is", null);
+        } else if (category === "all") {
+          query = query.is("archived_at", null);
+        } else {
+          query = query.in("type", CATEGORY_TYPES[category]).is("archived_at", null);
         }
 
         if (opts.afterCursor) {
@@ -283,7 +299,11 @@ export default function NotificationsArchivePage() {
         });
       }
       setItems((prev) =>
-        prev.map((row) => (row.id === n.id ? { ...row, is_read: true } : row))
+        prev.map((row) =>
+          row.id === n.id
+            ? { ...row, is_read: true, read_at: new Date().toISOString() }
+            : row
+        )
       );
     } catch {
       /* non-fatal */
@@ -302,7 +322,7 @@ export default function NotificationsArchivePage() {
       if (!session?.access_token) return;
 
       const body: { types?: string[] } = {};
-      if (category !== "all" && category !== "unread") {
+      if (category !== "all" && category !== "unread" && category !== "read" && category !== "archived") {
         body.types = CATEGORY_TYPES[category];
       }
 
@@ -321,7 +341,11 @@ export default function NotificationsArchivePage() {
       setItems((prev) =>
         prev.map((row) => {
           if (body.types && !body.types.includes(row.type)) return row;
-          return { ...row, is_read: true };
+          return {
+            ...row,
+            is_read: true,
+            read_at: row.read_at || new Date().toISOString(),
+          };
         })
       );
       // For the "Unread" filter, marking all read empties the list.
@@ -336,7 +360,7 @@ export default function NotificationsArchivePage() {
     }
   }
 
-  const hasUnreadInList = items.some((n) => !n.is_read);
+  const hasUnreadInList = items.some((n) => isNotificationUnread(n));
   const filterCount = items.length;
 
   return (
@@ -483,15 +507,16 @@ function NotificationCard({
   isBusy: boolean;
   onClick: () => void;
 }) {
-  const { type, title, message, is_read, created_at, href } = notification;
+  const { type, title, message, created_at, href } = notification;
+  const unread = isNotificationUnread(notification);
   const tagLabel = categoryLabelForType(type);
   const interactive = Boolean(href);
 
   const baseClasses =
     "block w-full rounded-2xl border bg-white px-4 py-3 text-left shadow-sm transition-all duration-200";
-  const stateClasses = is_read
-    ? "border-[#e2e8f0]"
-    : "border-[#0f2740]/15 bg-[#f8fbff] shadow-md";
+  const stateClasses = unread
+    ? "border-[#0f2740]/15 bg-[#f8fbff] shadow-md"
+    : "border-[#e2e8f0]";
   const interactiveClasses = interactive
     ? "hover:border-[#cbd5e1] hover:shadow-md focus:outline-none focus:ring-2 focus:ring-[#0f2740]/20"
     : "";
@@ -500,7 +525,7 @@ function NotificationCard({
     <div className="flex items-start gap-3">
       <span
         className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${
-          is_read ? "bg-[#f1f5f9]" : "bg-white shadow-inner"
+          unread ? "bg-white shadow-inner" : "bg-[#f1f5f9]"
         }`}
       >
         <NotificationIcon type={type} />
@@ -509,19 +534,23 @@ function NotificationCard({
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <p
             className={`text-sm ${
-              is_read
-                ? "font-medium text-[#0f172a]"
-                : "font-semibold text-[#0f172a]"
+              unread
+                ? "font-semibold text-[#0f172a]"
+                : "font-medium text-[#0f172a]"
             }`}
           >
             {title || "Notification"}
           </p>
-          {!is_read ? (
+          {unread ? (
             <span
               className="inline-block h-2 w-2 rounded-full bg-[#c1121f]"
               aria-label="Unread"
             />
-          ) : null}
+          ) : (
+            <span className="inline-flex rounded-full border border-[#e2e8f0] bg-[#f8fafb] px-1.5 py-0.5 text-[10px] font-medium text-[#64748b]">
+              Read
+            </span>
+          )}
           <span className="ml-auto text-[11px] text-[#94a3b8]">
             <span title={formatExact(created_at)}>
               {formatRelative(created_at)}

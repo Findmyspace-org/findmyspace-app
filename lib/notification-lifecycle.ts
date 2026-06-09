@@ -3,6 +3,10 @@
  * Call with a Supabase client that has permission to update `public.notifications` (service role).
  */
 
+import { markNotificationReadPayload } from "@/lib/notification-state";
+
+const UNREAD_FILTER = { read_at: null, archived_at: null };
+
 export async function markNotificationsReadByBooking(
   supabaseAdmin: any,
   input: {
@@ -16,11 +20,11 @@ export async function markNotificationsReadByBooking(
 
   let q = supabaseAdmin
     .from("notifications")
-    .update({ is_read: true })
+    .update(markNotificationReadPayload())
     .eq("related_entity_type", "booking")
     .eq("related_entity_id", bookingId)
     .in("type", types)
-    .eq("is_read", false);
+    .is("read_at", null);
 
   if (userIds?.length) {
     q = q.in("user_id", userIds);
@@ -41,12 +45,12 @@ export async function markMessageNotificationsReadForBooking(
 
   const { error } = await supabaseAdmin
     .from("notifications")
-    .update({ is_read: true })
+    .update(markNotificationReadPayload())
     .eq("user_id", userId)
     .eq("related_entity_type", "booking")
     .eq("related_entity_id", bookingId)
     .eq("type", "booking_message")
-    .eq("is_read", false);
+    .is("read_at", null);
 
   if (error) {
     console.error("markMessageNotificationsReadForBooking failed:", error);
@@ -65,13 +69,15 @@ export async function markNotificationsReadByProfile(
 
   const { error } = await supabaseAdmin
     .from("notifications")
-    .update({ is_read: true })
+    .update(markNotificationReadPayload())
     .eq("related_entity_type", "profile")
     .eq("related_entity_id", profileId)
     .in("type", types)
-    .eq("is_read", false);
+    .is("read_at", null);
 
   if (error) {
     console.error("markNotificationsReadByProfile failed:", error);
   }
 }
+
+export { UNREAD_FILTER as NOTIFICATION_UNREAD_DB_FILTER };

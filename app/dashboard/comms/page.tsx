@@ -73,6 +73,19 @@ import {
   FOCUS_HIGHLIGHT_CLASS,
   useFocusHighlight,
 } from "@/lib/use-focus-highlight";
+import {
+  isNotificationUnread,
+  isApprovedNotificationType,
+} from "@/lib/notification-state";
+import {
+  archiveNotificationClient,
+  markNotificationReadClient,
+} from "@/lib/mark-notifications-read-client";
+import {
+  cardMatchesCommsStatusFilter,
+  type CommsStatusFilter,
+} from "@/lib/comms-filters";
+import { broadcastInboxRefresh } from "@/lib/inbox-refresh";
 
 // ---------------------------------------------------------------------------
 // Domain types
@@ -89,6 +102,8 @@ type NotificationRow = {
   message: string | null;
   href: string | null;
   is_read: boolean;
+  read_at: string | null;
+  archived_at: string | null;
   created_at: string;
   related_entity_type: string | null;
   related_entity_id: string | null;
@@ -172,10 +187,12 @@ type CardIcon =
 type NotificationCard = BaseCardChrome & {
   kind: "notification";
   notificationId: string;
+  notificationType: string;
   href: string;
   ctaLabel: string;
   relatedEntityType: string | null;
   relatedEntityId: string | null;
+  archived: boolean;
 };
 
 type OwnerQuestionCard = BaseCardChrome & {
@@ -239,6 +256,9 @@ const PLATFORM_NOTIF_TYPES = new Set<string>([
   "payment_needed",
   "payment_received",
   "booking_paid",
+  "listing_enquiry",
+  "listing_enquiry_received",
+  "listing_claim_interest",
 ]);
 
 /** Booking-status notifications surface inside My bookings tab. */
@@ -247,6 +267,9 @@ const BOOKING_STATUS_NOTIF_TYPES = new Set<string>([
   "booking_confirmed",
   "booking_declined",
   "booking_expired",
+  "listing_enquiry",
+  "listing_enquiry_received",
+  "listing_claim_interest",
 ]);
 
 // ---------------------------------------------------------------------------
@@ -455,23 +478,45 @@ function notificationToCard(n: NotificationRow): NotificationCard | null {
       iconType = "booking";
       ctaLabel = "View booking";
       break;
+    case "listing_enquiry":
+    case "listing_enquiry_received":
+      from = "FindMySpace";
+      regarding = "Listing enquiry";
+      status = "action_required";
+      iconType = "booking";
+      ctaLabel = "View enquiry";
+      break;
+    case "listing_claim_interest":
+      from = "FindMySpace";
+      regarding = "Claim request";
+      status = "action_required";
+      iconType = "listing";
+      ctaLabel = "View claim";
+      break;
     default:
       return null;
   }
 
   const title = n.title || "Notification";
   const summary = n.message || "";
+  const unread = isNotificationUnread(n);
+  if (isApprovedNotificationType(t) && !unread) {
+    status = "approved";
+    iconType = "approved";
+  }
   return {
     kind: "notification",
     id: `notif-${n.id}`,
     notificationId: n.id,
+    notificationType: t,
     from,
     regarding,
     status,
     title,
     summary,
     timestamp: n.created_at,
-    unread: !n.is_read,
+    unread,
+    archived: Boolean(n.archived_at),
     href: n.href || "/dashboard",
     ctaLabel,
     iconType,
@@ -540,14 +585,8 @@ function renterQuestionToCard(q: ListingQuestion): RenterQuestionCard {
       : "dismissed";
   const ts = isAnswered && q.answered_at ? q.answered_at : q.created_at;
 
-  // Renter-side unread proxy: a freshly-answered question (within the last 7
-  // days) is flagged unread until we add explicit per-user read state.
-  let unread = false;
-  if (isAnswered && q.answered_at) {
-    const ageDays =
-      (Date.now() - new Date(q.answered_at).getTime()) / (1000 * 60 * 60 * 24);
-    unread = ageDays < 7;
-  }
+  // Renter-side: pending = unread; answered/dismissed = read.
+  const unread = isPending;
 
   return {
     kind: "renter_question",
@@ -651,6 +690,7 @@ function CommsCenterContent() {
   const [error, setError] = useState("");
   const [busyCardId, setBusyCardId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState<CommsStatusFilter>("all");
 
   const [platformCards, setPlatformCards] = useState<NotificationCard[]>([]);
   const [enquiryCards, setEnquiryCards] = useState<OwnerQuestionCard[]>([]);
@@ -710,7 +750,7 @@ function CommsCenterContent() {
       ] = await Promise.all([
         (supabase.from("notifications") as any)
           .select(
-            "id, user_id, role, type, title, message, href, is_read, created_at, related_entity_type, related_entity_id"
+            "id, user_id, role, type, title, message, href, is_read, read_at, archived_at, created_at, related_entity_type, related_entity_id"
           )
           .eq("user_id", userId)
           .order("created_at", { ascending: false })
@@ -795,29 +835,36 @@ function CommsCenterContent() {
   async function handleNotificationClick(card: NotificationCard) {
     setBusyCardId(card.id);
     try {
-      const accessToken = accessTokenRef.current;
-      if (accessToken) {
-        await fetch("/api/notifications/read", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${accessToken}`,
-          },
-          body: JSON.stringify({ notificationId: card.notificationId }),
-        });
-      }
+      await markNotificationReadClient(card.notificationId);
       const updater = (cards: CommsCard[]): CommsCard[] =>
-        cards.map((c) => (c.id === card.id ? { ...c, unread: false } : c));
-      setPlatformCards(
-        (prev) => updater(prev) as NotificationCard[]
-      );
+        cards.map((c) =>
+          c.id === card.id && c.kind === "notification"
+            ? { ...c, unread: false, archived: c.archived }
+            : c
+        );
+      setPlatformCards((prev) => updater(prev) as NotificationCard[]);
       setBookingCards(updater);
+      broadcastInboxRefresh();
     } catch {
       /* best-effort */
     } finally {
       setBusyCardId(null);
     }
     router.push(card.href);
+  }
+
+  async function handleArchiveNotification(card: NotificationCard) {
+    setBusyCardId(card.id);
+    try {
+      await archiveNotificationClient(card.notificationId);
+      setPlatformCards((prev) => prev.filter((c) => c.id !== card.id));
+      setBookingCards((prev) => prev.filter((c) => c.id !== card.id));
+      broadcastInboxRefresh();
+    } catch {
+      /* best-effort */
+    } finally {
+      setBusyCardId(null);
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -965,17 +1012,36 @@ function CommsCenterContent() {
     return cards.filter((c) => c.searchBlob.includes(search));
   }
 
+  function applyStatusFilter<T extends CommsCard>(cards: T[]): T[] {
+    return cards.filter((c) => {
+      const filterable = {
+        unread: c.unread,
+        archived: c.kind === "notification" ? c.archived : false,
+        kind: c.kind,
+        status: c.status,
+        notificationType:
+          c.kind === "notification" ? c.notificationType : undefined,
+        questionStatus:
+          c.kind === "owner_question" || c.kind === "renter_question"
+            ? c.questionStatus
+            : undefined,
+        unreadCount: c.kind === "booking_thread" ? c.unreadCount : undefined,
+      };
+      return cardMatchesCommsStatusFilter(filterable, statusFilter);
+    });
+  }
+
   const filteredPlatform = useMemo(
-    () => applySearch(platformCards),
-    [platformCards, search]
+    () => applyStatusFilter(applySearch(platformCards)),
+    [platformCards, search, statusFilter]
   );
   const filteredEnquiries = useMemo(
-    () => applySearch(enquiryCards),
-    [enquiryCards, search]
+    () => applyStatusFilter(applySearch(enquiryCards)),
+    [enquiryCards, search, statusFilter]
   );
   const filteredBookings = useMemo(
-    () => applySearch(bookingCards),
-    [bookingCards, search]
+    () => applyStatusFilter(applySearch(bookingCards)),
+    [bookingCards, search, statusFilter]
   );
 
   const platformUnread = platformCards.filter((c) => c.unread).length;
@@ -1046,6 +1112,38 @@ function CommsCenterContent() {
             </label>
           </div>
 
+          {/* Status filters */}
+          <div
+            role="tablist"
+            aria-label="Message status"
+            className="-mx-4 mb-4 flex gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:overflow-visible sm:px-0"
+          >
+            {(
+              [
+                ["all", "All"],
+                ["unread", "Unread"],
+                ["action_required", "Action required"],
+                ["read", "Read"],
+                ["archived", "Archived"],
+              ] as const
+            ).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                role="tab"
+                aria-selected={statusFilter === key}
+                onClick={() => setStatusFilter(key)}
+                className={`whitespace-nowrap rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+                  statusFilter === key
+                    ? "border-[#c1121f] bg-[#fff1f2] text-[#9f1239]"
+                    : "border-[#e2e8f0] bg-white text-[#475569] hover:border-[#cbd5e1]"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
           {/* Tabs */}
           <div
             role="tablist"
@@ -1104,6 +1202,7 @@ function CommsCenterContent() {
                   busy={busyCardId === card.id}
                   highlight={highlightedId === card.id}
                   onNotificationClick={handleNotificationClick}
+                  onArchiveNotification={handleArchiveNotification}
                   onOwnerAnswer={handleOwnerAnswer}
                   onRenterFollowUp={handleRenterFollowUp}
                 />
@@ -1196,6 +1295,7 @@ function CommsCardRow({
   busy,
   highlight,
   onNotificationClick,
+  onArchiveNotification,
   onOwnerAnswer,
   onRenterFollowUp,
 }: {
@@ -1203,6 +1303,7 @@ function CommsCardRow({
   busy: boolean;
   highlight: boolean;
   onNotificationClick: (card: NotificationCard) => void;
+  onArchiveNotification: (card: NotificationCard) => void;
   onOwnerAnswer: (
     card: OwnerQuestionCard,
     action: "yes" | "no" | "not_applicable" | "dismiss"
@@ -1246,6 +1347,7 @@ function CommsCardRow({
           card={card}
           busy={busy}
           onClick={onNotificationClick}
+          onArchive={onArchiveNotification}
         />
       ) : null}
     </li>
@@ -1311,7 +1413,11 @@ function CardChrome({ card }: { card: CommsCard }) {
               className="inline-block h-2 w-2 rounded-full bg-[#c1121f]"
               aria-label="Unread"
             />
-          ) : null}
+          ) : (
+            <span className="inline-flex rounded-full border border-[#e2e8f0] bg-[#f8fafb] px-1.5 py-0.5 text-[10px] font-medium normal-case tracking-normal text-[#64748b]">
+              Read
+            </span>
+          )}
         </div>
 
         {/* Summary */}
@@ -1613,13 +1719,25 @@ function NotificationCardCta({
   card,
   busy,
   onClick,
+  onArchive,
 }: {
   card: NotificationCard;
   busy: boolean;
   onClick: (card: NotificationCard) => void;
+  onArchive: (card: NotificationCard) => void;
 }) {
   return (
-    <div className="mt-3 flex justify-end border-t border-[#f1f5f9] pt-3">
+    <div className="mt-3 flex flex-wrap items-center justify-end gap-3 border-t border-[#f1f5f9] pt-3">
+      {!card.unread && !card.archived ? (
+        <button
+          type="button"
+          onClick={() => onArchive(card)}
+          disabled={busy}
+          className="text-xs font-medium text-[#64748b] underline-offset-2 hover:text-[#0f172a] hover:underline disabled:opacity-60"
+        >
+          Archive
+        </button>
+      ) : null}
       <button
         type="button"
         onClick={() => onClick(card)}

@@ -22,6 +22,8 @@ import {
   createVerificationSignedUrl,
   OWNER_VERIFICATION_BUCKET,
 } from "@/lib/verification-storage";
+import { markNotificationsReadByTypesClient } from "@/lib/mark-notifications-read-client";
+import { VERIFICATION_OUTCOME_NOTIFICATION_TYPES } from "@/lib/notification-state";
 
 type OwnerVerificationDocument = {
   id: string;
@@ -270,6 +272,12 @@ function VerificationPageContent({ step }: { step: string }) {
 
   useEffect(() => {
     loadVerificationData();
+  }, []);
+
+  useEffect(() => {
+    void markNotificationsReadByTypesClient({
+      types: [...VERIFICATION_OUTCOME_NOTIFICATION_TYPES],
+    });
   }, []);
 
   async function fetchOwnershipDocs(listingIds: string[]) {

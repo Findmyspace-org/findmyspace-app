@@ -136,7 +136,8 @@ export async function GET(req: NextRequest) {
       .select("related_entity_id")
       .eq("user_id", user.id)
       .eq("type", "booking_message")
-      .eq("is_read", false)
+      .is("read_at", null)
+      .is("archived_at", null)
       .eq("related_entity_type", "booking");
 
     const unreadByBooking = new Map<string, number>();

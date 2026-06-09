@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { markNotificationReadPayload } from "@/lib/notification-state";
 
 export async function POST(req: NextRequest) {
   try {
@@ -50,7 +51,7 @@ export async function POST(req: NextRequest) {
     }
 
     const { error: updateError } = await (admin.from("notifications") as any)
-      .update({ is_read: true })
+      .update(markNotificationReadPayload())
       .eq("id", notificationId)
       .eq("user_id", user.id);
 

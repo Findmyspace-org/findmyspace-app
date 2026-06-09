@@ -3,17 +3,15 @@ import { createClient } from "@supabase/supabase-js";
 import { markNotificationReadPayload } from "@/lib/notification-state";
 
 /**
- * POST /api/notifications/read-by-related
+ * POST /api/notifications/read-by-types
  *
- * Bulk mark the AUTHENTICATED user's unread notifications as read where they
- * match a given `(related_entity_type, related_entity_id, type[])`.
+ * Mark all unread notifications of the given types for the authenticated user.
+ * Used when opening a section (e.g. verification page) without a specific row id.
  */
 
 export const runtime = "nodejs";
 
 type Body = {
-  relatedEntityType?: string;
-  relatedEntityId?: string;
   types?: string[];
 };
 
@@ -46,29 +44,21 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
     }
 
-    let body: Body | null = null;
+    let body: Body = {};
     try {
-      body = (await req.json()) as Body;
+      body = ((await req.json()) as Body) || {};
     } catch {
       return NextResponse.json({ error: "Invalid request body." }, { status: 400 });
     }
 
-    const relatedEntityType = (body?.relatedEntityType || "").trim();
-    const relatedEntityId = (body?.relatedEntityId || "").trim();
     const types = Array.isArray(body?.types)
       ? body.types
           .map((t) => (typeof t === "string" ? t.trim() : ""))
           .filter((t) => t.length > 0)
       : [];
 
-    if (!relatedEntityType || !relatedEntityId || types.length === 0) {
-      return NextResponse.json(
-        {
-          error:
-            "Missing required fields: relatedEntityType, relatedEntityId, types[].",
-        },
-        { status: 400 }
-      );
+    if (types.length === 0) {
+      return NextResponse.json({ error: "Missing types[]." }, { status: 400 });
     }
 
     const admin = createClient(supabaseUrl, serviceKey, {
@@ -82,18 +72,16 @@ export async function POST(req: NextRequest) {
     const { error } = await (admin.from("notifications") as any)
       .update(markNotificationReadPayload())
       .eq("user_id", user.id)
-      .eq("related_entity_type", relatedEntityType)
-      .eq("related_entity_id", relatedEntityId)
       .in("type", types)
       .is("read_at", null);
 
     if (error) {
-      console.error("read-by-related update failed:", error);
+      console.error("read-by-types update failed:", error);
       return NextResponse.json({ error: "Update failed." }, { status: 500 });
     }
     return NextResponse.json({ ok: true });
   } catch (err) {
-    console.error("read-by-related error:", err);
+    console.error("read-by-types error:", err);
     return NextResponse.json({ error: "Server error." }, { status: 500 });
   }
 }

@@ -207,3 +207,6 @@ export const UNCLAIMED_REQUEST_INTRO =
   "Tell us how you need this space. Availability will be confirmed when you submit this request.";
 
 export const UNCLAIMED_PRICING_LABEL = "Pricing to be confirmed";
+
+export const UNCLAIMED_PRICING_HINT =
+  "Please enquire for pricing and availability.";

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdminApi } from "@/lib/require-admin-api";
+import { markNotificationReadPayload } from "@/lib/notification-state";
 
 export async function POST(req: NextRequest) {
   const auth = await requireAdminApi(req);
@@ -18,9 +19,10 @@ export async function POST(req: NextRequest) {
       relatedEntityType?: string;
       relatedEntityId?: string;
       types?: string[];
+      userId?: string;
     };
 
-    const { relatedEntityType, relatedEntityId, types } = body;
+    const { relatedEntityType, relatedEntityId, types, userId } = body;
     if (!relatedEntityType || !relatedEntityId || !Array.isArray(types) || types.length === 0) {
       return NextResponse.json(
         { error: "Missing relatedEntityType, relatedEntityId, or types." },
@@ -32,12 +34,18 @@ export async function POST(req: NextRequest) {
       auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
     });
 
-    const { error } = await (admin.from("notifications") as any)
-      .update({ is_read: true })
+    let query = (admin.from("notifications") as any)
+      .update(markNotificationReadPayload())
       .eq("related_entity_type", relatedEntityType)
       .eq("related_entity_id", relatedEntityId)
       .in("type", types)
-      .eq("is_read", false);
+      .is("read_at", null);
+
+    if (userId) {
+      query = query.eq("user_id", userId);
+    }
+
+    const { error } = await query;
 
     if (error) {
       console.error("mark-related-read failed:", error);

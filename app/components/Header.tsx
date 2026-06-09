@@ -101,6 +101,8 @@ export default function Header() {
    */
   const [pendingListingQuestionCount, setPendingListingQuestionCount] =
     useState(0);
+  /** Unread non-archived rows in `notifications` — sole source for Comms badge. */
+  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
 
   const hideHeader = pathname === "/login" || pathname === "/signup";
 
@@ -160,6 +162,7 @@ export default function Header() {
         setAdminActionCount(0);
         setMessageUnreadCount(0);
         setPendingListingQuestionCount(0);
+        setUnreadNotificationCount(0);
         setNotifications([]);
       }
 
@@ -236,11 +239,27 @@ export default function Header() {
         setAdminActionCount(0);
         setMessageUnreadCount(0);
         setPendingListingQuestionCount(0);
+        setUnreadNotificationCount(0);
         setNotifications([]);
         return;
       }
 
       try {
+        const { count: unreadTotal, error: unreadTotalError } = await supabase
+          .from("notifications")
+          .select("id", { count: "exact", head: true })
+          .eq("user_id", userId)
+          .is("read_at", null)
+          .is("archived_at", null);
+
+        if (mounted) {
+          if (!unreadTotalError && typeof unreadTotal === "number") {
+            setUnreadNotificationCount(unreadTotal);
+          } else {
+            setUnreadNotificationCount(0);
+          }
+        }
+
         const nextNotifications: ActionNotification[] = [];
 
         function pushUniqueNotification(item: ActionNotification) {
@@ -410,7 +429,8 @@ export default function Header() {
           .select("id", { count: "exact", head: true })
           .eq("user_id", userId)
           .eq("type", "booking_message")
-          .eq("is_read", false);
+          .is("read_at", null)
+          .is("archived_at", null);
 
         if (mounted) {
           if (!messageCountError && messageUnreadExact !== null) {
@@ -470,7 +490,8 @@ export default function Header() {
             .select("id", { count: "exact", head: true })
             .eq("user_id", userId)
             .eq("type", "listing_question")
-            .eq("is_read", false);
+            .is("read_at", null)
+            .is("archived_at", null);
           if (lqNotifError) {
             console.warn(
               "Unread listing_question notifications count failed:",
@@ -492,10 +513,11 @@ export default function Header() {
         const { data: notificationRows, error: notificationsError } = await supabase
           .from("notifications")
           .select(
-            "id, user_id, role, type, title, href, is_read, created_at, related_entity_type, related_entity_id"
+            "id, user_id, role, type, title, href, is_read, read_at, archived_at, created_at, related_entity_type, related_entity_id"
           )
           .eq("user_id", userId)
-          .eq("is_read", false)
+          .is("read_at", null)
+          .is("archived_at", null)
           .order("created_at", { ascending: false })
           .limit(25);
 
@@ -607,6 +629,7 @@ export default function Header() {
         setAdminActionCount(0);
         setMessageUnreadCount(0);
         setPendingListingQuestionCount(0);
+        setUnreadNotificationCount(0);
         setNotifications([]);
       }
     }
@@ -767,16 +790,9 @@ export default function Header() {
     myBookingActionCount + bookingRequestActionCount + adminActionCount;
 
   /**
-   * Single source of truth for the Comms unread badge.
-   *
-   * `pendingListingQuestionCount` is the de-duplicated extra (see comment
-   * on its useState), so adding it here cannot double-count listing
-   * questions whose notifications are still unread.
+   * Header Comms badge: unread notifications only (read_at IS NULL, not archived).
    */
-  const commsBadgeCount =
-    messageUnreadCount +
-    totalNotificationCount +
-    pendingListingQuestionCount;
+  const commsBadgeCount = unreadNotificationCount;
 
   // Workspace-based primary navigation.
   //
