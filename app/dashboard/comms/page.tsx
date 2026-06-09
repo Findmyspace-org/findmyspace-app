@@ -251,7 +251,9 @@ const PLATFORM_NOTIF_TYPES = new Set<string>([
   "listing_submitted",
   "listing_pending",
   "listing_rejected",
+  "listing_needs_changes",
   "listing_activated",
+  "listing_claimed",
   "ownership_proof_verified",
   "payment_needed",
   "payment_received",
@@ -410,15 +412,34 @@ function notificationToCard(n: NotificationRow): NotificationCard | null {
     case "listing_pending":
       from = "FindMySpace";
       regarding = "Listing";
-      status = t === "listing_submitted" ? "info" : "action_required";
+      if (t === "listing_submitted" && n.role === "admin") {
+        status = "action_required";
+        ctaLabel = "Review listing";
+      } else {
+        status = t === "listing_submitted" ? "info" : "action_required";
+        ctaLabel = "View listing";
+      }
       iconType = "listing";
-      ctaLabel = "View listing";
       break;
     case "listing_rejected":
       from = "FindMySpace";
       regarding = "Listing";
       status = "declined";
       iconType = "declined";
+      ctaLabel = "View listing";
+      break;
+    case "listing_needs_changes":
+      from = "FindMySpace";
+      regarding = "Listing";
+      status = "action_required";
+      iconType = "listing";
+      ctaLabel = "View listing";
+      break;
+    case "listing_claimed":
+      from = "FindMySpace";
+      regarding = "Listing";
+      status = "info";
+      iconType = "listing";
       ctaLabel = "View listing";
       break;
     case "listing_activated":

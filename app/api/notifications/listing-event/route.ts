@@ -204,6 +204,39 @@ export async function POST(req: NextRequest) {
         spaceId: space.id,
       });
 
+      const { data: admins } = await (supabaseAdmin.from("profiles") as any)
+        .select("id")
+        .eq("role", "admin");
+
+      const adminTitle = "New listing submitted for review";
+      const adminMessage = `${getDisplayName(ownerProfile || undefined)} submitted ${spaceTitle} for review.`;
+
+      for (const adminRow of (admins as { id: string }[]) || []) {
+        if (!adminRow?.id) continue;
+
+        const { data: existing } = await (supabaseAdmin.from("notifications") as any)
+          .select("id")
+          .eq("user_id", adminRow.id)
+          .eq("type", "listing_submitted")
+          .eq("related_entity_type", "space")
+          .eq("related_entity_id", space.id)
+          .is("read_at", null)
+          .limit(1);
+
+        if ((existing || []).length > 0) continue;
+
+        await createInAppNotification({
+          supabaseAdmin,
+          userId: adminRow.id,
+          role: "admin",
+          title: adminTitle,
+          message: adminMessage,
+          type: "listing_submitted",
+          href: `/admin/listing-reviews/${space.id}`,
+          spaceId: space.id,
+        });
+      }
+
       return NextResponse.json({ ok: true });
     }
 

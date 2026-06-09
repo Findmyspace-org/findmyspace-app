@@ -20,7 +20,6 @@ import { LISTING_CLAIM_INTEREST_STATUSES } from "@/lib/listing-lifecycle";
 import type { SpaceCrmLinkSummary } from "@/lib/space-crm-link";
 import {
   markNotificationsReadByRelatedClient,
-  markNotificationsReadByTypesClient,
 } from "@/lib/mark-notifications-read-client";
 
 type ClaimInterestRow = {
@@ -208,6 +207,13 @@ function ClaimInterestDetailDrawer({
       }
       await load();
       onUpdated();
+      if (body.status) {
+        void markNotificationsReadByRelatedClient({
+          relatedEntityType: "listing_claim_interest",
+          relatedEntityId: interestId,
+          types: ["listing_claim_interest"],
+        });
+      }
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Action failed.");
     } finally {
@@ -484,12 +490,23 @@ function AdminClaimInterestsPageContent() {
   const searchParams = useSearchParams();
   const openFromUrl = searchParams.get("open");
   const listingFilter = searchParams.get("listing");
+  const statusFromUrl = searchParams.get("status");
 
   const [role, setRole] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<ClaimInterestRow[]>([]);
   const [message, setMessage] = useState("");
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>(() => {
+    if (
+      statusFromUrl &&
+      LISTING_CLAIM_INTEREST_STATUSES.includes(
+        statusFromUrl as (typeof LISTING_CLAIM_INTEREST_STATUSES)[number]
+      )
+    ) {
+      return statusFromUrl as StatusFilter;
+    }
+    return "all";
+  });
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
@@ -511,6 +528,17 @@ function AdminClaimInterestsPageContent() {
   }, [statusFilter]);
 
   useEffect(() => {
+    if (
+      statusFromUrl &&
+      LISTING_CLAIM_INTEREST_STATUSES.includes(
+        statusFromUrl as (typeof LISTING_CLAIM_INTEREST_STATUSES)[number]
+      )
+    ) {
+      setStatusFilter(statusFromUrl as StatusFilter);
+    }
+  }, [statusFromUrl]);
+
+  useEffect(() => {
     async function init() {
       const {
         data: { user },
@@ -529,9 +557,6 @@ function AdminClaimInterestsPageContent() {
       setRole(r);
       if (r === "admin") {
         await load();
-        void markNotificationsReadByTypesClient({
-          types: ["listing_claim_interest"],
-        });
       } else {
         setLoading(false);
       }
@@ -542,9 +567,13 @@ function AdminClaimInterestsPageContent() {
   useEffect(() => {
     if (openFromUrl) {
       setSelectedId(openFromUrl);
-      window.history.replaceState({}, "", "/admin/listing-claim-interests");
+      const nextUrl =
+        statusFilter !== "all"
+          ? `/admin/listing-claim-interests?status=${encodeURIComponent(statusFilter)}`
+          : "/admin/listing-claim-interests";
+      window.history.replaceState({}, "", nextUrl);
     }
-  }, [openFromUrl]);
+  }, [openFromUrl, statusFilter]);
 
   const filtered = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();

@@ -148,7 +148,7 @@ async function notifyListingEnquiry(
       type: "listing_enquiry",
       title: adminCopy.notificationTitle,
       message: notificationMessage,
-      href: "/admin/listing-enquiries",
+      href: `/admin/listing-enquiries?open=${params.enquiryId}`,
       related_entity_type: "listing_enquiry",
       related_entity_id: params.enquiryId,
       is_read: false,

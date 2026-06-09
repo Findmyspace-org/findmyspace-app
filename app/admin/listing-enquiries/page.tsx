@@ -1,23 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { format } from "date-fns";
-import {
-  Building2,
-  ClipboardList,
-  Inbox,
-  LayoutDashboard,
-  MessageSquare,
-  ShieldCheck,
-  Users,
-} from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { AdminNav } from "@/app/components/AdminNav";
 import { adminApiFetch } from "@/lib/admin-api-client";
 import { LISTING_ENQUIRY_STATUSES } from "@/lib/listing-lifecycle";
 import type { SpaceCrmLinkSummary } from "@/lib/space-crm-link";
-import { markNotificationsReadByTypesClient } from "@/lib/mark-notifications-read-client";
+import { markNotificationsReadByRelatedClient } from "@/lib/mark-notifications-read-client";
+import {
+  FOCUS_HIGHLIGHT_CLASS,
+  useFocusHighlight,
+} from "@/lib/use-focus-highlight";
 
 type EnquiryRow = {
   id: string;
@@ -55,17 +51,33 @@ function statusBadge(status: string) {
   }
 }
 
-export default function AdminListingEnquiriesPage() {
+function isValidEnquiryStatus(value: string | null): value is string {
+  return Boolean(value && LISTING_ENQUIRY_STATUSES.includes(value as never));
+}
+
+function AdminListingEnquiriesPageContent() {
+  const searchParams = useSearchParams();
+  const openFromUrl = searchParams.get("open");
+  const statusFromUrl = searchParams.get("status");
+
   const [role, setRole] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<EnquiryRow[]>([]);
-  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<string>(() =>
+    isValidEnquiryStatus(statusFromUrl) ? statusFromUrl : "all"
+  );
   const [message, setMessage] = useState("");
   const [savingId, setSavingId] = useState<string | null>(null);
   const [draftNotes, setDraftNotes] = useState<Record<string, string>>({});
   const [crmSummaries, setCrmSummaries] = useState<
     Record<string, SpaceCrmLinkSummary>
   >({});
+
+  const { highlightedId } = useFocusHighlight({
+    focusId: openFromUrl,
+    ready: !loading && rows.length > 0,
+    prefix: "enquiry-card",
+  });
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -111,6 +123,12 @@ export default function AdminListingEnquiriesPage() {
   }, []);
 
   useEffect(() => {
+    if (isValidEnquiryStatus(statusFromUrl)) {
+      setStatusFilter(statusFromUrl);
+    }
+  }, [statusFromUrl]);
+
+  useEffect(() => {
     async function init() {
       const {
         data: { user },
@@ -128,9 +146,6 @@ export default function AdminListingEnquiriesPage() {
       setRole((profile as { role?: string } | null)?.role ?? null);
       if ((profile as { role?: string } | null)?.role === "admin") {
         await load();
-        void markNotificationsReadByTypesClient({
-          types: ["listing_enquiry", "listing_enquiry_received"],
-        });
       } else {
         setLoading(false);
       }
@@ -138,10 +153,34 @@ export default function AdminListingEnquiriesPage() {
     void init();
   }, [load]);
 
+  useEffect(() => {
+    if (!openFromUrl) return;
+    void markNotificationsReadByRelatedClient({
+      relatedEntityType: "listing_enquiry",
+      relatedEntityId: openFromUrl,
+      types: ["listing_enquiry", "listing_enquiry_received"],
+    });
+    window.history.replaceState(
+      {},
+      "",
+      statusFilter !== "all"
+        ? `/admin/listing-enquiries?status=${encodeURIComponent(statusFilter)}`
+        : "/admin/listing-enquiries"
+    );
+  }, [openFromUrl, statusFilter]);
+
   const filtered = useMemo(() => {
     if (statusFilter === "all") return rows;
     return rows.filter((row) => row.status === statusFilter);
   }, [rows, statusFilter]);
+
+  async function markEnquiryNotificationsRead(enquiryId: string) {
+    await markNotificationsReadByRelatedClient({
+      relatedEntityType: "listing_enquiry",
+      relatedEntityId: enquiryId,
+      types: ["listing_enquiry", "listing_enquiry_received"],
+    });
+  }
 
   async function updateEnquiry(
     id: string,
@@ -186,6 +225,11 @@ export default function AdminListingEnquiriesPage() {
           : row
       )
     );
+
+    if (patch.status && patch.status !== "new") {
+      void markEnquiryNotificationsRead(id);
+    }
+
     setSavingId(null);
     setMessage("Saved.");
   }
@@ -246,143 +290,154 @@ export default function AdminListingEnquiriesPage() {
             {filtered.map((row) => {
               const crm = crmSummaries[row.listing_id];
               return (
-              <article
-                key={row.id}
-                className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm"
-              >
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <p className="text-lg font-semibold text-gray-900">{row.name}</p>
-                    <p className="text-sm text-gray-600">
-                      {row.email}
-                      {row.phone ? ` · ${row.phone}` : ""}
-                    </p>
-                    <p className="mt-1 text-sm">
-                      <Link
-                        href={`/spaces/${row.listing_id}`}
-                        className="font-medium text-[#0f2740] hover:underline"
-                      >
-                        {row.spaces?.title || "Untitled listing"}
-                      </Link>
-                      {row.spaces?.status ? (
-                        <span className="ml-2 text-xs text-gray-500">
-                          ({row.spaces.status})
-                        </span>
-                      ) : null}
-                    </p>
-                    {crm?.crm_organisation_id ? (
-                      <p className="mt-1 text-xs text-gray-600">
-                        CRM:{" "}
+                <article
+                  key={row.id}
+                  id={`enquiry-card-${row.id}`}
+                  className={`rounded-xl border border-gray-200 bg-white p-4 shadow-sm ${
+                    highlightedId === row.id ? FOCUS_HIGHLIGHT_CLASS : ""
+                  }`}
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="text-lg font-semibold text-gray-900">{row.name}</p>
+                      <p className="text-sm text-gray-600">
+                        {row.email}
+                        {row.phone ? ` · ${row.phone}` : ""}
+                      </p>
+                      <p className="mt-1 text-sm">
                         <Link
-                          href={`/space-place/organisations/${crm.crm_organisation_id}`}
+                          href={`/spaces/${row.listing_id}`}
                           className="font-medium text-[#0f2740] hover:underline"
-                          target="_blank"
                         >
-                          {crm.organisation_name || "Organisation"}
+                          {row.spaces?.title || "Untitled listing"}
                         </Link>
-                        {crm.crm_contact_id ? (
-                          <>
-                            {" · "}
-                            <Link
-                              href={`/space-place/contacts/${crm.crm_contact_id}`}
-                              className="font-medium text-[#0f2740] hover:underline"
-                              target="_blank"
-                            >
-                              {crm.contact_name || "Contact"}
-                            </Link>
-                          </>
+                        {row.spaces?.status ? (
+                          <span className="ml-2 text-xs text-gray-500">
+                            ({row.spaces.status})
+                          </span>
                         ) : null}
                       </p>
-                    ) : null}
+                      {crm?.crm_organisation_id ? (
+                        <p className="mt-1 text-xs text-gray-600">
+                          CRM:{" "}
+                          <Link
+                            href={`/space-place/organisations/${crm.crm_organisation_id}`}
+                            className="font-medium text-[#0f2740] hover:underline"
+                            target="_blank"
+                          >
+                            {crm.organisation_name || "Organisation"}
+                          </Link>
+                          {crm.crm_contact_id ? (
+                            <>
+                              {" · "}
+                              <Link
+                                href={`/space-place/contacts/${crm.crm_contact_id}`}
+                                className="font-medium text-[#0f2740] hover:underline"
+                                target="_blank"
+                              >
+                                {crm.contact_name || "Contact"}
+                              </Link>
+                            </>
+                          ) : null}
+                        </p>
+                      ) : null}
+                    </div>
+                    <span className={statusBadge(row.status)}>{row.status}</span>
                   </div>
-                  <span className={statusBadge(row.status)}>{row.status}</span>
-                </div>
 
-                <dl className="mt-3 grid gap-2 text-sm text-gray-700 sm:grid-cols-2">
-                  <div>
-                    <dt className="text-xs uppercase text-gray-500">Submitted</dt>
-                    <dd>{format(new Date(row.created_at), "dd MMM yyyy HH:mm")}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs uppercase text-gray-500">Duration</dt>
-                    <dd className="capitalize">{row.duration_type}</dd>
-                  </div>
-                  {row.requested_start ? (
+                  <dl className="mt-3 grid gap-2 text-sm text-gray-700 sm:grid-cols-2">
                     <div>
-                      <dt className="text-xs uppercase text-gray-500">Preferred start</dt>
-                      <dd>
-                        {format(new Date(row.requested_start), "dd MMM yyyy HH:mm")}
-                      </dd>
+                      <dt className="text-xs uppercase text-gray-500">Submitted</dt>
+                      <dd>{format(new Date(row.created_at), "dd MMM yyyy HH:mm")}</dd>
                     </div>
-                  ) : null}
-                  {row.purpose ? (
-                    <div className="sm:col-span-2">
-                      <dt className="text-xs uppercase text-gray-500">Purpose</dt>
-                      <dd>{row.purpose}</dd>
+                    <div>
+                      <dt className="text-xs uppercase text-gray-500">Duration</dt>
+                      <dd className="capitalize">{row.duration_type}</dd>
                     </div>
-                  ) : null}
-                  {row.message ? (
-                    <div className="sm:col-span-2">
-                      <dt className="text-xs uppercase text-gray-500">Message</dt>
-                      <dd className="whitespace-pre-wrap">{row.message}</dd>
-                    </div>
-                  ) : null}
-                </dl>
+                    {row.requested_start ? (
+                      <div>
+                        <dt className="text-xs uppercase text-gray-500">Preferred start</dt>
+                        <dd>
+                          {format(new Date(row.requested_start), "dd MMM yyyy HH:mm")}
+                        </dd>
+                      </div>
+                    ) : null}
+                    {row.purpose ? (
+                      <div className="sm:col-span-2">
+                        <dt className="text-xs uppercase text-gray-500">Purpose</dt>
+                        <dd>{row.purpose}</dd>
+                      </div>
+                    ) : null}
+                    {row.message ? (
+                      <div className="sm:col-span-2">
+                        <dt className="text-xs uppercase text-gray-500">Message</dt>
+                        <dd className="whitespace-pre-wrap">{row.message}</dd>
+                      </div>
+                    ) : null}
+                  </dl>
 
-                <div className="mt-4 flex flex-wrap items-end gap-3 border-t border-gray-100 pt-4">
-                  <label className="block">
-                    <span className="mb-1 block text-xs font-medium text-gray-600">
-                      Status
-                    </span>
-                    <select
-                      value={row.status}
+                  <div className="mt-4 flex flex-wrap items-end gap-3 border-t border-gray-100 pt-4">
+                    <label className="block">
+                      <span className="mb-1 block text-xs font-medium text-gray-600">
+                        Status
+                      </span>
+                      <select
+                        value={row.status}
+                        disabled={savingId === row.id}
+                        onChange={(e) =>
+                          void updateEnquiry(row.id, { status: e.target.value })
+                        }
+                        className="rounded-md border border-gray-300 px-3 py-2 text-sm"
+                      >
+                        {LISTING_ENQUIRY_STATUSES.map((s) => (
+                          <option key={s} value={s}>
+                            {s}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="min-w-[220px] flex-1 block">
+                      <span className="mb-1 block text-xs font-medium text-gray-600">
+                        Admin notes
+                      </span>
+                      <input
+                        value={draftNotes[row.id] ?? ""}
+                        onChange={(e) =>
+                          setDraftNotes((prev) => ({
+                            ...prev,
+                            [row.id]: e.target.value,
+                          }))
+                        }
+                        className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                      />
+                    </label>
+                    <button
+                      type="button"
                       disabled={savingId === row.id}
-                      onChange={(e) =>
-                        void updateEnquiry(row.id, { status: e.target.value })
+                      onClick={() =>
+                        void updateEnquiry(row.id, {
+                          adminNotes: draftNotes[row.id] ?? "",
+                        })
                       }
-                      className="rounded-md border border-gray-300 px-3 py-2 text-sm"
+                      className="rounded-md bg-[#0f2740] px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
                     >
-                      {LISTING_ENQUIRY_STATUSES.map((s) => (
-                        <option key={s} value={s}>
-                          {s}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="min-w-[220px] flex-1 block">
-                    <span className="mb-1 block text-xs font-medium text-gray-600">
-                      Admin notes
-                    </span>
-                    <input
-                      value={draftNotes[row.id] ?? ""}
-                      onChange={(e) =>
-                        setDraftNotes((prev) => ({
-                          ...prev,
-                          [row.id]: e.target.value,
-                        }))
-                      }
-                      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-                    />
-                  </label>
-                  <button
-                    type="button"
-                    disabled={savingId === row.id}
-                    onClick={() =>
-                      void updateEnquiry(row.id, {
-                        adminNotes: draftNotes[row.id] ?? "",
-                      })
-                    }
-                    className="rounded-md bg-[#0f2740] px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
-                  >
-                    Save notes
-                  </button>
-                </div>
-              </article>
+                      Save notes
+                    </button>
+                  </div>
+                </article>
               );
             })}
           </div>
         )}
       </div>
     </main>
+  );
+}
+
+export default function AdminListingEnquiriesPage() {
+  return (
+    <Suspense fallback={<main className="p-8 text-gray-600">Loading…</main>}>
+      <AdminListingEnquiriesPageContent />
+    </Suspense>
   );
 }

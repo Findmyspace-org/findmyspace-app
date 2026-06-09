@@ -4,6 +4,10 @@ import Link from "next/link";
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import {
+  HEADER_DROPDOWN_NOTIFICATION_TYPE_SET,
+  HEADER_DROPDOWN_NOTIFICATION_TYPES,
+} from "@/lib/header-notification-types";
 import { supabase } from "@/lib/supabase";
 import AuthModal from "@/app/components/AuthModal";
 import { sanitizeNextPath } from "@/lib/auth-redirect";
@@ -249,6 +253,7 @@ export default function Header() {
           .from("notifications")
           .select("id", { count: "exact", head: true })
           .eq("user_id", userId)
+          .in("type", [...HEADER_DROPDOWN_NOTIFICATION_TYPES])
           .is("read_at", null)
           .is("archived_at", null);
 
@@ -375,30 +380,8 @@ export default function Header() {
           nextAdminCount = pendingSpacesCount + pendingOwnerCount + pendingBankCount;
         }
 
-        // Notification table unread rows (badge uses actionable types only)
-        const DROPDOWN_NOTIFICATION_TYPES = new Set([
-          "payment_needed",
-          "booking_request",
-          "booking_declined",
-          "booking_expired",
-          "booking_confirmed",
-          "booking_paid",
-          "payment_received",
-          "booking_message",
-          "identity_submitted",
-          "bank_submitted",
-          "identity_verified",
-          "identity_rejected",
-          "bank_verified",
-          "bank_rejected",
-          "listing_question",
-          "listing_question_answered",
-          "listing_submitted",
-          "listing_pending",
-          "listing_rejected",
-          "listing_activated",
-          "ownership_proof_verified",
-        ]);
+        // Notification table unread rows (badge uses dropdown-visible types only)
+        const DROPDOWN_NOTIFICATION_TYPES = HEADER_DROPDOWN_NOTIFICATION_TYPE_SET;
 
         const RENTER_BADGE_NOTIFICATION_TYPES = new Set([
           "payment_needed",
@@ -422,6 +405,11 @@ export default function Header() {
           "payment_received",
           "identity_submitted",
           "bank_submitted",
+          "listing_submitted",
+          "listing_enquiry",
+          "listing_enquiry_received",
+          "listing_claim_interest",
+          "listing_claimed",
         ]);
 
         const { count: messageUnreadExact, error: messageCountError } = await supabase
@@ -562,8 +550,10 @@ export default function Header() {
               t === "listing_submitted" ||
               t === "listing_pending" ||
               t === "listing_rejected" ||
+              t === "listing_needs_changes" ||
               t === "listing_activated" ||
               t === "ownership_proof_verified" ||
+              t === "listing_claimed" ||
               t === "identity_verified" ||
               t === "identity_rejected" ||
               t === "bank_verified" ||
@@ -573,7 +563,10 @@ export default function Header() {
             } else if (
               t === "payment_received" ||
               t === "identity_submitted" ||
-              t === "bank_submitted"
+              t === "bank_submitted" ||
+              t === "listing_enquiry" ||
+              t === "listing_enquiry_received" ||
+              t === "listing_claim_interest"
             ) {
               mappedType = "admin";
             } else {
@@ -602,7 +595,14 @@ export default function Header() {
                           : mappedType === "admin"
                             ? t === "identity_submitted" || t === "bank_submitted"
                               ? "/admin/verification"
-                              : "/admin/bookings"
+                              : t === "listing_enquiry" ||
+                                  t === "listing_enquiry_received"
+                                ? "/admin/listing-enquiries"
+                                : t === "listing_claim_interest"
+                                  ? "/admin/listing-claim-interests"
+                                  : t === "listing_submitted"
+                                    ? "/admin/listing-reviews"
+                                    : "/admin/bookings"
                             : "/dashboard");
 
             pushUniqueNotification({

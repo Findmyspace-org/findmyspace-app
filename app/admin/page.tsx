@@ -18,6 +18,8 @@ import {
   Users,
 } from "lucide-react";
 import { AdminNav } from "@/app/components/AdminNav";
+import { AdminActionRequiredPanel } from "@/app/components/AdminActionRequiredPanel";
+import type { AdminActionQueue } from "@/app/components/AdminActionRequiredPanel";
 import { adminApiFetch } from "@/lib/admin-api-client";
 
 type AdminProfileRow = {
@@ -62,6 +64,7 @@ export default function AdminPage() {
     claimedListings: number;
     activeListings: number;
   } | null>(null);
+  const [actionQueue, setActionQueue] = useState<AdminActionQueue | null>(null);
 
   useEffect(() => {
     checkRole();
@@ -130,7 +133,10 @@ export default function AdminPage() {
       }
 
       try {
-        const stats = await adminApiFetch("/api/admin/venue-scout/stats");
+        const [stats, queue] = await Promise.all([
+          adminApiFetch("/api/admin/venue-scout/stats"),
+          adminApiFetch("/api/admin/action-queue"),
+        ]);
         setScoutStats({
           draftScoutListings: (stats.draftScoutListings as number) ?? 0,
           publishedUnclaimed: (stats.publishedUnclaimed as number) ?? 0,
@@ -139,8 +145,10 @@ export default function AdminPage() {
           claimedListings: (stats.claimedListings as number) ?? 0,
           activeListings: (stats.activeListings as number) ?? 0,
         });
+        setActionQueue(queue as AdminActionQueue);
       } catch {
         setScoutStats(null);
+        setActionQueue(null);
       }
     }
 
@@ -232,6 +240,8 @@ export default function AdminPage() {
         </p>
 
         <AdminNav current="dashboard" />
+
+        {actionQueue ? <AdminActionRequiredPanel queue={actionQueue} /> : null}
 
         <div className="mb-6 space-y-4">
           <div className="rounded-md border border-gray-300 bg-white p-5 shadow-sm">
