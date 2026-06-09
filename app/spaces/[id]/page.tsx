@@ -64,7 +64,6 @@ type Space = {
   longitude: number | null;
   image_urls: string[];
   attributes: Record<string, string[]>;
-  cancellation_policy?: string | null;
 };
 
 type HostProfile = {
@@ -391,9 +390,7 @@ export default async function Page({
                   Cancellation policy
                 </p>
                 <p className="mt-1 whitespace-pre-line text-sm text-gray-700">
-                  {space.cancellation_policy?.trim()
-                    ? space.cancellation_policy.trim()
-                    : "Cancellation policy will be confirmed before payment."}
+                  Cancellation policy will be confirmed before payment.
                 </p>
               </div>
 
