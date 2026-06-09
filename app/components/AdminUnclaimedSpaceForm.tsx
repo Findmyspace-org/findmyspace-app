@@ -14,7 +14,9 @@ import SpaceCategoryFields from "@/app/components/SpaceCategoryFields";
 import { LISTING_SPACE_TYPE_OPTIONS } from "@/app/data/spaceFeatureConfig";
 import { adminApiFetch } from "@/lib/admin-api-client";
 import { ADMIN_SPACE_IMAGE_MAX_BYTES } from "@/lib/admin-space-image-upload";
+import { AdminCrmLinkSection } from "@/app/components/AdminCrmLinkSection";
 import { AdminLocationSection } from "@/app/components/AdminLocationSection";
+import type { SpaceCrmLinkSummary } from "@/lib/space-crm-link";
 import { sortSpaceImages } from "@/lib/sort-space-images";
 
 type SpaceImage = {
@@ -42,7 +44,12 @@ type FormState = {
 const FIELD_CLASS =
   "w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-[#0f2740] focus:ring-1 focus:ring-[#0f2740]";
 
-function payloadFromState(state: FormState) {
+type CrmLinkState = {
+  crm_organisation_id: string | null;
+  crm_contact_id: string | null;
+};
+
+function payloadFromState(state: FormState, crmLink: CrmLinkState) {
   return {
     title: state.title,
     description: state.description,
@@ -57,6 +64,8 @@ function payloadFromState(state: FormState) {
     latitude: state.latitude,
     longitude: state.longitude,
     attributes: state.attributes,
+    crm_organisation_id: crmLink.crm_organisation_id,
+    crm_contact_id: crmLink.crm_contact_id,
   };
 }
 
@@ -68,6 +77,11 @@ type AdminUnclaimedSpaceFormProps = {
   initialImages?: SpaceImage[];
   enquiryCount?: number;
   readOnly?: boolean;
+  initialCrmLink?: SpaceCrmLinkSummary | null;
+  defaultOrganisationId?: string;
+  defaultOrganisationName?: string;
+  defaultContactId?: string;
+  defaultContactName?: string;
   onCreated?: (id: string) => void;
   onSavedAndExit?: () => void;
 };
@@ -80,6 +94,11 @@ export function AdminUnclaimedSpaceForm({
   initialImages = [],
   enquiryCount = 0,
   readOnly = false,
+  initialCrmLink = null,
+  defaultOrganisationId,
+  defaultOrganisationName,
+  defaultContactId,
+  defaultContactName,
   onCreated,
   onSavedAndExit,
 }: AdminUnclaimedSpaceFormProps) {
@@ -111,6 +130,11 @@ export function AdminUnclaimedSpaceForm({
   const [reordering, setReordering] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [crmLink, setCrmLink] = useState<CrmLinkState>({
+    crm_organisation_id:
+      initialCrmLink?.crm_organisation_id ?? defaultOrganisationId ?? null,
+    crm_contact_id: initialCrmLink?.crm_contact_id ?? defaultContactId ?? null,
+  });
 
   const sortedImages = useMemo(() => sortSpaceImages(images), [images]);
 
@@ -132,7 +156,7 @@ export function AdminUnclaimedSpaceForm({
       setSaving(true);
       setMessage(null);
       try {
-        const body = payloadFromState(state);
+        const body = payloadFromState(state, crmLink);
 
         if (mode === "create") {
           const result = await adminApiFetch("/api/admin/spaces/unclaimed", {
@@ -161,7 +185,7 @@ export function AdminUnclaimedSpaceForm({
         setSaving(false);
       }
     },
-    [mode, onCreated, onSavedAndExit, readOnly, spaceId, state, status]
+    [crmLink, mode, onCreated, onSavedAndExit, readOnly, spaceId, state, status]
   );
 
   const publish = useCallback(async () => {
@@ -186,7 +210,7 @@ export function AdminUnclaimedSpaceForm({
     try {
       await adminApiFetch(`/api/admin/spaces/${spaceId}/unclaimed`, {
         method: "PATCH",
-        body: JSON.stringify(payloadFromState(state)),
+        body: JSON.stringify(payloadFromState(state, crmLink)),
       });
       await adminApiFetch(`/api/admin/spaces/${spaceId}/publish-unclaimed`, {
         method: "POST",
@@ -198,7 +222,7 @@ export function AdminUnclaimedSpaceForm({
     } finally {
       setPublishing(false);
     }
-  }, [readOnly, spaceId, state]);
+  }, [crmLink, readOnly, spaceId, state]);
 
   async function persistImageOrder(ordered: SpaceImage[]) {
     if (!spaceId) return;
@@ -436,6 +460,23 @@ export function AdminUnclaimedSpaceForm({
           longitude: state.longitude,
         }}
         onChange={(patch) => setState((s) => ({ ...s, ...patch }))}
+      />
+
+      <AdminCrmLinkSection
+        spaceId={spaceId}
+        initialLink={initialCrmLink}
+        readOnly={readOnly}
+        defaultOrganisationId={defaultOrganisationId}
+        defaultOrganisationName={defaultOrganisationName}
+        defaultContactId={defaultContactId}
+        defaultContactName={defaultContactName}
+        value={crmLink}
+        onChange={(next) =>
+          setCrmLink({
+            crm_organisation_id: next.crm_organisation_id,
+            crm_contact_id: next.crm_contact_id,
+          })
+        }
       />
 
       <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">

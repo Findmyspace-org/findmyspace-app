@@ -11,6 +11,7 @@ import { scoutFormFromAttributes } from "@/lib/venue-scout-tags";
 import { VenueScoutCaptureForm } from "@/app/components/VenueScoutCaptureForm";
 import { VenueScoutNextActions } from "@/app/components/VenueScoutNextActions";
 import { AdminListingClaimPanel } from "@/app/components/AdminListingClaimPanel";
+import type { SpaceCrmLinkSummary } from "@/lib/space-crm-link";
 
 type SpaceRow = {
   id: string;
@@ -44,6 +45,7 @@ function VenueScoutEditContent() {
     { id: string; image_url: string; sort_order: number | null }[]
   >([]);
   const [readOnly, setReadOnly] = useState(false);
+  const [crmLink, setCrmLink] = useState<SpaceCrmLinkSummary | null>(null);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -62,6 +64,7 @@ function VenueScoutEditContent() {
         )
       );
       setReadOnly(Boolean(result.readOnly));
+      setCrmLink((result.crm_link as SpaceCrmLinkSummary | null) ?? null);
       setMessage("");
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Failed to load listing.");
@@ -135,6 +138,7 @@ function VenueScoutEditContent() {
             initialAttributes={attributes}
             initialImages={images}
             initialAdminNotes={space.listing_admin_comment || ""}
+            initialCrmLink={crmLink}
             initial={{
               title: space.title || "",
               description: space.description || "",

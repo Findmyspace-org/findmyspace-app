@@ -1,0 +1,31 @@
+/**
+ * Columns safe to expose on public marketplace pages.
+ * Excludes CRM link fields and other internal admin metadata.
+ */
+export const PUBLIC_SPACE_SELECT = [
+  "id",
+  "owner_id",
+  "title",
+  "description",
+  "city",
+  "suburb",
+  "street_address",
+  "province",
+  "postal_code",
+  "country",
+  "address_line_1",
+  "space_type",
+  "booking_unit",
+  "price_per_hour",
+  "price_per_day",
+  "price_per_month",
+  "min_booking_hours",
+  "min_booking_days",
+  "min_booking_months",
+  "latitude",
+  "longitude",
+  "status",
+  "cancellation_policy",
+  "created_at",
+  "updated_at",
+].join(", ");

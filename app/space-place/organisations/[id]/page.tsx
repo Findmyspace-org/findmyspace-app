@@ -36,6 +36,7 @@ import { ContactEmailActions } from "../../components/ContactEmailActions";
 import { getCrmCaptureEmail } from "@/lib/space-place/crm-email";
 import { CrmEmailList } from "../../components/CrmEmailList";
 import type { CrmEmailMessageWithRelations } from "@/lib/space-place/types";
+import { CrmMarketplaceListingsSection } from "../../components/CrmMarketplaceListingsSection";
 
 export default function OrganisationDetailPage() {
   const params = useParams();
@@ -333,6 +334,12 @@ export default function OrganisationDetailPage() {
           )}
         </Card>
       ))}
+
+      <CrmMarketplaceListingsSection
+        mode="organisation"
+        entityId={org.id}
+        organisationName={org.name}
+      />
 
       <SectionHeading>Tasks</SectionHeading>
       {tasks.map((t) => (

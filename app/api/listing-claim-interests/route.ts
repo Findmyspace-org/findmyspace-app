@@ -5,6 +5,10 @@ import { renderEmailLayout } from "@/lib/email-templates/EmailLayout";
 import { buildListingClaimInterestAdminCopy } from "@/lib/communication-copy";
 import { isUnclaimedListing } from "@/lib/listing-lifecycle";
 import { getCanonicalPublicSiteUrl } from "@/lib/site-url";
+import {
+  formatCrmLinkForAdminNotice,
+  loadSpaceCrmContextForListing,
+} from "@/lib/space-crm-link";
 
 type ClaimInterestBody = {
   listingId?: string;
@@ -96,7 +100,17 @@ export async function POST(req: NextRequest) {
   const interestId = (inserted as { id: string }).id;
   const listingTitle = listingRow.title || "Untitled listing";
   const appBaseUrl = getCanonicalPublicSiteUrl();
-  const adminEditUrl = `${appBaseUrl}/admin/unclaimed-listings/${listingId}/edit`;
+  const adminEditUrl = `${appBaseUrl}/admin/listing-claim-interests?open=${interestId}`;
+
+  let crmNotice: string | null = null;
+  try {
+    const crmContext = await loadSpaceCrmContextForListing(admin, listingId);
+    if (crmContext) {
+      crmNotice = formatCrmLinkForAdminNotice(crmContext);
+    }
+  } catch {
+    // non-blocking
+  }
 
   try {
     const copy = buildListingClaimInterestAdminCopy({
@@ -106,12 +120,19 @@ export async function POST(req: NextRequest) {
       role,
     });
 
+    const notificationMessage = crmNotice
+      ? `${copy.notificationMessage} CRM: ${crmNotice}.`
+      : copy.notificationMessage;
+    const emailBodyLines = crmNotice
+      ? [...copy.emailBodyLines, `CRM link: ${crmNotice}`]
+      : copy.emailBodyLines;
+
     const adminEmail = process.env.ADMIN_NOTIFICATION_EMAIL;
     if (adminEmail) {
       const rendered = renderEmailLayout({
         preheader: copy.emailPreheader,
         title: copy.emailTitle,
-        bodyLines: copy.emailBodyLines,
+        bodyLines: emailBodyLines,
         primaryCTA: { label: copy.ctaLabel, href: adminEditUrl },
         footerRole: copy.emailFooterRole,
       });
@@ -131,8 +152,8 @@ export async function POST(req: NextRequest) {
         role: "admin",
         type: "listing_claim_interest",
         title: copy.notificationTitle,
-        message: copy.notificationMessage,
-        href: `/admin/unclaimed-listings/${listingId}/edit`,
+        message: notificationMessage,
+        href: `/admin/listing-claim-interests?open=${interestId}`,
         related_entity_type: "listing_claim_interest",
         related_entity_id: interestId,
         is_read: false,

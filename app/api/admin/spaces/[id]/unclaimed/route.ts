@@ -8,6 +8,10 @@ import {
   parseUnclaimedSpaceInput,
   syncSpaceAttributes,
 } from "@/lib/admin-unclaimed-space";
+import {
+  fetchSpaceCrmLinkSummary,
+  validateSpaceCrmLink,
+} from "@/lib/space-crm-link";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -37,7 +41,7 @@ export async function GET(
   }
   const space = result.space;
 
-  const [{ data: images }, { data: attributes }, { count: enquiryCount }] =
+  const [{ data: images }, { data: attributes }, { count: enquiryCount }, { count: claimInterestCount }] =
     await Promise.all([
       admin
         .from("space_images")
@@ -50,6 +54,10 @@ export async function GET(
         .eq("space_id", id),
       admin
         .from("listing_enquiries")
+        .select("id", { count: "exact", head: true })
+        .eq("listing_id", id),
+      admin
+        .from("listing_claim_interests")
         .select("id", { count: "exact", head: true })
         .eq("listing_id", id),
     ]);
@@ -67,6 +75,11 @@ export async function GET(
     images: images || [],
     attributes: grouped,
     enquiry_count: enquiryCount ?? 0,
+    claim_interest_count: claimInterestCount ?? 0,
+    crm_link: await fetchSpaceCrmLinkSummary(
+      admin,
+      space as { crm_organisation_id?: string | null; crm_contact_id?: string | null }
+    ),
   });
 }
 
@@ -106,6 +119,14 @@ export async function PATCH(
     return NextResponse.json({ error: parsed.error }, { status: 400 });
   }
 
+  const crmValidated = await validateSpaceCrmLink(admin, {
+    crm_organisation_id: parsed.data.crm_organisation_id,
+    crm_contact_id: parsed.data.crm_contact_id,
+  });
+  if (!crmValidated.ok) {
+    return NextResponse.json({ error: crmValidated.error }, { status: 400 });
+  }
+
   const patch: Record<string, unknown> = {
     owner_id: null,
     created_by_admin: true,
@@ -123,6 +144,10 @@ export async function PATCH(
   if (d.country !== undefined) patch.country = d.country ?? "South Africa";
   if (d.latitude !== undefined) patch.latitude = d.latitude;
   if (d.longitude !== undefined) patch.longitude = d.longitude;
+  if (d.crm_organisation_id !== undefined) {
+    patch.crm_organisation_id = d.crm_organisation_id;
+  }
+  if (d.crm_contact_id !== undefined) patch.crm_contact_id = d.crm_contact_id;
 
   const street = d.street_address ?? d.address_line_1;
   if (street !== undefined || d.address_line_1 !== undefined) {

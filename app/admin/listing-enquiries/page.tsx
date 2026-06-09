@@ -14,7 +14,9 @@ import {
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { AdminNav } from "@/app/components/AdminNav";
+import { adminApiFetch } from "@/lib/admin-api-client";
 import { LISTING_ENQUIRY_STATUSES } from "@/lib/listing-lifecycle";
+import type { SpaceCrmLinkSummary } from "@/lib/space-crm-link";
 import { markNotificationsReadByTypesClient } from "@/lib/mark-notifications-read-client";
 
 type EnquiryRow = {
@@ -61,6 +63,9 @@ export default function AdminListingEnquiriesPage() {
   const [message, setMessage] = useState("");
   const [savingId, setSavingId] = useState<string | null>(null);
   const [draftNotes, setDraftNotes] = useState<Record<string, string>>({});
+  const [crmSummaries, setCrmSummaries] = useState<
+    Record<string, SpaceCrmLinkSummary>
+  >({});
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -75,13 +80,32 @@ export default function AdminListingEnquiriesPage() {
     if (error) {
       setMessage(error.message);
       setRows([]);
+      setCrmSummaries({});
     } else {
-      setRows((data as EnquiryRow[]) || []);
+      const loaded = (data as EnquiryRow[]) || [];
+      setRows(loaded);
       const notes: Record<string, string> = {};
-      for (const row of (data as EnquiryRow[]) || []) {
+      for (const row of loaded) {
         notes[row.id] = row.admin_notes || "";
       }
       setDraftNotes(notes);
+
+      const listingIds = Array.from(new Set(loaded.map((r) => r.listing_id)));
+      if (listingIds.length > 0) {
+        try {
+          const result = await adminApiFetch("/api/admin/spaces/crm-summaries", {
+            method: "POST",
+            body: JSON.stringify({ space_ids: listingIds }),
+          });
+          setCrmSummaries(
+            (result.summaries as Record<string, SpaceCrmLinkSummary>) || {}
+          );
+        } catch {
+          setCrmSummaries({});
+        }
+      } else {
+        setCrmSummaries({});
+      }
     }
     setLoading(false);
   }, []);
@@ -219,7 +243,9 @@ export default function AdminListingEnquiriesPage() {
           <p className="mt-8 text-gray-500">No enquiries yet.</p>
         ) : (
           <div className="mt-6 space-y-4">
-            {filtered.map((row) => (
+            {filtered.map((row) => {
+              const crm = crmSummaries[row.listing_id];
+              return (
               <article
                 key={row.id}
                 className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm"
@@ -244,6 +270,30 @@ export default function AdminListingEnquiriesPage() {
                         </span>
                       ) : null}
                     </p>
+                    {crm?.crm_organisation_id ? (
+                      <p className="mt-1 text-xs text-gray-600">
+                        CRM:{" "}
+                        <Link
+                          href={`/space-place/organisations/${crm.crm_organisation_id}`}
+                          className="font-medium text-[#0f2740] hover:underline"
+                          target="_blank"
+                        >
+                          {crm.organisation_name || "Organisation"}
+                        </Link>
+                        {crm.crm_contact_id ? (
+                          <>
+                            {" · "}
+                            <Link
+                              href={`/space-place/contacts/${crm.crm_contact_id}`}
+                              className="font-medium text-[#0f2740] hover:underline"
+                              target="_blank"
+                            >
+                              {crm.contact_name || "Contact"}
+                            </Link>
+                          </>
+                        ) : null}
+                      </p>
+                    ) : null}
                   </div>
                   <span className={statusBadge(row.status)}>{row.status}</span>
                 </div>
@@ -328,7 +378,8 @@ export default function AdminListingEnquiriesPage() {
                   </button>
                 </div>
               </article>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

@@ -7,6 +7,7 @@ import {
   parseUnclaimedSpaceInput,
   syncSpaceAttributes,
 } from "@/lib/admin-unclaimed-space";
+import { validateSpaceCrmLink, enrichSpacesWithCrmSummaries } from "@/lib/space-crm-link";
 
 export async function GET(req: NextRequest) {
   const auth = await requireAdminApi(req);
@@ -31,7 +32,9 @@ export async function GET(req: NextRequest) {
 
   const { data: spaces, error } = await admin
     .from("spaces")
-    .select("id, title, city, suburb, space_type, status, created_at")
+    .select(
+      "id, title, city, suburb, space_type, status, created_at, crm_organisation_id, crm_contact_id"
+    )
     .eq("created_by_admin", true)
     .in("status", overviewStatuses)
     .order("created_at", { ascending: false });
@@ -69,10 +72,19 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  const rows = ((spaces as Record<string, unknown>[]) || []).map((space) => ({
+  const enriched = await enrichSpacesWithCrmSummaries(
+    admin,
+    ((spaces as Record<string, unknown>[]) || []) as {
+      id: string;
+      crm_organisation_id?: string | null;
+      crm_contact_id?: string | null;
+    }[]
+  );
+
+  const rows = enriched.map((space) => ({
     ...space,
-    enquiry_count: enquiryCounts[(space.id as string) || ""] || 0,
-    cover_image_url: coverImages[(space.id as string) || ""] || null,
+    enquiry_count: enquiryCounts[space.id] || 0,
+    cover_image_url: coverImages[space.id] || null,
   }));
 
   return NextResponse.json({ listings: rows });
@@ -103,6 +115,14 @@ export async function POST(req: NextRequest) {
   const parsed = parseUnclaimedSpaceInput(body);
   if (!parsed.ok) {
     return NextResponse.json({ error: parsed.error }, { status: 400 });
+  }
+
+  const crmValidated = await validateSpaceCrmLink(admin, {
+    crm_organisation_id: parsed.data.crm_organisation_id,
+    crm_contact_id: parsed.data.crm_contact_id,
+  });
+  if (!crmValidated.ok) {
+    return NextResponse.json({ error: crmValidated.error }, { status: 400 });
   }
 
   const status = "draft" as const;

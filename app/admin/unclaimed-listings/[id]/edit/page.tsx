@@ -10,6 +10,7 @@ import { AdminUnclaimedSpaceForm } from "@/app/components/AdminUnclaimedSpaceFor
 import { AdminListingClaimPanel } from "@/app/components/AdminListingClaimPanel";
 import { UnclaimedListingEnquirySocialProof } from "@/app/components/UnclaimedListingEnquirySocialProof";
 import { sortSpaceImages } from "@/lib/sort-space-images";
+import type { SpaceCrmLinkSummary } from "@/lib/space-crm-link";
 
 type SpaceRow = {
   id: string;
@@ -42,7 +43,9 @@ export default function EditUnclaimedListingPage() {
     { id: string; image_url: string; sort_order: number | null }[]
   >([]);
   const [enquiryCount, setEnquiryCount] = useState(0);
+  const [claimInterestCount, setClaimInterestCount] = useState(0);
   const [readOnly, setReadOnly] = useState(false);
+  const [crmLink, setCrmLink] = useState<SpaceCrmLinkSummary | null>(null);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -61,7 +64,9 @@ export default function EditUnclaimedListingPage() {
         )
       );
       setEnquiryCount((result.enquiry_count as number) || 0);
+      setClaimInterestCount((result.claim_interest_count as number) || 0);
       setReadOnly(Boolean(result.readOnly));
+      setCrmLink((result.crm_link as SpaceCrmLinkSummary | null) ?? null);
       setMessage("");
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Failed to load listing.");
@@ -152,6 +157,15 @@ export default function EditUnclaimedListingPage() {
               {enquiryCount} {enquiryCount === 1 ? "enquiry" : "enquiries"}
             </Link>
           ) : null}
+          {claimInterestCount > 0 ? (
+            <Link
+              href={`/admin/listing-claim-interests?listing=${space.id}`}
+              className="text-sm font-medium text-violet-700 hover:underline"
+            >
+              {claimInterestCount}{" "}
+              {claimInterestCount === 1 ? "claim interest" : "claim interests"}
+            </Link>
+          ) : null}
         </div>
 
         <h1 className="text-2xl font-semibold text-gray-900">Edit unclaimed listing</h1>
@@ -180,6 +194,7 @@ export default function EditUnclaimedListingPage() {
             initialStatus={space.status}
             enquiryCount={enquiryCount}
             readOnly={readOnly}
+            initialCrmLink={crmLink}
             onSavedAndExit={() =>
               router.push("/admin/unclaimed-listings?saved=1")
             }

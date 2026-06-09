@@ -25,6 +25,7 @@ import { UnclaimedListingMobileSheet } from "@/app/components/UnclaimedListingMo
 import { UnclaimedListingPricingSection } from "@/app/components/UnclaimedListingPricingSection";
 import { UnclaimedListingSidebar } from "@/app/components/UnclaimedListingSidebar";
 import { getListingEnquiryCount } from "@/lib/listing-enquiry-count";
+import { PUBLIC_SPACE_SELECT } from "@/lib/public-space-columns";
 
 import {
   ArrowLeft,
@@ -78,7 +79,7 @@ type HostProfile = {
 async function getSpace(id: string) {
   const { data: rawSpace, error } = await supabase
     .from("spaces")
-    .select("*")
+    .select(PUBLIC_SPACE_SELECT)
     .eq("id", id)
     .single();
 

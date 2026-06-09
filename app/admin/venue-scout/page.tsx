@@ -143,7 +143,7 @@ export default function VenueScoutDashboardPage() {
             View enquiries
           </Link>
           <Link
-            href="/admin/unclaimed-listings"
+            href="/admin/listing-claim-interests"
             className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800 hover:bg-gray-50"
           >
             <Link2 className="h-4 w-4" />

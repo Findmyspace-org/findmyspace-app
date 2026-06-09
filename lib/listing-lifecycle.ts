@@ -172,6 +172,16 @@ export const LISTING_ENQUIRY_STATUSES = [
 
 export type ListingEnquiryStatus = (typeof LISTING_ENQUIRY_STATUSES)[number];
 
+export const LISTING_CLAIM_INTEREST_STATUSES = [
+  "new",
+  "contacted",
+  "claim_link_sent",
+  "closed",
+] as const;
+
+export type ListingClaimInterestStatus =
+  (typeof LISTING_CLAIM_INTEREST_STATUSES)[number];
+
 export const LISTING_ENQUIRY_DURATION_TYPES = [
   "hourly",
   "daily",

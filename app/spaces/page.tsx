@@ -49,6 +49,7 @@ import {
   parseIntent,
   type SpaceIntentKey,
 } from "@/lib/space-intents";
+import { PUBLIC_SPACE_SELECT } from "@/lib/public-space-columns";
 
 type Space = {
   id: string;
@@ -283,7 +284,7 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
 
       const { data, error } = await supabase
         .from("spaces")
-        .select("*")
+        .select(PUBLIC_SPACE_SELECT)
         .in("status", [...PUBLIC_LISTING_STATUSES])
         .order("created_at", { ascending: false });
 

@@ -1,14 +1,20 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
 import { ArrowLeft } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { AdminUnclaimedSpaceForm } from "@/app/components/AdminUnclaimedSpaceForm";
 
-export default function NewUnclaimedListingPage() {
+function NewUnclaimedListingContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const crmOrgId = searchParams.get("crm_org_id") || undefined;
+  const crmOrgName = searchParams.get("crm_org_name") || undefined;
+  const crmContactId = searchParams.get("crm_contact_id") || undefined;
+  const crmContactName = searchParams.get("crm_contact_name") || undefined;
+  const prefillTitle = searchParams.get("title") || undefined;
   const [role, setRole] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -62,10 +68,23 @@ export default function NewUnclaimedListingPage() {
         <div className="mt-6">
           <AdminUnclaimedSpaceForm
             mode="create"
+            defaultOrganisationId={crmOrgId}
+            defaultOrganisationName={crmOrgName}
+            defaultContactId={crmContactId}
+            defaultContactName={crmContactName}
+            initial={prefillTitle ? { title: prefillTitle } : undefined}
             onCreated={(id) => router.replace(`/admin/unclaimed-listings/${id}/edit`)}
           />
         </div>
       </div>
     </main>
+  );
+}
+
+export default function NewUnclaimedListingPage() {
+  return (
+    <Suspense fallback={<main className="p-8 text-gray-600">Loading…</main>}>
+      <NewUnclaimedListingContent />
+    </Suspense>
   );
 }

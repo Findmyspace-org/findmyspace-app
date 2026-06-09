@@ -1,19 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApi } from "@/lib/require-admin-api";
 import { adminAudit } from "@/lib/admin-audit";
-import {
-  createServiceAdminClient,
-  fetchAdminCreatedListing,
-} from "@/lib/admin-unclaimed-space";
-import {
-  buildListingClaimUrl,
-  claimTokenExpiresAt,
-  generateClaimToken,
-  hashClaimToken,
-  isSpaceClaimable,
-  type ClaimableSpaceRow,
-} from "@/lib/listing-claim-token";
-import { sendListingClaimInviteEmail } from "@/lib/listing-claim-server";
+import { createServiceAdminClient } from "@/lib/admin-unclaimed-space";
+import { createListingClaimLink } from "@/lib/listing-claim-server";
+
+type CreateBody = {
+  spaceId?: string;
+  ownerEmail?: string | null;
+  sendEmail?: boolean;
+};
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -63,12 +58,6 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ tokens: rows, space: space ?? null });
 }
 
-type CreateBody = {
-  spaceId?: string;
-  ownerEmail?: string | null;
-  sendEmail?: boolean;
-};
-
 export async function POST(req: NextRequest) {
   const auth = await requireAdminApi(req);
   if ("response" in auth) return auth.response;
@@ -85,82 +74,20 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "spaceId is required." }, { status: 400 });
   }
 
-  const ownerEmail = body.ownerEmail?.trim() || null;
-  if (ownerEmail && !ownerEmail.includes("@")) {
-    return NextResponse.json({ error: "Invalid owner email." }, { status: 400 });
-  }
-
   const admin = createServiceAdminClient();
   if (!admin) {
     return NextResponse.json({ error: "Server configuration error." }, { status: 500 });
   }
 
-  const { space, error: spaceErr } = await fetchAdminCreatedListing(admin, spaceId, {
-    allowOwnerClaimed: false,
+  const result = await createListingClaimLink(admin, {
+    spaceId,
+    actorUserId: auth.userId,
+    ownerEmail: body.ownerEmail,
+    sendEmail: body.sendEmail,
   });
-  if (spaceErr || !space) {
-    return NextResponse.json({ error: spaceErr || "Listing not found." }, { status: 404 });
-  }
 
-  const spaceRow = space as ClaimableSpaceRow;
-  if (!isSpaceClaimable(spaceRow)) {
-    return NextResponse.json(
-      { error: "Listing must be draft or unclaimed with no owner to generate a claim link." },
-      { status: 400 }
-    );
-  }
-
-  const nowIso = new Date().toISOString();
-  await admin
-    .from("listing_claim_tokens")
-    .update({ status: "revoked", revoked_at: nowIso })
-    .eq("listing_id", spaceId)
-    .eq("status", "pending");
-
-  const rawToken = generateClaimToken();
-  const tokenHash = hashClaimToken(rawToken);
-  const expiresAt = claimTokenExpiresAt(14);
-
-  const { data: inserted, error: insertErr } = await admin
-    .from("listing_claim_tokens")
-    .insert({
-      listing_id: spaceId,
-      token_hash: tokenHash,
-      owner_email: ownerEmail,
-      created_by: auth.userId,
-      status: "pending",
-      expires_at: expiresAt,
-    })
-    .select("id, listing_id, owner_email, status, expires_at, created_at")
-    .single();
-
-  if (insertErr || !inserted) {
-    return NextResponse.json(
-      { error: insertErr?.message || "Could not create claim token." },
-      { status: 500 }
-    );
-  }
-
-  await admin
-    .from("spaces")
-    .update({ owner_invited_at: nowIso })
-    .eq("id", spaceId);
-
-  const claimUrl = buildListingClaimUrl(rawToken);
-  const listingTitle = spaceRow.title?.trim() || "Your listing";
-
-  let emailSent = false;
-  if (body.sendEmail && ownerEmail) {
-    try {
-      await sendListingClaimInviteEmail({
-        to: ownerEmail,
-        listingTitle,
-        claimUrl,
-      });
-      emailSent = true;
-    } catch (err) {
-      console.error("[listing-claims] invite email failed", err);
-    }
+  if (!result.ok) {
+    return NextResponse.json({ error: result.error }, { status: result.status });
   }
 
   await adminAudit({
@@ -169,16 +96,16 @@ export async function POST(req: NextRequest) {
     targetType: "space",
     targetId: spaceId,
     meta: {
-      token_id: (inserted as { id: string }).id,
-      owner_email: ownerEmail,
-      email_sent: emailSent,
+      token_id: result.token.id,
+      owner_email: body.ownerEmail?.trim() || null,
+      email_sent: result.emailSent,
     },
   });
 
   return NextResponse.json({
     ok: true,
-    claimUrl,
-    emailSent,
-    token: inserted,
+    claimUrl: result.claimUrl,
+    emailSent: result.emailSent,
+    token: result.token,
   });
 }

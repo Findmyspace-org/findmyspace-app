@@ -11,6 +11,10 @@ import {
   LISTING_ENQUIRY_DURATION_TYPES,
 } from "@/lib/listing-lifecycle";
 import { getCanonicalPublicSiteUrl } from "@/lib/site-url";
+import {
+  formatCrmLinkForAdminNotice,
+  loadSpaceCrmContextForListing,
+} from "@/lib/space-crm-link";
 
 type EnquiryBody = {
   listingId?: string;
@@ -96,6 +100,7 @@ async function notifyListingEnquiry(
     requesterId: string | null;
     requesterName: string;
     requesterEmail: string;
+    crmNotice?: string | null;
   }
 ) {
   const adminEmail = process.env.ADMIN_NOTIFICATION_EMAIL;
@@ -109,11 +114,17 @@ async function notifyListingEnquiry(
     requesterEmail: params.requesterEmail,
   });
 
+  const crmSuffix = params.crmNotice ? ` CRM: ${params.crmNotice}.` : "";
+  const notificationMessage = `${adminCopy.notificationMessage}${crmSuffix}`;
+  const emailBodyLines = params.crmNotice
+    ? [...adminCopy.emailBodyLines, `CRM link: ${params.crmNotice}`]
+    : adminCopy.emailBodyLines;
+
   if (adminEmail) {
     const rendered = renderEmailLayout({
       preheader: adminCopy.emailPreheader,
       title: adminCopy.emailTitle,
-      bodyLines: adminCopy.emailBodyLines,
+      bodyLines: emailBodyLines,
       primaryCTA: { label: adminCopy.ctaLabel, href: adminInboxUrl },
       footerRole: adminCopy.emailFooterRole,
     });
@@ -136,7 +147,7 @@ async function notifyListingEnquiry(
       role: "admin",
       type: "listing_enquiry",
       title: adminCopy.notificationTitle,
-      message: adminCopy.notificationMessage,
+      message: notificationMessage,
       href: "/admin/listing-enquiries",
       related_entity_type: "listing_enquiry",
       related_entity_id: params.enquiryId,
@@ -295,6 +306,16 @@ export async function POST(req: NextRequest) {
 
   const enquiryId = (inserted as { id: string }).id;
 
+  let crmNotice: string | null = null;
+  try {
+    const crmContext = await loadSpaceCrmContextForListing(admin, listingId);
+    if (crmContext) {
+      crmNotice = formatCrmLinkForAdminNotice(crmContext);
+    }
+  } catch {
+    // non-blocking
+  }
+
   try {
     await notifyListingEnquiry(admin, {
       enquiryId,
@@ -303,6 +324,7 @@ export async function POST(req: NextRequest) {
       requesterId,
       requesterName: name,
       requesterEmail: email,
+      crmNotice,
     });
   } catch (err) {
     console.error("[listing-enquiries] notification failed", err);

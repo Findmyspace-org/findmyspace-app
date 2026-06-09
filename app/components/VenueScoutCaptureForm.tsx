@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
+import { AdminCrmLinkSection } from "@/app/components/AdminCrmLinkSection";
 import { AdminLocationSection } from "@/app/components/AdminLocationSection";
 import {
   AdminSpacePhotosPanel,
@@ -9,6 +10,7 @@ import {
 } from "@/app/components/AdminSpacePhotosPanel";
 import { LISTING_SPACE_TYPE_OPTIONS } from "@/app/data/spaceFeatureConfig";
 import { adminApiFetch } from "@/lib/admin-api-client";
+import type { SpaceCrmLinkSummary } from "@/lib/space-crm-link";
 import {
   mergeScoutAttributes,
   scoutAttributesFromForm,
@@ -38,7 +40,11 @@ type ScoutFormState = {
   tags: string[];
 };
 
-function payloadFromState(state: ScoutFormState, extraAttributes: Record<string, string[]>) {
+function payloadFromState(
+  state: ScoutFormState,
+  extraAttributes: Record<string, string[]>,
+  crmLink: { crm_organisation_id: string | null; crm_contact_id: string | null }
+) {
   const scoutAttrs = scoutAttributesFromForm({
     website: state.website,
     phone: state.phone,
@@ -60,6 +66,8 @@ function payloadFromState(state: ScoutFormState, extraAttributes: Record<string,
     latitude: state.latitude,
     longitude: state.longitude,
     attributes: mergeScoutAttributes(extraAttributes, scoutAttrs),
+    crm_organisation_id: crmLink.crm_organisation_id,
+    crm_contact_id: crmLink.crm_contact_id,
   };
 }
 
@@ -71,6 +79,7 @@ type VenueScoutCaptureFormProps = {
   initialAttributes?: Record<string, string[]>;
   initialImages?: AdminSpaceImage[];
   initialAdminNotes?: string;
+  initialCrmLink?: SpaceCrmLinkSummary | null;
   readOnly?: boolean;
   onCreated?: (id: string) => void;
   showSavedBanner?: boolean;
@@ -84,6 +93,7 @@ export function VenueScoutCaptureForm({
   initialAttributes = {},
   initialImages: initialImagesProp = [],
   initialAdminNotes = "",
+  initialCrmLink = null,
   readOnly = false,
   onCreated,
   showSavedBanner = false,
@@ -117,6 +127,10 @@ export function VenueScoutCaptureForm({
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [optionalOpen, setOptionalOpen] = useState(false);
+  const [crmLink, setCrmLink] = useState({
+    crm_organisation_id: initialCrmLink?.crm_organisation_id ?? null,
+    crm_contact_id: initialCrmLink?.crm_contact_id ?? null,
+  });
 
   useEffect(() => {
     if (initial) {
@@ -135,7 +149,7 @@ export function VenueScoutCaptureForm({
   }, [initial, initialAttributes, initialImagesProp, initialStatus]);
 
   const persistListing = useCallback(async () => {
-    const body = payloadFromState(state, baseAttributes);
+    const body = payloadFromState(state, baseAttributes, crmLink);
 
     if (mode === "create") {
       const result = await adminApiFetch("/api/admin/spaces/unclaimed", {
@@ -169,7 +183,7 @@ export function VenueScoutCaptureForm({
     });
 
     return spaceId;
-  }, [baseAttributes, mode, spaceId, state, status]);
+  }, [baseAttributes, crmLink, mode, spaceId, state, status]);
 
   async function saveDraft() {
     if (readOnly) return;
@@ -326,6 +340,19 @@ export function VenueScoutCaptureForm({
         onChange={(patch) => setState((s) => ({ ...s, ...patch }))}
       />
 
+      <AdminCrmLinkSection
+        spaceId={spaceId}
+        initialLink={initialCrmLink}
+        readOnly={readOnly}
+        value={crmLink}
+        onChange={(next) =>
+          setCrmLink({
+            crm_organisation_id: next.crm_organisation_id,
+            crm_contact_id: next.crm_contact_id,
+          })
+        }
+      />
+
       <section
         id="scout-photos"
         className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm"
@@ -365,15 +392,18 @@ export function VenueScoutCaptureForm({
                   placeholder="https://"
                 />
               </label>
-              <label className="block">
-                <span className="mb-1 block text-sm font-medium text-gray-700">Phone</span>
-                <input
-                  type="tel"
-                  value={state.phone}
-                  onChange={(e) => setState((s) => ({ ...s, phone: e.target.value }))}
-                  className={FIELD_CLASS}
-                />
-              </label>
+            <label className="block">
+              <span className="mb-1 block text-sm font-medium text-gray-700">Phone</span>
+              <input
+                type="tel"
+                value={state.phone}
+                onChange={(e) => setState((s) => ({ ...s, phone: e.target.value }))}
+                className={FIELD_CLASS}
+              />
+              <p className="mt-1 text-xs text-gray-500">
+                Saved on the listing — you can create a CRM contact from these details later.
+              </p>
+            </label>
             </div>
             <label className="block">
               <span className="mb-1 block text-sm font-medium text-gray-700">

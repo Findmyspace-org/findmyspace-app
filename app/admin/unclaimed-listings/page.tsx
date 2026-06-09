@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { format } from "date-fns";
-import { Compass, ImageIcon, Plus, Search } from "lucide-react";
+import { Compass, ImageIcon, Link2, Plus, Search } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { AdminNav } from "@/app/components/AdminNav";
 import { adminApiFetch } from "@/lib/admin-api-client";
@@ -28,6 +28,9 @@ type ListingRow = {
   created_at: string;
   enquiry_count: number;
   cover_image_url: string | null;
+  crm_linked?: boolean;
+  crm_organisation_name?: string | null;
+  crm_contact_name?: string | null;
 };
 
 function AdminUnclaimedListingsPageContent({
@@ -197,6 +200,7 @@ function AdminUnclaimedListingsPageContent({
                   <th className="px-4 py-3">Status</th>
                   <th className="hidden px-4 py-3 md:table-cell">Category</th>
                   <th className="hidden px-4 py-3 lg:table-cell">Location</th>
+                  <th className="hidden px-4 py-3 lg:table-cell">CRM</th>
                   <th className="px-4 py-3">Enquiries</th>
                   <th className="hidden px-4 py-3 sm:table-cell">Created</th>
                   <th className="px-4 py-3" />
@@ -247,6 +251,11 @@ function AdminUnclaimedListingsPageContent({
                         </p>
                         <p className="mt-0.5 text-xs text-gray-500 md:hidden">
                           {formatSpaceTypeLabel(row.space_type)}
+                          {row.crm_linked ? (
+                            <span className="block text-[#0f2740]">
+                              CRM: {row.crm_organisation_name || "Linked"}
+                            </span>
+                          ) : null}
                         </p>
                       </td>
                       <td className="px-4 py-3">
@@ -259,6 +268,23 @@ function AdminUnclaimedListingsPageContent({
                       </td>
                       <td className="hidden px-4 py-3 text-gray-600 lg:table-cell">
                         {location}
+                      </td>
+                      <td className="hidden px-4 py-3 text-gray-600 lg:table-cell">
+                        {row.crm_linked ? (
+                          <span className="inline-flex items-start gap-1.5 text-xs">
+                            <Link2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#0f2740]" />
+                            <span>
+                              {row.crm_organisation_name || "Linked org"}
+                              {row.crm_contact_name ? (
+                                <span className="block text-gray-500">
+                                  {row.crm_contact_name}
+                                </span>
+                              ) : null}
+                            </span>
+                          </span>
+                        ) : (
+                          <span className="text-xs text-gray-400">No CRM link</span>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-gray-700">{row.enquiry_count}</td>
                       <td className="hidden px-4 py-3 text-gray-600 sm:table-cell">

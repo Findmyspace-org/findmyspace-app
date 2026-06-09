@@ -8,14 +8,140 @@ import {
 } from "@/lib/communication-copy";
 import { getCanonicalPublicSiteUrl } from "@/lib/site-url";
 import {
+  buildListingClaimUrl,
+  claimTokenExpiresAt,
+  generateClaimToken,
   hashClaimToken,
   isSpaceClaimable,
-  type ClaimTokenRow,
-  type ClaimableSpaceRow,
   OWNER_CLAIMED_STATUS,
   resolveClaimTokenStatus,
+  type ClaimableSpaceRow,
+  type ClaimTokenRow,
   type ListingClaimTokenStatus,
 } from "@/lib/listing-claim-token";
+
+export type CreateListingClaimLinkResult =
+  | {
+      ok: true;
+      claimUrl: string;
+      emailSent: boolean;
+      token: {
+        id: string;
+        listing_id: string;
+        owner_email: string | null;
+        status: string;
+        expires_at: string;
+        created_at: string;
+      };
+    }
+  | { ok: false; error: string; status: number };
+
+export async function createListingClaimLink(
+  admin: SupabaseClient,
+  params: {
+    spaceId: string;
+    actorUserId: string;
+    ownerEmail?: string | null;
+    sendEmail?: boolean;
+    listingTitle?: string | null;
+  }
+): Promise<CreateListingClaimLinkResult> {
+  const ownerEmail = params.ownerEmail?.trim() || null;
+  if (ownerEmail && !ownerEmail.includes("@")) {
+    return { ok: false, error: "Invalid owner email.", status: 400 };
+  }
+
+  const { data: space, error: spaceErr } = await admin
+    .from("spaces")
+    .select(
+      "id, title, description, city, suburb, space_type, status, owner_id, created_by_admin, claimed_at"
+    )
+    .eq("id", params.spaceId)
+    .maybeSingle();
+
+  if (spaceErr || !space) {
+    return { ok: false, error: "Listing not found.", status: 404 };
+  }
+
+  const spaceRow = space as ClaimableSpaceRow;
+  if (!isSpaceClaimable(spaceRow)) {
+    return {
+      ok: false,
+      error:
+        "Listing must be draft or unclaimed with no owner to generate a claim link.",
+      status: 400,
+    };
+  }
+
+  const nowIso = new Date().toISOString();
+  await admin
+    .from("listing_claim_tokens")
+    .update({ status: "revoked", revoked_at: nowIso })
+    .eq("listing_id", params.spaceId)
+    .eq("status", "pending");
+
+  const rawToken = generateClaimToken();
+  const tokenHash = hashClaimToken(rawToken);
+  const expiresAt = claimTokenExpiresAt(14);
+
+  const { data: inserted, error: insertErr } = await admin
+    .from("listing_claim_tokens")
+    .insert({
+      listing_id: params.spaceId,
+      token_hash: tokenHash,
+      owner_email: ownerEmail,
+      created_by: params.actorUserId,
+      status: "pending",
+      expires_at: expiresAt,
+    })
+    .select("id, listing_id, owner_email, status, expires_at, created_at")
+    .single();
+
+  if (insertErr || !inserted) {
+    return {
+      ok: false,
+      error: insertErr?.message || "Could not create claim token.",
+      status: 500,
+    };
+  }
+
+  await admin
+    .from("spaces")
+    .update({ owner_invited_at: nowIso })
+    .eq("id", params.spaceId);
+
+  const claimUrl = buildListingClaimUrl(rawToken);
+  const listingTitle =
+    params.listingTitle?.trim() || spaceRow.title?.trim() || "Your listing";
+
+  let emailSent = false;
+  if (params.sendEmail && ownerEmail) {
+    try {
+      await sendListingClaimInviteEmail({
+        to: ownerEmail,
+        listingTitle,
+        claimUrl,
+      });
+      emailSent = true;
+    } catch (err) {
+      console.error("[listing-claim] invite email failed", err);
+    }
+  }
+
+  return {
+    ok: true,
+    claimUrl,
+    emailSent,
+    token: inserted as {
+      id: string;
+      listing_id: string;
+      owner_email: string | null;
+      status: string;
+      expires_at: string;
+      created_at: string;
+    },
+  };
+}
 
 export type AcceptClaimResult =
   | { ok: true; spaceId: string; listingTitle: string }

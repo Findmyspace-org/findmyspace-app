@@ -271,6 +271,7 @@ export default function AdminPage() {
                   label: "Claim interests",
                   value: scoutStats.claimInterests,
                   icon: Link2,
+                  href: "/admin/listing-claim-interests",
                 },
                 { label: "Enquiries", value: scoutStats.enquiries, icon: Inbox },
                 {
@@ -283,7 +284,24 @@ export default function AdminPage() {
                   value: scoutStats.activeListings,
                   icon: ShieldCheck,
                 },
-              ].map(({ label, value, icon: Icon }) => (
+              ].map(({ label, value, icon: Icon, href }) => (
+                href ? (
+                  <Link
+                    key={label}
+                    href={href}
+                    className="rounded-md border border-gray-300 bg-white p-4 shadow-sm transition hover:border-[#192a3a]/30 hover:bg-gray-50"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gray-100 text-[#192a3a]">
+                        <Icon className="h-4 w-4" />
+                      </span>
+                      <div className="min-w-0">
+                        <p className="text-xl font-semibold text-[#192a3a]">{value}</p>
+                        <p className="text-xs text-gray-600">{label}</p>
+                      </div>
+                    </div>
+                  </Link>
+                ) : (
                 <div
                   key={label}
                   className="rounded-md border border-gray-300 bg-white p-4 shadow-sm"
@@ -298,6 +316,7 @@ export default function AdminPage() {
                     </div>
                   </div>
                 </div>
+                )
               ))}
             </div>
           ) : null}
@@ -332,6 +351,12 @@ export default function AdminPage() {
             </Link>
             <Link href="/admin/venue-scout" className="rounded-full bg-gray-100 px-3 py-1 hover:bg-gray-200">
               Venue Scout
+            </Link>
+            <Link href="/admin/listing-enquiries" className="rounded-full bg-gray-100 px-3 py-1 hover:bg-gray-200">
+              Listing enquiries
+            </Link>
+            <Link href="/admin/listing-claim-interests" className="rounded-full bg-gray-100 px-3 py-1 hover:bg-gray-200">
+              Claim interests
             </Link>
             <Link href="/admin/verification" className="rounded-full bg-gray-100 px-3 py-1 hover:bg-gray-200">
               Go to Verification

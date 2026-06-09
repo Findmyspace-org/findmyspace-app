@@ -1,6 +1,7 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { LISTING_SPACE_TYPE_OPTIONS } from "@/app/data/spaceFeatureConfig";
 import { UNCLAIMED_LISTING_STATUS } from "@/lib/listing-lifecycle";
+import { parseSpaceCrmLinkInput } from "@/lib/space-crm-link";
 
 export const ADMIN_UNCLAIMED_STATUSES = ["draft", "unclaimed"] as const;
 export type AdminUnclaimedStatus = (typeof ADMIN_UNCLAIMED_STATUSES)[number];
@@ -33,6 +34,8 @@ export type UnclaimedSpaceInput = {
   latitude?: number | null;
   longitude?: number | null;
   attributes?: Record<string, string[]>;
+  crm_organisation_id?: string | null;
+  crm_contact_id?: string | null;
 };
 
 export function createServiceAdminClient(): SupabaseClient | null {
@@ -145,6 +148,17 @@ export function parseUnclaimedSpaceInput(
     }
   }
 
+  const crmParsed = parseSpaceCrmLinkInput(body);
+  if (!crmParsed.ok) {
+    return { ok: false, error: crmParsed.error };
+  }
+  if (crmParsed.data.crm_organisation_id !== undefined) {
+    data.crm_organisation_id = crmParsed.data.crm_organisation_id;
+  }
+  if (crmParsed.data.crm_contact_id !== undefined) {
+    data.crm_contact_id = crmParsed.data.crm_contact_id;
+  }
+
   return { ok: true, data };
 }
 
@@ -177,6 +191,8 @@ export function buildUnclaimedSpaceRow(
     price_per_month: null,
     verification_status: "pending",
     ownership_proof_status: "pending",
+    crm_organisation_id: input.crm_organisation_id ?? null,
+    crm_contact_id: input.crm_contact_id ?? null,
   };
 }
 

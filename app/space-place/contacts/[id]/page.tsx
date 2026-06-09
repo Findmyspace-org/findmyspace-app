@@ -27,6 +27,7 @@ import { TaskCard } from "../../components/TaskCard";
 import { CrmEmailList } from "../../components/CrmEmailList";
 import type { CrmEmailMessageWithRelations } from "@/lib/space-place/types";
 import { dedupeActiveSpacers } from "@/lib/space-place/spacers";
+import { CrmMarketplaceListingsSection } from "../../components/CrmMarketplaceListingsSection";
 
 export default function ContactDetailPage() {
   const params = useParams();
@@ -197,6 +198,15 @@ export default function ContactDetailPage() {
           </Card>
         ))
       )}
+
+      {org ? (
+        <CrmMarketplaceListingsSection
+          mode="contact"
+          entityId={contact.id}
+          organisationId={org.id}
+          organisationName={org.name}
+        />
+      ) : null}
 
       <SectionHeading>Tasks</SectionHeading>
       {tasks.map((t) => (

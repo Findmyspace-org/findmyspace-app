@@ -9,6 +9,7 @@ import {
   History,
   Inbox,
   LayoutDashboard,
+  Link2,
   MessageSquare,
   Share2,
   ShieldCheck,
@@ -26,6 +27,7 @@ export type AdminNavKey =
   | "unclaimed-listings"
   | "listing-reviews"
   | "listing-enquiries"
+  | "listing-claim-interests"
   | "verification"
   | "messages"
   | "finance"
@@ -63,6 +65,12 @@ const NAV_ITEMS: NavItem[] = [
     href: "/admin/listing-enquiries",
     label: "Listing enquiries",
     icon: Inbox,
+  },
+  {
+    key: "listing-claim-interests",
+    href: "/admin/listing-claim-interests",
+    label: "Claim interests",
+    icon: Link2,
   },
   { key: "verification", href: "/admin/verification", label: "Verification", icon: ShieldCheck },
   { key: "messages", href: "/admin/messages", label: "Messages", icon: MessageSquare },
