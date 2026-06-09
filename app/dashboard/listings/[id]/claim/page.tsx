@@ -11,6 +11,7 @@ import {
   type ClaimWizardStep,
 } from "@/app/components/ClaimOnboardingShell";
 import { ClaimStepStatusCard } from "@/app/components/ClaimStepStatusCard";
+import { ClaimSubmittedConfirmation } from "@/app/components/ClaimSubmittedConfirmation";
 import { ClaimIdentityUpload } from "@/app/components/ClaimIdentityUpload";
 import { OwnershipProofUpload } from "@/app/components/OwnershipProofUpload";
 import type { ListingCompletionResult } from "@/lib/listing-completion";
@@ -40,46 +41,6 @@ const VALID_STEPS: ClaimWizardStep[] = [
   "submit",
 ];
 
-function ClaimSubmittedConfirmation({ spaceId }: { spaceId: string }) {
-  return (
-    <section className="space-y-5 rounded-2xl border border-blue-200 bg-white p-6 shadow-sm">
-      <div className="rounded-xl border border-blue-100 bg-blue-50 p-4">
-        <h2 className="text-lg font-semibold text-blue-950">
-          Claim submitted for review
-        </h2>
-        <p className="mt-2 text-sm leading-relaxed text-blue-900">
-          Your ownership proof and identity documents have been submitted.
-          FindMySpace will review your claim before listing editing is unlocked.
-        </p>
-      </div>
-
-      <div>
-        <p className="text-sm font-medium text-gray-900">What happens next</p>
-        <ul className="mt-2 space-y-2 text-sm text-gray-600">
-          <li>• Ownership proof will be verified by admin</li>
-          <li>• Identity will be verified by admin</li>
-          <li>• You&apos;ll be notified when your claim is approved</li>
-        </ul>
-      </div>
-
-      <div className="flex flex-wrap gap-3 pt-1">
-        <Link
-          href="/dashboard/listings"
-          className="inline-flex rounded-lg bg-[#0f2740] px-4 py-2 text-sm font-semibold text-white"
-        >
-          Back to my listings
-        </Link>
-        <Link
-          href={`/spaces/${spaceId}`}
-          className="inline-flex rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-[#0f2740] hover:bg-gray-50"
-        >
-          View prepared listing
-        </Link>
-      </div>
-    </section>
-  );
-}
-
 function ClaimPageContent() {
   const params = useParams();
   const searchParams = useSearchParams();
@@ -97,6 +58,7 @@ function ClaimPageContent() {
   const [loading, setLoading] = useState(true);
   const [savingProfile, setSavingProfile] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [submitSucceeded, setSubmitSucceeded] = useState(false);
   const [message, setMessage] = useState("");
   const [completion, setCompletion] = useState<ListingCompletionResult | null>(
     null
@@ -219,6 +181,7 @@ function ClaimPageContent() {
   const ownershipItem = completion?.items.find((i) => i.id === "ownership");
 
   const underReview = completion?.status === PENDING_VERIFICATION_STATUS;
+  const showSubmittedConfirmation = underReview || submitSucceeded;
   const canEditSteps =
     completion?.status === OWNER_CLAIMED_STATUS || completion?.status === "rejected";
 
@@ -355,8 +318,12 @@ function ClaimPageContent() {
         `/api/owner/listings/${spaceId}/submit-review`,
         { method: "POST" }
       );
-      setCompletion((result.completion as ListingCompletionResult) || completion);
-      router.push(`${returnToClaim}?step=submit`);
+      const updated = (result.completion as ListingCompletionResult) || null;
+      if (updated) {
+        setCompletion(updated);
+      }
+      setSubmitSucceeded(true);
+      router.replace(returnToClaim);
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Submit failed.");
     }
@@ -394,17 +361,12 @@ function ClaimPageContent() {
           listingTitle={completion.listingTitle}
           currentStep={currentStep}
           stepProgress={stepProgress}
+          submitted={showSubmittedConfirmation}
         >
-          {underReview && currentStep !== "submit" ? (
-            <div className="mb-6 rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-950">
-              <p className="font-medium">Claim submitted — under review</p>
-              <p className="mt-1">
-                FindMySpace is reviewing your verification and ownership documents.
-                Listing editing will be available after we approve your claim.
-              </p>
-            </div>
-          ) : null}
-
+          {showSubmittedConfirmation ? (
+            <ClaimSubmittedConfirmation spaceId={spaceId} />
+          ) : (
+            <>
           {currentStep === "details" ? (
             <section className="space-y-4 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
               <h2 className="text-lg font-semibold text-gray-900">Claim details</h2>
@@ -573,9 +535,6 @@ function ClaimPageContent() {
           ) : null}
 
           {currentStep === "submit" ? (
-            underReview ? (
-              <ClaimSubmittedConfirmation spaceId={spaceId} />
-            ) : (
               <section className="space-y-4 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
                 <h2 className="text-lg font-semibold text-gray-900">
                   Submit for review
@@ -627,7 +586,8 @@ function ClaimPageContent() {
                   <button
                     type="button"
                     onClick={() => goToStep("identity")}
-                    className="inline-flex items-center gap-1 text-sm font-medium text-gray-600"
+                    disabled={submitting}
+                    className="inline-flex items-center gap-1 text-sm font-medium text-gray-600 disabled:opacity-50"
                   >
                     <ArrowLeft className="h-4 w-4" />
                     Back
@@ -640,11 +600,16 @@ function ClaimPageContent() {
                       className="inline-flex items-center gap-2 rounded-lg bg-[#0f2740] px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
                     >
                       {submitting ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Submitting…
+                        </>
                       ) : (
-                        <Send className="h-4 w-4" />
+                        <>
+                          <Send className="h-4 w-4" />
+                          Submit claim for review
+                        </>
                       )}
-                      Submit claim for review
                     </button>
                   ) : null}
                 </div>
@@ -660,8 +625,9 @@ function ClaimPageContent() {
                   (read-only until approved)
                 </p>
               </section>
-            )
           ) : null}
+            </>
+          )}
         </ClaimOnboardingShell>
       </main>
     </RequireAuth>

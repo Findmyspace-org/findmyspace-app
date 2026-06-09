@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Check, Clock3 } from "lucide-react";
+import { Check, CheckCircle2, Clock3 } from "lucide-react";
 
 export type ClaimWizardStep =
   | "details"
@@ -23,15 +23,42 @@ export function ClaimOnboardingShell({
   listingTitle,
   currentStep,
   stepProgress,
+  submitted = false,
   children,
 }: {
   spaceId: string;
   listingTitle: string | null;
   currentStep: ClaimWizardStep;
   stepProgress: Partial<Record<ClaimWizardStep, ClaimStepProgress>>;
+  /** When true, hide wizard chrome and show post-submit confirmation layout. */
+  submitted?: boolean;
   children: React.ReactNode;
 }) {
   const currentIndex = STEPS.findIndex((s) => s.key === currentStep);
+
+  if (submitted) {
+    return (
+      <div className="mx-auto max-w-3xl">
+        <div className="mb-6 flex items-start gap-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
+            <CheckCircle2 className="h-5 w-5" aria-hidden />
+          </span>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-emerald-800">
+              Submitted
+            </p>
+            <h1 className="mt-1 text-2xl font-semibold text-gray-900">
+              Claim submitted for review
+            </h1>
+            <p className="mt-1 text-sm text-gray-600">
+              {listingTitle || "Your listing"}
+            </p>
+          </div>
+        </div>
+        {children}
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-3xl">
