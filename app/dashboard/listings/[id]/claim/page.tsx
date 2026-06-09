@@ -7,12 +7,14 @@ import { ArrowLeft, ArrowRight, Loader2, Send } from "lucide-react";
 import RequireAuth from "@/app/components/RequireAuth";
 import {
   ClaimOnboardingShell,
+  type ClaimStepProgress,
   type ClaimWizardStep,
 } from "@/app/components/ClaimOnboardingShell";
 import {
   ClaimStepStatusCard,
   type ClaimStepUiState,
 } from "@/app/components/ClaimStepStatusCard";
+import { ClaimIdentityUpload } from "@/app/components/ClaimIdentityUpload";
 import { OwnershipProofUpload } from "@/app/components/OwnershipProofUpload";
 import type { ListingCompletionResult } from "@/lib/listing-completion";
 import type { ChecklistItemState } from "@/lib/listing-completion";
@@ -28,7 +30,6 @@ const VALID_STEPS: ClaimWizardStep[] = [
   "details",
   "ownership",
   "identity",
-  "bank",
   "submit",
 ];
 
@@ -52,11 +53,12 @@ function ClaimPageContent() {
   const spaceId = typeof params.id === "string" ? params.id : "";
 
   const stepParam = searchParams.get("step");
-  const currentStep: ClaimWizardStep = VALID_STEPS.includes(
-    stepParam as ClaimWizardStep
-  )
-    ? (stepParam as ClaimWizardStep)
-    : "details";
+  const currentStep: ClaimWizardStep =
+    stepParam === "bank"
+      ? "submit"
+      : VALID_STEPS.includes(stepParam as ClaimWizardStep)
+        ? (stepParam as ClaimWizardStep)
+        : "details";
 
   const [loading, setLoading] = useState(true);
   const [savingProfile, setSavingProfile] = useState(false);
@@ -80,6 +82,10 @@ function ClaimPageContent() {
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
+  const [idDocsReady, setIdDocsReady] = useState({
+    hasIdFront: false,
+    hasIdBack: false,
+  });
 
   const returnToClaim = `/dashboard/listings/${spaceId}/claim`;
 
@@ -163,11 +169,84 @@ function ClaimPageContent() {
   );
 
   const identityItem = completion?.items.find((i) => i.id === "identity");
-  const bankItem = completion?.items.find((i) => i.id === "bank");
   const ownershipItem = completion?.items.find((i) => i.id === "ownership");
 
   const underReview = completion?.status === PENDING_VERIFICATION_STATUS;
-  const canEditSteps = completion?.status === OWNER_CLAIMED_STATUS || completion?.status === "rejected";
+  const canEditSteps =
+    completion?.status === OWNER_CLAIMED_STATUS || completion?.status === "rejected";
+
+  const ownershipUploaded = Boolean(ownershipProof);
+  const identityUploaded =
+    (idDocsReady.hasIdFront && idDocsReady.hasIdBack) ||
+    identityItem?.state === "done" ||
+    identityItem?.state === "pending_review";
+
+  const stepProgress = useMemo((): Partial<Record<ClaimWizardStep, ClaimStepProgress>> => {
+    const ownershipProgress: ClaimStepProgress = !ownershipUploaded
+      ? "incomplete"
+      : ownershipItem?.state === "done" || ownershipProofStatus === "verified"
+        ? "complete"
+        : "pending_review";
+    const identityProgress: ClaimStepProgress = !identityUploaded
+      ? "incomplete"
+      : identityItem?.state === "done"
+        ? "complete"
+        : "pending_review";
+    return {
+      details: contactComplete ? "complete" : "incomplete",
+      ownership: ownershipProgress,
+      identity: identityProgress,
+      submit: underReview
+        ? "pending_review"
+        : completion?.canSubmit && contactComplete
+          ? "complete"
+          : "incomplete",
+    };
+  }, [
+    contactComplete,
+    ownershipUploaded,
+    ownershipItem?.state,
+    ownershipProofStatus,
+    identityUploaded,
+    identityItem?.state,
+    underReview,
+    completion?.canSubmit,
+  ]);
+
+  const refreshCompletion = useCallback(async () => {
+    if (!spaceId) return;
+    try {
+      const data = await ownerApiFetch(
+        `/api/owner/listings/${spaceId}/completion-status`
+      );
+      setCompletion(data as ListingCompletionResult);
+    } catch {
+      /* keep existing completion */
+    }
+  }, [spaceId]);
+
+  function handleOwnershipUploaded(doc: {
+    id: string;
+    file_url: string;
+    file_path: string | null;
+    status: string | null;
+  }) {
+    setOwnershipProof(doc);
+    setOwnershipProofStatus("pending");
+    setCompletion((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        ownership_proof_status: "pending",
+        items: prev.items.map((item) =>
+          item.id === "ownership"
+            ? { ...item, state: "pending_review" as ChecklistItemState }
+            : item
+        ),
+      };
+    });
+    void refreshCompletion();
+  }
 
   async function saveContactDetails() {
     if (!ownerId) return;
@@ -237,6 +316,7 @@ function ClaimPageContent() {
           spaceId={spaceId}
           listingTitle={completion.listingTitle}
           currentStep={currentStep}
+          stepProgress={stepProgress}
         >
           {underReview ? (
             <div className="mb-6 rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-950">
@@ -347,7 +427,7 @@ function ClaimPageContent() {
                 ownerId={ownerId}
                 ownershipProof={ownershipProof}
                 ownershipProofStatus={ownershipProofStatus}
-                onUploaded={() => void load()}
+                onUploaded={handleOwnershipUploaded}
                 disabled={!canEditSteps}
               />
               <div className="flex justify-between pt-2">
@@ -373,85 +453,35 @@ function ClaimPageContent() {
 
           {currentStep === "identity" ? (
             <section className="space-y-4 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-              <h2 className="text-lg font-semibold text-gray-900">Identity verification</h2>
+              <h2 className="text-lg font-semibold text-gray-900">
+                Identity verification
+              </h2>
               <p className="text-sm text-gray-600">
-                Upload ID front and back so we can verify who is claiming this space.
+                Upload your ID document so we can verify who is claiming this space.
               </p>
               <ClaimStepStatusCard
-                title="Identity documents"
+                title="ID front and back"
                 description={
                   identityItem?.state === "pending_review"
                     ? "Your ID is with FindMySpace for review."
                     : identityItem?.state === "done"
                       ? "Identity verified."
-                      : "Upload ID front and back in verification."
+                      : "Upload both sides of your ID below."
                 }
                 state={
                   identityItem ? checklistToUi(identityItem.state) : "required"
                 }
-                action={
-                  <Link
-                    href={`/dashboard/verification?step=identity&return=${encodeURIComponent(`${returnToClaim}?step=identity`)}`}
-                    className="inline-flex rounded-lg border border-[#0f2740] px-4 py-2 text-sm font-semibold text-[#0f2740] hover:bg-[#0f2740]/5"
-                  >
-                    {identityItem?.state === "done"
-                      ? "View verification"
-                      : "Open identity verification"}
-                  </Link>
-                }
+              />
+              <ClaimIdentityUpload
+                ownerId={ownerId}
+                disabled={!canEditSteps}
+                onStatusChange={setIdDocsReady}
+                onUploaded={() => void refreshCompletion()}
               />
               <div className="flex justify-between pt-2">
                 <button
                   type="button"
                   onClick={() => goToStep("ownership")}
-                  className="inline-flex items-center gap-1 text-sm font-medium text-gray-600"
-                >
-                  <ArrowLeft className="h-4 w-4" />
-                  Back
-                </button>
-                <button
-                  type="button"
-                  onClick={() => goToStep("bank")}
-                  className="inline-flex items-center gap-1 text-sm font-semibold text-[#0f2740]"
-                >
-                  Continue
-                  <ArrowRight className="h-4 w-4" />
-                </button>
-              </div>
-            </section>
-          ) : null}
-
-          {currentStep === "bank" ? (
-            <section className="space-y-4 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-              <h2 className="text-lg font-semibold text-gray-900">Bank details</h2>
-              <p className="text-sm text-gray-600">
-                Bank verification is required before payouts can be made.
-              </p>
-              <ClaimStepStatusCard
-                title="Bank account verification"
-                description={
-                  bankItem?.state === "pending_review"
-                    ? "Your bank details are with FindMySpace for review."
-                    : bankItem?.state === "done"
-                      ? "Bank details verified."
-                      : "Add bank details and proof of bank account."
-                }
-                state={bankItem ? checklistToUi(bankItem.state) : "required"}
-                action={
-                  <Link
-                    href={`/dashboard/verification?step=bank&return=${encodeURIComponent(`${returnToClaim}?step=bank`)}`}
-                    className="inline-flex rounded-lg border border-[#0f2740] px-4 py-2 text-sm font-semibold text-[#0f2740] hover:bg-[#0f2740]/5"
-                  >
-                    {bankItem?.state === "done"
-                      ? "View bank details"
-                      : "Open bank verification"}
-                  </Link>
-                }
-              />
-              <div className="flex justify-between pt-2">
-                <button
-                  type="button"
-                  onClick={() => goToStep("identity")}
                   className="inline-flex items-center gap-1 text-sm font-medium text-gray-600"
                 >
                   <ArrowLeft className="h-4 w-4" />
@@ -475,8 +505,8 @@ function ClaimPageContent() {
                 Submit for review
               </h2>
               <p className="text-sm text-gray-600">
-                We&apos;ll review your claim before you can edit and activate the
-                listing.
+                Submit your claim for review. Once approved, you&apos;ll be able to
+                edit the listing, add pricing, and complete payout setup.
               </p>
 
               <div className="space-y-3">
@@ -493,16 +523,12 @@ function ClaimPageContent() {
                   }
                 />
                 <ClaimStepStatusCard
-                  title="Identity documents"
+                  title="Identity documents submitted"
                   state={
                     identityItem
                       ? checklistToUi(identityItem.state)
                       : "required"
                   }
-                />
-                <ClaimStepStatusCard
-                  title="Bank details"
-                  state={bankItem ? checklistToUi(bankItem.state) : "required"}
                 />
               </div>
 
@@ -529,7 +555,7 @@ function ClaimPageContent() {
               <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
                 <button
                   type="button"
-                  onClick={() => goToStep("bank")}
+                  onClick={() => goToStep("identity")}
                   className="inline-flex items-center gap-1 text-sm font-medium text-gray-600"
                 >
                   <ArrowLeft className="h-4 w-4" />

@@ -175,6 +175,8 @@ export async function computeListingCompletion(
   const ownershipState = docState(hasOwnershipFile, ownershipStatus);
 
   const isClaimOnboarding = row.status === "owner_claimed";
+  const isClaimSubmitFlow =
+    row.status === "owner_claimed" || row.status === "rejected";
   const claimHref = `/dashboard/listings/${spaceId}/claim`;
 
   const items: ChecklistItem[] = [
@@ -217,8 +219,10 @@ export async function computeListingCompletion(
     {
       id: "identity",
       title: "Identity verification",
-      description: "Upload ID front and back in profile verification.",
-      href: "/dashboard/verification?step=identity",
+      description: "Upload ID front and back.",
+      href: isClaimOnboarding
+        ? `${claimHref}?step=identity`
+        : "/dashboard/verification?step=identity",
       state: identityState,
       requiredForSubmit: true,
       requiredForApproval: true,
@@ -226,10 +230,10 @@ export async function computeListingCompletion(
     {
       id: "bank",
       title: "Bank verification",
-      description: "Bank details and proof of bank account.",
+      description: "Bank details and proof of bank account (required before payouts).",
       href: "/dashboard/verification?step=bank",
       state: bankState,
-      requiredForSubmit: true,
+      requiredForSubmit: !isClaimSubmitFlow,
       requiredForApproval: true,
     },
     {

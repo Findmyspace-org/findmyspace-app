@@ -1,10 +1,14 @@
 "use client";
 
-import { useState } from "react";
-import { Loader2 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { FileText, ImageIcon, Loader2 } from "lucide-react";
+import { ClaimDocumentPreviewModal } from "@/app/components/ClaimDocumentPreviewModal";
 import { supabase } from "@/lib/supabase";
 import { uploadOwnerPrivateFile } from "@/lib/owner-private-upload";
-import { LISTING_OWNERSHIP_BUCKET } from "@/lib/verification-storage";
+import {
+  createVerificationSignedUrl,
+  LISTING_OWNERSHIP_BUCKET,
+} from "@/lib/verification-storage";
 
 type OwnershipDoc = {
   id: string;
@@ -12,6 +16,20 @@ type OwnershipDoc = {
   file_path: string | null;
   status: string | null;
 };
+
+function fileNameFromPath(path: string | null | undefined): string | null {
+  if (!path) return null;
+  const segment = path.split("/").pop();
+  return segment || null;
+}
+
+function isImageFile(name: string): boolean {
+  return /\.(jpe?g|png|gif|webp|bmp)$/i.test(name);
+}
+
+function isPdfFile(name: string): boolean {
+  return /\.pdf$/i.test(name);
+}
 
 export function OwnershipProofUpload({
   spaceId,
@@ -25,12 +43,46 @@ export function OwnershipProofUpload({
   ownerId: string;
   ownershipProof: OwnershipDoc | null;
   ownershipProofStatus: string | null;
-  onUploaded: () => void;
+  onUploaded: (doc: OwnershipDoc) => void;
   disabled?: boolean;
 }) {
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState("");
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
+
+  const displayFileName = useMemo(() => {
+    if (file?.name) return file.name;
+    return fileNameFromPath(ownershipProof?.file_path);
+  }, [file, ownershipProof?.file_path]);
+
+  const mimeHint = useMemo((): "image" | "pdf" | "unknown" => {
+    const name = displayFileName || "";
+    if (isImageFile(name)) return "image";
+    if (isPdfFile(name)) return "pdf";
+    return "unknown";
+  }, [displayFileName]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function resolvePreview() {
+      if (!ownershipProof?.file_path) {
+        setPreviewUrl(null);
+        return;
+      }
+      const url = await createVerificationSignedUrl(
+        supabase,
+        LISTING_OWNERSHIP_BUCKET,
+        ownershipProof.file_path
+      );
+      if (!cancelled) setPreviewUrl(url);
+    }
+    void resolvePreview();
+    return () => {
+      cancelled = true;
+    };
+  }, [ownershipProof?.file_path]);
 
   async function handleUpload() {
     if (!file) {
@@ -47,9 +99,11 @@ export function OwnershipProofUpload({
         `ownership-${spaceId}`
       );
 
+      let savedDoc: OwnershipDoc;
+
       if (ownershipProof?.id) {
         const { error: updateError } = await (supabase
-          .from("listing_ownership_documents") as any)
+          .from("listing_ownership_documents") as ReturnType<typeof supabase.from>)
           .update({
             file_url: uploaded.fileUrl,
             file_path: uploaded.filePath,
@@ -57,9 +111,15 @@ export function OwnershipProofUpload({
           })
           .eq("id", ownershipProof.id);
         if (updateError) throw new Error(updateError.message);
+        savedDoc = {
+          id: ownershipProof.id,
+          file_url: uploaded.fileUrl,
+          file_path: uploaded.filePath,
+          status: "pending",
+        };
       } else {
-        const { error: insertError } = await (supabase
-          .from("listing_ownership_documents") as any)
+        const { data: inserted, error: insertError } = await (supabase
+          .from("listing_ownership_documents") as ReturnType<typeof supabase.from>)
           .insert({
             space_id: spaceId,
             owner_id: ownerId,
@@ -67,11 +127,16 @@ export function OwnershipProofUpload({
             file_url: uploaded.fileUrl,
             file_path: uploaded.filePath,
             status: "pending",
-          });
+          })
+          .select("id, file_url, file_path, status")
+          .single();
         if (insertError) throw new Error(insertError.message);
+        savedDoc = inserted as OwnershipDoc;
       }
 
-      const { error: spaceError } = await (supabase.from("spaces") as any)
+      const { error: spaceError } = await (supabase.from("spaces") as ReturnType<
+        typeof supabase.from
+      >)
         .update({ ownership_proof_status: "pending" })
         .eq("id", spaceId);
 
@@ -79,7 +144,7 @@ export function OwnershipProofUpload({
 
       setFile(null);
       setMessage("Ownership proof uploaded. We will review it with your claim.");
-      onUploaded();
+      onUploaded(savedDoc);
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Upload failed.");
     } finally {
@@ -87,7 +152,7 @@ export function OwnershipProofUpload({
     }
   }
 
-  const statusLabel = ownershipProofStatus || "not uploaded";
+  const statusLabel = ownershipProofStatus || (ownershipProof ? "pending" : "not uploaded");
 
   return (
     <div className="space-y-4">
@@ -97,22 +162,53 @@ export function OwnershipProofUpload({
         letter.
       </p>
 
-      <div className="rounded-lg border border-gray-200 bg-[#f8fafc] px-3 py-2 text-sm text-gray-700">
-        Status: <span className="font-medium capitalize">{statusLabel}</span>
-        {ownershipProof?.file_url ? (
-          <>
-            {" · "}
-            <a
-              href={ownershipProof.file_url}
-              target="_blank"
-              rel="noreferrer"
-              className="font-medium text-[#0f2740] underline"
+      {ownershipProof ? (
+        <div className="flex items-start gap-3 rounded-xl border border-gray-200 bg-[#f8fafc] p-3">
+          <button
+            type="button"
+            onClick={() => setPreviewOpen(true)}
+            className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-gray-200 bg-white hover:ring-2 hover:ring-[#0f2740]/20"
+            aria-label="View uploaded ownership proof"
+          >
+            {previewUrl && mimeHint === "image" ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={previewUrl}
+                alt="Ownership proof preview"
+                className="h-full w-full object-cover"
+              />
+            ) : mimeHint === "pdf" ? (
+              <FileText className="h-8 w-8 text-[#0f2740]" />
+            ) : (
+              <ImageIcon className="h-8 w-8 text-gray-400" />
+            )}
+          </button>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium text-gray-900">
+              {displayFileName || "Uploaded document"}
+            </p>
+            <p className="mt-0.5 text-xs capitalize text-gray-600">
+              Status: {statusLabel}
+            </p>
+            <button
+              type="button"
+              onClick={() => setPreviewOpen(true)}
+              className="mt-1 text-xs font-medium text-[#0f2740] underline"
             >
               View uploaded file
-            </a>
-          </>
-        ) : null}
-      </div>
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      <ClaimDocumentPreviewModal
+        open={previewOpen}
+        onClose={() => setPreviewOpen(false)}
+        title="Ownership proof"
+        fileName={displayFileName}
+        previewUrl={previewUrl}
+        mimeHint={mimeHint}
+      />
 
       <label className="block">
         <span className="mb-1 block text-xs font-medium text-gray-700">

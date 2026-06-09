@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckCircle2, Circle, Clock3, XCircle } from "lucide-react";
+import { AlertCircle, CheckCircle2, Clock3 } from "lucide-react";
 
 export type ClaimStepUiState =
   | "required"
@@ -25,13 +25,18 @@ const PILL: Record<ClaimStepUiState, string> = {
 function Icon({ state }: { state: ClaimStepUiState }) {
   switch (state) {
     case "completed":
-      return <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600" />;
+      return <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600" aria-hidden />;
     case "pending_review":
-      return <Clock3 className="h-5 w-5 shrink-0 text-blue-600" />;
+      return <Clock3 className="h-5 w-5 shrink-0 text-blue-600" aria-hidden />;
     case "needs_attention":
-      return <XCircle className="h-5 w-5 shrink-0 text-red-600" />;
+      return <AlertCircle className="h-5 w-5 shrink-0 text-red-600" aria-hidden />;
     default:
-      return <Circle className="h-5 w-5 shrink-0 text-gray-400" />;
+      return (
+        <span
+          className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-2 border-gray-300 bg-gray-50"
+          aria-hidden
+        />
+      );
   }
 }
 
