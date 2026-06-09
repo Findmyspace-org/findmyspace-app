@@ -1,4 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import {
+  buildClaimReadiness,
+  claimSubmitBlockers,
+} from "@/lib/claim-readiness";
 
 export type ChecklistItemState = "done" | "missing" | "pending_review" | "rejected";
 
@@ -122,12 +126,14 @@ export async function computeListingCompletion(
       .from("listing_ownership_documents")
       .select("id, status")
       .eq("space_id", spaceId)
-      .order("uploaded_at", { ascending: false })
+      .order("id", { ascending: false })
       .limit(1)
       .maybeSingle(),
     admin
       .from("profiles")
-      .select("owner_verification_status, bank_verification_status")
+      .select(
+        "owner_verification_status, bank_verification_status, first_name, phone"
+      )
       .eq("id", ownerId)
       .maybeSingle(),
     admin
@@ -144,7 +150,13 @@ export async function computeListingCompletion(
   const prof = profile as {
     owner_verification_status: string | null;
     bank_verification_status: string | null;
+    first_name: string | null;
+    phone: string | null;
   } | null;
+
+  const contactComplete = Boolean(
+    prof?.first_name?.trim() && prof?.phone?.trim()
+  );
 
   const idDocList =
     (idDocs as { document_type: string; status: string | null }[]) || [];
@@ -160,7 +172,11 @@ export async function computeListingCompletion(
   );
 
   const ownership = ownershipDoc as { status: string | null } | null;
-  const hasOwnershipFile = Boolean(ownership);
+  const hasOwnershipFile = Boolean(
+    ownership ||
+      row.ownership_proof_status === "pending" ||
+      row.ownership_proof_status === "verified"
+  );
   const ownershipStatus = row.ownership_proof_status || ownership?.status || null;
 
   const basicsDone = basicsComplete(row);
@@ -252,15 +268,29 @@ export async function computeListingCompletion(
   ];
 
   const submitBlockers: string[] = [];
-  for (const item of items) {
-    if (!item.requiredForSubmit) continue;
-    if (item.id === "identity" || item.id === "bank" || item.id === "ownership") {
-      if (item.state === "missing" || item.state === "rejected") {
-        submitBlockers.push(item.title);
+  if (isClaimSubmitFlow) {
+    const claimReadiness = buildClaimReadiness({
+      contactComplete,
+      hasOwnershipProof: hasOwnershipFile,
+      hasIdFront,
+      hasIdBack,
+      ownershipVerified: ownershipState === "done",
+      identityVerified: identityState === "done",
+      ownershipRejected: ownershipState === "rejected",
+      identityRejected: identityState === "rejected",
+    });
+    submitBlockers.push(...claimSubmitBlockers(claimReadiness));
+  } else {
+    for (const item of items) {
+      if (!item.requiredForSubmit) continue;
+      if (item.id === "identity" || item.id === "bank" || item.id === "ownership") {
+        if (item.state === "missing" || item.state === "rejected") {
+          submitBlockers.push(item.title);
+        }
+        continue;
       }
-      continue;
+      if (item.state !== "done") submitBlockers.push(item.title);
     }
-    if (item.state !== "done") submitBlockers.push(item.title);
   }
 
   const approvalBlockers: string[] = [];

@@ -15,6 +15,28 @@ export type ClaimReadiness = {
   identityRejected: boolean;
 };
 
+/** Build claim readiness from raw upload/contact signals (client + server). */
+export function buildClaimReadiness(input: {
+  contactComplete: boolean;
+  hasOwnershipProof: boolean;
+  hasIdFront: boolean;
+  hasIdBack: boolean;
+  ownershipVerified?: boolean;
+  identityVerified?: boolean;
+  ownershipRejected?: boolean;
+  identityRejected?: boolean;
+}): ClaimReadiness {
+  return {
+    contactComplete: input.contactComplete,
+    ownershipUploaded: input.hasOwnershipProof,
+    identitySubmitted: input.hasIdFront && input.hasIdBack,
+    ownershipVerified: input.ownershipVerified ?? false,
+    identityVerified: input.identityVerified ?? false,
+    ownershipRejected: input.ownershipRejected ?? false,
+    identityRejected: input.identityRejected ?? false,
+  };
+}
+
 export function isClaimReadyToSubmit(readiness: ClaimReadiness): boolean {
   return (
     readiness.contactComplete &&

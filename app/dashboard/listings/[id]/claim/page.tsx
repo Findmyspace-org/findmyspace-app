@@ -16,12 +16,13 @@ import { OwnershipProofUpload } from "@/app/components/OwnershipProofUpload";
 import type { ListingCompletionResult } from "@/lib/listing-completion";
 import type { ChecklistItemState } from "@/lib/listing-completion";
 import {
-  claimStepProgress,
+  buildClaimReadiness,
   claimSubmitBlockers,
   contactClaimDisplay,
   identityClaimDisplay,
   isClaimReadyToSubmit,
   ownershipClaimDisplay,
+  claimStepProgress,
   type ClaimReadiness,
 } from "@/lib/claim-readiness";
 import {
@@ -222,15 +223,11 @@ function ClaimPageContent() {
     completion?.status === OWNER_CLAIMED_STATUS || completion?.status === "rejected";
 
   const claimReadiness = useMemo((): ClaimReadiness => {
-    const ownershipUploaded = Boolean(ownershipProof);
-    const identitySubmitted =
-      (idDocsReady.hasIdFront && idDocsReady.hasIdBack) ||
-      identityItem?.state === "done" ||
-      identityItem?.state === "pending_review";
-    return {
+    return buildClaimReadiness({
       contactComplete,
-      ownershipUploaded,
-      identitySubmitted,
+      hasOwnershipProof: Boolean(ownershipProof),
+      hasIdFront: idDocsReady.hasIdFront,
+      hasIdBack: idDocsReady.hasIdBack,
       ownershipVerified:
         ownershipProofStatus === "verified" || ownershipItem?.state === "done",
       identityVerified:
@@ -241,7 +238,7 @@ function ClaimPageContent() {
       identityRejected:
         completion?.owner.owner_verification_status === "rejected" ||
         identityItem?.state === "rejected",
-    };
+    });
   }, [
     contactComplete,
     ownershipProof,
@@ -254,6 +251,12 @@ function ClaimPageContent() {
 
   const readyToSubmit = isClaimReadyToSubmit(claimReadiness);
   const submitBlockers = claimSubmitBlockers(claimReadiness);
+
+  useEffect(() => {
+    if (readyToSubmit && message.includes("Complete all required steps")) {
+      setMessage("");
+    }
+  }, [readyToSubmit, message]);
   const contactDisplay = contactClaimDisplay(claimReadiness.contactComplete);
   const ownershipDisplay = ownershipClaimDisplay(claimReadiness);
   const identityDisplay = identityClaimDisplay(claimReadiness);
@@ -333,6 +336,21 @@ function ClaimPageContent() {
     setSubmitting(true);
     setMessage("");
     try {
+      if (ownerId) {
+        const { error: profileError } = await (supabase.from("profiles") as ReturnType<
+          typeof supabase.from
+        >)
+          .update({
+            first_name: firstName.trim() || null,
+            last_name: lastName.trim() || null,
+            phone: phone.trim() || null,
+          })
+          .eq("id", ownerId);
+        if (profileError) {
+          throw new Error(profileError.message);
+        }
+      }
+
       const result = await ownerApiFetch(
         `/api/owner/listings/${spaceId}/submit-review`,
         { method: "POST" }
