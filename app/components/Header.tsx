@@ -8,6 +8,11 @@ import {
   HEADER_DROPDOWN_NOTIFICATION_TYPE_SET,
   HEADER_DROPDOWN_NOTIFICATION_TYPES,
 } from "@/lib/header-notification-types";
+import { fetchHostActionInput } from "@/lib/fetch-host-action-input";
+import {
+  computeHostActionCards,
+  hostActionNotificationItems,
+} from "@/lib/host-action-required";
 import { supabase } from "@/lib/supabase";
 import AuthModal from "@/app/components/AuthModal";
 import { sanitizeNextPath } from "@/lib/auth-redirect";
@@ -315,6 +320,23 @@ export default function Header() {
               type: "request",
             });
           });
+
+          try {
+            const hostActionInput = await fetchHostActionInput(supabase, userId);
+            if (hostActionInput) {
+              const actionCards = computeHostActionCards(hostActionInput);
+              for (const item of hostActionNotificationItems(actionCards)) {
+                pushUniqueNotification({
+                  id: `host-action-${item.id}`,
+                  title: item.description,
+                  href: item.href,
+                  type: "listing_status",
+                });
+              }
+            }
+          } catch (hostActionErr) {
+            console.warn("Host action notifications failed:", hostActionErr);
+          }
         }
 
         if (mounted) {

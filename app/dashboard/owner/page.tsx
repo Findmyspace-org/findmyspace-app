@@ -268,7 +268,7 @@ export default function HostDashboardPage() {
               </div>
             ) : null}
 
-            {/* Verification reminders — only render when relevant. */}
+            {/* Verification & listing actions — stable cards, no flickering banners. */}
             <OwnerVerificationAlerts />
 
             {/* TOP METRICS — what hosts most often act on. */}
