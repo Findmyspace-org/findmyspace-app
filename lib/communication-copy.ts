@@ -1115,6 +1115,42 @@ export function buildListingClaimInterestAdminCopy(
   };
 }
 
+export type PropertyInviteInput = {
+  propertyName: string;
+  spaceCount: number;
+  inviteUrl: string;
+};
+
+export function buildPropertyInviteCopy(
+  input: PropertyInviteInput
+): CommunicationCopy {
+  const name = input.propertyName.trim() || "your property";
+  const count = input.spaceCount;
+  const spaceLabel =
+    count === 1 ? "1 space" : `${count} spaces`;
+
+  return {
+    notificationTitle: "Manage your property on FindMySpace",
+    notificationMessage: `You've been invited to manage ${name} (${spaceLabel}) on FindMySpace.`,
+    emailSubject: "Manage your property on FindMySpace",
+    emailPreheader: "Accept your invitation to manage your venue and spaces.",
+    emailTitle: "You've been invited to manage a property",
+    emailBodyLines: [
+      "FindMySpace has prepared a property profile for you to review and accept.",
+      {
+        html: `Property: ${emailStrong(name).html}`,
+      },
+      {
+        html: `Includes: ${emailStrong(spaceLabel).html}`,
+      },
+      "Accepting grants you access to manage all spaces under this property. Your listings will not go live until setup and admin approval are complete.",
+      "Use the button below to sign in and accept this invitation.",
+    ],
+    ctaLabel: "Accept invitation",
+    emailFooterRole: "host",
+  };
+}
+
 export type ListingClaimInviteInput = {
   listingTitle: string;
   claimUrl: string;

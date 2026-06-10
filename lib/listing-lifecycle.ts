@@ -144,6 +144,42 @@ export type OwnerListingNextAction = {
   muted: boolean;
 };
 
+/** Property dashboard: next action for a child space (extends owner listing helpers). */
+export function getPropertyChildSpaceNextAction(
+  spaceId: string,
+  status: string | null | undefined
+): OwnerListingNextAction | null {
+  const existing = getOwnerListingNextAction(spaceId, status);
+  if (existing) return existing;
+
+  const editHref = `/spaces/${spaceId}/edit`;
+  const completionHref = getOwnerListingCompletionHref(spaceId);
+
+  switch (status) {
+    case BOOKABLE_LISTING_STATUS:
+    case "paused":
+      return { label: "Edit listing", href: editHref, urgent: false, muted: false };
+    case "draft":
+    case UNCLAIMED_LISTING_STATUS:
+      return {
+        label: "Complete setup",
+        href: completionHref,
+        urgent: false,
+        muted: false,
+      };
+    case PENDING_VERIFICATION_STATUS:
+    case "pending":
+      return {
+        label: "Awaiting admin approval",
+        href: getOwnerListingClaimHref(spaceId),
+        urgent: false,
+        muted: true,
+      };
+    default:
+      return null;
+  }
+}
+
 export function getOwnerListingNextAction(
   spaceId: string,
   status: string | null | undefined

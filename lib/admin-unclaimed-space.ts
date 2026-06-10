@@ -165,13 +165,15 @@ export function parseUnclaimedSpaceInput(
 export function buildUnclaimedSpaceRow(
   input: UnclaimedSpaceInput,
   adminUserId: string,
-  status: AdminUnclaimedStatus
+  status: AdminUnclaimedStatus,
+  options?: { propertyId?: string | null }
 ): Record<string, unknown> {
   const street = input.street_address ?? input.address_line_1 ?? null;
   return {
     owner_id: null,
     created_by_admin: true,
     created_by_admin_id: adminUserId,
+    property_id: options?.propertyId ?? null,
     status,
     title: input.title?.trim() || "Untitled listing",
     description: input.description ?? null,
