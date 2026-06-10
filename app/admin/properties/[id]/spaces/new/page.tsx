@@ -3,17 +3,15 @@
 import { hasAdminUiAccess } from "@/lib/client-admin-access";
 
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { AdminNav } from "@/app/components/AdminNav";
 import { AdminUnclaimedSpaceForm } from "@/app/components/AdminUnclaimedSpaceForm";
 import { AdminPropertySpaceBreadcrumb } from "@/app/components/AdminPropertySpaceBreadcrumb";
 import { adminApiFetch } from "@/lib/admin-api-client";
 
 export default function NewPropertySpacePage() {
   const params = useParams();
-  const router = useRouter();
   const propertyId = typeof params.id === "string" ? params.id : "";
 
   const [role, setRole] = useState<string | null>(null);
@@ -80,7 +78,7 @@ export default function NewPropertySpacePage() {
         .maybeSingle();
       const r = (profile as { role?: string } | null)?.role ?? null;
       setRole(r);
-      if (r === "admin") {
+      if (hasAdminUiAccess(r)) {
         await loadProperty();
       }
       setLoading(false);
@@ -89,46 +87,46 @@ export default function NewPropertySpacePage() {
   }, [loadProperty]);
 
   if (loading) {
-    return <main className="p-8 text-gray-600">Loading…</main>;
+    return <div className="text-gray-600">Loading…</div>;
   }
 
   if (!hasAdminUiAccess(role)) {
     return (
-      <main className="p-8">
+      <div>
         <p className="text-red-600">Access denied.</p>
-      </main>
+      </div>
     );
   }
 
   return (
-    <main className="min-h-screen bg-gray-50 p-6 md:p-8">
-      <div className="mx-auto max-w-3xl">
-        <AdminNav current="properties" />
+    <div className="mx-auto max-w-3xl">
+      <AdminPropertySpaceBreadcrumb
+        propertyId={propertyId}
+        propertyName={propertyName || "Property"}
+      />
 
-        <AdminPropertySpaceBreadcrumb
+      <h1 className="text-2xl font-semibold text-gray-900">Add space</h1>
+      <p className="mt-1 text-sm text-gray-600">
+        Create a draft listing under {propertyName || "this property"}. Address is
+        prefilled from the property.
+      </p>
+
+      <div className="mt-6">
+        <AdminUnclaimedSpaceForm
+          mode="create"
           propertyId={propertyId}
-          propertyName={propertyName || "Property"}
+          initial={initialLocation}
+          backHref={`/admin/properties/${propertyId}`}
+          backLabel="Back to property"
+          onCreated={(newSpaceId) => {
+            window.history.replaceState(
+              null,
+              "",
+              `/admin/properties/${propertyId}/spaces/${newSpaceId}/edit`
+            );
+          }}
         />
-
-        <h1 className="text-2xl font-semibold text-gray-900">Add space</h1>
-        <p className="mt-1 text-sm text-gray-600">
-          Create a draft listing under {propertyName || "this property"}. Address is
-          prefilled from the property.
-        </p>
-
-        <div className="mt-6">
-          <AdminUnclaimedSpaceForm
-            mode="create"
-            propertyId={propertyId}
-            initial={initialLocation}
-            onCreated={(spaceId) =>
-              router.replace(
-                `/admin/properties/${propertyId}/spaces/${spaceId}/edit`
-              )
-            }
-          />
-        </div>
       </div>
-    </main>
+    </div>
   );
 }

@@ -5,7 +5,7 @@ import { useMemo, useState } from "react";
 import { ChevronDown, ChevronUp, Loader2, Star, Trash2, Upload } from "lucide-react";
 import { adminApiFetch } from "@/lib/admin-api-client";
 import { ADMIN_SPACE_IMAGE_MAX_BYTES } from "@/lib/admin-space-image-upload";
-import { sortSpaceImages } from "@/lib/sort-space-images";
+import { normalizeSpaceImages, sortSpaceImages } from "@/lib/sort-space-images";
 
 export type AdminSpaceImage = {
   id: string;
@@ -113,7 +113,7 @@ export function AdminSpacePhotosPanel({
           method: "POST",
           body: form,
         });
-        const uploaded = (result.images as AdminSpaceImage[]) || [];
+        const uploaded = normalizeSpaceImages(result.images);
         added.push(...uploaded);
         const batchFailed = (result.failed as { name: string; error: string }[]) || [];
         for (const f of batchFailed) {

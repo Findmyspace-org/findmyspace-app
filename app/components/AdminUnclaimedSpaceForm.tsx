@@ -1,29 +1,19 @@
 "use client";
 
-import Image from "next/image";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  ChevronDown,
-  ChevronUp,
-  Loader2,
-  Star,
-  Trash2,
-  Upload,
-} from "lucide-react";
+import Link from "next/link";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ArrowLeft } from "lucide-react";
 import SpaceCategoryFields from "@/app/components/SpaceCategoryFields";
 import { LISTING_SPACE_TYPE_OPTIONS } from "@/app/data/spaceFeatureConfig";
 import { adminApiFetch } from "@/lib/admin-api-client";
-import { ADMIN_SPACE_IMAGE_MAX_BYTES } from "@/lib/admin-space-image-upload";
 import { AdminCrmLinkSection } from "@/app/components/AdminCrmLinkSection";
 import { AdminLocationSection } from "@/app/components/AdminLocationSection";
+import {
+  AdminSpacePhotosPanel,
+  type AdminSpaceImage,
+} from "@/app/components/AdminSpacePhotosPanel";
 import type { SpaceCrmLinkSummary } from "@/lib/space-crm-link";
 import { sortSpaceImages } from "@/lib/sort-space-images";
-
-type SpaceImage = {
-  id: string;
-  image_url: string;
-  sort_order: number | null;
-};
 
 type FormState = {
   title: string;
@@ -69,12 +59,30 @@ function payloadFromState(state: FormState, crmLink: CrmLinkState) {
   };
 }
 
+function formStateFromInitial(initial?: Partial<FormState>): FormState {
+  return {
+    title: initial?.title ?? "",
+    description: initial?.description ?? "",
+    spaceType: initial?.spaceType ?? "storage",
+    bookingUnit: initial?.bookingUnit ?? "day",
+    city: initial?.city ?? "",
+    suburb: initial?.suburb ?? "",
+    streetAddress: initial?.streetAddress ?? "",
+    province: initial?.province ?? "",
+    postalCode: initial?.postalCode ?? "",
+    country: initial?.country ?? "South Africa",
+    latitude: initial?.latitude ?? null,
+    longitude: initial?.longitude ?? null,
+    attributes: initial?.attributes ?? {},
+  };
+}
+
 type AdminUnclaimedSpaceFormProps = {
   mode: "create" | "edit";
   spaceId?: string;
   initialStatus?: string | null;
   initial?: Partial<FormState>;
-  initialImages?: SpaceImage[];
+  initialImages?: AdminSpaceImage[];
   enquiryCount?: number;
   readOnly?: boolean;
   initialCrmLink?: SpaceCrmLinkSummary | null;
@@ -84,6 +92,10 @@ type AdminUnclaimedSpaceFormProps = {
   defaultContactName?: string;
   /** When set, create mode POSTs to the property spaces API instead of standalone unclaimed. */
   propertyId?: string;
+  backHref?: string;
+  backLabel?: string;
+  listHref?: string;
+  listLabel?: string;
   onCreated?: (id: string) => void;
   onSavedAndExit?: () => void;
 };
@@ -102,37 +114,21 @@ export function AdminUnclaimedSpaceForm({
   defaultContactId,
   defaultContactName,
   propertyId,
+  backHref,
+  backLabel,
+  listHref = "/admin/unclaimed-listings",
+  listLabel = "All unclaimed listings",
   onCreated,
   onSavedAndExit,
 }: AdminUnclaimedSpaceFormProps) {
-  const [state, setState] = useState<FormState>({
-    title: initial?.title ?? "",
-    description: initial?.description ?? "",
-    spaceType: initial?.spaceType ?? "storage",
-    bookingUnit: initial?.bookingUnit ?? "day",
-    city: initial?.city ?? "",
-    suburb: initial?.suburb ?? "",
-    streetAddress: initial?.streetAddress ?? "",
-    province: initial?.province ?? "",
-    postalCode: initial?.postalCode ?? "",
-    country: initial?.country ?? "South Africa",
-    latitude: initial?.latitude ?? null,
-    longitude: initial?.longitude ?? null,
-    attributes: initial?.attributes ?? {},
-  });
-  const [images, setImages] = useState<SpaceImage[]>(initialImages);
+  const [state, setState] = useState<FormState>(() => formStateFromInitial(initial));
+  const [images, setImages] = useState<AdminSpaceImage[]>(() =>
+    sortSpaceImages(initialImages)
+  );
   const [status, setStatus] = useState(initialStatus || "draft");
   const [message, setMessage] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState<{
-    current: number;
-    total: number;
-  } | null>(null);
-  const [reordering, setReordering] = useState(false);
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [crmLink, setCrmLink] = useState<CrmLinkState>({
     crm_organisation_id:
       initialCrmLink?.crm_organisation_id ?? defaultOrganisationId ?? null,
@@ -144,19 +140,26 @@ export function AdminUnclaimedSpaceForm({
   const activeSpaceId = spaceId ?? createdSpaceId;
   const activeMode = mode === "create" && createdSpaceId ? "edit" : mode;
 
-  const sortedImages = useMemo(() => sortSpaceImages(images), [images]);
+  const serverSyncKey = mode === "edit" && spaceId ? `edit:${spaceId}` : "create";
+  const lastServerSyncKeyRef = useRef<string | null>(null);
+
+  const initialImagesKey = useMemo(
+    () => initialImages.map((img) => img.id).join(","),
+    [initialImages]
+  );
 
   useEffect(() => {
+    if (lastServerSyncKeyRef.current === serverSyncKey) return;
+    lastServerSyncKeyRef.current = serverSyncKey;
+
     if (initial) {
-      setState((prev) => ({
-        ...prev,
-        ...initial,
-        attributes: initial.attributes ?? prev.attributes,
-      }));
+      setState(formStateFromInitial(initial));
     }
-    setImages(initialImages);
-    setStatus(initialStatus || "draft");
-  }, [initial, initialImages, initialStatus]);
+    if (mode === "edit" && spaceId) {
+      setImages(sortSpaceImages(initialImages));
+      setStatus(initialStatus || "draft");
+    }
+  }, [serverSyncKey, mode, spaceId, initial, initialImages, initialStatus, initialImagesKey]);
 
   const saveDraft = useCallback(
     async (stayOnPage: boolean) => {
@@ -190,7 +193,7 @@ export function AdminUnclaimedSpaceForm({
           setMessage(
             propertyId
               ? "Draft saved. You can upload photos below."
-              : "Draft saved."
+              : "Draft saved. You can upload photos below."
           );
           onCreated?.(newId);
         } else if (activeSpaceId) {
@@ -261,137 +264,6 @@ export function AdminUnclaimedSpaceForm({
     }
   }, [activeSpaceId, crmLink, readOnly, state]);
 
-  async function persistImageOrder(ordered: SpaceImage[]) {
-    if (!activeSpaceId) return;
-    const imageIds = ordered.map((img) => img.id);
-    await adminApiFetch(`/api/admin/spaces/${activeSpaceId}/images/reorder`, {
-      method: "PATCH",
-      body: JSON.stringify({ imageIds }),
-    });
-    setImages(
-      ordered.map((img, index) => ({
-        ...img,
-        sort_order: index,
-      }))
-    );
-  }
-
-  async function moveImage(imageId: string, direction: -1 | 1) {
-    if (readOnly || !activeSpaceId || reordering) return;
-    const index = sortedImages.findIndex((img) => img.id === imageId);
-    if (index < 0) return;
-    const target = index + direction;
-    if (target < 0 || target >= sortedImages.length) return;
-
-    const next = [...sortedImages];
-    const [item] = next.splice(index, 1);
-    next.splice(target, 0, item);
-
-    setReordering(true);
-    setMessage(null);
-    try {
-      await persistImageOrder(next);
-    } catch (err) {
-      setMessage(err instanceof Error ? err.message : "Could not reorder photos.");
-    } finally {
-      setReordering(false);
-    }
-  }
-
-  async function uploadImages(fileList: FileList | null) {
-    if (readOnly || !activeSpaceId || !fileList?.length) return;
-
-    const allowed = new Set(["image/jpeg", "image/png", "image/webp"]);
-    const allowedExt = new Set(["jpg", "jpeg", "png", "webp"]);
-    const maxMb = (ADMIN_SPACE_IMAGE_MAX_BYTES / (1024 * 1024)).toFixed(0);
-    const files = Array.from(fileList);
-
-    for (const file of files) {
-      const ext = (file.name.split(".").pop() || "").toLowerCase();
-      if (!allowed.has(file.type) && !allowedExt.has(ext)) {
-        setMessage(
-          `Invalid file type "${file.name}". Use JPG, PNG, or WebP only.`
-        );
-        return;
-      }
-      if (file.size > ADMIN_SPACE_IMAGE_MAX_BYTES) {
-        setMessage(
-          `"${file.name}" is too large. Maximum size is ${maxMb} MB per image.`
-        );
-        return;
-      }
-    }
-
-    setUploading(true);
-    setMessage(null);
-    const added: SpaceImage[] = [];
-    const failed: string[] = [];
-
-    for (let i = 0; i < files.length; i++) {
-      setUploadProgress({ current: i + 1, total: files.length });
-      const file = files[i];
-      try {
-        const form = new FormData();
-        form.append("files", file);
-        const result = await adminApiFetch(`/api/admin/spaces/${activeSpaceId}/images`, {
-          method: "POST",
-          body: form,
-        });
-        const uploaded = (result.images as SpaceImage[]) || [];
-        added.push(...uploaded);
-        const batchFailed = (result.failed as { name: string; error: string }[]) || [];
-        for (const f of batchFailed) {
-          failed.push(`${f.name}: ${f.error}`);
-        }
-      } catch (err) {
-        failed.push(
-          `${file.name}: ${err instanceof Error ? err.message : "Upload failed."}`
-        );
-      }
-    }
-
-    if (added.length > 0) {
-      setImages((prev) => sortSpaceImages([...prev, ...added]));
-    }
-
-    if (failed.length === 0) {
-      setMessage(`${added.length} photo(s) uploaded.`);
-    } else if (added.length > 0) {
-      setMessage(
-        `${added.length} uploaded, ${failed.length} failed: ${failed.join("; ")}`
-      );
-    } else {
-      setMessage(`Upload failed: ${failed.join("; ")}`);
-    }
-
-    setUploading(false);
-    setUploadProgress(null);
-  }
-
-  async function removeImage(imageId: string) {
-    if (readOnly || !activeSpaceId) return;
-    setDeletingId(imageId);
-    setMessage(null);
-    try {
-      await adminApiFetch(`/api/admin/spaces/${activeSpaceId}/images`, {
-        method: "DELETE",
-        body: JSON.stringify({ imageId }),
-      });
-      const remaining = sortSpaceImages(images.filter((img) => img.id !== imageId));
-      if (remaining.length > 0) {
-        await persistImageOrder(remaining);
-      } else {
-        setImages([]);
-      }
-      setConfirmDeleteId(null);
-      setMessage("Photo removed.");
-    } catch (err) {
-      setMessage(err instanceof Error ? err.message : "Could not remove image.");
-    } finally {
-      setDeletingId(null);
-    }
-  }
-
   const statusBadge =
     status === "unclaimed"
       ? "bg-amber-100 text-amber-900"
@@ -399,8 +271,18 @@ export function AdminUnclaimedSpaceForm({
         ? "bg-green-100 text-green-800"
         : "bg-gray-100 text-gray-700";
 
+  const resolvedBackHref =
+    backHref ??
+    (propertyId
+      ? `/admin/properties/${propertyId}`
+      : activeSpaceId
+        ? "/admin/unclaimed-listings"
+        : listHref);
+  const resolvedBackLabel =
+    backLabel ?? (propertyId ? "Back to property" : "Back to unclaimed listings");
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-4">
       <div className="flex flex-wrap items-center gap-2">
         <span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusBadge}`}>
           {status === "unclaimed"
@@ -536,138 +418,13 @@ export function AdminUnclaimedSpaceForm({
 
       <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
         <h2 className="text-lg font-semibold text-gray-900">Photos</h2>
-        <p className="mt-1 text-sm text-gray-600">
-          First photo is the cover image on cards and the public listing. Use the arrows
-          to reorder.
-        </p>
-        {!activeSpaceId ? (
-          <p className="mt-2 text-sm text-gray-600">
-            Save a draft first to upload photos.
-          </p>
-        ) : (
-          <>
-            {sortedImages.length === 0 ? (
-              <p className="mt-3 text-sm text-gray-500">No photos yet.</p>
-            ) : (
-              <div className="mt-4 space-y-3">
-                {sortedImages.map((img, index) => (
-                  <div
-                    key={img.id}
-                    className="flex items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 p-2"
-                  >
-                    <div className="relative h-20 w-28 shrink-0 overflow-hidden rounded-md border border-gray-200 bg-white">
-                      <Image
-                        src={img.image_url}
-                        alt=""
-                        fill
-                        className="object-cover"
-                        unoptimized
-                      />
-                      {index === 0 ? (
-                        <span className="absolute left-1 top-1 inline-flex items-center gap-0.5 rounded bg-[#0f2740] px-1.5 py-0.5 text-[10px] font-semibold text-white">
-                          <Star className="h-2.5 w-2.5" />
-                          Cover
-                        </span>
-                      ) : null}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      {index === 0 ? (
-                        <>
-                          <p className="text-sm font-medium text-gray-900">
-                            Cover image
-                          </p>
-                          <p className="text-xs text-gray-500">
-                            Shown on search results, browse cards, map results, and
-                            the public listing.
-                          </p>
-                        </>
-                      ) : (
-                        <p className="text-sm text-gray-600">Photo {index + 1}</p>
-                      )}
-                    </div>
-                    {!readOnly ? (
-                      <div className="flex shrink-0 items-center gap-1">
-                        <button
-                          type="button"
-                          disabled={index === 0 || reordering || uploading}
-                          onClick={() => void moveImage(img.id, -1)}
-                          className="rounded border border-gray-300 bg-white p-1.5 text-gray-700 disabled:opacity-40"
-                          aria-label="Move photo up"
-                        >
-                          <ChevronUp className="h-4 w-4" />
-                        </button>
-                        <button
-                          type="button"
-                          disabled={
-                            index === sortedImages.length - 1 ||
-                            reordering ||
-                            uploading
-                          }
-                          onClick={() => void moveImage(img.id, 1)}
-                          className="rounded border border-gray-300 bg-white p-1.5 text-gray-700 disabled:opacity-40"
-                          aria-label="Move photo down"
-                        >
-                          <ChevronDown className="h-4 w-4" />
-                        </button>
-                        {confirmDeleteId === img.id ? (
-                          <div className="ml-1 flex items-center gap-1">
-                            <button
-                              type="button"
-                              disabled={deletingId === img.id}
-                              onClick={() => void removeImage(img.id)}
-                              className="rounded bg-red-600 px-2 py-1 text-xs font-medium text-white disabled:opacity-60"
-                            >
-                              {deletingId === img.id ? "…" : "Delete"}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setConfirmDeleteId(null)}
-                              className="rounded border border-gray-300 bg-white px-2 py-1 text-xs text-gray-700"
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => setConfirmDeleteId(img.id)}
-                            className="rounded border border-gray-300 bg-white p-1.5 text-red-600"
-                            aria-label="Remove photo"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        )}
-                      </div>
-                    ) : null}
-                  </div>
-                ))}
-              </div>
-            )}
-            {!readOnly ? (
-              <label className="mt-4 inline-flex cursor-pointer items-center gap-2 rounded-lg border border-gray-300 bg-gray-50 px-4 py-2 text-sm font-medium text-gray-800 hover:bg-gray-100">
-                {uploading ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Upload className="h-4 w-4" />
-                )}
-                {uploading && uploadProgress
-                  ? `Uploading ${uploadProgress.current} of ${uploadProgress.total}…`
-                  : "Upload photos"}
-                <input
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
-                  multiple
-                  className="sr-only"
-                  disabled={uploading || reordering}
-                  onChange={(e) => {
-                    void uploadImages(e.target.files);
-                    e.target.value = "";
-                  }}
-                />
-              </label>
-            ) : null}
-          </>
-        )}
+        <AdminSpacePhotosPanel
+          spaceId={activeSpaceId ?? undefined}
+          images={images}
+          onImagesChange={setImages}
+          readOnly={readOnly}
+          onMessage={setMessage}
+        />
       </section>
 
       {message ? (
@@ -685,46 +442,69 @@ export function AdminUnclaimedSpaceForm({
       ) : null}
 
       {!readOnly ? (
-        <div className="flex flex-wrap gap-3">
-          {activeMode === "edit" ? (
-            <>
+        <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+          <div className="flex flex-wrap gap-3">
+            {activeMode === "edit" ? (
+              <>
+                <button
+                  type="button"
+                  disabled={saving || publishing}
+                  onClick={() => void saveDraft(false)}
+                  className="rounded-lg bg-[#0f2740] px-5 py-2.5 text-sm font-semibold text-white hover:opacity-95 disabled:opacity-60"
+                >
+                  {saving ? "Saving…" : "Save"}
+                </button>
+                <button
+                  type="button"
+                  disabled={saving || publishing}
+                  onClick={() => void saveDraft(true)}
+                  className="rounded-lg border border-gray-300 bg-white px-5 py-2.5 text-sm font-semibold text-gray-800 hover:bg-gray-50 disabled:opacity-60"
+                >
+                  Save &amp; continue editing
+                </button>
+              </>
+            ) : (
               <button
                 type="button"
-                disabled={saving || publishing || uploading || reordering}
-                onClick={() => void saveDraft(false)}
-                className="rounded-lg bg-[#0f2740] px-5 py-2.5 text-sm font-semibold text-white hover:opacity-95 disabled:opacity-60"
-              >
-                {saving ? "Saving…" : "Save"}
-              </button>
-              <button
-                type="button"
-                disabled={saving || publishing || uploading || reordering}
+                disabled={saving || publishing}
                 onClick={() => void saveDraft(true)}
                 className="rounded-lg border border-gray-300 bg-white px-5 py-2.5 text-sm font-semibold text-gray-800 hover:bg-gray-50 disabled:opacity-60"
               >
-                Save &amp; continue editing
+                {saving ? "Saving…" : "Save draft"}
               </button>
-            </>
-          ) : (
-            <button
-              type="button"
-              disabled={saving || publishing}
-              onClick={() => void saveDraft(true)}
-              className="rounded-lg border border-gray-300 bg-white px-5 py-2.5 text-sm font-semibold text-gray-800 hover:bg-gray-50 disabled:opacity-60"
+            )}
+            {activeSpaceId ? (
+              <button
+                type="button"
+                disabled={saving || publishing}
+                onClick={() => void publish()}
+                className="rounded-lg border border-[#0f2740] bg-white px-5 py-2.5 text-sm font-semibold text-[#0f2740] hover:bg-gray-50 disabled:opacity-60"
+              >
+                {publishing ? "Publishing…" : "Publish as unclaimed"}
+              </button>
+            ) : null}
+          </div>
+          <div className="flex flex-wrap items-center gap-4 border-t border-gray-100 pt-3 text-sm">
+            <Link
+              href={resolvedBackHref}
+              className="inline-flex items-center gap-1.5 font-medium text-gray-700 hover:text-gray-900"
             >
-              {saving ? "Saving…" : "Save draft"}
-            </button>
-          )}
-          {activeSpaceId ? (
-            <button
-              type="button"
-              disabled={saving || publishing || uploading || reordering}
-              onClick={() => void publish()}
-              className="rounded-lg border border-[#0f2740] bg-white px-5 py-2.5 text-sm font-semibold text-[#0f2740] hover:bg-gray-50 disabled:opacity-60"
-            >
-              {publishing ? "Publishing…" : "Publish as unclaimed"}
-            </button>
-          ) : null}
+              <ArrowLeft className="h-4 w-4" />
+              {resolvedBackLabel}
+            </Link>
+            {!propertyId ? (
+              <Link href={listHref} className="font-medium text-[#0f2740] hover:underline">
+                {listLabel}
+              </Link>
+            ) : (
+              <Link
+                href="/admin/unclaimed-listings"
+                className="font-medium text-gray-600 hover:underline"
+              >
+                All unclaimed listings
+              </Link>
+            )}
+          </div>
         </div>
       ) : null}
     </div>

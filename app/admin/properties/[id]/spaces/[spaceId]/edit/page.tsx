@@ -7,7 +7,6 @@ import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { Eye } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import { AdminNav } from "@/app/components/AdminNav";
 import { adminApiFetch } from "@/lib/admin-api-client";
 import { AdminUnclaimedSpaceForm } from "@/app/components/AdminUnclaimedSpaceForm";
 import { AdminPropertySpaceBreadcrumb } from "@/app/components/AdminPropertySpaceBreadcrumb";
@@ -117,7 +116,7 @@ export default function EditPropertySpacePage() {
         .maybeSingle();
       const r = (profile as { role?: string } | null)?.role ?? null;
       setRole(r);
-      if (r === "admin") {
+      if (hasAdminUiAccess(r)) {
         await load();
       } else {
         setLoading(false);
@@ -127,20 +126,20 @@ export default function EditPropertySpacePage() {
   }, [load]);
 
   if (loading) {
-    return <main className="p-8 text-gray-600">Loading…</main>;
+    return <div className="text-gray-600">Loading…</div>;
   }
 
   if (!hasAdminUiAccess(role)) {
     return (
-      <main className="p-8">
+      <div>
         <p className="text-red-600">Access denied.</p>
-      </main>
+      </div>
     );
   }
 
   if (!space) {
     return (
-      <main className="p-8">
+      <div>
         <p className="text-red-600">{message || "Space not found."}</p>
         <Link
           href={`/admin/properties/${propertyId}`}
@@ -148,80 +147,77 @@ export default function EditPropertySpacePage() {
         >
           Back to property
         </Link>
-      </main>
+      </div>
     );
   }
 
   return (
-    <main className="min-h-screen bg-gray-50 p-6 md:p-8">
-      <div className="mx-auto max-w-3xl">
-        <AdminNav current="properties" />
+    <div className="mx-auto max-w-3xl">
+      <AdminPropertySpaceBreadcrumb
+        propertyId={propertyId}
+        propertyName={propertyName || "Property"}
+        spaceTitle={space.title?.trim() || "Untitled space"}
+      />
 
-        <AdminPropertySpaceBreadcrumb
-          propertyId={propertyId}
-          propertyName={propertyName || "Property"}
-          spaceTitle={space.title?.trim() || "Untitled space"}
-        />
-
-        <div className="mb-4 flex flex-wrap items-center justify-end gap-3">
-          {space.status === "draft" || space.status === "unclaimed" ? (
-            <Link
-              href={
-                space.status === "unclaimed"
-                  ? `/spaces/${space.id}`
-                  : `/admin/unclaimed-listings/${space.id}/preview`
-              }
-              target="_blank"
-              className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-[#0f2740] hover:bg-gray-50"
-            >
-              <Eye className="h-4 w-4" />
-              Preview listing
-            </Link>
-          ) : null}
-        </div>
-
-        <h1 className="text-2xl font-semibold text-gray-900">Edit space</h1>
-        <p className="mt-2 text-sm text-gray-600">
-          Save your draft, upload photos, then publish when ready. This space is linked
-          to {propertyName || "the property"}.
-        </p>
-
-        {enquiryCount > 0 ? (
-          <div className="mt-4">
-            <UnclaimedListingEnquirySocialProof count={enquiryCount} />
-          </div>
+      <div className="mb-4 flex flex-wrap items-center justify-end gap-3">
+        {space.status === "draft" || space.status === "unclaimed" ? (
+          <Link
+            href={
+              space.status === "unclaimed"
+                ? `/spaces/${space.id}`
+                : `/admin/unclaimed-listings/${space.id}/preview`
+            }
+            target="_blank"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-[#0f2740] hover:bg-gray-50"
+          >
+            <Eye className="h-4 w-4" />
+            Preview listing
+          </Link>
         ) : null}
-
-        <div className="mt-6">
-          <AdminUnclaimedSpaceForm
-            key={space.id}
-            mode="edit"
-            spaceId={space.id}
-            propertyId={propertyId}
-            initialStatus={space.status}
-            enquiryCount={enquiryCount}
-            readOnly={readOnly}
-            initialCrmLink={crmLink}
-            onSavedAndExit={() => router.push(`/admin/properties/${propertyId}`)}
-            initialImages={images}
-            initial={{
-              title: space.title || "",
-              description: space.description || "",
-              spaceType: space.space_type || "storage",
-              bookingUnit: space.booking_unit || "day",
-              city: space.city || "",
-              suburb: space.suburb || "",
-              streetAddress: space.street_address || "",
-              province: space.province || "",
-              postalCode: space.postal_code || "",
-              country: space.country || "South Africa",
-              latitude: space.latitude,
-              longitude: space.longitude,
-              attributes,
-            }}
-          />
-        </div>
       </div>
-    </main>
+
+      <h1 className="text-2xl font-semibold text-gray-900">Edit space</h1>
+      <p className="mt-2 text-sm text-gray-600">
+        Save your draft, upload photos, then publish when ready. This space is linked
+        to {propertyName || "the property"}.
+      </p>
+
+      {enquiryCount > 0 ? (
+        <div className="mt-4">
+          <UnclaimedListingEnquirySocialProof count={enquiryCount} />
+        </div>
+      ) : null}
+
+      <div className="mt-6">
+        <AdminUnclaimedSpaceForm
+          mode="edit"
+          spaceId={space.id}
+          propertyId={propertyId}
+          initialStatus={space.status}
+          enquiryCount={enquiryCount}
+          readOnly={readOnly}
+          initialCrmLink={crmLink}
+          backHref={`/admin/properties/${propertyId}`}
+          backLabel="Back to property"
+          onSavedAndExit={() => router.push(`/admin/properties/${propertyId}`)}
+          initialImages={images}
+          initial={{
+            title: space.title || "",
+            description: space.description || "",
+            spaceType: space.space_type || "storage",
+            bookingUnit: space.booking_unit || "day",
+            city: space.city || "",
+            suburb: space.suburb || "",
+            streetAddress: space.street_address || "",
+            province: space.province || "",
+            postalCode: space.postal_code || "",
+            country: space.country || "South Africa",
+            latitude: space.latitude,
+            longitude: space.longitude,
+            attributes,
+          }}
+        />
+      </div>
+    </div>
   );
 }

@@ -3,14 +3,13 @@
 import { hasAdminUiAccess } from "@/lib/client-admin-access";
 
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import { ArrowLeft } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { AdminUnclaimedSpaceForm } from "@/app/components/AdminUnclaimedSpaceForm";
 
 function NewUnclaimedListingContent() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const crmOrgId = searchParams.get("crm_org_id") || undefined;
   const crmOrgName = searchParams.get("crm_org_name") || undefined;
@@ -42,21 +41,20 @@ function NewUnclaimedListingContent() {
   }, []);
 
   if (loading) {
-    return <main className="p-8 text-gray-600">Loading…</main>;
+    return <div className="text-gray-600">Loading…</div>;
   }
 
   if (!hasAdminUiAccess(role)) {
     return (
-      <main className="p-8">
+      <div>
         <p className="text-red-600">Access denied.</p>
-      </main>
+      </div>
     );
   }
 
   return (
-    <main className="min-h-screen bg-gray-50 p-6 md:p-8">
-      <div className="mx-auto max-w-3xl">
-        <Link
+    <div className="mx-auto max-w-3xl">
+      <Link
           href="/admin/unclaimed-listings"
           className="mb-4 inline-flex items-center gap-2 text-sm font-medium text-gray-700 hover:text-gray-900"
         >
@@ -75,17 +73,22 @@ function NewUnclaimedListingContent() {
             defaultContactId={crmContactId}
             defaultContactName={crmContactName}
             initial={prefillTitle ? { title: prefillTitle } : undefined}
-            onCreated={(id) => router.replace(`/admin/unclaimed-listings/${id}/edit`)}
+            onCreated={(id) => {
+              window.history.replaceState(
+                null,
+                "",
+                `/admin/unclaimed-listings/${id}/edit`
+              );
+            }}
           />
         </div>
-      </div>
-    </main>
+    </div>
   );
 }
 
 export default function NewUnclaimedListingPage() {
   return (
-    <Suspense fallback={<main className="p-8 text-gray-600">Loading…</main>}>
+    <Suspense fallback={<div className="p-8 text-gray-600">Loading…</div>}>
       <NewUnclaimedListingContent />
     </Suspense>
   );

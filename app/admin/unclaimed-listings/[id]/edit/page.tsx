@@ -94,7 +94,7 @@ export default function EditUnclaimedListingPage() {
         .maybeSingle();
       const r = (profile as { role?: string } | null)?.role ?? null;
       setRole(r);
-      if (r === "admin") {
+      if (hasAdminUiAccess(r)) {
         await load();
       } else {
         setLoading(false);
@@ -104,31 +104,30 @@ export default function EditUnclaimedListingPage() {
   }, [load]);
 
   if (loading) {
-    return <main className="p-8 text-gray-600">Loading…</main>;
+    return <div className="text-gray-600">Loading…</div>;
   }
 
   if (!hasAdminUiAccess(role)) {
     return (
-      <main className="p-8">
+      <div>
         <p className="text-red-600">Access denied.</p>
-      </main>
+      </div>
     );
   }
 
   if (!space) {
     return (
-      <main className="p-8">
+      <div>
         <p className="text-red-600">{message || "Listing not found."}</p>
         <Link href="/admin/unclaimed-listings" className="mt-4 inline-block text-sm underline">
           Back to list
         </Link>
-      </main>
+      </div>
     );
   }
 
   return (
-    <main className="min-h-screen bg-gray-50 p-6 md:p-8">
-      <div className="mx-auto max-w-3xl">
+    <div className="mx-auto max-w-3xl">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <Link
             href="/admin/unclaimed-listings"
@@ -190,13 +189,14 @@ export default function EditUnclaimedListingPage() {
           />
 
           <AdminUnclaimedSpaceForm
-            key={space.id}
             mode="edit"
             spaceId={space.id}
             initialStatus={space.status}
             enquiryCount={enquiryCount}
             readOnly={readOnly}
             initialCrmLink={crmLink}
+            backHref="/admin/unclaimed-listings"
+            backLabel="Back to unclaimed listings"
             onSavedAndExit={() =>
               router.push("/admin/unclaimed-listings?saved=1")
             }
@@ -218,7 +218,6 @@ export default function EditUnclaimedListingPage() {
             }}
           />
         </div>
-      </div>
-    </main>
+    </div>
   );
 }
