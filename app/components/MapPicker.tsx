@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import {
   MapContainer,
   Marker,
@@ -8,6 +8,7 @@ import {
   useMap,
   useMapEvents,
 } from "react-leaflet";
+import type { Marker as LeafletMarker } from "leaflet";
 
 type MapPickerProps = {
   latitude: number;
@@ -21,9 +22,12 @@ function ClickHandler({
 }: {
   onChange: (lat: number, lng: number) => void;
 }) {
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+
   useMapEvents({
     click(e) {
-      onChange(e.latlng.lat, e.latlng.lng);
+      onChangeRef.current(e.latlng.lat, e.latlng.lng);
     },
   });
 
@@ -44,6 +48,47 @@ function RecenterMap({
   }, [latitude, longitude, map]);
 
   return null;
+}
+
+/** Keeps marker position in sync when parent coordinates change (click / form update). */
+function DraggableMarker({
+  latitude,
+  longitude,
+  onChange,
+}: {
+  latitude: number;
+  longitude: number;
+  onChange: (lat: number, lng: number) => void;
+}) {
+  const markerRef = useRef<LeafletMarker | null>(null);
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+
+  useEffect(() => {
+    const marker = markerRef.current;
+    if (!marker) return;
+    const current = marker.getLatLng();
+    if (
+      Math.abs(current.lat - latitude) > 1e-7 ||
+      Math.abs(current.lng - longitude) > 1e-7
+    ) {
+      marker.setLatLng([latitude, longitude]);
+    }
+  }, [latitude, longitude]);
+
+  return (
+    <Marker
+      ref={markerRef}
+      position={[latitude, longitude]}
+      draggable={true}
+      eventHandlers={{
+        dragend: (e) => {
+          const pos = e.target.getLatLng();
+          onChangeRef.current(pos.lat, pos.lng);
+        },
+      }}
+    />
+  );
 }
 
 export default function MapPicker({
@@ -82,17 +127,10 @@ export default function MapPicker({
 
         <RecenterMap latitude={latitude} longitude={longitude} />
         <ClickHandler onChange={onChange} />
-
-        <Marker
-          position={[latitude, longitude]}
-          draggable={true}
-          eventHandlers={{
-            dragend: (e) => {
-              const marker = e.target;
-              const pos = marker.getLatLng();
-              onChange(pos.lat, pos.lng);
-            },
-          }}
+        <DraggableMarker
+          latitude={latitude}
+          longitude={longitude}
+          onChange={onChange}
         />
       </MapContainer>
     </div>

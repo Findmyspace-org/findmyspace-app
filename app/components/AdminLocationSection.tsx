@@ -75,11 +75,15 @@ export function AdminLocationSection({
 }: AdminLocationSectionProps) {
   const [suggestions, setSuggestions] = useState<GeocodedAddress[]>([]);
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
+  const [pinSuggestions, setPinSuggestions] = useState<GeocodedAddress[]>([]);
   const [searching, setSearching] = useState(false);
   const [reverseGeocoding, setReverseGeocoding] = useState(false);
   const [geoMessage, setGeoMessage] = useState<string | null>(null);
   const suggestionAbortRef = useRef<AbortController | null>(null);
+  const reverseGeocodeAbortRef = useRef<AbortController | null>(null);
+  const reverseGeocodeRequestIdRef = useRef(0);
   const valueRef = useRef(value);
+  const skipAutocompleteRef = useRef(false);
 
   useEffect(() => {
     valueRef.current = value;
@@ -94,8 +98,23 @@ export function AdminLocationSection({
   const mapLat = hasPin ? value.latitude! : DEFAULT_LAT;
   const mapLng = hasPin ? value.longitude! : DEFAULT_LNG;
 
+  const clearPinSuggestionState = useCallback(() => {
+    setPinSuggestions([]);
+  }, []);
+
+  const clearAddressSuggestionState = useCallback(() => {
+    suggestionAbortRef.current?.abort();
+    suggestionAbortRef.current = null;
+    setSuggestions([]);
+    setSuggestionsOpen(false);
+  }, []);
+
   useEffect(() => {
     if (readOnly) return;
+    if (skipAutocompleteRef.current) {
+      skipAutocompleteRef.current = false;
+      return;
+    }
 
     const query = buildAddressQuery({
       streetAddress: value.streetAddress,
@@ -141,11 +160,24 @@ export function AdminLocationSection({
     value.country,
   ]);
 
-  function selectSuggestion(result: GeocodedAddress) {
-    onChange(applyGeocodedAddress(value, result, true));
-    setSuggestionsOpen(false);
-    setGeoMessage("Address selected. Pin placed on map.");
-  }
+  const selectSuggestion = useCallback(
+    (result: GeocodedAddress) => {
+      onChange(applyGeocodedAddress(valueRef.current, result, true));
+      clearAddressSuggestionState();
+      clearPinSuggestionState();
+      setGeoMessage("Address selected. Pin placed on map.");
+    },
+    [clearAddressSuggestionState, clearPinSuggestionState, onChange]
+  );
+
+  const selectPinSuggestion = useCallback(
+    (result: GeocodedAddress) => {
+      onChange(applyGeocodedAddress(valueRef.current, result, true));
+      clearPinSuggestionState();
+      setGeoMessage("Location selected from map.");
+    },
+    [clearPinSuggestionState, onChange]
+  );
 
   async function findAddressOnMap() {
     const query = buildAddressQuery({
@@ -163,6 +195,7 @@ export function AdminLocationSection({
 
     setSearching(true);
     setGeoMessage(null);
+    clearPinSuggestionState();
     try {
       const result = await adminApiFetch(
         `/api/admin/geocode?q=${encodeURIComponent(query)}&limit=1`
@@ -175,7 +208,8 @@ export function AdminLocationSection({
         return;
       }
 
-      onChange(applyGeocodedAddress(value, matches[0], true));
+      skipAutocompleteRef.current = true;
+      onChange(applyGeocodedAddress(valueRef.current, matches[0], true));
       setGeoMessage("Address found. Pin placed on map.");
     } catch (err) {
       setGeoMessage(
@@ -187,14 +221,23 @@ export function AdminLocationSection({
   }
 
   const reverseGeocodePin = useCallback(
-    async (lat: number, lng: number) => {
+    async (lat: number, lng: number, requestId: number) => {
+      reverseGeocodeAbortRef.current?.abort();
+      const controller = new AbortController();
+      reverseGeocodeAbortRef.current = controller;
+
       setReverseGeocoding(true);
       try {
         const result = await adminApiFetch(
-          `/api/admin/geocode?lat=${lat}&lng=${lng}`
+          `/api/admin/geocode?lat=${lat}&lng=${lng}`,
+          { signal: controller.signal }
         );
+
+        if (reverseGeocodeRequestIdRef.current !== requestId) return;
+
         const geocoded = result.result as GeocodedAddress | undefined;
         if (geocoded) {
+          skipAutocompleteRef.current = true;
           onChange(
             applyGeocodedAddress(
               { ...valueRef.current, latitude: lat, longitude: lng },
@@ -202,11 +245,41 @@ export function AdminLocationSection({
               false
             )
           );
+
+          const searchQuery =
+            geocoded.label?.trim() ||
+            buildAddressQuery({
+              streetAddress: geocoded.streetAddress,
+              suburb: geocoded.suburb,
+              city: geocoded.city,
+              province: geocoded.province,
+              country: geocoded.country,
+            });
+
+          if (searchQuery.length >= 3) {
+            try {
+              const nearby = await adminApiFetch(
+                `/api/admin/geocode?q=${encodeURIComponent(searchQuery)}&limit=5`,
+                { signal: controller.signal }
+              );
+              if (reverseGeocodeRequestIdRef.current !== requestId) return;
+              const options = (nearby.results as GeocodedAddress[]) || [];
+              setPinSuggestions(options.length > 0 ? options : [geocoded]);
+            } catch (nearbyErr) {
+              if ((nearbyErr as Error).name === "AbortError") return;
+              setPinSuggestions([geocoded]);
+            }
+          } else {
+            setPinSuggestions([geocoded]);
+          }
         }
       } catch (err) {
+        if ((err as Error).name === "AbortError") return;
         console.error("Reverse geocoding failed", err);
       } finally {
-        setReverseGeocoding(false);
+        if (reverseGeocodeRequestIdRef.current === requestId) {
+          setReverseGeocoding(false);
+        }
       }
     },
     [onChange]
@@ -215,11 +288,26 @@ export function AdminLocationSection({
   const handleMapPinChange = useCallback(
     (lat: number, lng: number) => {
       if (readOnly) return;
+
+      reverseGeocodeRequestIdRef.current += 1;
+      const requestId = reverseGeocodeRequestIdRef.current;
+
+      clearAddressSuggestionState();
+      clearPinSuggestionState();
+      reverseGeocodeAbortRef.current?.abort();
+      reverseGeocodeAbortRef.current = null;
+
       onChange({ latitude: lat, longitude: lng });
       setGeoMessage(`Pin placed at ${lat.toFixed(6)}, ${lng.toFixed(6)}`);
-      void reverseGeocodePin(lat, lng);
+      void reverseGeocodePin(lat, lng, requestId);
     },
-    [onChange, readOnly, reverseGeocodePin]
+    [
+      clearAddressSuggestionState,
+      clearPinSuggestionState,
+      onChange,
+      readOnly,
+      reverseGeocodePin,
+    ]
   );
 
   return (
@@ -255,7 +343,7 @@ export function AdminLocationSection({
             <div className="absolute z-20 mt-1 max-h-56 w-full overflow-auto rounded-xl border border-gray-200 bg-white shadow-lg">
               {suggestions.map((suggestion, idx) => (
                 <button
-                  key={`${suggestion.latitude}-${suggestion.longitude}-${idx}`}
+                  key={`addr-${suggestion.latitude}-${suggestion.longitude}-${idx}`}
                   type="button"
                   onMouseDown={(e) => {
                     e.preventDefault();
@@ -366,6 +454,26 @@ export function AdminLocationSection({
         )}
         {reverseGeocoding ? (
           <p className="mt-1 text-xs text-gray-500">Updating address from map pin…</p>
+        ) : null}
+        {!readOnly && pinSuggestions.length > 0 ? (
+          <div className="mt-3 rounded-xl border border-gray-200 bg-gray-50 p-2">
+            <p className="mb-2 px-1 text-xs font-medium text-gray-600">
+              Choose the best match for this pin
+            </p>
+            <ul className="max-h-48 space-y-1 overflow-auto">
+              {pinSuggestions.map((suggestion, idx) => (
+                <li key={`pin-${suggestion.latitude}-${suggestion.longitude}-${idx}`}>
+                  <button
+                    type="button"
+                    onClick={() => selectPinSuggestion(suggestion)}
+                    className="w-full rounded-lg border border-transparent bg-white px-3 py-2 text-left text-sm text-gray-700 hover:border-gray-200 hover:bg-gray-50"
+                  >
+                    {suggestion.label}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
         ) : null}
         {!readOnly ? (
           <p className="mt-1 text-xs text-gray-500">
