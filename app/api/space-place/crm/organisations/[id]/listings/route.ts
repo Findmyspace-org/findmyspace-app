@@ -66,5 +66,29 @@ export async function GET(
         : null,
   }));
 
-  return NextResponse.json({ organisation: org, listings });
+  const { data: properties, error: propertiesErr } = await adminClient
+    .from("properties")
+    .select("id, name, city, suburb, owner_email, owner_accepted_at, created_at")
+    .eq("crm_organisation_id", organisationId)
+    .order("name", { ascending: true });
+
+  if (propertiesErr) {
+    return NextResponse.json({ error: propertiesErr.message }, { status: 500 });
+  }
+
+  const propertyRows = ((properties || []) as {
+    id: string;
+    name: string;
+    city: string | null;
+    suburb: string | null;
+    owner_email: string | null;
+    owner_accepted_at: string | null;
+    created_at: string;
+  }[]).map((row) => ({
+    ...row,
+    admin_url: `/admin/properties/${row.id}`,
+    owner_status: row.owner_accepted_at ? "Owner accepted" : row.owner_email ? "Invited" : "No owner",
+  }));
+
+  return NextResponse.json({ organisation: org, listings, properties: propertyRows });
 }

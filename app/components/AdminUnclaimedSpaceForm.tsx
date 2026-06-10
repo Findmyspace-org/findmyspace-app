@@ -82,6 +82,8 @@ type AdminUnclaimedSpaceFormProps = {
   defaultOrganisationName?: string;
   defaultContactId?: string;
   defaultContactName?: string;
+  /** When set, create mode POSTs to the property spaces API instead of standalone unclaimed. */
+  propertyId?: string;
   onCreated?: (id: string) => void;
   onSavedAndExit?: () => void;
 };
@@ -99,6 +101,7 @@ export function AdminUnclaimedSpaceForm({
   defaultOrganisationName,
   defaultContactId,
   defaultContactName,
+  propertyId,
   onCreated,
   onSavedAndExit,
 }: AdminUnclaimedSpaceFormProps) {
@@ -159,13 +162,21 @@ export function AdminUnclaimedSpaceForm({
         const body = payloadFromState(state, crmLink);
 
         if (mode === "create") {
-          const result = await adminApiFetch("/api/admin/spaces/unclaimed", {
-            method: "POST",
-            body: JSON.stringify(body),
-          });
+          const result = propertyId
+            ? await adminApiFetch(`/api/admin/properties/${propertyId}/spaces`, {
+                method: "POST",
+                body: JSON.stringify(body),
+              })
+            : await adminApiFetch("/api/admin/spaces/unclaimed", {
+                method: "POST",
+                body: JSON.stringify(body),
+              });
           setStatus("draft");
           setMessage("Draft saved.");
-          onCreated?.(result.id as string);
+          const newId = propertyId
+            ? ((result.space as { id?: string })?.id as string)
+            : (result.id as string);
+          onCreated?.(newId);
         } else if (spaceId) {
           await adminApiFetch(`/api/admin/spaces/${spaceId}/unclaimed`, {
             method: "PATCH",

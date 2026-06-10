@@ -18,6 +18,15 @@ type MarketplaceListing = {
   linked_via?: string;
 };
 
+type CrmProperty = {
+  id: string;
+  name: string;
+  city: string | null;
+  suburb: string | null;
+  owner_status: string;
+  admin_url: string;
+};
+
 type Props = {
   mode: "organisation" | "contact";
   entityId: string;
@@ -40,6 +49,7 @@ export function CrmMarketplaceListingsSection({
   organisationId,
 }: Props) {
   const [listings, setListings] = useState<MarketplaceListing[]>([]);
+  const [properties, setProperties] = useState<CrmProperty[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -63,14 +73,17 @@ export function CrmMarketplaceListingsSection({
       });
       const json = (await res.json()) as {
         listings?: MarketplaceListing[];
+        properties?: CrmProperty[];
         error?: string;
       };
       if (!res.ok) {
         setMessage(json.error || "Could not load marketplace listings.");
         setListings([]);
+        setProperties([]);
         return;
       }
       setListings(json.listings || []);
+      setProperties(mode === "organisation" ? json.properties || [] : []);
     } catch {
       setMessage("Could not load marketplace listings.");
       setListings([]);
@@ -128,19 +141,31 @@ export function CrmMarketplaceListingsSection({
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <SectionHeading>Marketplace listings</SectionHeading>
         {mode === "organisation" ? (
-          <button
-            type="button"
-            onClick={() => void createFromOrganisation()}
-            disabled={creating}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-[#0f2740] px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
-          >
-            {creating ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href={`/admin/properties/new?crm_org_id=${encodeURIComponent(
+                entityId
+              )}&crm_org_name=${encodeURIComponent(organisationName || "")}`}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-[#0f2740] px-3 py-1.5 text-xs font-semibold text-[#0f2740]"
+              target="_blank"
+            >
               <Plus className="h-3.5 w-3.5" />
-            )}
-            Create unclaimed listing
-          </button>
+              Create property
+            </Link>
+            <button
+              type="button"
+              onClick={() => void createFromOrganisation()}
+              disabled={creating}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-[#0f2740] px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
+            >
+              {creating ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Plus className="h-3.5 w-3.5" />
+              )}
+              Create unclaimed listing
+            </button>
+          </div>
         ) : organisationId ? (
           <Link
             href={`/admin/unclaimed-listings/new?crm_org_id=${encodeURIComponent(
@@ -161,6 +186,39 @@ export function CrmMarketplaceListingsSection({
           ? `FindMySpace listings linked to ${organisationName || "this organisation"}.`
           : "Listings linked to this contact or their organisation."}
       </p>
+
+      {mode === "organisation" && properties.length > 0 ? (
+        <div className="mb-6">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[#64748b]">
+            Properties
+          </p>
+          <ul className="space-y-2">
+            {properties.map((property) => (
+              <li
+                key={property.id}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[#e2e8f0] bg-[#f8fafc] px-4 py-3"
+              >
+                <div className="min-w-0">
+                  <p className="font-medium text-[#0f172a]">{property.name}</p>
+                  <p className="text-xs text-[#64748b]">
+                    {[property.suburb, property.city].filter(Boolean).join(", ") ||
+                      "Location TBC"}{" "}
+                    · {property.owner_status}
+                  </p>
+                </div>
+                <Link
+                  href={property.admin_url}
+                  target="_blank"
+                  className="inline-flex items-center gap-1 text-xs font-medium text-[#0f2740] hover:underline"
+                >
+                  Admin
+                  <ExternalLink className="h-3 w-3" />
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       {loading ? (
         <p className="text-sm text-[#64748b]">Loading listings…</p>

@@ -69,6 +69,12 @@ export const HOST_NAV: DashboardNavItem[] = [
     matchPrefix: true,
   },
   {
+    label: "My properties",
+    href: "/dashboard/properties",
+    icon: Landmark,
+    matchPrefix: true,
+  },
+  {
     label: "Booking requests",
     href: "/dashboard/requests",
     icon: ClipboardList,

@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { format } from "date-fns";
-import { Compass, ImageIcon, Link2, Plus, Search } from "lucide-react";
+import { Building2, Compass, ImageIcon, Link2, Plus, Search } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { AdminNav } from "@/app/components/AdminNav";
 import { adminApiFetch } from "@/lib/admin-api-client";
@@ -131,8 +131,15 @@ function AdminUnclaimedListingsPageContent({
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Link
-              href="/admin/venue-scout"
+              href="/admin/properties"
               className="inline-flex items-center gap-2 rounded-lg border-2 border-[#0f2740] bg-white px-4 py-2 text-sm font-semibold text-[#0f2740] hover:bg-[#0f2740]/5"
+            >
+              <Building2 className="h-4 w-4" />
+              Properties
+            </Link>
+            <Link
+              href="/admin/venue-scout"
+              className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-50"
             >
               <Compass className="h-4 w-4" />
               Venue Scout

@@ -30,6 +30,7 @@ export type AdminNavKey =
   | "listings"
   | "venue-scout"
   | "unclaimed-listings"
+  | "properties"
   | "space-place-crm"
   | "listing-reviews"
   | "listing-enquiries"
@@ -90,6 +91,12 @@ const NAV_SECTIONS: NavSection[] = [
         key: "unclaimed-listings",
         href: "/admin/unclaimed-listings",
         label: "Unclaimed listings",
+        icon: Building2,
+      },
+      {
+        key: "properties",
+        href: "/admin/properties",
+        label: "Properties",
         icon: Building2,
       },
       {
