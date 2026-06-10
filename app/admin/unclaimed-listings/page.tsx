@@ -1,5 +1,7 @@
 "use client";
 
+import { hasAdminUiAccess } from "@/lib/client-admin-access";
+
 import Image from "next/image";
 import Link from "next/link";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
@@ -109,7 +111,7 @@ function AdminUnclaimedListingsPageContent({
     return <main className="p-8 text-gray-600">Loading…</main>;
   }
 
-  if (role !== "admin") {
+  if (!hasAdminUiAccess(role)) {
     return (
       <main className="p-8">
         <p className="text-red-600">Access denied.</p>

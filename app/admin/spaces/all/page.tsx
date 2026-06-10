@@ -1,5 +1,7 @@
 "use client";
 
+import { hasAdminUiAccess } from "@/lib/client-admin-access";
+
 import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -110,7 +112,7 @@ export default function AdminAllSpacesPage() {
   }, []);
 
   useEffect(() => {
-    if (role === "admin") void load();
+    if (hasAdminUiAccess(role)) void load();
   }, [role, load]);
 
   const filteredCount = useMemo(() => spaces.length, [spaces]);
@@ -147,7 +149,7 @@ export default function AdminAllSpacesPage() {
     );
   }
 
-  if (role !== "admin") {
+  if (!hasAdminUiAccess(role)) {
     return (
       <div className="mx-auto max-w-7xl rounded-lg border border-red-200 bg-red-50 p-6">
         <h1 className="text-xl font-bold text-red-800">Access denied</h1>

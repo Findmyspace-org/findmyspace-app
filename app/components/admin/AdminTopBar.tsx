@@ -117,7 +117,7 @@ export function AdminTopBar({
       </button>
 
       <Link href="/admin" className="hidden items-center gap-2 lg:flex">
-        <Image src="/logo.png" alt="" width={24} height={24} aria-hidden />
+        <Image src="/map-pin.png" alt="" width={24} height={24} aria-hidden />
         <span className="text-sm font-semibold text-[#192a3a]">Admin</span>
       </Link>
 

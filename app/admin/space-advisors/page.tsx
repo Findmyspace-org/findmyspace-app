@@ -1,5 +1,7 @@
 "use client";
 
+import { hasAdminUiAccess } from "@/lib/client-admin-access";
+
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import {
@@ -114,7 +116,7 @@ export default function AdminSpaceAdvisorsPage() {
       .select("role")
       .eq("id", user.id)
       .single();
-    if ((profile as { role?: string } | null)?.role !== "admin") {
+    if (!hasAdminUiAccess((profile as { role?: string | null } | null)?.role)) {
       setRole("user");
       return false;
     }
@@ -380,7 +382,7 @@ export default function AdminSpaceAdvisorsPage() {
     );
   }
 
-  if (role !== "admin") {
+  if (!hasAdminUiAccess(role)) {
     return (
       <main className="min-h-screen bg-white px-6 py-10 text-black">
         <div className="mx-auto max-w-4xl rounded-md border border-red-300 bg-red-50 p-6">

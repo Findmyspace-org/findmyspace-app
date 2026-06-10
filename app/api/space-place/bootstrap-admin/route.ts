@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { isPlatformAdminRole } from "@/lib/admin-roles";
 
 export const runtime = "nodejs";
 
@@ -44,7 +45,7 @@ export async function POST(req: NextRequest) {
     .eq("id", user.id)
     .maybeSingle();
 
-  if ((platformProfile as { role?: string } | null)?.role !== "admin") {
+  if (!isPlatformAdminRole((platformProfile as { role?: string } | null)?.role)) {
     return NextResponse.json(
       { error: "Only FindMySpace platform admins can enable Main Admin access." },
       { status: 403 }

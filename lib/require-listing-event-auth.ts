@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { isPlatformAdminRole } from "@/lib/admin-roles";
 
 export type ListingEventAuthOk = { userId: string; role: "admin" | "owner" | "internal" };
 export type ListingEventAuthFail = { response: NextResponse };
@@ -70,7 +71,7 @@ export async function requireListingEventAuth(
     .eq("id", user.id)
     .maybeSingle();
 
-  if ((profile as { role?: string } | null)?.role === "admin") {
+  if (isPlatformAdminRole((profile as { role?: string } | null)?.role)) {
     return { userId: user.id, role: "admin" };
   }
 

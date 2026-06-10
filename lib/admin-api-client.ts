@@ -51,7 +51,9 @@ export async function adminApiFetch(path: string, init?: RequestInit) {
       throw new Error("Not signed in. Sign in again as admin.");
     }
     if (res.status === 403) {
-      throw new Error("Admin access required.");
+      throw new Error(
+        (typeof json.error === "string" && json.error) || "Access denied."
+      );
     }
     throw new Error(message);
   }

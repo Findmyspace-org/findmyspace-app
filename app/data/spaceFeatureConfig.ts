@@ -311,6 +311,7 @@ const EVENT_SUITABLE_CONTENT_CHECKS: SpaceFeatureCheckbox[] = [
   cb("sf_ev_suit_content_creation", "Content creation", "FileText"),
   cb("sf_ev_suit_live_streaming", "Live streaming", "RadioReceiver"),
   cb("sf_ev_suit_youtube", "YouTube production", "Tv"),
+  cb("film_shoots", "Film shoots", "Camera"),
 ];
 
 const EVENT_SUITABLE_SOCIAL_CHECKS: SpaceFeatureCheckbox[] = [
@@ -320,6 +321,7 @@ const EVENT_SUITABLE_SOCIAL_CHECKS: SpaceFeatureCheckbox[] = [
   cb("sf_ev_suit_bridal_showers", "Bridal showers", "Sparkles"),
   cb("sf_ev_suit_small_weddings", "Small weddings", "Heart"),
   cb("sf_ev_suit_family_gatherings", "Family gatherings", "Users"),
+  cb("weddings", "Weddings", "Heart"),
 ];
 
 const EVENT_SUITABLE_COMMUNITY_CHECKS: SpaceFeatureCheckbox[] = [

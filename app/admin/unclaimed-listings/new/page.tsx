@@ -1,5 +1,7 @@
 "use client";
 
+import { hasAdminUiAccess } from "@/lib/client-admin-access";
+
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
@@ -43,7 +45,7 @@ function NewUnclaimedListingContent() {
     return <main className="p-8 text-gray-600">Loading…</main>;
   }
 
-  if (role !== "admin") {
+  if (!hasAdminUiAccess(role)) {
     return (
       <main className="p-8">
         <p className="text-red-600">Access denied.</p>

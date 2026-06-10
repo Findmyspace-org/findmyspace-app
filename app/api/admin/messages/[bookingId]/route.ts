@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getPublicSiteUrlFromEnv } from "@/lib/site-url";
+import { isPlatformAdminRole } from "@/lib/admin-roles";
 
 type BookingRow = {
   id: string;
@@ -78,7 +79,7 @@ async function authenticateAdmin(req: NextRequest) {
     .eq("id", user.id)
     .single();
 
-  if (roleErr || !profile || profile.role !== "admin") {
+  if (roleErr || !profile || !isPlatformAdminRole(profile.role)) {
     return { error: NextResponse.json({ error: "Forbidden" }, { status: 403 }) };
   }
 

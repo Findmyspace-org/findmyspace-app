@@ -16,6 +16,7 @@ import {
 import { supabase } from "@/lib/supabase";
 import AuthModal from "@/app/components/AuthModal";
 import { sanitizeNextPath } from "@/lib/auth-redirect";
+import { isPlatformAdminRole } from "@/lib/admin-roles";
 import {
   Home,
   Search,
@@ -224,7 +225,7 @@ export default function Header() {
           );
         }
 
-        setIsAdmin(data?.role === "admin");
+        setIsAdmin(isPlatformAdminRole(data?.role));
         setIsHost(data?.is_host === true);
       } catch (error) {
         console.error("Profile load failed:", error);

@@ -1,5 +1,7 @@
 "use client";
 
+import { hasAdminUiAccess } from "@/lib/client-admin-access";
+
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import {
@@ -63,7 +65,7 @@ export default function AdminFinancePage() {
       .select("role")
       .eq("id", user.id)
       .single();
-    if ((profile as { role?: string } | null)?.role !== "admin") {
+    if (!hasAdminUiAccess((profile as { role?: string | null } | null)?.role)) {
       setRole("user");
       return false;
     }
@@ -215,7 +217,7 @@ export default function AdminFinancePage() {
     );
   }
 
-  if (role !== "admin") {
+  if (!hasAdminUiAccess(role)) {
     return (
       <main className="min-h-screen bg-[#f7f9fb] px-4 py-10 text-[#192a3a] sm:px-6">
         <div className="mx-auto max-w-lg rounded-xl border border-red-200 bg-white p-6 shadow-sm">

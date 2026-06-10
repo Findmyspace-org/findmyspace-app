@@ -1,5 +1,7 @@
 "use client";
 
+import { hasAdminUiAccess } from "@/lib/client-admin-access";
+
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
@@ -167,7 +169,7 @@ export default function AdminSpacesPage() {
       return;
     }
 
-    if (profileData?.role !== "admin") {
+    if (!hasAdminUiAccess(profileData?.role)) {
       setRole("user");
       setLoading(false);
       return;
@@ -671,7 +673,7 @@ export default function AdminSpacesPage() {
     );
   }
 
-  if (role !== "admin") {
+  if (!hasAdminUiAccess(role)) {
     return (
       <main className="min-h-screen bg-white px-6 py-10 text-black">
         <div className="mx-auto max-w-4xl rounded-md border border-red-300 bg-red-50 p-6">

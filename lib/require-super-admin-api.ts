@@ -1,17 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { isPlatformAdminRole } from "@/lib/admin-roles";
+import { isSuperAdminRole } from "@/lib/admin-roles";
 
-export type AdminAuthOk = { userId: string; role: string };
-export type AdminAuthFail = { response: NextResponse };
+export type SuperAdminAuthOk = { userId: string };
+export type SuperAdminAuthFail = { response: NextResponse };
 
 /**
- * Verify Bearer JWT and profiles.role is admin or super_admin (and not disabled).
- * Use in Route Handlers only.
+ * Verify Bearer JWT and profiles.role === 'super_admin'. Use in Route Handlers only.
  */
-export async function requireAdminApi(
+export async function requireSuperAdminApi(
   req: NextRequest
-): Promise<AdminAuthOk | AdminAuthFail> {
+): Promise<SuperAdminAuthOk | SuperAdminAuthFail> {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -60,23 +59,27 @@ export async function requireAdminApi(
     },
   });
 
-  const { data: profile, error: profileError } = await (admin.from("profiles") as any)
+  const { data: profile, error: profileError } = await admin
+    .from("profiles")
     .select("role, admin_access_disabled")
     .eq("id", user.id)
-    .single();
+    .maybeSingle();
 
-  const profileRow = profile as {
+  const row = profile as {
     role?: string | null;
     admin_access_disabled?: boolean | null;
   } | null;
 
-  if (profileError || !isPlatformAdminRole(profileRow?.role)) {
+  if (profileError || !isSuperAdminRole(row?.role)) {
     return {
-      response: NextResponse.json({ error: "Forbidden." }, { status: 403 }),
+      response: NextResponse.json(
+        { error: "Super admin access required." },
+        { status: 403 }
+      ),
     };
   }
 
-  if (profileRow?.admin_access_disabled) {
+  if (row?.admin_access_disabled) {
     return {
       response: NextResponse.json(
         { error: "Your admin access is disabled." },
@@ -85,5 +88,5 @@ export async function requireAdminApi(
     };
   }
 
-  return { userId: user.id, role: profileRow!.role! };
+  return { userId: user.id };
 }

@@ -14,6 +14,7 @@ import {
   isAdminNavItemActive,
   type AdminNavKey,
 } from "@/lib/admin-navigation";
+import { useAdminRole } from "@/lib/use-admin-role";
 
 type BadgeMap = Partial<Record<AdminNavKey | "comms", number>>;
 
@@ -116,6 +117,7 @@ export function AdminSidebar({
   badges?: BadgeMap;
 }) {
   const pathname = usePathname() || "";
+  const { isSuperAdmin } = useAdminRole();
   const [commsUnread, setCommsUnread] = useState(0);
 
   useEffect(() => {
@@ -158,7 +160,7 @@ export function AdminSidebar({
       >
         <Link href="/admin" className="flex min-w-0 items-center gap-2">
           <Image
-            src="/logo.png"
+            src="/map-pin.png"
             alt="FindMySpace"
             width={28}
             height={28}
@@ -210,7 +212,9 @@ export function AdminSidebar({
               </p>
             ) : null}
             <ul className="space-y-0.5">
-              {section.items.map((item) => {
+              {section.items
+                .filter((item) => !item.superAdminOnly || isSuperAdmin)
+                .map((item) => {
                 const active = isAdminNavItemActive(pathname, item);
                 const badgeCount = badges[item.key as keyof BadgeMap];
                 return (

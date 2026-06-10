@@ -13,6 +13,7 @@ import {
   MessageSquare,
   Share2,
   ShieldCheck,
+  UserCog,
   Users,
 } from "lucide-react";
 
@@ -21,6 +22,7 @@ export type AdminNavKey =
   | "comms"
   | "activity"
   | "users"
+  | "admin-users"
   | "bookings"
   | "spaces"
   | "spaces-all"
@@ -45,6 +47,8 @@ export type AdminNavItem = {
   /** Match pathname prefix for active state (defaults to href without query). */
   matchPrefix?: string;
   external?: boolean;
+  /** Only shown in sidebar for super_admin users. */
+  superAdminOnly?: boolean;
 };
 
 export type AdminNavSection = {
@@ -179,6 +183,13 @@ export const ADMIN_NAV_SECTIONS: AdminNavSection[] = [
     title: "Administration",
     items: [
       { key: "users", href: "/admin/users", label: "Users", icon: Users },
+      {
+        key: "admin-users",
+        href: "/admin/admin-users",
+        label: "Admin users",
+        icon: UserCog,
+        superAdminOnly: true,
+      },
       { key: "activity", href: "/admin/activity", label: "Activity", icon: History },
       {
         key: "space-advisors",

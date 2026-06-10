@@ -1,5 +1,7 @@
 "use client";
 
+import { hasAdminUiAccess } from "@/lib/client-admin-access";
+
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -144,7 +146,7 @@ export default function AdminListingsPage() {
       return;
     }
 
-    if (adminProfile?.role !== "admin") {
+    if (!hasAdminUiAccess(adminProfile?.role)) {
       setRole("user");
       setLoading(false);
       return;
@@ -556,7 +558,7 @@ export default function AdminListingsPage() {
     );
   }
 
-  if (role !== "admin") {
+  if (!hasAdminUiAccess(role)) {
     return (
       <main className="min-h-screen bg-white px-6 py-10 text-black">
         <div className="mx-auto max-w-4xl rounded-md border border-red-300 bg-red-50 p-5">

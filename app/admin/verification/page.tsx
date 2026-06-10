@@ -1,5 +1,7 @@
 "use client";
 
+import { hasAdminUiAccess } from "@/lib/client-admin-access";
+
 import Link from "next/link";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
@@ -159,7 +161,7 @@ function AdminVerificationPageContent({
       return;
     }
 
-    if (adminProfile?.role !== "admin") {
+    if (!hasAdminUiAccess(adminProfile?.role)) {
       setRole("user");
       setLoading(false);
       return;
@@ -570,7 +572,7 @@ function AdminVerificationPageContent({
     );
   }
 
-  if (role !== "admin") {
+  if (!hasAdminUiAccess(role)) {
     return (
       <main className="min-h-screen bg-white px-6 py-10 text-black">
         <div className="mx-auto max-w-4xl rounded-xl border border-red-300 bg-red-50 p-6">

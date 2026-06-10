@@ -1,5 +1,7 @@
 "use client";
 
+import { hasAdminUiAccess } from "@/lib/client-admin-access";
+
 import Link from "next/link";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
@@ -586,7 +588,7 @@ function AdminClaimInterestsPageContent() {
     return <main className="p-8 text-gray-600">Loading…</main>;
   }
 
-  if (role !== "admin") {
+  if (!hasAdminUiAccess(role)) {
     return (
       <main className="p-8">
         <p className="text-red-600">Access denied.</p>
