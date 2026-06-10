@@ -159,6 +159,25 @@ export async function PATCH(
     patch.status = "draft";
   }
 
+  if ("property_id" in body) {
+    const raw = body.property_id;
+    if (raw === null) {
+      patch.property_id = null;
+    } else if (typeof raw === "string" && UUID_RE.test(raw.trim())) {
+      const { data: property } = await admin
+        .from("properties")
+        .select("id")
+        .eq("id", raw.trim())
+        .maybeSingle();
+      if (!property) {
+        return NextResponse.json({ error: "Property not found." }, { status: 400 });
+      }
+      patch.property_id = raw.trim();
+    } else if (raw !== undefined) {
+      return NextResponse.json({ error: "Invalid property_id." }, { status: 400 });
+    }
+  }
+
   const { error: updateErr } = await admin.from("spaces").update(patch).eq("id", id);
   if (updateErr) {
     return NextResponse.json({ error: updateErr.message }, { status: 500 });

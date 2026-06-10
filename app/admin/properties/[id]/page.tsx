@@ -3,24 +3,35 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { ArrowLeft, ExternalLink, Plus } from "lucide-react";
+import { ArrowLeft, ExternalLink, Pencil, Plus } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { AdminNav } from "@/app/components/AdminNav";
 import { adminApiFetch } from "@/lib/admin-api-client";
 import { AdminPropertyInvitePanel } from "@/app/components/AdminPropertyInvitePanel";
+import { AdminPropertySpaceBreadcrumb } from "@/app/components/AdminPropertySpaceBreadcrumb";
 import { adminListingStatusBadgeClass } from "@/lib/admin-listing-status-display";
 import { formatSpaceTypeLabel } from "@/app/data/spaceFeatureConfig";
+import { AdminPropertyForm } from "@/app/components/AdminPropertyForm";
 
 type PropertyDetail = {
   id: string;
   name: string;
   description: string | null;
   formatted_address: string;
+  address_line1: string | null;
+  suburb: string | null;
+  city: string | null;
+  province: string | null;
+  postal_code: string | null;
+  country: string | null;
+  latitude: number | null;
+  longitude: number | null;
   owner_email: string | null;
   owner_id: string | null;
   owner_status: string;
   owner_invited_at: string | null;
   owner_accepted_at: string | null;
+  crm_organisation_id: string | null;
   crm_organisation: { id: string; name: string } | null;
 };
 
@@ -42,6 +53,7 @@ export default function AdminPropertyDetailPage() {
   const [property, setProperty] = useState<PropertyDetail | null>(null);
   const [spaces, setSpaces] = useState<SpaceRow[]>([]);
   const [message, setMessage] = useState("");
+  const [editing, setEditing] = useState(false);
 
   const load = useCallback(async () => {
     if (!propertyId) return;
@@ -112,13 +124,10 @@ export default function AdminPropertyDetailPage() {
       <div className="mx-auto max-w-5xl">
         <AdminNav current="properties" />
 
-        <Link
-          href="/admin/properties"
-          className="mb-4 inline-flex items-center gap-2 text-sm font-medium text-gray-700 hover:text-gray-900"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back to properties
-        </Link>
+        <AdminPropertySpaceBreadcrumb
+          propertyId={propertyId}
+          propertyName={property.name}
+        />
 
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -127,65 +136,109 @@ export default function AdminPropertyDetailPage() {
               <p className="mt-1 text-sm text-gray-600">{property.formatted_address}</p>
             ) : null}
           </div>
-          <Link
-            href={`/admin/properties/${propertyId}/spaces/new`}
-            className="inline-flex items-center gap-2 rounded-lg bg-[#0f2740] px-4 py-2 text-sm font-semibold text-white"
-          >
-            <Plus className="h-4 w-4" />
-            Add space
-          </Link>
+          <div className="flex flex-wrap items-center gap-2">
+            {!editing ? (
+              <button
+                type="button"
+                onClick={() => setEditing(true)}
+                className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-50"
+              >
+                <Pencil className="h-4 w-4" />
+                Edit property
+              </button>
+            ) : null}
+            <Link
+              href={`/admin/properties/${propertyId}/spaces/new`}
+              className="inline-flex items-center gap-2 rounded-lg bg-[#0f2740] px-4 py-2 text-sm font-semibold text-white"
+            >
+              <Plus className="h-4 w-4" />
+              Add space
+            </Link>
+          </div>
         </div>
 
         {message ? <p className="mt-4 text-sm text-red-600">{message}</p> : null}
 
-        <div className="mt-6 grid gap-6 lg:grid-cols-2">
-          <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
-              Property details
-            </h2>
-            {property.description ? (
-              <p className="mt-3 text-sm text-gray-700 whitespace-pre-wrap">
-                {property.description}
-              </p>
-            ) : (
-              <p className="mt-3 text-sm text-gray-500">No description.</p>
-            )}
+        {editing ? (
+          <div className="mt-6">
+            <AdminPropertyForm
+              mode="edit"
+              propertyId={propertyId}
+              initial={{
+                name: property.name,
+                description: property.description || "",
+                ownerEmail: property.owner_email || "",
+                crmOrganisationId:
+                  property.crm_organisation?.id ?? property.crm_organisation_id,
+                crmOrganisationName: property.crm_organisation?.name ?? null,
+                location: {
+                  streetAddress: property.address_line1 || "",
+                  suburb: property.suburb || "",
+                  city: property.city || "",
+                  province: property.province || "",
+                  postalCode: property.postal_code || "",
+                  country: property.country || "South Africa",
+                  latitude: property.latitude,
+                  longitude: property.longitude,
+                },
+              }}
+              onSuccess={async () => {
+                setEditing(false);
+                await load();
+              }}
+              onCancel={() => setEditing(false)}
+            />
+          </div>
+        ) : (
+          <div className="mt-6 grid gap-6 lg:grid-cols-2">
+            <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+                Property details
+              </h2>
+              {property.description ? (
+                <p className="mt-3 text-sm text-gray-700 whitespace-pre-wrap">
+                  {property.description}
+                </p>
+              ) : (
+                <p className="mt-3 text-sm text-gray-500">No description.</p>
+              )}
 
-            <dl className="mt-4 space-y-2 text-sm">
-              <div className="flex justify-between gap-4">
-                <dt className="text-gray-500">Owner status</dt>
-                <dd className="font-medium text-gray-900">{property.owner_status}</dd>
-              </div>
-              {property.owner_email ? (
+              <dl className="mt-4 space-y-2 text-sm">
                 <div className="flex justify-between gap-4">
-                  <dt className="text-gray-500">Owner email</dt>
-                  <dd className="text-gray-900">{property.owner_email}</dd>
+                  <dt className="text-gray-500">Owner status</dt>
+                  <dd className="font-medium text-gray-900">{property.owner_status}</dd>
                 </div>
-              ) : null}
-              {property.crm_organisation ? (
-                <div className="flex justify-between gap-4">
-                  <dt className="text-gray-500">CRM organisation</dt>
-                  <dd>
-                    <Link
-                      href={`/space-place/organisations/${property.crm_organisation.id}`}
-                      className="inline-flex items-center gap-1 font-medium text-[#0f2740] hover:underline"
-                    >
-                      {property.crm_organisation.name}
-                      <ExternalLink className="h-3.5 w-3.5" />
-                    </Link>
-                  </dd>
-                </div>
-              ) : null}
-            </dl>
-          </section>
+                {property.owner_email ? (
+                  <div className="flex justify-between gap-4">
+                    <dt className="text-gray-500">Owner email</dt>
+                    <dd className="text-gray-900">{property.owner_email}</dd>
+                  </div>
+                ) : null}
+                {property.crm_organisation ? (
+                  <div className="flex justify-between gap-4">
+                    <dt className="text-gray-500">CRM organisation</dt>
+                    <dd>
+                      <Link
+                        href={`/space-place/organisations/${property.crm_organisation.id}`}
+                        className="inline-flex items-center gap-1 font-medium text-[#0f2740] hover:underline"
+                      >
+                        {property.crm_organisation.name}
+                        <ExternalLink className="h-3.5 w-3.5" />
+                      </Link>
+                    </dd>
+                  </div>
+                ) : null}
+              </dl>
+            </section>
 
-          <AdminPropertyInvitePanel
+            <AdminPropertyInvitePanel
             propertyId={propertyId}
             propertyName={property.name}
             ownerEmailDefault={property.owner_email}
             hasOwner={hasOwner}
           />
-        </div>
+          </div>
+        )}
 
         <section className="mt-6 rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
           <div className="flex items-center justify-between gap-3">

@@ -3,10 +3,10 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { ArrowLeft } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { AdminNav } from "@/app/components/AdminNav";
 import { AdminUnclaimedSpaceForm } from "@/app/components/AdminUnclaimedSpaceForm";
+import { AdminPropertySpaceBreadcrumb } from "@/app/components/AdminPropertySpaceBreadcrumb";
 import { adminApiFetch } from "@/lib/admin-api-client";
 
 export default function NewPropertySpacePage() {
@@ -103,13 +103,10 @@ export default function NewPropertySpacePage() {
       <div className="mx-auto max-w-3xl">
         <AdminNav current="properties" />
 
-        <Link
-          href={`/admin/properties/${propertyId}`}
-          className="mb-4 inline-flex items-center gap-2 text-sm font-medium text-gray-700 hover:text-gray-900"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back to {propertyName || "property"}
-        </Link>
+        <AdminPropertySpaceBreadcrumb
+          propertyId={propertyId}
+          propertyName={propertyName || "Property"}
+        />
 
         <h1 className="text-2xl font-semibold text-gray-900">Add space</h1>
         <p className="mt-1 text-sm text-gray-600">
@@ -123,7 +120,9 @@ export default function NewPropertySpacePage() {
             propertyId={propertyId}
             initial={initialLocation}
             onCreated={(spaceId) =>
-              router.replace(`/admin/unclaimed-listings/${spaceId}/edit`)
+              router.replace(
+                `/admin/properties/${propertyId}/spaces/${spaceId}/edit`
+              )
             }
           />
         </div>

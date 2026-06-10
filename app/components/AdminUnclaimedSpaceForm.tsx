@@ -138,6 +138,11 @@ export function AdminUnclaimedSpaceForm({
       initialCrmLink?.crm_organisation_id ?? defaultOrganisationId ?? null,
     crm_contact_id: initialCrmLink?.crm_contact_id ?? defaultContactId ?? null,
   });
+  /** After first save in create mode — enables photo upload before parent redirect. */
+  const [createdSpaceId, setCreatedSpaceId] = useState<string | null>(null);
+
+  const activeSpaceId = spaceId ?? createdSpaceId;
+  const activeMode = mode === "create" && createdSpaceId ? "edit" : mode;
 
   const sortedImages = useMemo(() => sortSpaceImages(images), [images]);
 
@@ -161,7 +166,10 @@ export function AdminUnclaimedSpaceForm({
       try {
         const body = payloadFromState(state, crmLink);
 
-        if (mode === "create") {
+        if (activeMode === "create") {
+          if (propertyId && !propertyId.match(/^[0-9a-f-]{36}$/i)) {
+            throw new Error("Invalid property context. Reload and try again.");
+          }
           const result = propertyId
             ? await adminApiFetch(`/api/admin/properties/${propertyId}/spaces`, {
                 method: "POST",
@@ -172,13 +180,21 @@ export function AdminUnclaimedSpaceForm({
                 body: JSON.stringify(body),
               });
           setStatus("draft");
-          setMessage("Draft saved.");
           const newId = propertyId
             ? ((result.space as { id?: string })?.id as string)
             : (result.id as string);
+          if (!newId) {
+            throw new Error("Draft saved but listing id was missing. Please reload.");
+          }
+          setCreatedSpaceId(newId);
+          setMessage(
+            propertyId
+              ? "Draft saved. You can upload photos below."
+              : "Draft saved."
+          );
           onCreated?.(newId);
-        } else if (spaceId) {
-          await adminApiFetch(`/api/admin/spaces/${spaceId}/unclaimed`, {
+        } else if (activeSpaceId) {
+          await adminApiFetch(`/api/admin/spaces/${activeSpaceId}/unclaimed`, {
             method: "PATCH",
             body: JSON.stringify(
               status === "draft" ? { ...body, status: "draft" as const } : body
@@ -196,12 +212,22 @@ export function AdminUnclaimedSpaceForm({
         setSaving(false);
       }
     },
-    [crmLink, mode, onCreated, onSavedAndExit, readOnly, spaceId, state, status]
+    [
+      activeMode,
+      activeSpaceId,
+      crmLink,
+      onCreated,
+      onSavedAndExit,
+      propertyId,
+      readOnly,
+      state,
+      status,
+    ]
   );
 
   const publish = useCallback(async () => {
     if (readOnly) return;
-    if (!spaceId) {
+    if (!activeSpaceId) {
       setMessage("Save as draft first, then add photos and publish.");
       return;
     }
@@ -219,11 +245,11 @@ export function AdminUnclaimedSpaceForm({
     setPublishing(true);
     setMessage(null);
     try {
-      await adminApiFetch(`/api/admin/spaces/${spaceId}/unclaimed`, {
+      await adminApiFetch(`/api/admin/spaces/${activeSpaceId}/unclaimed`, {
         method: "PATCH",
         body: JSON.stringify(payloadFromState(state, crmLink)),
       });
-      await adminApiFetch(`/api/admin/spaces/${spaceId}/publish-unclaimed`, {
+      await adminApiFetch(`/api/admin/spaces/${activeSpaceId}/publish-unclaimed`, {
         method: "POST",
       });
       setStatus("unclaimed");
@@ -233,12 +259,12 @@ export function AdminUnclaimedSpaceForm({
     } finally {
       setPublishing(false);
     }
-  }, [crmLink, readOnly, spaceId, state]);
+  }, [activeSpaceId, crmLink, readOnly, state]);
 
   async function persistImageOrder(ordered: SpaceImage[]) {
-    if (!spaceId) return;
+    if (!activeSpaceId) return;
     const imageIds = ordered.map((img) => img.id);
-    await adminApiFetch(`/api/admin/spaces/${spaceId}/images/reorder`, {
+    await adminApiFetch(`/api/admin/spaces/${activeSpaceId}/images/reorder`, {
       method: "PATCH",
       body: JSON.stringify({ imageIds }),
     });
@@ -251,7 +277,7 @@ export function AdminUnclaimedSpaceForm({
   }
 
   async function moveImage(imageId: string, direction: -1 | 1) {
-    if (readOnly || !spaceId || reordering) return;
+    if (readOnly || !activeSpaceId || reordering) return;
     const index = sortedImages.findIndex((img) => img.id === imageId);
     if (index < 0) return;
     const target = index + direction;
@@ -273,7 +299,7 @@ export function AdminUnclaimedSpaceForm({
   }
 
   async function uploadImages(fileList: FileList | null) {
-    if (readOnly || !spaceId || !fileList?.length) return;
+    if (readOnly || !activeSpaceId || !fileList?.length) return;
 
     const allowed = new Set(["image/jpeg", "image/png", "image/webp"]);
     const allowedExt = new Set(["jpg", "jpeg", "png", "webp"]);
@@ -307,7 +333,7 @@ export function AdminUnclaimedSpaceForm({
       try {
         const form = new FormData();
         form.append("files", file);
-        const result = await adminApiFetch(`/api/admin/spaces/${spaceId}/images`, {
+        const result = await adminApiFetch(`/api/admin/spaces/${activeSpaceId}/images`, {
           method: "POST",
           body: form,
         });
@@ -343,11 +369,11 @@ export function AdminUnclaimedSpaceForm({
   }
 
   async function removeImage(imageId: string) {
-    if (readOnly || !spaceId) return;
+    if (readOnly || !activeSpaceId) return;
     setDeletingId(imageId);
     setMessage(null);
     try {
-      await adminApiFetch(`/api/admin/spaces/${spaceId}/images`, {
+      await adminApiFetch(`/api/admin/spaces/${activeSpaceId}/images`, {
         method: "DELETE",
         body: JSON.stringify({ imageId }),
       });
@@ -474,7 +500,7 @@ export function AdminUnclaimedSpaceForm({
       />
 
       <AdminCrmLinkSection
-        spaceId={spaceId}
+        spaceId={activeSpaceId ?? undefined}
         initialLink={initialCrmLink}
         readOnly={readOnly}
         defaultOrganisationId={defaultOrganisationId}
@@ -514,7 +540,7 @@ export function AdminUnclaimedSpaceForm({
           First photo is the cover image on cards and the public listing. Use the arrows
           to reorder.
         </p>
-        {!spaceId ? (
+        {!activeSpaceId ? (
           <p className="mt-2 text-sm text-gray-600">
             Save a draft first to upload photos.
           </p>
@@ -660,7 +686,7 @@ export function AdminUnclaimedSpaceForm({
 
       {!readOnly ? (
         <div className="flex flex-wrap gap-3">
-          {mode === "edit" ? (
+          {activeMode === "edit" ? (
             <>
               <button
                 type="button"
@@ -689,7 +715,7 @@ export function AdminUnclaimedSpaceForm({
               {saving ? "Saving…" : "Save draft"}
             </button>
           )}
-          {spaceId ? (
+          {activeSpaceId ? (
             <button
               type="button"
               disabled={saving || publishing || uploading || reordering}

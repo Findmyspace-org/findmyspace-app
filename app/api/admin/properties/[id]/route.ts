@@ -67,7 +67,7 @@ export async function GET(
   }[]).map((space) => ({
     ...space,
     status_label: adminListingStatusLabel(space.status),
-    admin_edit_url: `/admin/unclaimed-listings/${space.id}/edit`,
+    admin_edit_url: `/admin/properties/${id}/spaces/${space.id}/edit`,
   }));
 
   let ownerStatus = "No owner";
