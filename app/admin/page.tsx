@@ -1,537 +1,279 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { supabase } from "@/lib/supabase";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   Building2,
-  ChevronDown,
-  ChevronUp,
+  ClipboardList,
   Compass,
   Inbox,
+  LayoutGrid,
   Link2,
-  Mail,
-  MapPin,
-  Phone,
-  Search,
   ShieldCheck,
   Users,
+  Wallet,
 } from "lucide-react";
-import { AdminNav } from "@/app/components/AdminNav";
+import { supabase } from "@/lib/supabase";
 import { AdminActionRequiredPanel } from "@/app/components/AdminActionRequiredPanel";
 import type { AdminActionQueue } from "@/app/components/AdminActionRequiredPanel";
 import { adminApiFetch } from "@/lib/admin-api-client";
 
-type AdminProfileRow = {
-  id?: string;
-  role: string | null;
-  first_name?: string | null;
-  last_name?: string | null;
-  full_name?: string | null;
-  email?: string | null;
-  phone?: string | null;
-  created_at?: string | null;
-  owner_verification_status?: string | null;
-  bank_verification_status?: string | null;
-};
-
-type OwnerSpaceRow = {
-  id: string;
-  owner_id?: string | null;
-  title?: string | null;
-  status?: string | null;
-  address_line_1?: string | null;
-  suburb?: string | null;
-  city?: string | null;
-  space_type?: string | null;
-  booking_unit?: string | null;
-  created_at?: string | null;
+type ScoutStats = {
+  draftScoutListings: number;
+  publishedUnclaimed: number;
+  claimInterests: number;
+  enquiries: number;
+  claimedListings: number;
+  activeListings: number;
 };
 
 export default function AdminPage() {
   const [role, setRole] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [message, setMessage] = useState("");
-  const [users, setUsers] = useState<AdminProfileRow[]>([]);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [spacesByOwner, setSpacesByOwner] = useState<Record<string, OwnerSpaceRow[]>>({});
-  const [expandedUsers, setExpandedUsers] = useState<Record<string, boolean>>({});
-  const [scoutStats, setScoutStats] = useState<{
-    draftScoutListings: number;
-    publishedUnclaimed: number;
-    claimInterests: number;
-    enquiries: number;
-    claimedListings: number;
-    activeListings: number;
-  } | null>(null);
+  const [scoutStats, setScoutStats] = useState<ScoutStats | null>(null);
   const [actionQueue, setActionQueue] = useState<AdminActionQueue | null>(null);
 
   useEffect(() => {
-    checkRole();
+    async function checkRole() {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        setRole(null);
+        setLoading(false);
+        return;
+      }
+
+      const { data } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      const userRole = (data as { role?: string | null } | null)?.role || "user";
+      setRole(userRole);
+
+      if (userRole === "admin") {
+        try {
+          const [stats, queue] = await Promise.all([
+            adminApiFetch("/api/admin/venue-scout/stats"),
+            adminApiFetch("/api/admin/action-queue"),
+          ]);
+          setScoutStats({
+            draftScoutListings: (stats.draftScoutListings as number) ?? 0,
+            publishedUnclaimed: (stats.publishedUnclaimed as number) ?? 0,
+            claimInterests: (stats.claimInterests as number) ?? 0,
+            enquiries: (stats.enquiries as number) ?? 0,
+            claimedListings: (stats.claimedListings as number) ?? 0,
+            activeListings: (stats.activeListings as number) ?? 0,
+          });
+          setActionQueue(queue as AdminActionQueue);
+        } catch {
+          setScoutStats(null);
+          setActionQueue(null);
+        }
+      }
+
+      setLoading(false);
+    }
+
+    void checkRole();
   }, []);
-
-  async function checkRole() {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      setMessage("Please log in first.");
-      setLoading(false);
-      return;
-    }
-
-    const { data: rawData, error } = await (supabase.from("profiles") as any)
-      .select("role")
-      .eq("id", user.id)
-      .single();
-
-    const data = rawData as AdminProfileRow | null;
-
-    if (error) {
-      setMessage(error.message);
-      setLoading(false);
-      return;
-    }
-
-    setRole(data?.role || "user");
-
-    if ((data?.role || "user") === "admin") {
-      const { data: usersData, error: usersError } = await (supabase.from("profiles") as any)
-        .select(
-          "id, role, first_name, last_name, full_name, email, phone, created_at, owner_verification_status, bank_verification_status"
-        )
-        .order("created_at", { ascending: false });
-
-      if (usersError) {
-        setMessage(usersError.message);
-      } else {
-        setUsers((usersData || []) as AdminProfileRow[]);
-      }
-
-      const { data: spacesData, error: spacesError } = await (supabase.from("spaces") as any)
-        .select(
-          "id, owner_id, title, status, address_line_1, suburb, city, space_type, booking_unit, created_at"
-        )
-        .order("created_at", { ascending: false });
-
-      if (spacesError) {
-        setMessage(spacesError.message);
-      } else {
-        const groupedSpaces = ((spacesData || []) as OwnerSpaceRow[]).reduce(
-          (acc, space) => {
-            const ownerId = space.owner_id || "";
-            if (!ownerId) return acc;
-            if (!acc[ownerId]) acc[ownerId] = [];
-            acc[ownerId].push(space);
-            return acc;
-          },
-          {} as Record<string, OwnerSpaceRow[]>
-        );
-
-        setSpacesByOwner(groupedSpaces);
-      }
-
-      try {
-        const [stats, queue] = await Promise.all([
-          adminApiFetch("/api/admin/venue-scout/stats"),
-          adminApiFetch("/api/admin/action-queue"),
-        ]);
-        setScoutStats({
-          draftScoutListings: (stats.draftScoutListings as number) ?? 0,
-          publishedUnclaimed: (stats.publishedUnclaimed as number) ?? 0,
-          claimInterests: (stats.claimInterests as number) ?? 0,
-          enquiries: (stats.enquiries as number) ?? 0,
-          claimedListings: (stats.claimedListings as number) ?? 0,
-          activeListings: (stats.activeListings as number) ?? 0,
-        });
-        setActionQueue(queue as AdminActionQueue);
-      } catch {
-        setScoutStats(null);
-        setActionQueue(null);
-      }
-    }
-
-    setLoading(false);
-  }
-
-  function displayName(user: AdminProfileRow) {
-    const joined = `${user.first_name || ""} ${user.last_name || ""}`.trim();
-    return joined || user.full_name || user.email || "Name not set";
-  }
-
-  function getBadgeClass(status?: string | null) {
-    switch (status) {
-      case "verified":
-      case "active":
-      case "admin":
-        return "border-green-300 bg-green-50 text-green-700";
-      case "rejected":
-        return "border-red-300 bg-red-50 text-red-700";
-      case "paused":
-        return "border-gray-300 bg-gray-100 text-gray-700";
-      default:
-        return "border-yellow-300 bg-yellow-50 text-yellow-800";
-    }
-  }
-
-  function toggleUser(userId: string) {
-    setExpandedUsers((current) => ({
-      ...current,
-      [userId]: !current[userId],
-    }));
-  }
-
-  function getUserSpaces(userId?: string) {
-    if (!userId) return [];
-    return spacesByOwner[userId] || [];
-  }
-
-  const filteredUsers = useMemo(() => {
-    const normalizedSearch = searchQuery.trim().toLowerCase();
-    if (!normalizedSearch) return users;
-
-    return users.filter((user) => {
-      const haystack = [
-        user.first_name,
-        user.last_name,
-        user.full_name,
-        user.email,
-        user.phone,
-        user.role,
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
-
-      return haystack.includes(normalizedSearch);
-    });
-  }, [users, searchQuery]);
 
   if (loading) {
     return (
-      <main className="min-h-screen bg-white px-6 py-10 text-black">
-        <div className="mx-auto max-w-4xl rounded-md border border-gray-300 p-6 shadow-sm">
-          Loading admin area...
-        </div>
-      </main>
+      <div className="mx-auto max-w-7xl rounded-lg border border-gray-200 bg-white p-6">
+        Loading admin workspace…
+      </div>
     );
   }
 
   if (role !== "admin") {
     return (
-      <main className="min-h-screen bg-white px-6 py-10 text-black">
-        <div className="mx-auto max-w-4xl rounded-md border border-red-300 bg-red-50 p-6">
-          <h1 className="mb-3 text-2xl font-bold">Access denied</h1>
-          <p className="text-sm text-red-700">
-            You do not have admin access to this area.
-          </p>
-        </div>
-      </main>
+      <div className="mx-auto max-w-7xl rounded-lg border border-red-200 bg-red-50 p-6">
+        <h1 className="text-xl font-bold text-red-800">Access denied</h1>
+        <p className="mt-2 text-sm text-red-700">
+          You do not have admin access to this area.
+        </p>
+      </div>
     );
   }
 
   return (
-    <main className="min-h-screen bg-white px-6 py-10 text-black">
-      <div className="mx-auto max-w-7xl">
-        <h1 className="mb-2 text-4xl font-bold">Admin Dashboard</h1>
-        <p className="mb-6 text-gray-600">
-          Internal management area for FindMySpace.
+    <div className="mx-auto max-w-7xl space-y-8">
+      <header>
+        <h1 className="text-2xl font-bold tracking-tight text-[#192a3a]">
+          Admin workspace
+        </h1>
+        <p className="mt-1 text-sm text-gray-600">
+          What needs action, acquisition progress, and space operations at a
+          glance.
         </p>
+      </header>
 
-        <AdminNav current="dashboard" />
+      {actionQueue ? (
+        <section>
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">
+            Action required
+          </h2>
+          <AdminActionRequiredPanel queue={actionQueue} />
+        </section>
+      ) : null}
 
-        {actionQueue ? <AdminActionRequiredPanel queue={actionQueue} /> : null}
-
-        <div className="mb-6 space-y-4">
-          <div className="rounded-md border border-gray-300 bg-white p-5 shadow-sm">
-            <div className="flex items-start gap-3">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#192a3a]/10 text-[#192a3a]">
-                <Compass className="h-5 w-5" />
-              </span>
-              <div>
-                <h2 className="text-lg font-semibold text-[#192a3a]">Venue Scout</h2>
-                <p className="mt-1 text-sm text-gray-600">
-                  Quickly capture and publish venues and spaces.
-                </p>
-                <Link
-                  href="/admin/venue-scout"
-                  className="mt-4 inline-flex items-center gap-2 rounded-md bg-[#192a3a] px-4 py-2 text-sm font-medium text-white hover:bg-[#243a4f]"
-                >
-                  Open Venue Scout
-                </Link>
-              </div>
-            </div>
-          </div>
-
-          {scoutStats ? (
-            <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
-              {[
-                {
-                  label: "Draft scout listings",
-                  value: scoutStats.draftScoutListings,
-                  icon: MapPin,
-                },
-                {
-                  label: "Unclaimed listings",
-                  value: scoutStats.publishedUnclaimed,
-                  icon: Building2,
-                },
-                {
-                  label: "Claim interests",
-                  value: scoutStats.claimInterests,
-                  icon: Link2,
-                  href: "/admin/listing-claim-interests",
-                },
-                { label: "Enquiries", value: scoutStats.enquiries, icon: Inbox },
-                {
-                  label: "Claimed listings",
-                  value: scoutStats.claimedListings,
-                  icon: Users,
-                },
-                {
-                  label: "Active listings",
-                  value: scoutStats.activeListings,
-                  icon: ShieldCheck,
-                },
-              ].map(({ label, value, icon: Icon, href }) => (
-                href ? (
-                  <Link
-                    key={label}
-                    href={href}
-                    className="rounded-md border border-gray-300 bg-white p-4 shadow-sm transition hover:border-[#192a3a]/30 hover:bg-gray-50"
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gray-100 text-[#192a3a]">
-                        <Icon className="h-4 w-4" />
-                      </span>
-                      <div className="min-w-0">
-                        <p className="text-xl font-semibold text-[#192a3a]">{value}</p>
-                        <p className="text-xs text-gray-600">{label}</p>
-                      </div>
-                    </div>
-                  </Link>
-                ) : (
-                <div
-                  key={label}
-                  className="rounded-md border border-gray-300 bg-white p-4 shadow-sm"
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gray-100 text-[#192a3a]">
-                      <Icon className="h-4 w-4" />
-                    </span>
-                    <div className="min-w-0">
-                      <p className="text-xl font-semibold text-[#192a3a]">{value}</p>
-                      <p className="text-xs text-gray-600">{label}</p>
-                    </div>
+      <section>
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+            Acquisition pipeline
+          </h2>
+          <Link
+            href="/admin/spaces/all"
+            className="text-sm font-medium text-[#192a3a] hover:underline"
+          >
+            View all spaces
+          </Link>
+        </div>
+        {scoutStats ? (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+            {[
+              {
+                label: "Draft scout listings",
+                value: scoutStats.draftScoutListings,
+                href: "/admin/venue-scout",
+                icon: Compass,
+              },
+              {
+                label: "Unclaimed listings",
+                value: scoutStats.publishedUnclaimed,
+                href: "/admin/unclaimed-listings",
+                icon: Building2,
+              },
+              {
+                label: "Claim interests",
+                value: scoutStats.claimInterests,
+                href: "/admin/listing-claim-interests",
+                icon: Link2,
+              },
+              {
+                label: "Enquiries",
+                value: scoutStats.enquiries,
+                href: "/admin/listing-enquiries",
+                icon: Inbox,
+              },
+              {
+                label: "Claimed listings",
+                value: scoutStats.claimedListings,
+                href: "/admin/listing-reviews",
+                icon: Users,
+              },
+              {
+                label: "Active listings",
+                value: scoutStats.activeListings,
+                href: "/admin/listings",
+                icon: ShieldCheck,
+              },
+            ].map(({ label, value, href, icon: Icon }) => (
+              <Link
+                key={label}
+                href={href}
+                className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm transition hover:border-[#192a3a]/20 hover:shadow"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#192a3a]/10 text-[#192a3a]">
+                    <Icon className="h-4 w-4" />
+                  </span>
+                  <div>
+                    <p className="text-xl font-semibold text-[#192a3a]">{value}</p>
+                    <p className="text-xs text-gray-600">{label}</p>
                   </div>
                 </div>
-                )
-              ))}
-            </div>
-          ) : null}
-        </div>
-
-        <div className="mb-6 rounded-md border border-gray-300 bg-white p-4 shadow-sm">
-          <label className="mb-3 block text-sm font-medium text-[#192a3a]">
-            Search admin records
-          </label>
-          <div className="flex items-center gap-3 rounded-md border border-gray-300 px-3 py-2">
-            <Search className="h-4 w-4 text-gray-500" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search users by name, email, phone, or role"
-              className="w-full border-0 bg-transparent text-sm text-[#192a3a] outline-none"
-            />
+              </Link>
+            ))}
           </div>
-          <div className="mt-3 flex flex-wrap gap-2 text-xs text-gray-500">
-            <Link href="/admin/users" className="rounded-full bg-gray-100 px-3 py-1 hover:bg-gray-200">
-              Users directory
-            </Link>
-            <Link href="/admin/bookings" className="rounded-full bg-gray-100 px-3 py-1 hover:bg-gray-200">
-              Bookings list
-            </Link>
-            <Link href="/admin/spaces" className="rounded-full bg-gray-100 px-3 py-1 hover:bg-gray-200">
-              Go to Spaces
-            </Link>
-            <Link href="/admin/listings" className="rounded-full bg-gray-100 px-3 py-1 hover:bg-gray-200">
-              Listings admin
-            </Link>
-            <Link href="/admin/venue-scout" className="rounded-full bg-gray-100 px-3 py-1 hover:bg-gray-200">
-              Venue Scout
-            </Link>
-            <Link href="/admin/listing-enquiries" className="rounded-full bg-gray-100 px-3 py-1 hover:bg-gray-200">
-              Listing enquiries
-            </Link>
-            <Link href="/admin/listing-claim-interests" className="rounded-full bg-gray-100 px-3 py-1 hover:bg-gray-200">
-              Claim interests
-            </Link>
-            <Link href="/admin/verification" className="rounded-full bg-gray-100 px-3 py-1 hover:bg-gray-200">
-              Go to Verification
-            </Link>
-          </div>
-        </div>
-
-
-        <div id="users-section" className="mt-8">
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <div>
-              <h2 className="text-2xl font-semibold">Users</h2>
-              <p className="text-sm text-gray-600">
-                Manage platform users and review their current details.
-              </p>
-            </div>
-            <span className="rounded-full bg-gray-100 px-3 py-1 text-sm text-gray-700">
-              {filteredUsers.length} user{filteredUsers.length === 1 ? "" : "s"}
-            </span>
-          </div>
-
-          {filteredUsers.length === 0 ? (
-            <div className="rounded-md border border-gray-300 p-5 text-sm text-gray-600 shadow-sm">
-              No users found.
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {filteredUsers.map((user) => (
-                <div
-                  key={user.id || user.email || Math.random().toString()}
-                  className="overflow-hidden rounded-md border border-gray-300 bg-white shadow-sm"
-                >
-                  <button
-                    type="button"
-                    onClick={() => user.id && toggleUser(user.id)}
-                    className="w-full p-4 text-left"
-                  >
-                    <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                      <div className="min-w-0">
-                        <h3 className="truncate text-xl font-semibold text-[#192a3a]">
-                          {displayName(user)}
-                        </h3>
-                      </div>
-
-                      <div className="flex flex-wrap items-center justify-end gap-2 text-sm text-gray-500">
-                        <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-medium ${getBadgeClass(user.role)}`}>
-                          {user.role || "user"}
-                        </span>
-                        <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-medium ${getBadgeClass(user.owner_verification_status)}`}>
-                          Owner: {user.owner_verification_status || "pending"}
-                        </span>
-                        <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-medium ${getBadgeClass(user.bank_verification_status)}`}>
-                          Bank: {user.bank_verification_status || "pending"}
-                        </span>
-
-                        <span className="ml-2 text-sm font-medium text-[#192a3a]">
-                          {getUserSpaces(user.id).length} listing{getUserSpaces(user.id).length === 1 ? "" : "s"}
-                        </span>
-
-                        {user.id && expandedUsers[user.id] ? (
-                          <ChevronUp className="h-4 w-4" />
-                        ) : (
-                          <ChevronDown className="h-4 w-4" />
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="mt-4 grid gap-2 text-sm text-gray-700 lg:grid-cols-[1fr_0.8fr_1fr]">
-                      <div className="rounded-sm border border-gray-200 bg-gray-50 px-4 py-2.5">
-                        <div className="flex items-center gap-2 text-gray-500">
-                          <Mail className="h-4 w-4" />
-                          <p className="text-[11px] uppercase tracking-wide">Email</p>
-                        </div>
-                        <p className="mt-1 truncate text-[#192a3a]">{user.email || "Email not set"}</p>
-                      </div>
-
-                      <div className="rounded-sm border border-gray-200 bg-gray-50 px-4 py-2.5">
-                        <div className="flex items-center gap-2 text-gray-500">
-                          <Phone className="h-4 w-4" />
-                          <p className="text-[11px] uppercase tracking-wide">Phone</p>
-                        </div>
-                        <p className="mt-1 text-[#192a3a]">{user.phone || "Phone not set"}</p>
-                      </div>
-
-                      <div className="rounded-sm border border-gray-200 bg-gray-50 px-4 py-2.5">
-                        <div className="flex items-center gap-2 text-gray-500">
-                          <Users className="h-4 w-4" />
-                          <p className="text-[11px] uppercase tracking-wide">Created</p>
-                        </div>
-                        <p className="mt-1 text-[#192a3a]">
-                          {user.created_at ? new Date(user.created_at).toLocaleString() : "Unknown"}
-                        </p>
-                      </div>
-                    </div>
-                  </button>
-
-                  {user.id && expandedUsers[user.id] && (
-                    <div className="border-t border-gray-200 px-4 pb-4 pt-4">
-                      <div className="mb-3 flex items-center justify-between gap-3">
-                        <h4 className="text-sm font-semibold text-[#192a3a]">Listings</h4>
-                        <span className="rounded-full bg-gray-100 px-3 py-1 text-xs text-gray-700">
-                          {getUserSpaces(user.id).length} listing{getUserSpaces(user.id).length === 1 ? "" : "s"}
-                        </span>
-                      </div>
-
-                      {getUserSpaces(user.id).length === 0 ? (
-                        <div className="rounded-sm border border-gray-200 bg-gray-50 p-3 text-sm text-gray-600">
-                          This user has no listings yet.
-                        </div>
-                      ) : (
-                        <div className="space-y-3">
-                          {getUserSpaces(user.id).map((space) => (
-                            <div
-                              key={space.id}
-                              className="rounded-sm border border-gray-200 bg-gray-50 p-3"
-                            >
-                              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                                <div className="min-w-0">
-                                  <p className="truncate text-sm font-semibold text-[#192a3a]">
-                                    {space.title || "Untitled listing"}
-                                  </p>
-                                  <p className="mt-1 text-xs text-gray-600">
-                                    {[space.address_line_1, space.suburb, space.city]
-                                      .filter(Boolean)
-                                      .join(", ") || "Address not set"}
-                                  </p>
-                                  <p className="mt-1 text-xs text-gray-500">
-                                    Type: {space.space_type || "Not set"} | Booking: {space.booking_unit || "Not set"}
-                                  </p>
-                                </div>
-
-                                <div className="flex items-center gap-3">
-                                  <span
-                                    className={`inline-flex rounded-full border px-3 py-1 text-xs font-medium ${getBadgeClass(
-                                      space.status
-                                    )}`}
-                                  >
-                                    {space.status || "pending"}
-                                  </span>
-                                  <Link
-                                    href={`/admin/spaces`}
-                                    className="text-xs font-medium text-[#192a3a] underline"
-                                  >
-                                    Manage
-                                  </Link>
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {message && (
-          <div className="mt-6 rounded-md bg-gray-100 p-3 text-sm text-gray-800">
-            {message}
+        ) : (
+          <div className="rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-600">
+            Acquisition stats unavailable.
           </div>
         )}
+      </section>
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <section className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+            Space operations
+          </h2>
+          <p className="mt-2 text-sm text-gray-600">
+            Manage live listings, verification, and marketplace operations.
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            {[
+              { href: "/admin/spaces/all", label: "All spaces", icon: LayoutGrid },
+              { href: "/admin/spaces", label: "Space verification", icon: ShieldCheck },
+              { href: "/admin/listings", label: "Listings", icon: ClipboardList },
+              { href: "/admin/bookings", label: "Bookings", icon: Wallet },
+              { href: "/admin/messages", label: "Messages", icon: Inbox },
+            ].map(({ href, label, icon: Icon }) => (
+              <Link
+                key={href}
+                href={href}
+                className="inline-flex items-center gap-2 rounded-md border border-gray-200 px-3 py-2 text-sm font-medium hover:bg-gray-50"
+              >
+                <Icon className="h-4 w-4" />
+                {label}
+              </Link>
+            ))}
+          </div>
+        </section>
+
+        <section className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+            Verification & trust
+          </h2>
+          <p className="mt-2 text-sm text-gray-600">
+            Review owner identity, bank details, and listing approvals.
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            {[
+              { href: "/admin/verification", label: "Verification queue" },
+              { href: "/admin/listing-reviews", label: "Listing reviews" },
+              { href: "/admin/listing-enquiries", label: "Listing enquiries" },
+              { href: "/admin/listing-claim-interests", label: "Claim interests" },
+            ].map(({ href, label }) => (
+              <Link
+                key={href}
+                href={href}
+                className="inline-flex items-center rounded-md border border-gray-200 px-3 py-2 text-sm font-medium hover:bg-gray-50"
+              >
+                {label}
+              </Link>
+            ))}
+          </div>
+        </section>
       </div>
-    </main>
+
+      <section className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+          Quick links
+        </h2>
+        <div className="mt-4 flex flex-wrap gap-2">
+          {[
+            { href: "/admin/users", label: "Users" },
+            { href: "/admin/properties", label: "Properties" },
+            { href: "/admin/venue-scout", label: "Venue Scout" },
+            { href: "/admin/finance", label: "Finance" },
+            { href: "/admin/activity", label: "Activity log" },
+            { href: "/space-place", label: "Space Place CRM" },
+          ].map(({ href, label }) => (
+            <Link
+              key={href}
+              href={href}
+              className="rounded-full bg-gray-100 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-200"
+            >
+              {label}
+            </Link>
+          ))}
+        </div>
+      </section>
+    </div>
   );
 }

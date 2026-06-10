@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   Building2,
   ClipboardList,
@@ -43,6 +44,21 @@ function displayName(u: AdminUserRow) {
 }
 
 export default function AdminUsersPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="mx-auto max-w-6xl rounded-md border border-gray-300 p-6 shadow-sm">
+          <Loader2 className="h-6 w-6 animate-spin text-gray-500" />
+        </div>
+      }
+    >
+      <AdminUsersPageContent />
+    </Suspense>
+  );
+}
+
+function AdminUsersPageContent() {
+  const searchParams = useSearchParams();
   const [role, setRole] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
@@ -57,6 +73,14 @@ export default function AdminUsersPage() {
   const [editFull, setEditFull] = useState("");
   const [editPhone, setEditPhone] = useState("");
   const [savingUser, setSavingUser] = useState(false);
+
+  useEffect(() => {
+    const q = searchParams.get("search")?.trim();
+    if (q) {
+      setSearchInput(q);
+      setAppliedSearch(q);
+    }
+  }, [searchParams]);
 
   const checkRole = useCallback(async () => {
     const {

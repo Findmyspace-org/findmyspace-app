@@ -113,7 +113,10 @@ export default function Header() {
   /** Unread non-archived rows in `notifications` — sole source for Comms badge. */
   const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
 
-  const hideHeader = pathname === "/login" || pathname === "/signup";
+  const hideHeader =
+    pathname === "/login" ||
+    pathname === "/signup" ||
+    pathname?.startsWith("/admin");
 
   useEffect(() => {
     let mounted = true;

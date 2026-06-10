@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { Suspense } from "react";
 import Header from "@/app/components/Header";
 import AdvisorParamCapture from "@/app/components/AdvisorParamCapture";
+import { ConditionalSiteFooter } from "@/app/components/ConditionalSiteFooter";
 import "leaflet/dist/leaflet.css";
 
 export const metadata: Metadata = {
@@ -27,18 +28,9 @@ export default function RootLayout({
 
         <main>{children}</main>
 
-        <footer className="mt-16 border-t border-gray-200 bg-white">
-          <div className="mx-auto max-w-7xl px-6 py-6 text-sm text-gray-500 text-center">
-            <p>
-              © {new Date().getFullYear()} FindMySpace. All rights reserved.
-            </p>
-            <div className="mt-2 flex justify-center gap-4">
-              <a href="/terms" className="hover:underline">
-                Terms & Conditions
-              </a>
-            </div>
-          </div>
-        </footer>
+        <Suspense fallback={null}>
+          <ConditionalSiteFooter />
+        </Suspense>
       </body>
     </html>
   );
