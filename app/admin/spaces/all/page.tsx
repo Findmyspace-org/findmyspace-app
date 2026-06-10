@@ -27,6 +27,7 @@ import {
   getAdminSpaceVisibilityInfo,
 } from "@/lib/admin-space-visibility";
 import { isLiveListingStatus } from "@/lib/admin-listing-routing";
+import type { PublicListingMode } from "@/lib/public-listing-mode";
 
 type SpaceRow = {
   id: string;
@@ -35,6 +36,7 @@ type SpaceRow = {
   suburb: string | null;
   address_line_1: string | null;
   status: string | null;
+  public_listing_mode: string | null;
   space_type: string | null;
   created_at: string | null;
   updated_at: string | null;
@@ -117,9 +119,53 @@ export default function AdminAllSpacesPage() {
 
   const filteredCount = useMemo(() => spaces.length, [spaces]);
 
+  async function setPublicListingMode(
+    space: SpaceRow,
+    mode: PublicListingMode,
+    overrideNeedsChanges = false
+  ) {
+    setUpdatingId(space.id);
+    setMessage("");
+    try {
+      const result = await adminApiFetch(
+        `/api/admin/spaces/${space.id}/public-listing-mode`,
+        {
+          method: "POST",
+          body: JSON.stringify({ mode, overrideNeedsChanges }),
+        }
+      );
+      const nextMode =
+        (result.public_listing_mode as string | undefined) || mode;
+      const nextStatus =
+        (result.status as string | undefined) || space.status;
+      setSpaces((current) =>
+        current.map((row) =>
+          row.id === space.id
+            ? {
+                ...row,
+                public_listing_mode: nextMode,
+                status: nextStatus,
+              }
+            : row
+        )
+      );
+      setMessage(
+        mode === "off"
+          ? "Listing hidden from public."
+          : mode === "enquiry"
+            ? "Listing is now public enquiry-only."
+            : "Listing is now live and bookable."
+      );
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Could not update visibility.");
+    }
+    setUpdatingId(null);
+  }
+
   async function toggleLiveStatus(space: SpaceRow) {
-    if (!canAdminToggleLiveStatus(space.status)) return;
+    if (!canAdminToggleLiveStatus(space)) return;
     const nextStatus = space.status === "active" ? "paused" : "active";
+    const nextMode = nextStatus === "paused" ? "off" : "live";
     setUpdatingId(space.id);
     setMessage("");
     try {
@@ -129,7 +175,9 @@ export default function AdminAllSpacesPage() {
       });
       setSpaces((current) =>
         current.map((row) =>
-          row.id === space.id ? { ...row, status: nextStatus } : row
+          row.id === space.id
+            ? { ...row, status: nextStatus, public_listing_mode: nextMode }
+            : row
         )
       );
       setMessage(
@@ -254,7 +302,7 @@ export default function AdminAllSpacesPage() {
               ) : null}
 
               {spaces.map((space) => {
-                const visibility = getAdminSpaceVisibilityInfo(space.status);
+                const visibility = getAdminSpaceVisibilityInfo(space);
                 const location =
                   [space.suburb, space.city].filter(Boolean).join(", ") ||
                   space.address_line_1 ||
@@ -313,13 +361,41 @@ export default function AdminAllSpacesPage() {
                       </span>
                     </td>
                     <td className="px-4 py-3">
-                      <div className="space-y-1">
+                      <div className="space-y-2">
                         <span className={visibility.visibilityBadgeClass}>
                           {visibility.visibilityLabel}
                         </span>
                         <p className="text-[11px] text-gray-500">
                           {visibility.bookabilityLabel}
                         </p>
+                        <select
+                          value={space.public_listing_mode || "off"}
+                          disabled={updatingId === space.id}
+                          onChange={(e) => {
+                            const value = e.target.value as PublicListingMode;
+                            if (value === space.public_listing_mode) return;
+                            if (
+                              value === "enquiry" &&
+                              space.status === "needs_changes"
+                            ) {
+                              const ok = window.confirm(
+                                "This listing has requested changes. Set it public enquiry-only anyway?"
+                              );
+                              if (!ok) {
+                                e.target.value = space.public_listing_mode || "off";
+                                return;
+                              }
+                              void setPublicListingMode(space, value, true);
+                              return;
+                            }
+                            void setPublicListingMode(space, value);
+                          }}
+                          className="block w-full min-w-[140px] rounded-md border border-gray-200 px-2 py-1 text-xs disabled:opacity-50"
+                        >
+                          <option value="off">Hidden</option>
+                          <option value="enquiry">Public enquiry-only</option>
+                          <option value="live">Live / bookable</option>
+                        </select>
                       </div>
                     </td>
                     <td className="px-4 py-3">
@@ -375,7 +451,7 @@ export default function AdminAllSpacesPage() {
                             Property
                           </Link>
                         ) : null}
-                        {isLiveListingStatus(space.status) ? (
+                        {canAdminToggleLiveStatus(space) ? (
                           <button
                             type="button"
                             disabled={updatingId === space.id}

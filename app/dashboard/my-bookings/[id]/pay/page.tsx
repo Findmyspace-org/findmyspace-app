@@ -192,11 +192,18 @@ export default function BookingPaymentPage({ params }: PageProps) {
 
       const { data: liveSpace } = await supabase
         .from("spaces")
-        .select("status")
+        .select("status, public_listing_mode")
         .eq("id", booking.space_id)
         .maybeSingle();
 
-      if (!isSpaceBookable((liveSpace as { status: string | null } | null)?.status)) {
+      if (
+        !isSpaceBookable(
+          (liveSpace as {
+            status: string | null;
+            public_listing_mode: string | null;
+          } | null) ?? null
+        )
+      ) {
         setMessage("Payment is not available because this listing is no longer active.");
         setPaying(false);
         return;

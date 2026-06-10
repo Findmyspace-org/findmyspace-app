@@ -6,9 +6,12 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import SpaceCard from "@/app/components/SpaceCard";
 import {
-  isUnclaimedListing,
-  PUBLIC_LISTING_STATUSES,
+  isEnquiryOnlyListing,
 } from "@/lib/listing-lifecycle";
+import {
+  PUBLIC_LISTING_MODE_ENQUIRY,
+  PUBLIC_LISTING_MODE_LIVE,
+} from "@/lib/public-listing-mode";
 import PriceRangeFilter from "@/app/components/PriceRangeFilter";
 import {
   Search,
@@ -73,6 +76,7 @@ type Space = {
   image_urls?: string[];
   attributes?: Record<string, string[]>;
   status?: string | null;
+  public_listing_mode?: string | null;
 };
 
 type SpaceImageRow = {
@@ -285,7 +289,10 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
       const { data, error } = await supabase
         .from("spaces")
         .select(PUBLIC_SPACE_SELECT)
-        .in("status", [...PUBLIC_LISTING_STATUSES])
+        .in("public_listing_mode", [
+          PUBLIC_LISTING_MODE_ENQUIRY,
+          PUBLIC_LISTING_MODE_LIVE,
+        ])
         .order("created_at", { ascending: false });
 
       if (error) {
@@ -467,7 +474,7 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
         return false;
       }
 
-      if (isUnclaimedListing(space.status)) {
+      if (isEnquiryOnlyListing(space)) {
         return true;
       }
 

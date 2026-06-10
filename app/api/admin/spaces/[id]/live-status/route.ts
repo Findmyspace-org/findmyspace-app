@@ -74,7 +74,10 @@ export async function POST(
 
   const { error: updateErr } = await admin
     .from("spaces")
-    .update({ status: nextStatus })
+    .update({
+      status: nextStatus,
+      public_listing_mode: nextStatus === "paused" ? "off" : "live",
+    })
     .eq("id", id);
 
   if (updateErr) {

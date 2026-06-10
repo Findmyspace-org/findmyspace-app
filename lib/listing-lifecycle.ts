@@ -1,4 +1,32 @@
-/** Listing statuses that appear on public browse and detail pages. */
+import {
+  isEnquiryListingMode,
+  isLiveBookableMode,
+  isPublicListingMode,
+  isSpacePubliclyVisible,
+  PUBLIC_LISTING_MODE_ENQUIRY,
+  PUBLIC_LISTING_MODE_LIVE,
+  PUBLIC_LISTING_MODE_OFF,
+  PUBLIC_LISTING_MODES,
+  type PublicListingMode,
+  type SpaceListingModeFields,
+} from "@/lib/public-listing-mode";
+
+export {
+  PUBLIC_LISTING_MODES,
+  PUBLIC_LISTING_MODE_OFF,
+  PUBLIC_LISTING_MODE_ENQUIRY,
+  PUBLIC_LISTING_MODE_LIVE,
+  type PublicListingMode,
+  type SpaceListingModeFields,
+  isPublicListingMode,
+  isEnquiryListingMode,
+  isLiveBookableMode,
+  isSpacePubliclyVisible,
+  publicListingModeLabel,
+  canAdminSetEnquiryMode,
+} from "@/lib/public-listing-mode";
+
+/** @deprecated Use public_listing_mode filters — kept for migration compatibility. */
 export const PUBLIC_LISTING_STATUSES = ["active", "unclaimed"] as const;
 
 export type PublicListingStatus = (typeof PUBLIC_LISTING_STATUSES)[number];
@@ -58,17 +86,33 @@ export function getOwnerListingClaimHref(spaceId: string): string {
   return `/dashboard/listings/${spaceId}/claim`;
 }
 
-export function isSpaceBookable(status: string | null | undefined): boolean {
-  return status === BOOKABLE_LISTING_STATUS;
+export type SpaceBookabilityInput =
+  | string
+  | null
+  | undefined
+  | SpaceListingModeFields;
+
+function resolveBookabilityFields(
+  input: SpaceBookabilityInput
+): SpaceListingModeFields {
+  if (typeof input === "string" || input === null || input === undefined) {
+    return { status: input ?? null, public_listing_mode: PUBLIC_LISTING_MODE_LIVE };
+  }
+  return input;
 }
 
-export function bookableSpaceError(
-  status: string | null | undefined
-): string | null {
-  if (isSpaceBookable(status)) return null;
+export function isSpaceBookable(input: SpaceBookabilityInput): boolean {
+  const { status, public_listing_mode } = resolveBookabilityFields(input);
+  return (
+    status === BOOKABLE_LISTING_STATUS &&
+    isLiveBookableMode(public_listing_mode ?? PUBLIC_LISTING_MODE_LIVE)
+  );
+}
+
+export function bookableSpaceError(input: SpaceBookabilityInput): string | null {
+  if (isSpaceBookable(input)) return null;
   return "This listing is not available for booking.";
 }
-
 
 /** Owner dashboard: claimed listings moving through completion → review → live. */
 export const OWNER_COMPLETION_FLOW_STATUSES = [
@@ -338,6 +382,7 @@ export const LISTING_ENQUIRY_DURATION_TYPES = [
 export type ListingEnquiryDurationType =
   (typeof LISTING_ENQUIRY_DURATION_TYPES)[number];
 
+/** @deprecated Use isSpacePubliclyVisible(public_listing_mode). */
 export function isPublicListingStatus(
   status: string | null | undefined
 ): status is PublicListingStatus {
@@ -346,16 +391,39 @@ export function isPublicListingStatus(
   );
 }
 
-export function isBookableListingStatus(status: string | null | undefined): boolean {
-  return status === BOOKABLE_LISTING_STATUS;
+export function isBookableListingStatus(
+  input: SpaceBookabilityInput
+): boolean {
+  return isSpaceBookable(input);
 }
 
 export function isUnclaimedListing(status: string | null | undefined): boolean {
   return status === UNCLAIMED_LISTING_STATUS;
 }
 
-export function shouldHideListingPricing(status: string | null | undefined): boolean {
-  return isUnclaimedListing(status);
+export function isEnquiryOnlyListing(
+  space: SpaceListingModeFields | null | undefined
+): boolean {
+  if (!space) return false;
+  return isEnquiryListingMode(space.public_listing_mode);
+}
+
+export function shouldHideListingPricing(
+  space: SpaceListingModeFields | string | null | undefined
+): boolean {
+  if (typeof space === "string") {
+    return isUnclaimedListing(space);
+  }
+  return (
+    isEnquiryListingMode(space?.public_listing_mode) ||
+    isUnclaimedListing(space?.status)
+  );
+}
+
+export function acceptsListingEnquiries(
+  space: SpaceListingModeFields | null | undefined
+): boolean {
+  return isEnquiryListingMode(space?.public_listing_mode);
 }
 
 export const UNCLAIMED_LISTING_BADGE = "Availability to be confirmed";
@@ -367,3 +435,11 @@ export const UNCLAIMED_PRICING_LABEL = "Pricing to be confirmed";
 
 export const UNCLAIMED_PRICING_HINT =
   "Please enquire for pricing and availability.";
+
+export const ENQUIRY_LISTING_BADGE = UNCLAIMED_LISTING_BADGE;
+
+export const ENQUIRY_REQUEST_INTRO = UNCLAIMED_REQUEST_INTRO;
+
+export const ENQUIRY_PRICING_LABEL = UNCLAIMED_PRICING_LABEL;
+
+export const ENQUIRY_PRICING_HINT = UNCLAIMED_PRICING_HINT;

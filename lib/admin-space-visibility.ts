@@ -6,9 +6,16 @@ import {
 } from "@/lib/admin-listing-routing";
 import {
   isBookableListingStatus,
-  isPublicListingStatus,
+  isEnquiryOnlyListing,
+  isSpacePubliclyVisible,
   isUnclaimedListing,
 } from "@/lib/listing-lifecycle";
+import {
+  isLiveBookableMode,
+  normalizePublicListingMode,
+  publicListingModeLabel,
+  PUBLIC_LISTING_MODE_OFF,
+} from "@/lib/public-listing-mode";
 
 export type AdminSpaceVisibilityInfo = {
   visibilityLabel: string;
@@ -17,48 +24,72 @@ export type AdminSpaceVisibilityInfo = {
   bookabilityBadgeClass: string;
 };
 
-/** Admin table labels for public visibility and bookability (no lifecycle bypass). */
+const badgeBase =
+  "inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold";
+
+/** Admin table labels for public visibility and bookability. */
 export function getAdminSpaceVisibilityInfo(
-  status: string | null | undefined
+  space: {
+    status?: string | null;
+    public_listing_mode?: string | null;
+  } | string | null | undefined
 ): AdminSpaceVisibilityInfo {
-  const visibilityBadgeClass =
-    "inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold";
-  const bookabilityBadgeClass =
-    "inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold";
+  const status =
+    typeof space === "string" || space === null || space === undefined
+      ? space
+      : space.status;
+  const mode =
+    typeof space === "object" && space !== null
+      ? normalizePublicListingMode(space.public_listing_mode)
+      : PUBLIC_LISTING_MODE_OFF;
+
+  if (status === "paused" && mode === PUBLIC_LISTING_MODE_OFF) {
+    return {
+      visibilityLabel: "Paused",
+      bookabilityLabel: "Not bookable",
+      visibilityBadgeClass: `${badgeBase} bg-slate-100 text-slate-700`,
+      bookabilityBadgeClass: `${badgeBase} bg-gray-100 text-gray-600`,
+    };
+  }
+
+  if (isLiveBookableMode(mode)) {
+    return {
+      visibilityLabel: "Live",
+      bookabilityLabel: isBookableListingStatus({
+        status,
+        public_listing_mode: mode,
+      })
+        ? "Bookable"
+        : "Not bookable",
+      visibilityBadgeClass: `${badgeBase} bg-green-100 text-green-800`,
+      bookabilityBadgeClass: `${badgeBase} bg-green-100 text-green-800`,
+    };
+  }
+
+  if (mode === "enquiry") {
+    return {
+      visibilityLabel: "Public enquiry-only",
+      bookabilityLabel: "Enquiry only",
+      visibilityBadgeClass: `${badgeBase} bg-amber-100 text-amber-900`,
+      bookabilityBadgeClass: `${badgeBase} bg-amber-50 text-amber-800`,
+    };
+  }
 
   if (status === "draft") {
     return {
       visibilityLabel: "Hidden",
       bookabilityLabel: "Not bookable",
-      visibilityBadgeClass: `${visibilityBadgeClass} bg-gray-100 text-gray-700`,
-      bookabilityBadgeClass: `${bookabilityBadgeClass} bg-gray-100 text-gray-600`,
+      visibilityBadgeClass: `${badgeBase} bg-gray-100 text-gray-700`,
+      bookabilityBadgeClass: `${badgeBase} bg-gray-100 text-gray-600`,
     };
   }
 
   if (isUnclaimedListing(status)) {
     return {
-      visibilityLabel: "Public enquiry-only",
-      bookabilityLabel: "Enquiry only",
-      visibilityBadgeClass: `${visibilityBadgeClass} bg-amber-100 text-amber-900`,
-      bookabilityBadgeClass: `${bookabilityBadgeClass} bg-amber-50 text-amber-800`,
-    };
-  }
-
-  if (status === "active") {
-    return {
-      visibilityLabel: "Live",
-      bookabilityLabel: "Bookable",
-      visibilityBadgeClass: `${visibilityBadgeClass} bg-green-100 text-green-800`,
-      bookabilityBadgeClass: `${bookabilityBadgeClass} bg-green-100 text-green-800`,
-    };
-  }
-
-  if (status === "paused") {
-    return {
-      visibilityLabel: "Paused",
+      visibilityLabel: "Hidden",
       bookabilityLabel: "Not bookable",
-      visibilityBadgeClass: `${visibilityBadgeClass} bg-slate-100 text-slate-700`,
-      bookabilityBadgeClass: `${bookabilityBadgeClass} bg-gray-100 text-gray-600`,
+      visibilityBadgeClass: `${badgeBase} bg-gray-100 text-gray-700`,
+      bookabilityBadgeClass: `${badgeBase} bg-gray-100 text-gray-600`,
     };
   }
 
@@ -66,16 +97,16 @@ export function getAdminSpaceVisibilityInfo(
     return {
       visibilityLabel: "Hidden",
       bookabilityLabel: "Not bookable",
-      visibilityBadgeClass: `${visibilityBadgeClass} bg-violet-100 text-violet-800`,
-      bookabilityBadgeClass: `${bookabilityBadgeClass} bg-gray-100 text-gray-600`,
+      visibilityBadgeClass: `${badgeBase} bg-violet-100 text-violet-800`,
+      bookabilityBadgeClass: `${badgeBase} bg-gray-100 text-gray-600`,
     };
   }
 
   return {
-    visibilityLabel: "Hidden",
+    visibilityLabel: publicListingModeLabel(mode),
     bookabilityLabel: "Not bookable",
-    visibilityBadgeClass: `${visibilityBadgeClass} bg-gray-100 text-gray-700`,
-    bookabilityBadgeClass: `${bookabilityBadgeClass} bg-gray-100 text-gray-600`,
+    visibilityBadgeClass: `${badgeBase} bg-gray-100 text-gray-700`,
+    bookabilityBadgeClass: `${badgeBase} bg-gray-100 text-gray-600`,
   };
 }
 
@@ -112,8 +143,9 @@ export function adminSpaceEditHref(space: {
 export function adminSpacePublicViewHref(space: {
   id: string;
   status?: string | null;
+  public_listing_mode?: string | null;
 }): string | null {
-  if (isPublicListingStatus(space.status)) {
+  if (isSpacePubliclyVisible(space)) {
     return `/spaces/${space.id}`;
   }
 
@@ -143,12 +175,24 @@ export function adminSpaceStatusActionHref(space: {
   return `/admin/spaces/all`;
 }
 
-export function canAdminToggleLiveStatus(status: string | null | undefined): boolean {
+export function canAdminToggleLiveStatus(
+  space: {
+    status?: string | null;
+    public_listing_mode?: string | null;
+  } | string | null | undefined
+): boolean {
+  const status = typeof space === "object" && space ? space.status : space;
   return isLiveListingStatus(status);
 }
 
 export function canAdminEditSpaceInTable(status: string | null | undefined): boolean {
   if (isLiveListingStatus(status)) return false;
-  if (isBookableListingStatus(status)) return false;
+  if (status === "active") return false;
   return true;
+}
+
+export function isEnquiryPublicSpace(space: {
+  public_listing_mode?: string | null;
+}): boolean {
+  return isEnquiryOnlyListing(space);
 }

@@ -1692,7 +1692,14 @@ function OwnerBookingRequestsPageContent({
     }> = [];
 
     if (nextStatus === "approved") {
-      if (!isSpaceBookable(bookingToUpdate.space?.status)) {
+      if (
+        !isSpaceBookable({
+          status: bookingToUpdate.space?.status,
+          public_listing_mode: (
+            bookingToUpdate.space as { public_listing_mode?: string | null } | undefined
+          )?.public_listing_mode,
+        })
+      ) {
         setMessage(
           "This listing is not active. Approve the listing before accepting bookings."
         );

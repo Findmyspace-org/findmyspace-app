@@ -7,7 +7,7 @@ import {
   buildListingEnquiryRequesterCopy,
 } from "@/lib/communication-copy";
 import {
-  isUnclaimedListing,
+  acceptsListingEnquiries,
   LISTING_ENQUIRY_DURATION_TYPES,
 } from "@/lib/listing-lifecycle";
 import { getCanonicalPublicSiteUrl } from "@/lib/site-url";
@@ -262,7 +262,7 @@ export async function POST(req: NextRequest) {
 
   const { data: listing, error: listingErr } = await admin
     .from("spaces")
-    .select("id, title, status")
+    .select("id, title, status, public_listing_mode")
     .eq("id", listingId)
     .maybeSingle();
 
@@ -270,10 +270,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Listing not found." }, { status: 404 });
   }
 
-  const listingRow = listing as { id: string; title: string; status: string | null };
-  if (!isUnclaimedListing(listingRow.status)) {
+  const listingRow = listing as {
+    id: string;
+    title: string;
+    status: string | null;
+    public_listing_mode: string | null;
+  };
+  if (!acceptsListingEnquiries(listingRow)) {
     return NextResponse.json(
-      { error: "Enquiries are only accepted for unclaimed listings." },
+      { error: "Enquiries are only accepted for public enquiry-only listings." },
       { status: 400 }
     );
   }

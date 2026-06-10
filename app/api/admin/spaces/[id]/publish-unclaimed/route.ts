@@ -41,6 +41,7 @@ export async function POST(
     .from("spaces")
     .update({
       status: "unclaimed",
+      public_listing_mode: "enquiry",
       owner_id: null,
       created_by_admin: true,
     })

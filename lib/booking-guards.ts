@@ -1,6 +1,7 @@
 import {
   bookableSpaceError,
   isSpaceBookable,
+  type SpaceBookabilityInput,
 } from "@/lib/listing-lifecycle";
 
 export { isSpaceBookable, bookableSpaceError };
@@ -10,9 +11,9 @@ export type BookableGuardResult =
   | { ok: false; error: string; status: number };
 
 export function assertSpaceBookable(
-  spaceStatus: string | null | undefined
+  input: SpaceBookabilityInput
 ): BookableGuardResult {
-  const message = bookableSpaceError(spaceStatus);
+  const message = bookableSpaceError(input);
   if (message) {
     return { ok: false, error: message, status: 400 };
   }
@@ -20,9 +21,9 @@ export function assertSpaceBookable(
 }
 
 export function assertSpaceBookableForPayment(
-  spaceStatus: string | null | undefined
+  input: SpaceBookabilityInput
 ): BookableGuardResult {
-  const message = bookableSpaceError(spaceStatus);
+  const message = bookableSpaceError(input);
   if (message) {
     return {
       ok: false,

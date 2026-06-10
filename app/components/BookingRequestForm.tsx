@@ -919,14 +919,17 @@ export default function BookingRequestForm({
       const { data: spaceStatusRow, error: spaceStatusError } = await (
         supabase.from("spaces") as any
       )
-        .select("status")
+        .select("status, public_listing_mode")
         .eq("id", spaceId)
         .single();
 
       if (
         spaceStatusError ||
         !spaceStatusRow ||
-        !isSpaceBookable((spaceStatusRow as { status: string | null }).status)
+        !isSpaceBookable(spaceStatusRow as {
+          status: string | null;
+          public_listing_mode: string | null;
+        })
       ) {
         setStatusMessage("This listing is not available for booking.");
         setLoading(false);

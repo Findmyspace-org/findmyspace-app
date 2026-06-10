@@ -14,10 +14,11 @@ import {
 } from "@/app/data/spaceFeatureConfig";
 import { formatListingAddress } from "@/lib/za-provinces";
 import {
-  isPublicListingStatus,
+  acceptsListingEnquiries,
+  ENQUIRY_LISTING_BADGE,
   isBookableListingStatus,
+  isSpacePubliclyVisible,
   isUnclaimedListing,
-  UNCLAIMED_LISTING_BADGE,
 } from "@/lib/listing-lifecycle";
 import { UnclaimedListingClaimSection } from "@/app/components/UnclaimedListingClaimSection";
 import { UnclaimedListingEnquirySocialProof } from "@/app/components/UnclaimedListingEnquirySocialProof";
@@ -153,13 +154,14 @@ export default async function Page({
     );
   }
 
-  if (!isPublicListingStatus(space.status)) {
+  if (!isSpacePubliclyVisible(space)) {
     notFound();
   }
 
   const unclaimed = isUnclaimedListing(space.status);
-  const bookable = isBookableListingStatus(space.status);
-  const enquiryCount = unclaimed ? await getListingEnquiryCount(space.id) : 0;
+  const enquiryMode = acceptsListingEnquiries(space);
+  const bookable = isBookableListingStatus(space);
+  const enquiryCount = enquiryMode ? await getListingEnquiryCount(space.id) : 0;
   const suitableForLabels =
     space.space_type === "event_space"
       ? getSectionCheckboxLabels(space.space_type, space.attributes, "suitable_for")
@@ -287,10 +289,10 @@ export default async function Page({
                     {space.title}
                   </h1>
 
-                  {unclaimed ? (
+                  {enquiryMode ? (
                     <div className="mt-3 flex flex-col items-start gap-2">
                       <p className="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-950">
-                        {UNCLAIMED_LISTING_BADGE}
+                        {ENQUIRY_LISTING_BADGE}
                       </p>
                       <UnclaimedListingEnquirySocialProof count={enquiryCount} />
                     </div>
@@ -357,18 +359,20 @@ export default async function Page({
               </div>
             </section>
 
-            {unclaimed ? (
+            {enquiryMode ? (
               <div className="space-y-4 lg:hidden">
                 <UnclaimedListingPricingSection className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm" />
-                <UnclaimedListingClaimSection
-                  listingId={space.id}
-                  listingTitle={space.title}
-                />
+                {unclaimed ? (
+                  <UnclaimedListingClaimSection
+                    listingId={space.id}
+                    listingTitle={space.title}
+                  />
+                ) : null}
               </div>
             ) : null}
           </div>
 
-          {unclaimed ? (
+          {enquiryMode ? (
             <UnclaimedListingSidebar
               listingId={space.id}
               listingTitle={space.title}
@@ -442,7 +446,7 @@ export default async function Page({
         </div>
       </div>
 
-      {unclaimed ? (
+      {enquiryMode ? (
         <UnclaimedListingMobileSheet
           listingId={space.id}
           listingTitle={space.title}

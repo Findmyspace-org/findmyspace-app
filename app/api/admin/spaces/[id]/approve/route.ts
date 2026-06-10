@@ -66,6 +66,7 @@ export async function POST(
     .from("spaces")
     .update({
       status: "active",
+      public_listing_mode: "live",
       approved_at: now,
       approved_by: auth.userId,
     })

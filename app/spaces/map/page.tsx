@@ -5,7 +5,10 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { PUBLIC_LISTING_STATUSES } from "@/lib/listing-lifecycle";
+import {
+  PUBLIC_LISTING_MODE_ENQUIRY,
+  PUBLIC_LISTING_MODE_LIVE,
+} from "@/lib/public-listing-mode";
 import { buildAttributeSearchText } from "@/app/data/spaceFeatureConfig";
 
 const SpacesMap = dynamic(() => import("@/app/components/SpacesMap"), {
@@ -31,6 +34,7 @@ type SpaceRow = {
   booking_unit: string | null;
   space_type: string | null;
   status: string | null;
+  public_listing_mode: string | null;
   latitude: number | null;
   longitude: number | null;
   created_at?: string | null;
@@ -84,9 +88,12 @@ function SpacesMapPageContent({ searchParamsString }: { searchParamsString: stri
     const { data, error } = await supabase
       .from("spaces")
       .select(
-        "id, title, description, city, suburb, address_line_1, price_per_hour, price_per_day, price_per_month, booking_unit, space_type, status, latitude, longitude, created_at"
+        "id, title, description, city, suburb, address_line_1, price_per_hour, price_per_day, price_per_month, booking_unit, space_type, status, public_listing_mode, latitude, longitude, created_at"
       )
-      .in("status", [...PUBLIC_LISTING_STATUSES])
+      .in("public_listing_mode", [
+        PUBLIC_LISTING_MODE_ENQUIRY,
+        PUBLIC_LISTING_MODE_LIVE,
+      ])
       .order("created_at", { ascending: false });
 
     if (error) {

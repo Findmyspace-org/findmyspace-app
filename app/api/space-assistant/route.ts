@@ -73,6 +73,7 @@ type SpaceRow = {
   min_booking_days: number | null;
   min_booking_months: number | null;
   status: string | null;
+  public_listing_mode: string | null;
 };
 
 type FeatureSummary = {
@@ -230,7 +231,7 @@ async function loadAssistantContext(
   const { data: spaceRow, error: spaceErr } = await supabase
     .from("spaces")
     .select(
-      "id, title, description, suburb, city, space_type, booking_unit, price_per_hour, price_per_day, price_per_month, min_booking_hours, min_booking_days, min_booking_months, status"
+      "id, title, description, suburb, city, space_type, booking_unit, price_per_hour, price_per_day, price_per_month, min_booking_hours, min_booking_days, min_booking_months, status, public_listing_mode"
     )
     .eq("id", spaceId)
     .single();
@@ -239,8 +240,12 @@ async function loadAssistantContext(
 
   const space = spaceRow as unknown as SpaceRow;
 
-  // Only respond for listings that are publicly viewable.
-  if (space.status !== "active") return null;
+  if (
+    space.status !== "active" ||
+    space.public_listing_mode !== "live"
+  ) {
+    return null;
+  }
 
   const { data: attrRows } = await supabase
     .from("space_attributes")

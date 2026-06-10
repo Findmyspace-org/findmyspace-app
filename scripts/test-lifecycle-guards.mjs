@@ -7,7 +7,6 @@
 import assert from "node:assert/strict";
 
 const BOOKABLE = "active";
-const PUBLIC = new Set(["active", "unclaimed"]);
 const CLAIMABLE = new Set(["draft", "unclaimed"]);
 const OWNER_EDITABLE = new Set([
   "owner_claimed",
@@ -17,12 +16,29 @@ const OWNER_EDITABLE = new Set([
   "pending",
 ]);
 
-function isSpaceBookable(status) {
-  return status === BOOKABLE;
+function isSpaceBookable(input) {
+  if (typeof input === "object" && input !== null) {
+    return (
+      input.status === BOOKABLE && (input.public_listing_mode || "live") === "live"
+    );
+  }
+  return input === BOOKABLE;
 }
 
-function isPublicListingStatus(status) {
-  return PUBLIC.has(status || "");
+function isSpacePubliclyVisible(input) {
+  const mode =
+    typeof input === "object" && input !== null
+      ? input.public_listing_mode
+      : input;
+  return mode === "enquiry" || mode === "live";
+}
+
+function acceptsListingEnquiries(input) {
+  const mode =
+    typeof input === "object" && input !== null
+      ? input.public_listing_mode
+      : null;
+  return mode === "enquiry";
 }
 
 function isSpaceClaimable(space) {
@@ -57,8 +73,8 @@ function isOwnerListingLockedForEdit(status) {
   );
 }
 
-function assertSpaceBookableForPayment(status) {
-  if (!isSpaceBookable(status)) {
+function assertSpaceBookableForPayment(input) {
+  if (!isSpaceBookable(input)) {
     return {
       ok: false,
       error: "Payment is not available because this listing is no longer active.",
@@ -67,21 +83,36 @@ function assertSpaceBookableForPayment(status) {
   return { ok: true };
 }
 
+function canAdminSetEnquiryMode(status, options = {}) {
+  if (status === "rejected" || status === "deleted") return false;
+  if (status === "needs_changes") return Boolean(options.overrideNeedsChanges);
+  return ["draft", "unclaimed", "owner_claimed", "pending_verification", "active"].includes(
+    status || ""
+  );
+}
+
 function test(name, fn) {
   fn();
   console.log(`✓ ${name}`);
 }
 
-test("only active is bookable", () => {
+test("only active + live mode is bookable", () => {
+  assert.equal(isSpaceBookable({ status: "active", public_listing_mode: "live" }), true);
+  assert.equal(isSpaceBookable({ status: "active", public_listing_mode: "enquiry" }), false);
+  assert.equal(isSpaceBookable({ status: "unclaimed", public_listing_mode: "enquiry" }), false);
   assert.equal(isSpaceBookable("active"), true);
-  assert.equal(isSpaceBookable("unclaimed"), false);
-  assert.equal(isSpaceBookable("owner_claimed"), false);
 });
 
-test("public statuses are active and unclaimed only", () => {
-  assert.equal(isPublicListingStatus("active"), true);
-  assert.equal(isPublicListingStatus("unclaimed"), true);
-  assert.equal(isPublicListingStatus("owner_claimed"), false);
+test("public visibility uses listing mode", () => {
+  assert.equal(isSpacePubliclyVisible({ public_listing_mode: "enquiry" }), true);
+  assert.equal(isSpacePubliclyVisible({ public_listing_mode: "live" }), true);
+  assert.equal(isSpacePubliclyVisible({ public_listing_mode: "off" }), false);
+});
+
+test("enquiries accept enquiry mode only", () => {
+  assert.equal(acceptsListingEnquiries({ public_listing_mode: "enquiry" }), true);
+  assert.equal(acceptsListingEnquiries({ public_listing_mode: "live" }), false);
+  assert.equal(acceptsListingEnquiries({ public_listing_mode: "off" }), false);
 });
 
 test("claim token expiry resolution", () => {
@@ -123,9 +154,19 @@ test("owner edit permissions by status", () => {
 });
 
 test("payment guard messaging", () => {
-  const blocked = assertSpaceBookableForPayment("paused");
+  const blocked = assertSpaceBookableForPayment({
+    status: "active",
+    public_listing_mode: "enquiry",
+  });
   assert.equal(blocked.ok, false);
   assert.match(blocked.error, /no longer active/i);
+});
+
+test("admin enquiry eligibility", () => {
+  assert.equal(canAdminSetEnquiryMode("pending_verification"), true);
+  assert.equal(canAdminSetEnquiryMode("needs_changes"), false);
+  assert.equal(canAdminSetEnquiryMode("needs_changes", { overrideNeedsChanges: true }), true);
+  assert.equal(canAdminSetEnquiryMode("rejected"), false);
 });
 
 console.log("\nAll lifecycle guard tests passed.");

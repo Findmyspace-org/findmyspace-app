@@ -25,6 +25,7 @@ export const PUBLIC_SPACE_SELECT = [
   "latitude",
   "longitude",
   "status",
+  "public_listing_mode",
   "created_at",
   "updated_at",
 ].join(", ");

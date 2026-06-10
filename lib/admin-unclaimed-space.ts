@@ -2,6 +2,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { LISTING_SPACE_TYPE_OPTIONS } from "@/app/data/spaceFeatureConfig";
 import { UNCLAIMED_LISTING_STATUS } from "@/lib/listing-lifecycle";
 import { parseSpaceCrmLinkInput } from "@/lib/space-crm-link";
+import { validateMinimumPublicContent } from "@/lib/admin-public-listing-mode";
 
 export const ADMIN_UNCLAIMED_STATUSES = ["draft", "unclaimed"] as const;
 export type AdminUnclaimedStatus = (typeof ADMIN_UNCLAIMED_STATUSES)[number];
@@ -276,51 +277,7 @@ export async function validateReadyToPublishUnclaimed(
     return { ok: false, error: error || "Listing not found." };
   }
 
-  const row = space as {
-    title: string | null;
-    space_type: string | null;
-    city: string | null;
-    suburb: string | null;
-    latitude: number | null;
-    longitude: number | null;
-  };
-
-  if (!row.title?.trim() || row.title.trim() === "Untitled listing") {
-    return { ok: false, error: "Title is required before publishing." };
-  }
-  if (!row.space_type?.trim()) {
-    return { ok: false, error: "Category is required before publishing." };
-  }
-  if (!row.city?.trim() && !row.suburb?.trim()) {
-    return { ok: false, error: "City or suburb is required before publishing." };
-  }
-
-  if (
-    row.latitude === null ||
-    row.longitude === null ||
-    !Number.isFinite(row.latitude) ||
-    !Number.isFinite(row.longitude)
-  ) {
-    return {
-      ok: false,
-      error:
-        "This listing does not have a map pin yet. Find the address on the map or place the pin manually before publishing.",
-    };
-  }
-
-  const { count, error: imgErr } = await admin
-    .from("space_images")
-    .select("id", { count: "exact", head: true })
-    .eq("space_id", spaceId);
-
-  if (imgErr) {
-    return { ok: false, error: imgErr.message };
-  }
-  if (!count || count < 1) {
-    return { ok: false, error: "Add at least one photo before publishing." };
-  }
-
-  return { ok: true };
+  return validateMinimumPublicContent(admin, spaceId);
 }
 
 export function isAdminUnclaimedStatus(

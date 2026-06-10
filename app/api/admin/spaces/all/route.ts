@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
   let query = admin
     .from("spaces")
     .select(
-      "id, title, city, suburb, address_line_1, status, created_at, submitted_for_review_at, owner_id, property_id, created_by_admin, space_type"
+      "id, title, city, suburb, address_line_1, status, public_listing_mode, created_at, submitted_for_review_at, owner_id, property_id, created_by_admin, space_type"
     )
     .order("created_at", { ascending: false })
     .limit(500);
@@ -115,6 +115,7 @@ export async function GET(req: NextRequest) {
     const ownerId = space.owner_id as string | null;
     const propertyId = space.property_id as string | null;
     const status = space.status as string | null;
+    const publicListingMode = space.public_listing_mode as string | null;
     const property = propertyId ? properties[propertyId] : null;
     const owner = ownerId ? owners[ownerId] : null;
 
@@ -129,6 +130,7 @@ export async function GET(req: NextRequest) {
       suburb: space.suburb as string | null,
       address_line_1: space.address_line_1 as string | null,
       status,
+      public_listing_mode: publicListingMode,
       space_type: space.space_type as string | null,
       created_at: space.created_at as string | null,
       updated_at: updatedAt,
@@ -146,7 +148,11 @@ export async function GET(req: NextRequest) {
         status,
         property_id: propertyId,
       }),
-      view_href: adminSpacePublicViewHref({ id, status }),
+      view_href: adminSpacePublicViewHref({
+        id,
+        status,
+        public_listing_mode: publicListingMode,
+      }),
     };
   });
 
@@ -160,7 +166,7 @@ export async function GET(req: NextRequest) {
         row.property_name,
         row.owner_name,
         row.owner_email,
-        row.status,
+        row.public_listing_mode,
       ]
         .filter(Boolean)
         .join(" ")
