@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2, MapPin } from "lucide-react";
 import { adminApiFetch } from "@/lib/admin-api-client";
 import { buildAddressQuery, type GeocodedAddress } from "@/lib/geocoding";
@@ -79,6 +79,11 @@ export function AdminLocationSection({
   const [reverseGeocoding, setReverseGeocoding] = useState(false);
   const [geoMessage, setGeoMessage] = useState<string | null>(null);
   const suggestionAbortRef = useRef<AbortController | null>(null);
+  const valueRef = useRef(value);
+
+  useEffect(() => {
+    valueRef.current = value;
+  }, [value]);
 
   const hasPin =
     value.latitude !== null &&
@@ -181,29 +186,41 @@ export function AdminLocationSection({
     }
   }
 
-  async function reverseGeocodePin(lat: number, lng: number) {
-    setReverseGeocoding(true);
-    try {
-      const result = await adminApiFetch(
-        `/api/admin/geocode?lat=${lat}&lng=${lng}`
-      );
-      const geocoded = result.result as GeocodedAddress | undefined;
-      if (geocoded) {
-        onChange({
-          latitude: lat,
-          longitude: lng,
-          ...applyGeocodedAddress(value, geocoded, false),
-        });
-      } else {
-        onChange({ latitude: lat, longitude: lng });
+  const reverseGeocodePin = useCallback(
+    async (lat: number, lng: number) => {
+      setReverseGeocoding(true);
+      try {
+        const result = await adminApiFetch(
+          `/api/admin/geocode?lat=${lat}&lng=${lng}`
+        );
+        const geocoded = result.result as GeocodedAddress | undefined;
+        if (geocoded) {
+          onChange(
+            applyGeocodedAddress(
+              { ...valueRef.current, latitude: lat, longitude: lng },
+              geocoded,
+              false
+            )
+          );
+        }
+      } catch (err) {
+        console.error("Reverse geocoding failed", err);
+      } finally {
+        setReverseGeocoding(false);
       }
-    } catch (err) {
-      console.error("Reverse geocoding failed", err);
+    },
+    [onChange]
+  );
+
+  const handleMapPinChange = useCallback(
+    (lat: number, lng: number) => {
+      if (readOnly) return;
       onChange({ latitude: lat, longitude: lng });
-    } finally {
-      setReverseGeocoding(false);
-    }
-  }
+      setGeoMessage(`Pin placed at ${lat.toFixed(6)}, ${lng.toFixed(6)}`);
+      void reverseGeocodePin(lat, lng);
+    },
+    [onChange, readOnly, reverseGeocodePin]
+  );
 
   return (
     <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
@@ -336,14 +353,11 @@ export function AdminLocationSection({
           latitude={mapLat}
           longitude={mapLng}
           zoom={DEFAULT_ZOOM}
-          onChange={(latitude, longitude) => {
-            if (readOnly) return;
-            void reverseGeocodePin(latitude, longitude);
-          }}
+          onChange={handleMapPinChange}
         />
         {hasPin ? (
           <p className="mt-2 text-sm text-gray-700">
-            Pin placed at: {value.latitude!.toFixed(6)}, {value.longitude!.toFixed(6)}
+            Pin at {value.latitude!.toFixed(6)}, {value.longitude!.toFixed(6)}
           </p>
         ) : (
           <p className="mt-2 text-sm text-amber-800">
