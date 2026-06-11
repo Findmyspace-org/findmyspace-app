@@ -31,11 +31,18 @@ type ReviewRow = {
   } | null;
 };
 
-const QUEUE_STATUSES = ["pending_verification", "needs_changes", "rejected"] as const;
+const QUEUE_STATUSES = [
+  "owner_claimed",
+  "pending_verification",
+  "needs_changes",
+  "rejected",
+] as const;
 
 function statusBadge(status: string | null) {
   const base = "inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold";
   switch (status) {
+    case "owner_claimed":
+      return `${base} bg-violet-100 text-violet-800`;
     case "pending_verification":
       return `${base} bg-blue-100 text-blue-800`;
     case "needs_changes":
@@ -100,7 +107,7 @@ export default function AdminListingReviewsPage() {
         .maybeSingle();
       const r = (profile as { role?: string } | null)?.role ?? null;
       setRole(r);
-      if (r === "admin") {
+      if (hasAdminUiAccess(r)) {
         await load();
       } else {
         setLoading(false);
@@ -193,7 +200,9 @@ export default function AdminListingReviewsPage() {
                     <td className="px-4 py-3 text-gray-600">
                       {row.submitted_for_review_at
                         ? format(new Date(row.submitted_for_review_at), "dd MMM yyyy HH:mm")
-                        : "—"}
+                        : row.claimed_at
+                          ? format(new Date(row.claimed_at), "dd MMM yyyy HH:mm")
+                          : "—"}
                     </td>
                     <td className="px-4 py-3 text-right">
                       <Link

@@ -11,6 +11,7 @@ import { Building2, Compass, ImageIcon, Link2, Plus, Search } from "lucide-react
 import { supabase } from "@/lib/supabase";
 import { AdminNav } from "@/app/components/AdminNav";
 import { adminApiFetch } from "@/lib/admin-api-client";
+import { adminSpaceEditHref } from "@/lib/admin-listing-routing";
 import { formatSpaceTypeLabel } from "@/app/data/spaceFeatureConfig";
 import {
   ADMIN_LISTING_FILTER_OPTIONS,
@@ -27,6 +28,7 @@ type ListingRow = {
   suburb: string | null;
   space_type: string | null;
   status: string | null;
+  property_id: string | null;
   created_at: string;
   enquiry_count: number;
   cover_image_url: string | null;
@@ -219,7 +221,11 @@ function AdminUnclaimedListingsPageContent({
                 {filteredListings.map((row) => {
                   const location =
                     [row.suburb, row.city].filter(Boolean).join(", ") || "—";
-                  const editHref = `/admin/unclaimed-listings/${row.id}/edit`;
+                  const editHref = adminSpaceEditHref({
+                    id: row.id,
+                    status: row.status,
+                    property_id: row.property_id,
+                  });
 
                   return (
                     <tr

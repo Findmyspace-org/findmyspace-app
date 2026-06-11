@@ -92,7 +92,9 @@ function NewPropertyContent() {
                 longitude: null,
               },
             }}
-            onSuccess={(id) => router.replace(`/admin/properties/${id}`)}
+            onSuccess={(id) =>
+              router.replace(`/admin/properties/${id}?created=1`)
+            }
           />
         </div>
       </div>

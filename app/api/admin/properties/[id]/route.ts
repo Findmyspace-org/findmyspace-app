@@ -3,7 +3,12 @@ import { requireAdminApi } from "@/lib/require-admin-api";
 import { adminAudit } from "@/lib/admin-audit";
 import { createServiceAdminClient } from "@/lib/admin-unclaimed-space";
 import { formatPropertyAddress, parsePropertyInput } from "@/lib/admin-property";
-import { adminListingStatusLabel } from "@/lib/admin-listing-status-display";
+import {
+  buildPropertySpaceRow,
+  computePropertySpacesHealth,
+  computePropertySpacesSummary,
+  type PropertySpaceHealthInput,
+} from "@/lib/property-space-ops";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -46,35 +51,126 @@ export async function GET(
     if (org) crmOrganisation = org as { id: string; name: string };
   }
 
+  let ownerName: string | null = null;
+  if (row.owner_id) {
+    const { data: ownerProfile } = await admin
+      .from("profiles")
+      .select("first_name, last_name, full_name, email")
+      .eq("id", row.owner_id as string)
+      .maybeSingle();
+    if (ownerProfile) {
+      const profile = ownerProfile as {
+        first_name?: string | null;
+        last_name?: string | null;
+        full_name?: string | null;
+        email?: string | null;
+      };
+      ownerName =
+        `${profile.first_name || ""} ${profile.last_name || ""}`.trim() ||
+        profile.full_name ||
+        profile.email ||
+        null;
+    }
+  }
+
   const { data: spaces, error: spacesErr } = await admin
     .from("spaces")
-    .select("id, title, status, space_type, city, suburb, created_at")
+    .select(
+      "id, title, status, public_listing_mode, space_type, booking_unit, price_per_hour, price_per_day, price_per_month, latitude, longitude, city, suburb, created_at, submitted_for_review_at, property_id"
+    )
     .eq("property_id", id)
-    .neq("status", "deleted")
     .order("title", { ascending: true });
 
   if (spacesErr) {
     return NextResponse.json({ error: spacesErr.message }, { status: 500 });
   }
 
-  const spaceRows = ((spaces || []) as {
+  const spaceRows = (spaces as Record<string, unknown>[]) || [];
+  const spaceIds = spaceRows.map((space) => space.id as string);
+  const coverImages: Record<string, string> = {};
+  const imageCounts: Record<string, number> = {};
+
+  if (spaceIds.length > 0) {
+    const { data: images } = await admin
+      .from("space_images")
+      .select("space_id, image_url, sort_order")
+      .in("space_id", spaceIds)
+      .order("sort_order", { ascending: true });
+
+    for (const image of (images as {
+      space_id: string;
+      image_url: string;
+    }[]) || []) {
+      imageCounts[image.space_id] = (imageCounts[image.space_id] || 0) + 1;
+      if (!coverImages[image.space_id]) {
+        coverImages[image.space_id] = image.image_url;
+      }
+    }
+  }
+
+  const healthInputs: PropertySpaceHealthInput[] = spaceRows.map((space) => {
+    const spaceId = space.id as string;
+    return {
+      id: spaceId,
+      status: space.status as string | null,
+      public_listing_mode: space.public_listing_mode as string | null,
+      booking_unit: space.booking_unit as string | null,
+      price_per_hour: space.price_per_hour as number | null,
+      price_per_day: space.price_per_day as number | null,
+      price_per_month: space.price_per_month as number | null,
+      latitude: space.latitude as number | null,
+      longitude: space.longitude as number | null,
+      city: space.city as string | null,
+      suburb: space.suburb as string | null,
+      image_count: imageCounts[spaceId] || 0,
+    };
+  });
+
+  const mappedSpaces = spaceRows.map((space) => {
+    const spaceId = space.id as string;
+    return buildPropertySpaceRow(
+      space as Parameters<typeof buildPropertySpaceRow>[0],
+      id,
+      coverImages[spaceId] || null,
+      imageCounts[spaceId] || 0
+    );
+  });
+
+  const activeSpaces = mappedSpaces.filter((space) => !space.is_archived);
+  const archivedSpaces = mappedSpaces.filter((space) => space.is_archived);
+
+  let propertyImages: {
     id: string;
-    title: string | null;
-    status: string | null;
-    space_type: string | null;
-    city: string | null;
-    suburb: string | null;
-    created_at: string;
-  }[]).map((space) => ({
-    ...space,
-    status_label: adminListingStatusLabel(space.status),
-    admin_edit_url: `/admin/properties/${id}/spaces/${space.id}/edit`,
-  }));
+    image_url: string;
+    sort_order: number;
+    caption: string | null;
+  }[] = [];
+
+  const { data: galleryRows, error: galleryErr } = await admin
+    .from("property_images")
+    .select("id, image_url, sort_order, caption")
+    .eq("property_id", id)
+    .order("sort_order", { ascending: true });
+
+  if (!galleryErr && galleryRows) {
+    propertyImages = (galleryRows as typeof propertyImages) || [];
+  }
 
   let ownerStatus = "No owner";
-  if (row.owner_accepted_at) ownerStatus = "Owner accepted";
-  else if (row.owner_invited_at) ownerStatus = "Invite sent";
-  else if (row.owner_email) ownerStatus = "Email on file";
+  let inviteStatus = "Not invited";
+  if (row.owner_accepted_at) {
+    ownerStatus = "Owner accepted";
+    inviteStatus = "Accepted";
+  } else if (row.owner_invited_at) {
+    ownerStatus = "Invite sent";
+    inviteStatus = "Invite sent";
+  } else if (row.owner_email) {
+    ownerStatus = "Email on file";
+    inviteStatus = "Email on file";
+  } else if (row.owner_id) {
+    ownerStatus = "Owner linked";
+    inviteStatus = "Owner linked";
+  }
 
   return NextResponse.json({
     property: {
@@ -86,9 +182,20 @@ export async function GET(
         province: row.province as string | null,
       }),
       owner_status: ownerStatus,
+      invite_status: inviteStatus,
+      owner_name: ownerName,
       crm_organisation: crmOrganisation,
     },
-    spaces: spaceRows,
+    summary: computePropertySpacesSummary(
+      spaceRows.map((space) => ({
+        status: space.status as string | null,
+        public_listing_mode: space.public_listing_mode as string | null,
+      }))
+    ),
+    health: computePropertySpacesHealth(healthInputs),
+    spaces: activeSpaces,
+    archived_spaces: archivedSpaces,
+    property_images: propertyImages,
   });
 }
 

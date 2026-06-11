@@ -452,7 +452,11 @@ export function AdminUnclaimedSpaceForm({
                   onClick={() => void saveDraft(false)}
                   className="rounded-lg bg-[#0f2740] px-5 py-2.5 text-sm font-semibold text-white hover:opacity-95 disabled:opacity-60"
                 >
-                  {saving ? "Saving…" : "Save"}
+                  {saving
+                    ? "Saving…"
+                    : propertyId
+                      ? "Save & return to property"
+                      : "Save"}
                 </button>
                 <button
                   type="button"

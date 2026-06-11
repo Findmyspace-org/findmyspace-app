@@ -1,5 +1,7 @@
 import {
   adminListingReviewHref,
+  adminLiveSpaceEditHref,
+  adminSpaceEditHref,
   adminUnclaimedEditHref,
   isLiveListingStatus,
   needsReviewWorkflow,
@@ -120,35 +122,7 @@ export function getAdminSpaceVisibilityInfo(
   };
 }
 
-export function adminSpaceEditHref(space: {
-  id: string;
-  status?: string | null;
-  property_id?: string | null;
-}): string {
-  const status = space.status;
-  const propertyId = space.property_id;
-
-  if (
-    propertyId &&
-    (status === "draft" || status === "unclaimed" || status === "owner_claimed")
-  ) {
-    return `/admin/properties/${propertyId}/spaces/${space.id}/edit`;
-  }
-
-  if (needsReviewWorkflow(status)) {
-    return adminListingReviewHref(space.id);
-  }
-
-  if (status === "draft" || status === "unclaimed") {
-    return adminUnclaimedEditHref(space.id);
-  }
-
-  if (isLiveListingStatus(status)) {
-    return `/admin/listings`;
-  }
-
-  return adminUnclaimedEditHref(space.id);
-}
+export { adminSpaceEditHref } from "@/lib/admin-listing-routing";
 
 export function adminSpacePublicViewHref(space: {
   id: string;
@@ -175,7 +149,7 @@ export function adminSpaceStatusActionHref(space: {
   }
 
   if (isLiveListingStatus(space.status)) {
-    return `/admin/spaces`;
+    return adminLiveSpaceEditHref(space.id);
   }
 
   if (space.status === "draft" || space.status === "unclaimed") {

@@ -3,17 +3,29 @@
 import { hasAdminUiAccess } from "@/lib/client-admin-access";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
-import { ArrowLeft, ExternalLink, Pencil, Plus } from "lucide-react";
+import { useParams, useSearchParams } from "next/navigation";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { ExternalLink, Pencil, Plus } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { AdminNav } from "@/app/components/AdminNav";
 import { adminApiFetch } from "@/lib/admin-api-client";
 import { AdminPropertyInvitePanel } from "@/app/components/AdminPropertyInvitePanel";
 import { AdminPropertySpaceBreadcrumb } from "@/app/components/AdminPropertySpaceBreadcrumb";
-import { adminListingStatusBadgeClass } from "@/lib/admin-listing-status-display";
-import { formatSpaceTypeLabel } from "@/app/data/spaceFeatureConfig";
 import { AdminPropertyForm } from "@/app/components/AdminPropertyForm";
+import { AdminPropertySummaryCards } from "@/app/components/AdminPropertySummaryCards";
+import { AdminPropertySpacesHub } from "@/app/components/AdminPropertySpacesHub";
+import { AdminPropertyOnboardingProgress } from "@/app/components/AdminPropertyOnboardingProgress";
+import {
+  AdminPropertyGallery,
+  type PropertyGalleryImage,
+} from "@/app/components/AdminPropertyGallery";
+import { computePropertyOnboardingProgress } from "@/lib/property-onboarding-progress";
+import type {
+  PropertySpacesHealth,
+  PropertySpacesSummary,
+  PropertySpaceHealthFilter,
+  PropertySpaceRow,
+} from "@/lib/property-space-ops";
 
 type PropertyDetail = {
   id: string;
@@ -30,32 +42,64 @@ type PropertyDetail = {
   longitude: number | null;
   owner_email: string | null;
   owner_id: string | null;
+  owner_name: string | null;
   owner_status: string;
+  invite_status: string;
   owner_invited_at: string | null;
   owner_accepted_at: string | null;
   crm_organisation_id: string | null;
   crm_organisation: { id: string; name: string } | null;
 };
 
-type SpaceRow = {
-  id: string;
-  title: string | null;
-  status: string | null;
-  status_label: string;
-  space_type: string | null;
-  admin_edit_url: string;
-};
-
-export default function AdminPropertyDetailPage() {
+function AdminPropertyDetailContent({
+  showCreatedBanner,
+  showUpdatedBanner,
+  showSavedBanner,
+}: {
+  showCreatedBanner: boolean;
+  showUpdatedBanner: boolean;
+  showSavedBanner: boolean;
+}) {
   const params = useParams();
   const propertyId = typeof params.id === "string" ? params.id : "";
 
   const [role, setRole] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [property, setProperty] = useState<PropertyDetail | null>(null);
-  const [spaces, setSpaces] = useState<SpaceRow[]>([]);
+  const [spaces, setSpaces] = useState<PropertySpaceRow[]>([]);
+  const [archivedSpaces, setArchivedSpaces] = useState<PropertySpaceRow[]>([]);
+  const [summary, setSummary] = useState<PropertySpacesSummary>({
+    total: 0,
+    hidden: 0,
+    enquiry: 0,
+    live: 0,
+    archived: 0,
+  });
+  const [health, setHealth] = useState<PropertySpacesHealth>({
+    withPhotos: 0,
+    missingPhotos: 0,
+    missingPricing: 0,
+    missingLocation: 0,
+  });
+  const [propertyImages, setPropertyImages] = useState<PropertyGalleryImage[]>([]);
+  const [healthFilter, setHealthFilter] = useState<PropertySpaceHealthFilter>(null);
   const [message, setMessage] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
+  const [galleryMessage, setGalleryMessage] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
+
+  useEffect(() => {
+    if (showCreatedBanner) {
+      setSuccessMessage("Property created successfully.");
+      window.history.replaceState({}, "", `/admin/properties/${propertyId}`);
+    } else if (showUpdatedBanner) {
+      setSuccessMessage("Property updated successfully.");
+      window.history.replaceState({}, "", `/admin/properties/${propertyId}`);
+    } else if (showSavedBanner) {
+      setSuccessMessage("Space saved successfully.");
+      window.history.replaceState({}, "", `/admin/properties/${propertyId}`);
+    }
+  }, [showCreatedBanner, showUpdatedBanner, showSavedBanner, propertyId]);
 
   const load = useCallback(async () => {
     if (!propertyId) return;
@@ -63,15 +107,42 @@ export default function AdminPropertyDetailPage() {
     try {
       const result = await adminApiFetch(`/api/admin/properties/${propertyId}`);
       setProperty(result.property as PropertyDetail);
-      setSpaces((result.spaces as SpaceRow[]) || []);
-      setMessage("");
+      setSpaces((result.spaces as PropertySpaceRow[]) || []);
+      setArchivedSpaces((result.archived_spaces as PropertySpaceRow[]) || []);
+      setSummary(
+        (result.summary as PropertySpacesSummary) || {
+          total: 0,
+          hidden: 0,
+          enquiry: 0,
+          live: 0,
+          archived: 0,
+        }
+      );
+      setHealth(
+        (result.health as PropertySpacesHealth) || {
+          withPhotos: 0,
+          missingPhotos: 0,
+          missingPricing: 0,
+          missingLocation: 0,
+        }
+      );
+      setPropertyImages(
+        ((result.property_images as PropertyGalleryImage[]) || []).map((img) => ({
+          ...img,
+          sort_order: img.sort_order ?? 0,
+        }))
+      );
+      if (!showCreatedBanner && !showUpdatedBanner && !showSavedBanner) {
+        setMessage("");
+      }
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Failed to load property.");
       setProperty(null);
       setSpaces([]);
+      setArchivedSpaces([]);
     }
     setLoading(false);
-  }, [propertyId]);
+  }, [propertyId, showCreatedBanner, showSavedBanner, showUpdatedBanner]);
 
   useEffect(() => {
     async function init() {
@@ -90,7 +161,7 @@ export default function AdminPropertyDetailPage() {
         .maybeSingle();
       const r = (profile as { role?: string } | null)?.role ?? null;
       setRole(r);
-      if (r === "admin") {
+      if (hasAdminUiAccess(r)) {
         await load();
       } else {
         setLoading(false);
@@ -98,6 +169,23 @@ export default function AdminPropertyDetailPage() {
     }
     void init();
   }, [load]);
+
+  const onboardingProgress = useMemo(() => {
+    if (!property) return null;
+    return computePropertyOnboardingProgress({
+      property: {
+        crm_organisation_id: property.crm_organisation_id,
+        owner_id: property.owner_id,
+        owner_invited_at: property.owner_invited_at,
+        owner_accepted_at: property.owner_accepted_at,
+      },
+      spaces,
+      archivedSpaces,
+      summary,
+      health,
+      propertyImageCount: propertyImages.length,
+    });
+  }, [archivedSpaces, health, property, propertyImages.length, spaces, summary]);
 
   if (loading) {
     return <main className="p-8 text-gray-600">Loading…</main>;
@@ -115,6 +203,12 @@ export default function AdminPropertyDetailPage() {
     return (
       <main className="p-8">
         <p className="text-red-600">{message || "Property not found."}</p>
+        <Link
+          href="/admin/properties"
+          className="mt-4 inline-block text-sm font-medium text-[#0f2740] hover:underline"
+        >
+          Back to properties
+        </Link>
       </main>
     );
   }
@@ -123,7 +217,7 @@ export default function AdminPropertyDetailPage() {
 
   return (
     <main className="min-h-screen bg-gray-50 p-6 md:p-8">
-      <div className="mx-auto max-w-5xl">
+      <div className="mx-auto max-w-6xl">
         <AdminNav current="properties" />
 
         <AdminPropertySpaceBreadcrumb
@@ -131,12 +225,44 @@ export default function AdminPropertyDetailPage() {
           propertyName={property.name}
         />
 
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="min-w-0">
             <h1 className="text-2xl font-semibold text-gray-900">{property.name}</h1>
             {property.formatted_address ? (
               <p className="mt-1 text-sm text-gray-600">{property.formatted_address}</p>
             ) : null}
+            <dl className="mt-3 flex flex-wrap gap-x-6 gap-y-2 text-sm">
+              {property.crm_organisation ? (
+                <div>
+                  <dt className="text-gray-500">CRM organisation</dt>
+                  <dd>
+                    <Link
+                      href={`/space-place/organisations/${property.crm_organisation.id}`}
+                      className="inline-flex items-center gap-1 font-medium text-[#0f2740] hover:underline"
+                    >
+                      {property.crm_organisation.name}
+                      <ExternalLink className="h-3.5 w-3.5" />
+                    </Link>
+                  </dd>
+                </div>
+              ) : null}
+              <div>
+                <dt className="text-gray-500">Owner</dt>
+                <dd className="font-medium text-gray-900">
+                  {property.owner_name ||
+                    property.owner_email ||
+                    "No owner assigned"}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-gray-500">Owner status</dt>
+                <dd className="font-medium text-gray-900">{property.owner_status}</dd>
+              </div>
+              <div>
+                <dt className="text-gray-500">Invite status</dt>
+                <dd className="font-medium text-gray-900">{property.invite_status}</dd>
+              </div>
+            </dl>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {!editing ? (
@@ -159,7 +285,25 @@ export default function AdminPropertyDetailPage() {
           </div>
         </div>
 
-        {message ? <p className="mt-4 text-sm text-red-600">{message}</p> : null}
+        {successMessage ? (
+          <p className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-900">
+            {successMessage}
+          </p>
+        ) : null}
+
+        {message ? (
+          <p
+            className={`mt-4 text-sm ${
+              message.toLowerCase().includes("fail") ||
+              message.toLowerCase().includes("could not") ||
+              message.toLowerCase().includes("error")
+                ? "text-red-600"
+                : "text-green-700"
+            }`}
+          >
+            {message}
+          </p>
+        ) : null}
 
         {editing ? (
           <div className="mt-6">
@@ -186,109 +330,103 @@ export default function AdminPropertyDetailPage() {
               }}
               onSuccess={async () => {
                 setEditing(false);
+                setSuccessMessage("Property updated successfully.");
                 await load();
               }}
               onCancel={() => setEditing(false)}
             />
           </div>
         ) : (
-          <div className="mt-6 grid gap-6 lg:grid-cols-2">
-            <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
-                Property details
-              </h2>
-              {property.description ? (
-                <p className="mt-3 text-sm text-gray-700 whitespace-pre-wrap">
-                  {property.description}
-                </p>
-              ) : (
-                <p className="mt-3 text-sm text-gray-500">No description.</p>
-              )}
+          <>
+            {onboardingProgress ? (
+              <div className="mt-6">
+                <AdminPropertyOnboardingProgress progress={onboardingProgress} />
+              </div>
+            ) : null}
 
-              <dl className="mt-4 space-y-2 text-sm">
-                <div className="flex justify-between gap-4">
-                  <dt className="text-gray-500">Owner status</dt>
-                  <dd className="font-medium text-gray-900">{property.owner_status}</dd>
-                </div>
+            <div className="mt-6">
+              <AdminPropertySummaryCards
+                summary={summary}
+                health={health}
+                healthFilter={healthFilter}
+                onHealthFilterChange={setHealthFilter}
+              />
+            </div>
+
+            <div className="mt-6 grid gap-6 lg:grid-cols-2">
+              <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+                <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+                  Property details
+                </h2>
+                {property.description ? (
+                  <p className="mt-3 text-sm text-gray-700 whitespace-pre-wrap">
+                    {property.description}
+                  </p>
+                ) : (
+                  <p className="mt-3 text-sm text-gray-500">No description.</p>
+                )}
                 {property.owner_email ? (
-                  <div className="flex justify-between gap-4">
-                    <dt className="text-gray-500">Owner email</dt>
-                    <dd className="text-gray-900">{property.owner_email}</dd>
-                  </div>
+                  <p className="mt-3 text-sm text-gray-600">
+                    Owner email:{" "}
+                    <span className="font-medium text-gray-900">
+                      {property.owner_email}
+                    </span>
+                  </p>
                 ) : null}
-                {property.crm_organisation ? (
-                  <div className="flex justify-between gap-4">
-                    <dt className="text-gray-500">CRM organisation</dt>
-                    <dd>
-                      <Link
-                        href={`/space-place/organisations/${property.crm_organisation.id}`}
-                        className="inline-flex items-center gap-1 font-medium text-[#0f2740] hover:underline"
-                      >
-                        {property.crm_organisation.name}
-                        <ExternalLink className="h-3.5 w-3.5" />
-                      </Link>
-                    </dd>
-                  </div>
-                ) : null}
-              </dl>
-            </section>
+              </section>
 
-            <AdminPropertyInvitePanel
-            propertyId={propertyId}
-            propertyName={property.name}
-            ownerEmailDefault={property.owner_email}
-            hasOwner={hasOwner}
-          />
-          </div>
+              <AdminPropertyInvitePanel
+                propertyId={propertyId}
+                propertyName={property.name}
+                ownerEmailDefault={property.owner_email}
+                hasOwner={hasOwner}
+              />
+            </div>
+
+            <div className="mt-6">
+              <AdminPropertySpacesHub
+                propertyId={propertyId}
+                spaces={spaces}
+                archivedSpaces={archivedSpaces}
+                healthFilter={healthFilter}
+                onReload={load}
+                onMessage={setMessage}
+              />
+            </div>
+
+            <div className="mt-6">
+              {galleryMessage ? (
+                <p className="mb-2 text-sm text-gray-600">{galleryMessage}</p>
+              ) : null}
+              <AdminPropertyGallery
+                propertyId={propertyId}
+                images={propertyImages}
+                onImagesChange={setPropertyImages}
+                onMessage={setGalleryMessage}
+              />
+            </div>
+          </>
         )}
-
-        <section className="mt-6 rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-          <div className="flex items-center justify-between gap-3">
-            <h2 className="text-lg font-semibold text-gray-900">Spaces</h2>
-            <span className="text-sm text-gray-500">{spaces.length} total</span>
-          </div>
-
-          {spaces.length === 0 ? (
-            <p className="mt-4 text-sm text-gray-600">
-              No spaces yet.{" "}
-              <Link
-                href={`/admin/properties/${propertyId}/spaces/new`}
-                className="font-semibold text-[#0f2740] hover:underline"
-              >
-                Add the first space
-              </Link>
-            </p>
-          ) : (
-            <ul className="mt-4 divide-y divide-gray-100">
-              {spaces.map((space) => (
-                <li
-                  key={space.id}
-                  className="flex flex-wrap items-center justify-between gap-3 py-3"
-                >
-                  <div>
-                    <Link
-                      href={space.admin_edit_url}
-                      className="font-medium text-[#0f2740] hover:underline"
-                    >
-                      {space.title?.trim() || "Untitled space"}
-                    </Link>
-                    {space.space_type ? (
-                      <p className="text-xs text-gray-500">
-                        {formatSpaceTypeLabel(space.space_type)}
-                      </p>
-                    ) : null}
-                  </div>
-                  <span
-                    className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${adminListingStatusBadgeClass(space.status)}`}
-                  >
-                    {space.status_label}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
       </div>
     </main>
+  );
+}
+
+function AdminPropertyDetailSearchParamsClient() {
+  const searchParams = useSearchParams();
+  return (
+    <AdminPropertyDetailContent
+      showCreatedBanner={searchParams.get("created") === "1"}
+      showUpdatedBanner={searchParams.get("updated") === "1"}
+      showSavedBanner={searchParams.get("saved") === "1"}
+    />
+  );
+}
+
+export default function AdminPropertyDetailPage() {
+  return (
+    <Suspense fallback={<main className="p-8 text-gray-600">Loading…</main>}>
+      <AdminPropertyDetailSearchParamsClient />
+    </Suspense>
   );
 }

@@ -320,24 +320,39 @@ export async function acceptPropertyInvite(
 
   const { data: childSpaces, error: spacesErr } = await admin
     .from("spaces")
-    .select("id, claimed_at")
+    .select("id, owner_id, claimed_at, created_by_admin, status")
     .eq("property_id", token.property_id);
 
   if (spacesErr) {
     return { ok: false, error: spacesErr.message, status: 500 };
   }
 
-  const spaces = (childSpaces as { id: string; claimed_at: string | null }[]) || [];
+  const spaces =
+    (childSpaces as {
+      id: string;
+      owner_id: string | null;
+      claimed_at: string | null;
+      created_by_admin: boolean | null;
+      status: string | null;
+    }[]) || [];
 
   for (const space of spaces) {
-    const patch: Record<string, unknown> = { owner_id: userId };
-    if (!space.claimed_at) {
-      patch.claimed_at = nowIso;
+    if (space.owner_id != null || !space.created_by_admin) {
+      continue;
     }
+
+    const patch: Record<string, unknown> = {
+      owner_id: userId,
+      status: "owner_claimed",
+      claimed_at: nowIso,
+    };
+
     const { error: spaceUpdateErr } = await admin
       .from("spaces")
       .update(patch)
-      .eq("id", space.id);
+      .eq("id", space.id)
+      .is("owner_id", null)
+      .eq("created_by_admin", true);
 
     if (spaceUpdateErr) {
       console.error("[property-invite] child space update failed", spaceUpdateErr);

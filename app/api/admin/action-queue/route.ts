@@ -36,7 +36,7 @@ export async function GET(req: NextRequest) {
     admin
       .from("spaces")
       .select("id", { count: "exact", head: true })
-      .eq("status", "pending_verification")
+      .in("status", ["owner_claimed", "pending_verification", "needs_changes", "rejected"])
       .not("owner_id", "is", null),
     admin
       .from("profiles")
@@ -54,8 +54,8 @@ export async function GET(req: NextRequest) {
       .eq("status", "pending_owner"),
     admin
       .from("spaces")
-      .select("submitted_for_review_at, created_at")
-      .eq("status", "pending_verification")
+      .select("submitted_for_review_at, claimed_at, created_at")
+      .in("status", ["owner_claimed", "pending_verification", "needs_changes", "rejected"])
       .not("owner_id", "is", null)
       .limit(200),
     admin
@@ -120,11 +120,13 @@ export async function GET(req: NextRequest) {
 
   const reviewRows = (oldestReviewRows as {
     submitted_for_review_at?: string | null;
+    claimed_at?: string | null;
     created_at?: string | null;
   }[]) || [];
   let reviewDate: string | null = null;
   for (const row of reviewRows) {
-    const candidate = row.submitted_for_review_at || row.created_at || null;
+    const candidate =
+      row.submitted_for_review_at || row.claimed_at || row.created_at || null;
     if (!candidate) continue;
     if (!reviewDate || new Date(candidate) < new Date(reviewDate)) {
       reviewDate = candidate;

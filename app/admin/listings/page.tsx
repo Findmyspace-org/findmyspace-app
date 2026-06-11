@@ -3,7 +3,8 @@
 import { hasAdminUiAccess } from "@/lib/client-admin-access";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   Building2,
   CheckCircle2,
@@ -95,6 +96,16 @@ type ListingRecord = {
 };
 
 export default function AdminListingsPage() {
+  return (
+    <Suspense fallback={<main className="p-8 text-gray-600">Loading…</main>}>
+      <AdminListingsPageContent />
+    </Suspense>
+  );
+}
+
+function AdminListingsPageContent() {
+  const searchParams = useSearchParams();
+  const focusSpaceId = searchParams.get("space");
   const [role, setRole] = useState<string | null>(null);
   const [records, setRecords] = useState<ListingRecord[]>([]);
   const [statusFilter, setStatusFilter] = useState("pending");
@@ -229,6 +240,18 @@ export default function AdminListingsPage() {
     setRecords(merged);
     setLoading(false);
   }
+
+  useEffect(() => {
+    if (!focusSpaceId || records.length === 0) return;
+    const record = records.find((item) => item.space.id === focusSpaceId);
+    if (!record) return;
+    setStatusFilter("all");
+    setExpandedListings((current) => ({ ...current, [focusSpaceId]: true }));
+    setContentDrafts((current) => ({
+      ...current,
+      [focusSpaceId]: current[focusSpaceId] ?? draftFromSpace(record.space),
+    }));
+  }, [focusSpaceId, records]);
 
   async function updateListingStatus(
     spaceId: string,

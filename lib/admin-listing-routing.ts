@@ -30,6 +30,50 @@ export function adminUnclaimedEditHref(spaceId: string): string {
   return `/admin/unclaimed-listings/${spaceId}/edit`;
 }
 
+export function adminLiveSpaceEditHref(spaceId: string): string {
+  return `/admin/listings?space=${encodeURIComponent(spaceId)}`;
+}
+
+const PROPERTY_FORM_EDIT_STATUSES = [
+  "draft",
+  "unclaimed",
+  "owner_claimed",
+] as const;
+
+/** Single source of truth for admin Edit links across property hub, all spaces, and queues. */
+export function adminSpaceEditHref(space: {
+  id: string;
+  status?: string | null;
+  property_id?: string | null;
+}): string {
+  const status = space.status;
+  const propertyId = space.property_id;
+  const id = space.id;
+
+  if (
+    propertyId &&
+    PROPERTY_FORM_EDIT_STATUSES.includes(
+      status as (typeof PROPERTY_FORM_EDIT_STATUSES)[number]
+    )
+  ) {
+    return `/admin/properties/${propertyId}/spaces/${id}/edit`;
+  }
+
+  if (needsReviewWorkflow(status)) {
+    return adminListingReviewHref(id);
+  }
+
+  if (status === "draft" || status === "unclaimed") {
+    return adminUnclaimedEditHref(id);
+  }
+
+  if (isLiveListingStatus(status)) {
+    return adminLiveSpaceEditHref(id);
+  }
+
+  return adminUnclaimedEditHref(id);
+}
+
 export function ownerCompletionHref(spaceId: string): string {
   return `/dashboard/listings/${spaceId}/complete`;
 }

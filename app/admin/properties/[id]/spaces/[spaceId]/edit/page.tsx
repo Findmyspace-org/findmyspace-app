@@ -199,7 +199,9 @@ export default function EditPropertySpacePage() {
           initialCrmLink={crmLink}
           backHref={`/admin/properties/${propertyId}`}
           backLabel="Back to property"
-          onSavedAndExit={() => router.push(`/admin/properties/${propertyId}`)}
+          onSavedAndExit={() =>
+            router.push(`/admin/properties/${propertyId}?saved=1`)
+          }
           initialImages={images}
           initial={{
             title: space.title || "",
