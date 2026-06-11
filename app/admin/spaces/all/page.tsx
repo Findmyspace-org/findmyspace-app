@@ -7,6 +7,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { format } from "date-fns";
 import {
+  Archive,
   Building2,
   ExternalLink,
   Eye,
@@ -14,6 +15,7 @@ import {
   PauseCircle,
   Pencil,
   PlayCircle,
+  RotateCcw,
   Search,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
@@ -28,6 +30,7 @@ import {
 } from "@/lib/admin-space-visibility";
 import { isLiveListingStatus } from "@/lib/admin-listing-routing";
 import type { PublicListingMode } from "@/lib/public-listing-mode";
+import { isArchivedSpace } from "@/lib/space-archive";
 
 type SpaceRow = {
   id: string;
@@ -63,6 +66,7 @@ const STATUS_FILTERS = [
   { key: "active", label: "Active" },
   { key: "paused", label: "Paused" },
   { key: "rejected", label: "Rejected" },
+  { key: "deleted", label: "Archived" },
 ];
 
 export default function AdminAllSpacesPage() {
@@ -73,6 +77,7 @@ export default function AdminAllSpacesPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [archiveTarget, setArchiveTarget] = useState<SpaceRow | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -158,6 +163,75 @@ export default function AdminAllSpacesPage() {
       );
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Could not update visibility.");
+    }
+    setUpdatingId(null);
+  }
+
+  async function archiveSpace(space: SpaceRow) {
+    setUpdatingId(space.id);
+    setMessage("");
+    try {
+      await adminApiFetch(`/api/admin/spaces/${space.id}/archive`, {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+      if (statusFilter === "deleted") {
+        setSpaces((current) =>
+          current.map((row) =>
+            row.id === space.id
+              ? {
+                  ...row,
+                  status: "deleted",
+                  public_listing_mode: "off",
+                  view_href: null,
+                }
+              : row
+          )
+        );
+      } else {
+        setSpaces((current) => current.filter((row) => row.id !== space.id));
+      }
+      setMessage(`"${space.title}" archived.`);
+      setArchiveTarget(null);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Could not archive space.");
+    }
+    setUpdatingId(null);
+  }
+
+  async function restoreSpace(space: SpaceRow) {
+    if (
+      !window.confirm(
+        `Restore "${space.title}" to draft (hidden)? You can set enquiry or live visibility again from this table.`
+      )
+    ) {
+      return;
+    }
+    setUpdatingId(space.id);
+    setMessage("");
+    try {
+      await adminApiFetch(`/api/admin/spaces/${space.id}/restore`, {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+      if (statusFilter === "deleted") {
+        setSpaces((current) => current.filter((row) => row.id !== space.id));
+      } else {
+        setSpaces((current) =>
+          current.map((row) =>
+            row.id === space.id
+              ? {
+                  ...row,
+                  status: "draft",
+                  public_listing_mode: "off",
+                }
+              : row
+          )
+        );
+      }
+      setMessage(`"${space.title}" restored to draft.`);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Could not restore space.");
     }
     setUpdatingId(null);
   }
@@ -302,6 +376,7 @@ export default function AdminAllSpacesPage() {
               ) : null}
 
               {spaces.map((space) => {
+                const archived = isArchivedSpace(space.status);
                 const visibility = getAdminSpaceVisibilityInfo(space);
                 const location =
                   [space.suburb, space.city].filter(Boolean).join(", ") ||
@@ -370,7 +445,7 @@ export default function AdminAllSpacesPage() {
                         </p>
                         <select
                           value={space.public_listing_mode || "off"}
-                          disabled={updatingId === space.id}
+                          disabled={updatingId === space.id || archived}
                           onChange={(e) => {
                             const value = e.target.value as PublicListingMode;
                             if (value === space.public_listing_mode) return;
@@ -451,7 +526,7 @@ export default function AdminAllSpacesPage() {
                             Property
                           </Link>
                         ) : null}
-                        {canAdminToggleLiveStatus(space) ? (
+                        {!archived && canAdminToggleLiveStatus(space) ? (
                           <button
                             type="button"
                             disabled={updatingId === space.id}
@@ -471,6 +546,27 @@ export default function AdminAllSpacesPage() {
                             )}
                           </button>
                         ) : null}
+                        {archived ? (
+                          <button
+                            type="button"
+                            disabled={updatingId === space.id}
+                            onClick={() => void restoreSpace(space)}
+                            className="inline-flex items-center gap-1 rounded-md border border-gray-200 px-2 py-1 text-xs font-medium hover:bg-gray-50 disabled:opacity-50"
+                          >
+                            <RotateCcw className="h-3.5 w-3.5" />
+                            Restore
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            disabled={updatingId === space.id}
+                            onClick={() => setArchiveTarget(space)}
+                            className="inline-flex items-center gap-1 rounded-md border border-red-200 px-2 py-1 text-xs font-medium text-red-800 hover:bg-red-50 disabled:opacity-50"
+                          >
+                            <Archive className="h-3.5 w-3.5" />
+                            Archive
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -480,6 +576,50 @@ export default function AdminAllSpacesPage() {
           </table>
         </div>
       </div>
+
+      {archiveTarget ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div
+            className="w-full max-w-md rounded-xl border border-gray-200 bg-white p-5 shadow-xl"
+            role="dialog"
+            aria-labelledby="archive-space-title"
+          >
+            <h2
+              id="archive-space-title"
+              className="text-lg font-semibold text-[#192a3a]"
+            >
+              Archive this space?
+            </h2>
+            <p className="mt-2 text-sm text-gray-600">
+              <span className="font-medium text-[#192a3a]">{archiveTarget.title}</span>{" "}
+              will be removed from public browse and default admin lists.
+            </p>
+            <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-gray-600">
+              <li>Bookings, enquiries, payments, and photos are kept.</li>
+              <li>Archive is blocked while open bookings are in progress.</li>
+              <li>You can restore to draft later from the Archived filter.</li>
+            </ul>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={updatingId === archiveTarget.id}
+                onClick={() => setArchiveTarget(null)}
+                className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={updatingId === archiveTarget.id}
+                onClick={() => void archiveSpace(archiveTarget)}
+                className="rounded-lg bg-red-800 px-4 py-2 text-sm font-semibold text-white hover:bg-red-900 disabled:opacity-50"
+              >
+                {updatingId === archiveTarget.id ? "Archiving…" : "Archive space"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -16,6 +16,7 @@ import {
   publicListingModeLabel,
   PUBLIC_LISTING_MODE_OFF,
 } from "@/lib/public-listing-mode";
+import { isArchivedSpace } from "@/lib/space-archive";
 
 export type AdminSpaceVisibilityInfo = {
   visibilityLabel: string;
@@ -42,6 +43,15 @@ export function getAdminSpaceVisibilityInfo(
     typeof space === "object" && space !== null
       ? normalizePublicListingMode(space.public_listing_mode)
       : PUBLIC_LISTING_MODE_OFF;
+
+  if (isArchivedSpace(status)) {
+    return {
+      visibilityLabel: "Archived",
+      bookabilityLabel: "Not bookable",
+      visibilityBadgeClass: `${badgeBase} bg-stone-200 text-stone-800`,
+      bookabilityBadgeClass: `${badgeBase} bg-gray-100 text-gray-600`,
+    };
+  }
 
   if (status === "paused" && mode === PUBLIC_LISTING_MODE_OFF) {
     return {

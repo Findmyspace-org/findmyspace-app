@@ -50,6 +50,7 @@ export async function GET(
     .from("spaces")
     .select("id, title, status, space_type, city, suburb, created_at")
     .eq("property_id", id)
+    .neq("status", "deleted")
     .order("title", { ascending: true });
 
   if (spacesErr) {

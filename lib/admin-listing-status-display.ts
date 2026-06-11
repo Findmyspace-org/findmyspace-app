@@ -48,6 +48,8 @@ export function adminListingStatusLabel(status: string | null | undefined): stri
       return "Active";
     case "paused":
       return "Paused";
+    case "deleted":
+      return "Archived";
     default:
       return status || "Unknown";
   }
@@ -73,6 +75,8 @@ export function adminListingStatusBadgeClass(status: string | null | undefined):
       return `${base} bg-green-100 text-green-800`;
     case "paused":
       return `${base} bg-slate-100 text-slate-700`;
+    case "deleted":
+      return `${base} bg-stone-200 text-stone-800`;
     default:
       return `${base} bg-gray-100 text-gray-700`;
   }

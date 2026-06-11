@@ -27,8 +27,12 @@ export async function GET(req: NextRequest) {
     .order("created_at", { ascending: false })
     .limit(500);
 
-  if (statusFilter && statusFilter !== "all") {
+  if (statusFilter === "deleted") {
+    query = query.eq("status", "deleted");
+  } else if (statusFilter && statusFilter !== "all") {
     query = query.eq("status", statusFilter);
+  } else {
+    query = query.neq("status", "deleted");
   }
 
   const { data: spaces, error } = await query;

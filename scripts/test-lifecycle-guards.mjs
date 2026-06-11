@@ -169,4 +169,37 @@ test("admin enquiry eligibility", () => {
   assert.equal(canAdminSetEnquiryMode("rejected"), false);
 });
 
+const OPEN_ARCHIVE_BLOCK = new Set([
+  "pending_owner",
+  "pending",
+  "approved",
+  "accepted_awaiting_payment",
+  "awaiting_payment",
+  "paid_confirmed",
+  "confirmed",
+]);
+
+function isOpenBookingStatusForArchive(status, paymentStatus) {
+  if (OPEN_ARCHIVE_BLOCK.has(status || "")) return true;
+  return (paymentStatus || "") === "awaiting_payment";
+}
+
+function isArchivedSpace(status) {
+  return (status || "") === "deleted";
+}
+
+test("archive blocks open booking statuses", () => {
+  assert.equal(isOpenBookingStatusForArchive("approved"), true);
+  assert.equal(isOpenBookingStatusForArchive("paid_confirmed"), true);
+  assert.equal(isOpenBookingStatusForArchive("completed"), false);
+  assert.equal(isOpenBookingStatusForArchive("declined"), false);
+  assert.equal(isOpenBookingStatusForArchive("expired"), false);
+  assert.equal(isOpenBookingStatusForArchive("pending", "awaiting_payment"), true);
+});
+
+test("archived space detection", () => {
+  assert.equal(isArchivedSpace("deleted"), true);
+  assert.equal(isArchivedSpace("draft"), false);
+});
+
 console.log("\nAll lifecycle guard tests passed.");

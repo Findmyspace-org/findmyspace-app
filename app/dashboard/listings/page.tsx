@@ -33,7 +33,6 @@ import {
   BadgeCheck,
   PauseCircle,
   PlayCircle,
-  Trash2,
   Search,
   X,
 } from "lucide-react";
@@ -951,13 +950,10 @@ function MyListingsPageContent({
                           ) : null}
 
                           {selectedPanelIsLive ? (
-                            <button
-                              onClick={() => updateListingStatus(selectedSpace.id, "deleted")}
-                              className="inline-flex items-center gap-2 rounded-md border border-red-300 px-2.5 py-0.5 text-sm text-red-700 hover:bg-red-50"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                              <span>Delete</span>
-                            </button>
+                            <p className="text-xs text-gray-500">
+                              To remove a listing from the marketplace, contact support or
+                              ask an admin to archive it.
+                            </p>
                           ) : null}
                         </div>
                       </div>
