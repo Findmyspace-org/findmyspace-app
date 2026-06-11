@@ -31,6 +31,38 @@ export function isOpenBookingStatusForArchive(
   return (paymentStatus || "") === "awaiting_payment";
 }
 
+export function mapArchiveMigrationError(message: string): string {
+  if (
+    /column .* does not exist|could not find the .* column|schema cache/i.test(
+      message
+    )
+  ) {
+    return `Database migration required. Apply migrations 030 (public_listing_mode) and 031 (space_archive) with supabase db push, then retry. Details: ${message}`;
+  }
+  return message;
+}
+
+export function isMigrationRequiredError(message: string): boolean {
+  return message.includes("Database migration required");
+}
+
+export async function assertArchiveSchemaReady(
+  admin: SupabaseClient
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const { error } = await admin
+    .from("spaces")
+    .select(
+      "id, status, public_listing_mode, archived_at, archived_by, archive_restore_status, archive_restore_public_listing_mode"
+    )
+    .limit(1);
+
+  if (error) {
+    return { ok: false, error: mapArchiveMigrationError(error.message) };
+  }
+
+  return { ok: true };
+}
+
 export async function countOpenBookingsForSpace(
   admin: SupabaseClient,
   spaceId: string
@@ -52,18 +84,17 @@ export async function countOpenBookingsForSpace(
   return { count: open.length, statuses };
 }
 
+export type ArchivePatch = {
+  status: typeof ARCHIVED_SPACE_STATUS;
+  public_listing_mode: typeof PUBLIC_LISTING_MODE_OFF;
+  archived_at: string;
+  archived_by: string;
+  archive_restore_status: string | null;
+  archive_restore_public_listing_mode: string | null;
+};
+
 export type ArchiveValidationResult =
-  | {
-      ok: true;
-      patch: {
-        status: typeof ARCHIVED_SPACE_STATUS;
-        public_listing_mode: typeof PUBLIC_LISTING_MODE_OFF;
-        archived_at: string;
-        archived_by: string;
-        archive_restore_status: string | null;
-        archive_restore_public_listing_mode: string | null;
-      };
-    }
+  | { ok: true; patch: ArchivePatch }
   | { ok: false; error: string; openBookingCount?: number; openBookingStatuses?: string[] };
 
 export async function validateAdminArchiveSpace(
@@ -77,8 +108,12 @@ export async function validateAdminArchiveSpace(
     .eq("id", spaceId)
     .maybeSingle();
 
-  if (error || !space) {
-    return { ok: false, error: error?.message || "Space not found." };
+  if (error) {
+    return { ok: false, error: mapArchiveMigrationError(error.message) };
+  }
+
+  if (!space) {
+    return { ok: false, error: "Space not found." };
   }
 
   const row = space as {
@@ -90,14 +125,20 @@ export async function validateAdminArchiveSpace(
     return { ok: false, error: "This space is already archived." };
   }
 
-  const { count, statuses } = await countOpenBookingsForSpace(admin, spaceId);
-  if (count > 0) {
-    return {
-      ok: false,
-      error: `Cannot archive: ${count} open booking${count === 1 ? "" : "s"} still in progress.`,
-      openBookingCount: count,
-      openBookingStatuses: statuses,
-    };
+  try {
+    const { count, statuses } = await countOpenBookingsForSpace(admin, spaceId);
+    if (count > 0) {
+      return {
+        ok: false,
+        error: `Cannot archive: ${count} open booking${count === 1 ? "" : "s"} still in progress.`,
+        openBookingCount: count,
+        openBookingStatuses: statuses,
+      };
+    }
+  } catch (bookingErr) {
+    const message =
+      bookingErr instanceof Error ? bookingErr.message : "Could not check bookings.";
+    return { ok: false, error: message };
   }
 
   return {
@@ -113,16 +154,77 @@ export async function validateAdminArchiveSpace(
   };
 }
 
-export type RestoreValidationResult =
+export type ArchiveApplyResult =
   | {
       ok: true;
-      patch: {
-        status: "draft";
-        public_listing_mode: typeof PUBLIC_LISTING_MODE_OFF;
-        archived_at: null;
-        archived_by: null;
-      };
+      spaceId: string;
+      status: typeof ARCHIVED_SPACE_STATUS;
+      public_listing_mode: typeof PUBLIC_LISTING_MODE_OFF;
     }
+  | { ok: false; error: string; migrationRequired?: boolean };
+
+export async function applyAdminArchiveSpace(
+  admin: SupabaseClient,
+  spaceId: string,
+  patch: ArchivePatch
+): Promise<ArchiveApplyResult> {
+  const { data: updated, error: updateErr } = await admin
+    .from("spaces")
+    .update(patch)
+    .eq("id", spaceId)
+    .select("id, status, public_listing_mode")
+    .maybeSingle();
+
+  if (updateErr) {
+    const mapped = mapArchiveMigrationError(updateErr.message);
+    return {
+      ok: false,
+      error: mapped,
+      migrationRequired: isMigrationRequiredError(mapped),
+    };
+  }
+
+  if (!updated) {
+    return {
+      ok: false,
+      error:
+        "Archive update did not apply. The space was not found or the update was blocked.",
+    };
+  }
+
+  const row = updated as {
+    id: string;
+    status: string | null;
+    public_listing_mode: string | null;
+  };
+
+  if (
+    row.status !== ARCHIVED_SPACE_STATUS ||
+    row.public_listing_mode !== PUBLIC_LISTING_MODE_OFF
+  ) {
+    return {
+      ok: false,
+      error: `Archive incomplete after update (status=${row.status ?? "null"}, public_listing_mode=${row.public_listing_mode ?? "null"}). Check database triggers and migrations.`,
+    };
+  }
+
+  return {
+    ok: true,
+    spaceId: row.id,
+    status: ARCHIVED_SPACE_STATUS,
+    public_listing_mode: PUBLIC_LISTING_MODE_OFF,
+  };
+}
+
+export type RestorePatch = {
+  status: "draft";
+  public_listing_mode: typeof PUBLIC_LISTING_MODE_OFF;
+  archived_at: null;
+  archived_by: null;
+};
+
+export type RestoreValidationResult =
+  | { ok: true; patch: RestorePatch }
   | { ok: false; error: string };
 
 export async function validateAdminRestoreSpace(
@@ -135,8 +237,12 @@ export async function validateAdminRestoreSpace(
     .eq("id", spaceId)
     .maybeSingle();
 
-  if (error || !space) {
-    return { ok: false, error: error?.message || "Space not found." };
+  if (error) {
+    return { ok: false, error: mapArchiveMigrationError(error.message) };
+  }
+
+  if (!space) {
+    return { ok: false, error: "Space not found." };
   }
 
   if (!isArchivedSpace((space as { status: string | null }).status)) {
@@ -151,5 +257,56 @@ export async function validateAdminRestoreSpace(
       archived_at: null,
       archived_by: null,
     },
+  };
+}
+
+export type RestoreApplyResult =
+  | {
+      ok: true;
+      spaceId: string;
+      status: "draft";
+      public_listing_mode: typeof PUBLIC_LISTING_MODE_OFF;
+    }
+  | { ok: false; error: string; migrationRequired?: boolean };
+
+export async function applyAdminRestoreSpace(
+  admin: SupabaseClient,
+  spaceId: string,
+  patch: RestorePatch
+): Promise<RestoreApplyResult> {
+  const { data: updated, error: updateErr } = await admin
+    .from("spaces")
+    .update(patch)
+    .eq("id", spaceId)
+    .select("id, status, public_listing_mode")
+    .maybeSingle();
+
+  if (updateErr) {
+    const mapped = mapArchiveMigrationError(updateErr.message);
+    return {
+      ok: false,
+      error: mapped,
+      migrationRequired: isMigrationRequiredError(mapped),
+    };
+  }
+
+  if (!updated) {
+    return {
+      ok: false,
+      error: "Restore update did not apply. The space was not found.",
+    };
+  }
+
+  const row = updated as {
+    id: string;
+    status: string | null;
+    public_listing_mode: string | null;
+  };
+
+  return {
+    ok: true,
+    spaceId: row.id,
+    status: "draft",
+    public_listing_mode: PUBLIC_LISTING_MODE_OFF,
   };
 }

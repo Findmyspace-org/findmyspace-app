@@ -57,5 +57,12 @@ export async function adminApiFetch(path: string, init?: RequestInit) {
     }
     throw new Error(message);
   }
+
+  if (json.ok === false) {
+    throw new Error(
+      (typeof json.error === "string" && json.error) || "Request failed."
+    );
+  }
+
   return json;
 }

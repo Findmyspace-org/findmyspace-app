@@ -78,6 +78,7 @@ export default function AdminAllSpacesPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [archiveTarget, setArchiveTarget] = useState<SpaceRow | null>(null);
+  const [archiveError, setArchiveError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -169,34 +170,32 @@ export default function AdminAllSpacesPage() {
 
   async function archiveSpace(space: SpaceRow) {
     setUpdatingId(space.id);
+    setArchiveError(null);
     setMessage("");
     try {
-      await adminApiFetch(`/api/admin/spaces/${space.id}/archive`, {
+      const result = await adminApiFetch(`/api/admin/spaces/${space.id}/archive`, {
         method: "POST",
         body: JSON.stringify({}),
       });
-      if (statusFilter === "deleted") {
-        setSpaces((current) =>
-          current.map((row) =>
-            row.id === space.id
-              ? {
-                  ...row,
-                  status: "deleted",
-                  public_listing_mode: "off",
-                  view_href: null,
-                }
-              : row
-          )
+
+      if (result.ok !== true) {
+        throw new Error(
+          (typeof result.error === "string" && result.error) ||
+            "Archive did not complete."
         );
-      } else {
-        setSpaces((current) => current.filter((row) => row.id !== space.id));
       }
-      setMessage(`"${space.title}" archived.`);
+
       setArchiveTarget(null);
+      setArchiveError(null);
+      setMessage("Space archived.");
+      await load();
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : "Could not archive space.");
+      const msg = err instanceof Error ? err.message : "Could not archive space.";
+      setArchiveError(msg);
+      setMessage(msg);
+    } finally {
+      setUpdatingId(null);
     }
-    setUpdatingId(null);
   }
 
   async function restoreSpace(space: SpaceRow) {
@@ -230,10 +229,12 @@ export default function AdminAllSpacesPage() {
         );
       }
       setMessage(`"${space.title}" restored to draft.`);
+      await load();
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Could not restore space.");
+    } finally {
+      setUpdatingId(null);
     }
-    setUpdatingId(null);
   }
 
   async function toggleLiveStatus(space: SpaceRow) {
@@ -560,7 +561,10 @@ export default function AdminAllSpacesPage() {
                           <button
                             type="button"
                             disabled={updatingId === space.id}
-                            onClick={() => setArchiveTarget(space)}
+                            onClick={() => {
+                              setArchiveError(null);
+                              setArchiveTarget(space);
+                            }}
                             className="inline-flex items-center gap-1 rounded-md border border-red-200 px-2 py-1 text-xs font-medium text-red-800 hover:bg-red-50 disabled:opacity-50"
                           >
                             <Archive className="h-3.5 w-3.5" />
@@ -599,11 +603,19 @@ export default function AdminAllSpacesPage() {
               <li>Archive is blocked while open bookings are in progress.</li>
               <li>You can restore to draft later from the Archived filter.</li>
             </ul>
+            {archiveError ? (
+              <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+                {archiveError}
+              </div>
+            ) : null}
             <div className="mt-5 flex justify-end gap-2">
               <button
                 type="button"
                 disabled={updatingId === archiveTarget.id}
-                onClick={() => setArchiveTarget(null)}
+                onClick={() => {
+                  setArchiveTarget(null);
+                  setArchiveError(null);
+                }}
                 className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
               >
                 Cancel
