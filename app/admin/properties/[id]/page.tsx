@@ -216,7 +216,7 @@ function AdminPropertyDetailContent({
   const hasOwner = Boolean(property.owner_id);
 
   return (
-    <main className="min-h-screen bg-gray-50 p-6 md:p-8">
+    <main className="bg-gray-50 p-6 md:p-8">
       <div className="mx-auto max-w-6xl">
         <AdminNav current="properties" />
 

@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronUp, Loader2, Star, Trash2, Upload } from "lucide-react";
 import { adminApiFetch } from "@/lib/admin-api-client";
 import { ADMIN_SPACE_IMAGE_MAX_BYTES } from "@/lib/admin-space-image-upload";
@@ -30,6 +30,7 @@ export function AdminSpacePhotosPanel({
   onMessage,
   compact = false,
 }: AdminSpacePhotosPanelProps) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<{
     current: number;
@@ -263,27 +264,36 @@ export function AdminSpacePhotosPanel({
         </div>
       )}
       {!readOnly && spaceId ? (
-        <label className="mt-4 inline-flex cursor-pointer items-center gap-2 rounded-lg border border-gray-300 bg-gray-50 px-4 py-2 text-sm font-medium text-gray-800 hover:bg-gray-100">
-          {uploading ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <Upload className="h-4 w-4" />
-          )}
-          {uploading && uploadProgress
-            ? `Uploading ${uploadProgress.current} of ${uploadProgress.total}…`
-            : "Upload photos"}
+        <>
           <input
+            ref={fileInputRef}
             type="file"
             accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
             multiple
-            className="sr-only"
+            className="hidden"
+            tabIndex={-1}
             disabled={uploading || reordering}
             onChange={(e) => {
               void uploadImages(e.target.files);
               e.target.value = "";
             }}
           />
-        </label>
+          <button
+            type="button"
+            disabled={uploading || reordering}
+            onClick={() => fileInputRef.current?.click()}
+            className="mt-4 inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-gray-50 px-4 py-2 text-sm font-medium text-gray-800 hover:bg-gray-100 disabled:opacity-60"
+          >
+            {uploading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Upload className="h-4 w-4" />
+            )}
+            {uploading && uploadProgress
+              ? `Uploading ${uploadProgress.current} of ${uploadProgress.total}…`
+              : "Upload photos"}
+          </button>
+        </>
       ) : null}
     </div>
   );

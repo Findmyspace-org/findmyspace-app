@@ -813,7 +813,11 @@ export default function CommsCenterPage() {
   );
 }
 
-function CommsCenterContent() {
+export function CommsCenterContent({
+  adminMode = false,
+}: {
+  adminMode?: boolean;
+} = {}) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -826,7 +830,16 @@ function CommsCenterContent() {
   // Mapping is one-shot: once the user clicks a different tab we lock and
   // never override again, so URL params don't fight manual navigation.
   const viewParam = (searchParams.get("view") || "").toLowerCase();
-  const adminContext = searchParams.get("context") === "admin";
+  const adminContext = adminMode || searchParams.get("context") === "admin";
+
+  useEffect(() => {
+    if (adminMode) return;
+    if (searchParams.get("context") !== "admin") return;
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("context");
+    const qs = params.toString();
+    router.replace(qs ? `/admin/comms?${qs}` : "/admin/comms");
+  }, [adminMode, router, searchParams]);
   const initialTabFromView: CommsTab | null =
     viewParam === "platform" || adminContext
       ? "platform"
@@ -1226,34 +1239,10 @@ function CommsCenterContent() {
   const navItems = isHostWorkspace ? HOST_NAV : RENTER_NAV;
   const navActiveHref = isHostWorkspace
     ? "/dashboard/comms?view=hosting"
-    : adminContext
-      ? "/dashboard/comms?context=admin"
-      : "/dashboard/comms?view=bookings";
+    : "/dashboard/comms?view=bookings";
 
-  return (
-    <RequireAuth>
-      <DashboardShell
-        workspaceLabel={isHostWorkspace ? "Hosting" : "My account"}
-        pageTitle="Comms Center"
-        pageSubtitle={
-          adminContext
-            ? "Admin notifications with live enquiry and claim workflow status."
-            : "Platform updates, listing questions, booking messages, and actions in one place."
-        }
-        navItems={navItems}
-        activeHref={navActiveHref}
-      >
+  const commsBody = (
         <>
-          {adminContext ? (
-            <div className="mb-4 rounded-lg border border-[#192a3a]/15 bg-[#f8fafc] px-4 py-3 text-sm text-gray-700">
-              <Link
-                href="/admin"
-                className="font-semibold text-[#192a3a] hover:underline"
-              >
-                ← Back to admin dashboard
-              </Link>
-            </div>
-          ) : null}
           {/* Refresh action lives inline so it stays near the content while
               the shell owns the page title. */}
           <div className="-mt-1 flex justify-end">
@@ -1418,6 +1407,38 @@ function CommsCenterContent() {
             </Link>
           </div>
         </>
+  );
+
+  if (adminContext && !adminMode) {
+    return null;
+  }
+
+  if (adminMode) {
+    return (
+      <RequireAuth>
+        <div>
+          <div className="mb-6">
+            <h1 className="text-2xl font-semibold text-[#192a3a]">Comms Center</h1>
+            <p className="mt-1 text-sm text-gray-600">
+              Admin notifications with live enquiry and claim workflow status.
+            </p>
+          </div>
+          {commsBody}
+        </div>
+      </RequireAuth>
+    );
+  }
+
+  return (
+    <RequireAuth>
+      <DashboardShell
+        workspaceLabel={isHostWorkspace ? "Hosting" : "My account"}
+        pageTitle="Comms Center"
+        pageSubtitle="Platform updates, listing questions, booking messages, and actions in one place."
+        navItems={navItems}
+        activeHref={navActiveHref}
+      >
+        {commsBody}
       </DashboardShell>
     </RequireAuth>
   );

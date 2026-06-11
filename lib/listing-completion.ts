@@ -3,6 +3,7 @@ import {
   buildClaimReadiness,
   claimSubmitBlockers,
 } from "@/lib/claim-readiness";
+import { isInheritedPropertyOwnership } from "@/lib/property-ownership-inherit";
 
 export type ChecklistItemState = "done" | "missing" | "pending_review" | "rejected";
 
@@ -32,6 +33,10 @@ export type ListingCompletionResult = {
   ownership_proof_status: string | null;
   listing_admin_comment: string | null;
   submitted_for_review_at: string | null;
+  contactComplete: boolean;
+  inheritedOwnership: boolean;
+  propertyId: string | null;
+  publicListingMode: string | null;
 };
 
 type SpaceRow = {
@@ -50,6 +55,8 @@ type SpaceRow = {
   ownership_proof_status: string | null;
   listing_admin_comment: string | null;
   submitted_for_review_at: string | null;
+  property_id: string | null;
+  public_listing_mode: string | null;
 };
 
 function docState(
@@ -95,7 +102,7 @@ export async function computeListingCompletion(
   const { data: space, error } = await admin
     .from("spaces")
     .select(
-      "id, title, description, space_type, booking_unit, city, suburb, status, owner_id, price_per_hour, price_per_day, price_per_month, ownership_proof_status, listing_admin_comment, submitted_for_review_at"
+      "id, title, description, space_type, booking_unit, city, suburb, status, owner_id, property_id, public_listing_mode, price_per_hour, price_per_day, price_per_month, ownership_proof_status, listing_admin_comment, submitted_for_review_at"
     )
     .eq("id", spaceId)
     .maybeSingle();
@@ -105,6 +112,20 @@ export async function computeListingCompletion(
   const row = space as SpaceRow;
   const ownerId = row.owner_id;
   if (!ownerId) return null;
+
+  let inheritedOwnership = false;
+  if (row.property_id) {
+    const { data: propertyRow } = await admin
+      .from("properties")
+      .select("owner_id, owner_accepted_at")
+      .eq("id", row.property_id)
+      .maybeSingle();
+    inheritedOwnership = isInheritedPropertyOwnership(
+      ownerId,
+      propertyRow as { owner_id: string | null; owner_accepted_at: string | null } | null,
+      row.property_id
+    );
+  }
 
   const [
     { count: imageCount },
@@ -192,7 +213,9 @@ export async function computeListingCompletion(
     bankSubmitted,
     prof?.bank_verification_status
   );
-  const ownershipState = docState(hasOwnershipFile, ownershipStatus);
+  const ownershipState = inheritedOwnership
+    ? "done"
+    : docState(hasOwnershipFile, ownershipStatus);
 
   const isClaimOnboarding = row.status === "owner_claimed";
   const isClaimSubmitFlow =
@@ -259,11 +282,13 @@ export async function computeListingCompletion(
     {
       id: "ownership",
       title: "Ownership proof",
-      description: "Proof of right to list this space.",
+      description: inheritedOwnership
+        ? "Ownership confirmed through venue invitation."
+        : "Proof of right to list this space.",
       href: isClaimOnboarding ? `${claimHref}?step=ownership` : `/spaces/${spaceId}/edit`,
       state: ownershipState,
-      requiredForSubmit: true,
-      requiredForApproval: true,
+      requiredForSubmit: !inheritedOwnership,
+      requiredForApproval: !inheritedOwnership,
     },
   ];
 
@@ -274,6 +299,7 @@ export async function computeListingCompletion(
       hasOwnershipProof: hasOwnershipFile,
       hasIdFront,
       hasIdBack,
+      ownershipInheritedFromProperty: inheritedOwnership,
       ownershipVerified: ownershipState === "done",
       identityVerified: identityState === "done",
       ownershipRejected: ownershipState === "rejected",
@@ -325,6 +351,10 @@ export async function computeListingCompletion(
     ownership_proof_status: ownershipStatus,
     listing_admin_comment: row.listing_admin_comment,
     submitted_for_review_at: row.submitted_for_review_at,
+    contactComplete,
+    inheritedOwnership,
+    propertyId: row.property_id,
+    publicListingMode: row.public_listing_mode,
   };
 }
 

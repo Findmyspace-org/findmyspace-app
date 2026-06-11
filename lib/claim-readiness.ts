@@ -21,18 +21,20 @@ export function buildClaimReadiness(input: {
   hasOwnershipProof: boolean;
   hasIdFront: boolean;
   hasIdBack: boolean;
+  ownershipInheritedFromProperty?: boolean;
   ownershipVerified?: boolean;
   identityVerified?: boolean;
   ownershipRejected?: boolean;
   identityRejected?: boolean;
 }): ClaimReadiness {
+  const inherited = Boolean(input.ownershipInheritedFromProperty);
   return {
     contactComplete: input.contactComplete,
-    ownershipUploaded: input.hasOwnershipProof,
+    ownershipUploaded: inherited || input.hasOwnershipProof,
     identitySubmitted: input.hasIdFront && input.hasIdBack,
-    ownershipVerified: input.ownershipVerified ?? false,
+    ownershipVerified: inherited || (input.ownershipVerified ?? false),
     identityVerified: input.identityVerified ?? false,
-    ownershipRejected: input.ownershipRejected ?? false,
+    ownershipRejected: inherited ? false : (input.ownershipRejected ?? false),
     identityRejected: input.identityRejected ?? false,
   };
 }
@@ -61,6 +63,7 @@ export function ownerClaimCanSubmitForSpace(input: {
   hasIdBack: boolean;
   ownershipProofStatus: string | null | undefined;
   hasOwnershipDocument?: boolean;
+  ownershipInheritedFromProperty?: boolean;
 }): boolean {
   return isClaimReadyToSubmit(
     buildClaimReadiness({
@@ -71,6 +74,7 @@ export function ownerClaimCanSubmitForSpace(input: {
       ),
       hasIdFront: input.hasIdFront,
       hasIdBack: input.hasIdBack,
+      ownershipInheritedFromProperty: input.ownershipInheritedFromProperty,
     })
   );
 }
@@ -96,8 +100,15 @@ export function ownershipClaimDisplay(
   readiness: Pick<
     ClaimReadiness,
     "ownershipUploaded" | "ownershipVerified" | "ownershipRejected"
-  >
+  >,
+  options?: { inheritedFromProperty?: boolean }
 ): ClaimItemDisplay {
+  if (options?.inheritedFromProperty) {
+    return {
+      uiState: "completed",
+      statusLabel: "Confirmed through venue invitation",
+    };
+  }
   if (!readiness.ownershipUploaded) {
     return { uiState: "required", statusLabel: "Required" };
   }

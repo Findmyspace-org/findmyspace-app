@@ -139,7 +139,7 @@ export function getOwnerListingCompletionHref(spaceId: string): string {
 
 export function getOwnerListingStatusLabel(
   status: string | null | undefined,
-  options?: { canSubmit?: boolean }
+  options?: { canSubmit?: boolean; publicListingMode?: string | null }
 ): string {
   switch (status) {
     case OWNER_CLAIMED_STATUS:
@@ -151,6 +151,8 @@ export function getOwnerListingStatusLabel(
     case "rejected":
       return "Rejected";
     case BOOKABLE_LISTING_STATUS:
+      if (options?.publicListingMode === "enquiry") return "Enquiry only";
+      if (options?.publicListingMode === "off") return "Not visible";
       return "Live";
     case "paused":
       return "Paused";

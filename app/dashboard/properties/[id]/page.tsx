@@ -8,11 +8,13 @@ import RequireAuth from "@/app/components/RequireAuth";
 import DashboardShell from "@/app/components/DashboardShell";
 import { HOST_NAV } from "@/lib/dashboard-nav";
 import { ownerApiFetch } from "@/lib/owner-api-client";
+import { OwnerPropertySpaceSteps } from "@/app/components/OwnerPropertySpaceSteps";
 import {
   getOwnerListingStatusBadgeClass,
   getPropertyChildSpaceNextAction,
 } from "@/lib/listing-lifecycle";
 import { formatSpaceTypeLabel } from "@/app/data/spaceFeatureConfig";
+import type { OwnerSpaceStep } from "@/lib/owner-property-space-steps";
 
 type PropertyDetail = {
   id: string;
@@ -27,6 +29,8 @@ type SpaceRow = {
   status: string | null;
   status_label: string;
   can_submit?: boolean;
+  inherited_ownership?: boolean;
+  steps?: OwnerSpaceStep[];
   space_type: string | null;
 };
 
@@ -131,6 +135,9 @@ function PropertyDetailContent() {
                             {space.status_label}
                           </span>
                         </div>
+                        {space.steps && space.steps.length > 0 ? (
+                          <OwnerPropertySpaceSteps steps={space.steps} />
+                        ) : null}
                         {nextAction ? (
                           <Link
                             href={nextAction.href}

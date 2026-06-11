@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronUp, Loader2, Trash2, Upload } from "lucide-react";
 import { adminApiFetch } from "@/lib/admin-api-client";
 import { ADMIN_SPACE_IMAGE_MAX_BYTES } from "@/lib/admin-space-image-upload";
@@ -30,6 +30,7 @@ export function AdminPropertyGallery({
   onImagesChange,
   onMessage,
 }: AdminPropertyGalleryProps) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [reordering, setReordering] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
@@ -251,25 +252,32 @@ export function AdminPropertyGallery({
         </div>
       )}
 
-      <label className="mt-4 inline-flex cursor-pointer items-center gap-2 rounded-lg border border-gray-300 bg-gray-50 px-4 py-2 text-sm font-medium text-gray-800 hover:bg-gray-100">
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
+        multiple
+        className="hidden"
+        tabIndex={-1}
+        disabled={uploading || reordering}
+        onChange={(e) => {
+          void uploadImages(e.target.files);
+          e.target.value = "";
+        }}
+      />
+      <button
+        type="button"
+        disabled={uploading || reordering}
+        onClick={() => fileInputRef.current?.click()}
+        className="mt-4 inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-gray-50 px-4 py-2 text-sm font-medium text-gray-800 hover:bg-gray-100 disabled:opacity-60"
+      >
         {uploading ? (
           <Loader2 className="h-4 w-4 animate-spin" />
         ) : (
           <Upload className="h-4 w-4" />
         )}
         {uploading ? "Uploading…" : "Upload photos"}
-        <input
-          type="file"
-          accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
-          multiple
-          className="sr-only"
-          disabled={uploading || reordering}
-          onChange={(e) => {
-            void uploadImages(e.target.files);
-            e.target.value = "";
-          }}
-        />
-      </label>
+      </button>
     </section>
   );
 }

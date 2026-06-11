@@ -34,6 +34,7 @@ import {
   BadgeCheck,
   PauseCircle,
   PlayCircle,
+  ImageIcon,
   Search,
   X,
 } from "lucide-react";
@@ -54,6 +55,7 @@ type Space = {
   price_per_day: number | null;
   price_per_month: number | null;
   status: string | null;
+  public_listing_mode?: string | null;
   created_at: string | null;
   ownership_proof_status?: string | null;
   owner_verification_status?: string | null;
@@ -78,6 +80,7 @@ type SpaceRow = {
   price_per_day: number | null;
   price_per_month: number | null;
   status: string | null;
+  public_listing_mode: string | null;
   created_at: string | null;
   ownership_proof_status: string | null;
   deposit_type: DepositType;
@@ -234,7 +237,7 @@ function MyListingsPageContent({
       const { data, error } = await supabase
         .from("spaces")
         .select(
-          "id, owner_id, title, description, city, suburb, address_line_1, space_type, booking_unit, price_per_hour, price_per_day, price_per_month, status, created_at, ownership_proof_status, deposit_type, deposit_months, monthly_payment_day"
+          "id, owner_id, title, description, city, suburb, address_line_1, space_type, booking_unit, price_per_hour, price_per_day, price_per_month, status, public_listing_mode, created_at, ownership_proof_status, deposit_type, deposit_months, monthly_payment_day"
         )
         .eq("owner_id", user.id)
         .order("created_at", { ascending: false });
@@ -334,7 +337,10 @@ function MyListingsPageContent({
       hasIdBack: claimContext.hasIdBack,
       ownershipProofStatus: space.ownership_proof_status,
     });
-    return getOwnerListingStatusLabel(space.status, { canSubmit });
+    return getOwnerListingStatusLabel(space.status, {
+      canSubmit,
+      publicListingMode: space.public_listing_mode,
+    });
   }
 
   function getNextAction(space: Space) {
@@ -611,8 +617,8 @@ function MyListingsPageContent({
                             unoptimized
                           />
                         ) : (
-                          <div className="flex h-full items-center justify-center text-xs text-gray-500">
-                            No image
+                          <div className="flex h-full items-center justify-center bg-gray-100 text-gray-400">
+                            <ImageIcon className="h-6 w-6" aria-hidden />
                           </div>
                         )}
                       </div>

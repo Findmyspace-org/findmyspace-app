@@ -58,9 +58,10 @@ export type AdminNavSection = {
 
 export const ADMIN_COMMS_ITEM: AdminNavItem = {
   key: "comms",
-  href: "/dashboard/comms?context=admin",
+  href: "/admin/comms",
   label: "Comms",
   icon: Bell,
+  matchPrefix: "/admin/comms",
 };
 
 export const ADMIN_NAV_SECTIONS: AdminNavSection[] = [
@@ -224,6 +225,10 @@ export function isAdminNavItemActive(
 
   if (item.key === "properties") {
     return pathname.startsWith("/admin/properties");
+  }
+
+  if (item.key === "comms") {
+    return pathname.startsWith("/admin/comms");
   }
 
   return pathname === base || pathname.startsWith(`${base}/`);

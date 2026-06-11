@@ -139,7 +139,7 @@ export function AdminTopBar({
 
       <div className="ml-auto flex items-center gap-2">
         <Link
-          href="/dashboard/comms?context=admin"
+          href="/admin/comms"
           className="relative inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50"
           aria-label="Comms inbox"
         >

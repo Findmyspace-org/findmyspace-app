@@ -5,6 +5,8 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, ArrowRight, Loader2, Send } from "lucide-react";
 import RequireAuth from "@/app/components/RequireAuth";
+import DashboardShell from "@/app/components/DashboardShell";
+import { HOST_NAV } from "@/lib/dashboard-nav";
 import {
   ClaimOnboardingShell,
   type ClaimStepProgress,
@@ -181,6 +183,15 @@ function ClaimPageContent() {
 
   const identityItem = completion?.items.find((i) => i.id === "identity");
   const ownershipItem = completion?.items.find((i) => i.id === "ownership");
+  const inheritedOwnership = Boolean(completion?.inheritedOwnership);
+  const hiddenClaimSteps = inheritedOwnership
+    ? (["ownership"] as ClaimWizardStep[])
+    : [];
+
+  useEffect(() => {
+    if (!inheritedOwnership || currentStep !== "ownership") return;
+    router.replace(`/dashboard/listings/${spaceId}/claim?step=identity`);
+  }, [inheritedOwnership, currentStep, router, spaceId]);
 
   const underReview = completion?.status === PENDING_VERIFICATION_STATUS;
   const showSubmittedConfirmation = underReview || submitSucceeded;
@@ -193,6 +204,7 @@ function ClaimPageContent() {
       hasOwnershipProof: Boolean(ownershipProof),
       hasIdFront: idDocsReady.hasIdFront,
       hasIdBack: idDocsReady.hasIdBack,
+      ownershipInheritedFromProperty: inheritedOwnership,
       ownershipVerified:
         ownershipProofStatus === "verified" || ownershipItem?.state === "done",
       identityVerified:
@@ -208,6 +220,7 @@ function ClaimPageContent() {
     contactComplete,
     ownershipProof,
     idDocsReady,
+    inheritedOwnership,
     identityItem?.state,
     ownershipItem?.state,
     ownershipProofStatus,
@@ -223,7 +236,9 @@ function ClaimPageContent() {
     }
   }, [readyToSubmit, message]);
   const contactDisplay = contactClaimDisplay(claimReadiness.contactComplete);
-  const ownershipDisplay = ownershipClaimDisplay(claimReadiness);
+  const ownershipDisplay = ownershipClaimDisplay(claimReadiness, {
+    inheritedFromProperty: inheritedOwnership,
+  });
   const identityDisplay = identityClaimDisplay(claimReadiness);
   const stepStates = claimStepProgress(claimReadiness);
 
@@ -342,32 +357,53 @@ function ClaimPageContent() {
 
   if (loading) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[#f8fafb] p-6">
-        <p className="flex items-center gap-2 text-gray-600">
-          <Loader2 className="h-5 w-5 animate-spin" />
-          Loading your claim…
-        </p>
-      </main>
+      <RequireAuth>
+        <DashboardShell
+          workspaceLabel="Hosting"
+          pageTitle="Complete your claim"
+          navItems={HOST_NAV}
+          activeHref="/dashboard/listings"
+        >
+          <p className="flex items-center gap-2 text-gray-600">
+            <Loader2 className="h-5 w-5 animate-spin" />
+            Loading your claim…
+          </p>
+        </DashboardShell>
+      </RequireAuth>
     );
   }
 
   if (!completion) {
     return (
-      <main className="min-h-screen bg-[#f8fafb] p-6">
-        <p className="text-red-600">{message || "Listing not found."}</p>
-      </main>
+      <RequireAuth>
+        <DashboardShell
+          workspaceLabel="Hosting"
+          pageTitle="Complete your claim"
+          navItems={HOST_NAV}
+          activeHref="/dashboard/listings"
+        >
+          <p className="text-red-600">{message || "Listing not found."}</p>
+        </DashboardShell>
+      </RequireAuth>
     );
   }
 
   return (
     <RequireAuth>
-      <main className="min-h-screen bg-[#f8fafb] px-6 py-10">
+      <DashboardShell
+        workspaceLabel="Hosting"
+        pageTitle={showSubmittedConfirmation ? "Claim submitted" : "Complete your claim"}
+        pageSubtitle={completion.listingTitle || undefined}
+        navItems={HOST_NAV}
+        activeHref="/dashboard/listings"
+      >
         <ClaimOnboardingShell
           spaceId={spaceId}
           listingTitle={completion.listingTitle}
           currentStep={currentStep}
           stepProgress={stepProgress}
           submitted={showSubmittedConfirmation}
+          hiddenSteps={hiddenClaimSteps}
         >
           {showSubmittedConfirmation ? (
             <ClaimSubmittedConfirmation
@@ -387,6 +423,14 @@ function ClaimPageContent() {
                 title="Contact details"
                 state={contactComplete ? "completed" : "required"}
               />
+
+              {inheritedOwnership ? (
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50/60 px-4 py-3 text-sm text-emerald-900">
+                  Ownership for this space is confirmed through your venue
+                  invitation — you do not need to upload separate ownership proof
+                  for each space.
+                </div>
+              ) : null}
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <label className="block">
@@ -449,7 +493,9 @@ function ClaimPageContent() {
                 <span />
                 <button
                   type="button"
-                  onClick={() => goToStep("ownership")}
+                  onClick={() =>
+                    goToStep(inheritedOwnership ? "identity" : "ownership")
+                  }
                   className="inline-flex items-center gap-1 text-sm font-semibold text-[#0f2740]"
                 >
                   Continue
@@ -525,7 +571,9 @@ function ClaimPageContent() {
               <div className="flex justify-between pt-2">
                 <button
                   type="button"
-                  onClick={() => goToStep("ownership")}
+                  onClick={() =>
+                    goToStep(inheritedOwnership ? "details" : "ownership")
+                  }
                   className="inline-flex items-center gap-1 text-sm font-medium text-gray-600"
                 >
                   <ArrowLeft className="h-4 w-4" />
@@ -559,11 +607,19 @@ function ClaimPageContent() {
                     state={contactDisplay.uiState}
                     statusLabel={contactDisplay.statusLabel}
                   />
-                  <ClaimStepStatusCard
-                    title="Ownership proof"
-                    state={ownershipDisplay.uiState}
-                    statusLabel={ownershipDisplay.statusLabel}
-                  />
+                  {inheritedOwnership ? (
+                    <ClaimStepStatusCard
+                      title="Ownership"
+                      state="completed"
+                      statusLabel="Confirmed through venue invitation"
+                    />
+                  ) : (
+                    <ClaimStepStatusCard
+                      title="Ownership proof"
+                      state={ownershipDisplay.uiState}
+                      statusLabel={ownershipDisplay.statusLabel}
+                    />
+                  )}
                   <ClaimStepStatusCard
                     title="Identity documents"
                     state={identityDisplay.uiState}
@@ -692,7 +748,7 @@ function ClaimPageContent() {
             </div>
           </div>
         ) : null}
-      </main>
+      </DashboardShell>
     </RequireAuth>
   );
 }

@@ -145,7 +145,7 @@ export function AdminSidebar({
     };
   }, []);
 
-  const commsActive = pathname.startsWith("/dashboard/comms");
+  const commsActive = pathname.startsWith("/admin/comms");
 
   return (
     <aside

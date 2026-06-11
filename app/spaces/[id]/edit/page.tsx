@@ -8,6 +8,8 @@ import { supabase } from "@/lib/supabase";
 import SpaceCategoryFields from "@/app/components/SpaceCategoryFields";
 import { LISTING_SPACE_TYPE_OPTIONS } from "@/app/data/spaceFeatureConfig";
 import RequireAuth from "@/app/components/RequireAuth";
+import DashboardShell from "@/app/components/DashboardShell";
+import { HOST_NAV } from "@/lib/dashboard-nav";
 import OwnerVerificationAlerts from "@/app/components/OwnerVerificationAlerts";
 import {
   DEFAULT_LISTING_BOOKING_REQUIREMENTS,
@@ -869,8 +871,14 @@ export default function EditListingPage({ params }: PageProps) {
 
   return (
     <RequireAuth>
-      <main className="min-h-screen bg-white px-6 py-10 text-black">
-        <div className="mx-auto max-w-4xl">
+      <DashboardShell
+        workspaceLabel="Hosting"
+        pageTitle="Edit listing"
+        pageSubtitle="Update the details of your space."
+        navItems={HOST_NAV}
+        activeHref="/dashboard/listings"
+      >
+        <div className="mx-auto max-w-4xl text-black">
           <div className="mb-8">
             <div className="mb-4 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
               <div>
@@ -1440,7 +1448,7 @@ export default function EditListingPage({ params }: PageProps) {
             </form>
           )}
         </div>
-      </main>
+      </DashboardShell>
     </RequireAuth>
   );
 }

@@ -24,6 +24,7 @@ export function ClaimOnboardingShell({
   currentStep,
   stepProgress,
   submitted = false,
+  hiddenSteps = [],
   children,
 }: {
   spaceId: string;
@@ -32,9 +33,11 @@ export function ClaimOnboardingShell({
   stepProgress: Partial<Record<ClaimWizardStep, ClaimStepProgress>>;
   /** When true, hide wizard chrome and show post-submit confirmation layout. */
   submitted?: boolean;
+  hiddenSteps?: ClaimWizardStep[];
   children: React.ReactNode;
 }) {
-  const currentIndex = STEPS.findIndex((s) => s.key === currentStep);
+  const visibleSteps = STEPS.filter((step) => !hiddenSteps.includes(step.key));
+  const currentIndex = visibleSteps.findIndex((s) => s.key === currentStep);
 
   if (submitted) {
     return (
@@ -80,7 +83,7 @@ export function ClaimOnboardingShell({
         className="mb-8 overflow-x-auto rounded-xl border border-gray-200 bg-white p-4 shadow-sm"
       >
         <ol className="flex min-w-[520px] items-center gap-1">
-          {STEPS.map((step, index) => {
+          {visibleSteps.map((step, index) => {
             const progress = stepProgress[step.key] || "incomplete";
             const done =
               progress === "complete" ||

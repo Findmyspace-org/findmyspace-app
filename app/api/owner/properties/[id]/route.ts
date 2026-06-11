@@ -3,6 +3,7 @@ import { requireOwnerPropertyApi } from "@/lib/require-owner-property-api";
 import { formatPropertyAddress } from "@/lib/admin-property";
 import { computeListingCompletion } from "@/lib/listing-completion";
 import { getOwnerListingStatusLabel } from "@/lib/listing-lifecycle";
+import { buildOwnerPropertySpaceSteps } from "@/lib/owner-property-space-steps";
 
 export async function GET(
   req: NextRequest,
@@ -26,7 +27,7 @@ export async function GET(
 
   const { data: spaces, error: spacesErr } = await auth.admin
     .from("spaces")
-    .select("id, title, status, space_type, city, suburb")
+    .select("id, title, status, space_type, city, suburb, public_listing_mode")
     .eq("property_id", id)
     .order("title", { ascending: true });
 
@@ -41,16 +42,28 @@ export async function GET(
     space_type: string | null;
     city: string | null;
     suburb: string | null;
+    public_listing_mode: string | null;
   }[];
 
   const spaceRows = await Promise.all(
     rawSpaces.map(async (space) => {
       const completion = await computeListingCompletion(auth.admin, space.id);
       const canSubmit = completion?.canSubmit ?? false;
+      const publicListingMode =
+        completion?.publicListingMode ?? space.public_listing_mode;
       return {
         ...space,
         can_submit: canSubmit,
-        status_label: getOwnerListingStatusLabel(space.status, { canSubmit }),
+        inherited_ownership: completion?.inheritedOwnership ?? false,
+        status_label: getOwnerListingStatusLabel(space.status, {
+          canSubmit,
+          publicListingMode,
+        }),
+        steps: buildOwnerPropertySpaceSteps({
+          spaceId: space.id,
+          status: space.status,
+          completion,
+        }),
       };
     })
   );
