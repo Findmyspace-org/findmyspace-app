@@ -8,6 +8,7 @@ import {
   createVerificationSignedUrl,
   OWNER_VERIFICATION_BUCKET,
 } from "@/lib/verification-storage";
+import { deriveVerificationUi } from "@/lib/workflow-state";
 import { supabase } from "@/lib/supabase";
 
 type IdDoc = {
@@ -20,11 +21,13 @@ type IdDoc = {
 
 export function ClaimIdentityUpload({
   ownerId,
+  ownerVerificationStatus = null,
   disabled = false,
   onUploaded,
   onStatusChange,
 }: {
   ownerId: string;
+  ownerVerificationStatus?: string | null;
   disabled?: boolean;
   onUploaded: () => void;
   onStatusChange?: (status: { hasIdFront: boolean; hasIdBack: boolean }) => void;
@@ -191,6 +194,27 @@ export function ClaimIdentityUpload({
     );
   }
 
+  const identityUi = deriveVerificationUi(
+    {
+      submitted: hasIdFront && hasIdBack,
+      profileStatus:
+        ownerVerificationStatus === "verified" ||
+        ownerVerificationStatus === "rejected" ||
+        ownerVerificationStatus === "pending"
+          ? ownerVerificationStatus
+          : null,
+    },
+    "Identity"
+  );
+
+  function docHint(hasDoc: boolean, emptyHint: string): string {
+    if (!hasDoc) return emptyHint;
+    if (identityUi.state === "verified") return "Verified";
+    if (identityUi.state === "rejected") return "Rejected — replace document";
+    if (identityUi.state === "pending_review") return "Pending review";
+    return identityUi.description;
+  }
+
   return (
     <div className="space-y-4">
       <FileUploadField
@@ -199,14 +223,19 @@ export function ClaimIdentityUpload({
         hasUploaded={hasIdFront}
         previewUrl={previewUrls.id_front}
         uploadedFileName={displayFileName(idFrontDoc)}
-        statusHint={
-          hasIdFront
-            ? "Uploaded — pending review"
-            : "Passport, driver licence, or national ID"
+        statusHint={docHint(
+          hasIdFront,
+          "Passport, driver licence, or national ID"
+        )}
+        uploadedLabel={
+          identityUi.state === "verified"
+            ? "ID front verified"
+            : identityUi.state === "rejected"
+              ? "ID front rejected"
+              : "ID front uploaded"
         }
-        uploadedLabel="ID front uploaded"
         onFileChange={setIdFrontFile}
-        disabled={disabled || uploading}
+        disabled={disabled || uploading || identityUi.state === "verified"}
       />
       <FileUploadField
         label="ID back"
@@ -214,14 +243,16 @@ export function ClaimIdentityUpload({
         hasUploaded={hasIdBack}
         previewUrl={previewUrls.id_back}
         uploadedFileName={displayFileName(idBackDoc)}
-        statusHint={
-          hasIdBack
-            ? "Uploaded — pending review"
-            : "Back of the same document"
+        statusHint={docHint(hasIdBack, "Back of the same document")}
+        uploadedLabel={
+          identityUi.state === "verified"
+            ? "ID back verified"
+            : identityUi.state === "rejected"
+              ? "ID back rejected"
+              : "ID back uploaded"
         }
-        uploadedLabel="ID back uploaded"
         onFileChange={setIdBackFile}
-        disabled={disabled || uploading}
+        disabled={disabled || uploading || identityUi.state === "verified"}
       />
 
       {(idFrontFile || idBackFile) && !disabled ? (

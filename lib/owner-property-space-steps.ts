@@ -86,7 +86,7 @@ export function buildOwnerPropertySpaceSteps(input: {
           ? null
           : `${claimHref}?step=ownership`,
       detail: inherited
-        ? "Ownership confirmed through venue invitation."
+        ? "Verified through property ownership."
         : ownershipItem?.description,
     },
     {

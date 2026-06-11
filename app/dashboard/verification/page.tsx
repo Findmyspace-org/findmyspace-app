@@ -24,6 +24,7 @@ import {
 } from "@/lib/verification-storage";
 import { markNotificationsReadByTypesClient } from "@/lib/mark-notifications-read-client";
 import { VERIFICATION_OUTCOME_NOTIFICATION_TYPES } from "@/lib/notification-state";
+import { deriveVerificationUi } from "@/lib/workflow-state";
 
 type OwnerVerificationDocument = {
   id: string;
@@ -184,11 +185,13 @@ const ACCOUNT_TYPES = ["Cheque", "Credit", "Savings"] as const;
 
 function mapStatus(
   hasFile: boolean,
-  status: string | null | undefined
+  status: string | null | undefined,
+  profileStatus?: string | null
 ): WorkflowStatus {
   if (!hasFile) return "Missing";
-  if (status === "verified") return "Verified";
-  if (status === "rejected") return "Rejected";
+  if (profileStatus === "verified" || status === "verified") return "Verified";
+  if (profileStatus === "rejected" || status === "rejected") return "Rejected";
+  if (profileStatus === "pending" || status === "pending") return "Uploaded";
   return "Uploaded";
 }
 
@@ -922,7 +925,8 @@ function VerificationPageContent({
         filePath: idFrontDoc?.file_path || null,
         status: mapStatus(
           !!idFrontDoc?.file_url || !!idFrontDoc?.file_path,
-          idFrontDoc?.status
+          idFrontDoc?.status,
+          ownerVerificationStatus
         ),
         actionText:
           idFrontDoc?.file_url || idFrontDoc?.file_path
@@ -938,7 +942,8 @@ function VerificationPageContent({
         filePath: idBackDoc?.file_path || null,
         status: mapStatus(
           !!idBackDoc?.file_url || !!idBackDoc?.file_path,
-          idBackDoc?.status
+          idBackDoc?.status,
+          ownerVerificationStatus
         ),
         actionText:
           idBackDoc?.file_url || idBackDoc?.file_path
@@ -963,7 +968,8 @@ function VerificationPageContent({
         status: mapStatus(
           !!existingBankDetails?.proof_of_bank_url ||
           !!existingBankDetails?.proof_of_bank_path,
-          existingBankDetails?.status
+          existingBankDetails?.status,
+          bankVerificationStatus
         ),
         actionText:
           existingBankDetails?.proof_of_bank_url ||
@@ -991,7 +997,13 @@ function VerificationPageContent({
     }));
 
     return [...baseRows, ...listingRows];
-  }, [existingDocs, existingBankDetails, listingProofs]);
+  }, [
+    existingDocs,
+    existingBankDetails,
+    listingProofs,
+    ownerVerificationStatus,
+    bankVerificationStatus,
+  ]);
 
   const workflowGrouped = useMemo(() => {
     const order: Array<WorkflowRow["requirement"]> = ["Identity", "Bank", "Listings"];
@@ -1253,12 +1265,33 @@ function VerificationPageContent({
                     <h2 className="mb-4 text-2xl font-semibold">Identity documents</h2>
 
                     <div className="grid gap-6 md:grid-cols-2">
+                      {(() => {
+                        const hasFront = Boolean(
+                          existingDocs.find((doc) => doc.document_type === "id_front")
+                        );
+                        const hasBack = Boolean(
+                          existingDocs.find((doc) => doc.document_type === "id_back")
+                        );
+                        const identityUi = deriveVerificationUi(
+                          {
+                            submitted: hasFront && hasBack,
+                            profileStatus: ownerVerificationStatus,
+                          },
+                          "Identity"
+                        );
+                        const docHint = (
+                          hasDoc: boolean,
+                          empty: string
+                        ) => {
+                          if (!hasDoc) return empty;
+                          return identityUi.shortLabel;
+                        };
+                        return (
+                          <>
                       <FileUploadField
                         label="ID document front"
                         selectedFile={idFrontFile}
-                        hasUploaded={Boolean(
-                          existingDocs.find((doc) => doc.document_type === "id_front")
-                        )}
+                        hasUploaded={hasFront}
                         previewUrl={documentPreviewUrls.id_front}
                         uploadedFileName={(() => {
                           const doc = existingDocs.find(
@@ -1267,24 +1300,24 @@ function VerificationPageContent({
                           const path = doc?.file_path || doc?.file_url;
                           return path ? path.split("/").pop() || null : null;
                         })()}
-                        uploadedLabel="Front uploaded"
+                        uploadedLabel={
+                          identityUi.state === "verified"
+                            ? "Front verified"
+                            : "Front uploaded"
+                        }
                         statusHint={
                           idFrontFile
                             ? "Save below to upload"
-                            : existingDocs.find((doc) => doc.document_type === "id_front")
-                              ? "Already uploaded — select a file to replace"
-                              : "Not uploaded yet"
+                            : docHint(hasFront, "Not uploaded yet")
                         }
                         onFileChange={setIdFrontFile}
-                        disabled={saving}
+                        disabled={saving || identityUi.state === "verified"}
                       />
 
                       <FileUploadField
                         label="ID document back"
                         selectedFile={idBackFile}
-                        hasUploaded={Boolean(
-                          existingDocs.find((doc) => doc.document_type === "id_back")
-                        )}
+                        hasUploaded={hasBack}
                         previewUrl={documentPreviewUrls.id_back}
                         uploadedFileName={(() => {
                           const doc = existingDocs.find(
@@ -1293,17 +1326,22 @@ function VerificationPageContent({
                           const path = doc?.file_path || doc?.file_url;
                           return path ? path.split("/").pop() || null : null;
                         })()}
-                        uploadedLabel="Back uploaded"
+                        uploadedLabel={
+                          identityUi.state === "verified"
+                            ? "Back verified"
+                            : "Back uploaded"
+                        }
                         statusHint={
                           idBackFile
                             ? "Save below to upload"
-                            : existingDocs.find((doc) => doc.document_type === "id_back")
-                              ? "Already uploaded — select a file to replace"
-                              : "Not uploaded yet"
+                            : docHint(hasBack, "Not uploaded yet")
                         }
                         onFileChange={setIdBackFile}
-                        disabled={saving}
+                        disabled={saving || identityUi.state === "verified"}
                       />
+                          </>
+                        );
+                      })()}
                     </div>
                   </section>
 
@@ -1418,26 +1456,46 @@ function VerificationPageContent({
                       </div>
 
                       <div className="md:col-span-2">
-                        <FileUploadField
-                          label="Proof of bank account"
-                          selectedFile={bankProofFile}
-                          hasUploaded={Boolean(
+                        {(() => {
+                          const hasBankProof = Boolean(
                             existingBankDetails?.proof_of_bank_url ||
                               existingBankDetails?.proof_of_bank_path
-                          )}
-                          previewUrl={documentPreviewUrls.bank_proof}
-                          uploadedLabel="Proof uploaded"
-                          statusHint={
-                            bankProofFile
-                              ? "Save below to upload"
-                              : existingBankDetails?.proof_of_bank_url ||
-                                  existingBankDetails?.proof_of_bank_path
-                                ? "Already uploaded — select a file to replace"
-                                : "Not uploaded yet"
-                          }
-                          onFileChange={setBankProofFile}
-                          disabled={saving}
-                        />
+                          );
+                          const bankUi = deriveVerificationUi(
+                            {
+                              submitted: hasBankProof,
+                              profileStatus: bankVerificationStatus,
+                              documentStatus:
+                                (existingBankDetails?.status as
+                                  | "pending"
+                                  | "verified"
+                                  | "rejected"
+                                  | null) ?? null,
+                            },
+                            "Bank"
+                          );
+                          const bankHint = hasBankProof
+                            ? bankUi.shortLabel
+                            : "Not uploaded yet";
+                          return (
+                            <FileUploadField
+                              label="Proof of bank account"
+                              selectedFile={bankProofFile}
+                              hasUploaded={hasBankProof}
+                              previewUrl={documentPreviewUrls.bank_proof}
+                              uploadedLabel={
+                                bankUi.state === "verified"
+                                  ? "Proof verified"
+                                  : "Proof uploaded"
+                              }
+                              statusHint={
+                                bankProofFile ? "Save below to upload" : bankHint
+                              }
+                              onFileChange={setBankProofFile}
+                              disabled={saving || bankUi.state === "verified"}
+                            />
+                          );
+                        })()}
                       </div>
                     </div>
                   </section>

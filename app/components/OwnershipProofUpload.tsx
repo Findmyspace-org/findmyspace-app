@@ -9,6 +9,7 @@ import {
   createVerificationSignedUrl,
   LISTING_OWNERSHIP_BUCKET,
 } from "@/lib/verification-storage";
+import { deriveVerificationUi } from "@/lib/workflow-state";
 
 type OwnershipDoc = {
   id: string;
@@ -152,7 +153,16 @@ export function OwnershipProofUpload({
     }
   }
 
-  const statusLabel = ownershipProofStatus || (ownershipProof ? "pending" : "not uploaded");
+  const ownershipUi = deriveVerificationUi(
+    {
+      submitted: Boolean(ownershipProof),
+      profileStatus: ownershipProofStatus,
+      documentStatus:
+        (ownershipProof?.status as "pending" | "verified" | "rejected" | null) ??
+        null,
+    },
+    "Ownership"
+  );
 
   return (
     <div className="space-y-4">
@@ -187,8 +197,8 @@ export function OwnershipProofUpload({
             <p className="text-sm font-medium text-gray-900">
               {displayFileName || "Uploaded document"}
             </p>
-            <p className="mt-0.5 text-xs capitalize text-gray-600">
-              Status: {statusLabel}
+            <p className="mt-0.5 text-xs text-gray-600">
+              Status: {ownershipUi.label}
             </p>
             <button
               type="button"

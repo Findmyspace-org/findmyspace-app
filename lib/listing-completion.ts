@@ -4,6 +4,11 @@ import {
   claimSubmitBlockers,
 } from "@/lib/claim-readiness";
 import { isInheritedPropertyOwnership } from "@/lib/property-ownership-inherit";
+import {
+  deriveVerificationUi,
+  verificationUiToChecklistState,
+  type VerificationDecision,
+} from "@/lib/workflow-state";
 
 export type ChecklistItemState = "done" | "missing" | "pending_review" | "rejected";
 
@@ -71,12 +76,19 @@ function docState(
 
 function uploadedVerificationState(
   uploaded: boolean,
-  profileStatus: string | null | undefined
+  profileStatus: string | null | undefined,
+  kind: "Identity" | "Bank" = "Identity",
+  inheritedFromProperty = false
 ): ChecklistItemState {
-  if (!uploaded) return "missing";
-  if (profileStatus === "verified") return "done";
-  if (profileStatus === "rejected") return "rejected";
-  return "pending_review";
+  const ui = deriveVerificationUi(
+    {
+      submitted: uploaded,
+      profileStatus: (profileStatus as VerificationDecision) ?? null,
+      inheritedFromProperty,
+    },
+    kind
+  );
+  return verificationUiToChecklistState(ui);
 }
 
 function hasPricing(space: SpaceRow): boolean {
@@ -207,15 +219,41 @@ export async function computeListingCompletion(
 
   const identityState = uploadedVerificationState(
     identitySubmitted,
-    prof?.owner_verification_status
+    prof?.owner_verification_status,
+    "Identity"
   );
   const bankState = uploadedVerificationState(
     bankSubmitted,
-    prof?.bank_verification_status
+    prof?.bank_verification_status,
+    "Bank"
   );
   const ownershipState = inheritedOwnership
-    ? "done"
-    : docState(hasOwnershipFile, ownershipStatus);
+    ? verificationUiToChecklistState(
+        deriveVerificationUi(
+          {
+            submitted: true,
+            profileStatus: "verified",
+            inheritedFromProperty: true,
+          },
+          "Ownership"
+        )
+      )
+    : verificationUiToChecklistState(
+        deriveVerificationUi(
+          {
+            submitted: hasOwnershipFile,
+            profileStatus:
+              ownershipStatus === "verified"
+                ? "verified"
+                : ownershipStatus === "rejected"
+                  ? "rejected"
+                  : hasOwnershipFile
+                    ? "pending"
+                    : null,
+          },
+          "Ownership"
+        )
+      );
 
   const isClaimOnboarding = row.status === "owner_claimed";
   const isClaimSubmitFlow =
@@ -283,7 +321,7 @@ export async function computeListingCompletion(
       id: "ownership",
       title: "Ownership proof",
       description: inheritedOwnership
-        ? "Ownership confirmed through venue invitation."
+        ? "Verified through property ownership."
         : "Proof of right to list this space.",
       href: isClaimOnboarding ? `${claimHref}?step=ownership` : `/spaces/${spaceId}/edit`,
       state: ownershipState,

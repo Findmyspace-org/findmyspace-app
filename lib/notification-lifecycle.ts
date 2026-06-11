@@ -80,4 +80,34 @@ export async function markNotificationsReadByProfile(
   }
 }
 
+export async function markNotificationsReadByRelatedEntity(
+  supabaseAdmin: any,
+  input: {
+    relatedEntityType: string;
+    relatedEntityId: string;
+    types: string[];
+    userIds?: string[];
+  }
+) {
+  const { relatedEntityType, relatedEntityId, types, userIds } = input;
+  if (!relatedEntityType || !relatedEntityId || !types.length) return;
+
+  let q = supabaseAdmin
+    .from("notifications")
+    .update(markNotificationReadPayload())
+    .eq("related_entity_type", relatedEntityType)
+    .eq("related_entity_id", relatedEntityId)
+    .in("type", types)
+    .is("read_at", null);
+
+  if (userIds?.length) {
+    q = q.in("user_id", userIds);
+  }
+
+  const { error } = await q;
+  if (error) {
+    console.error("markNotificationsReadByRelatedEntity failed:", error);
+  }
+}
+
 export { UNREAD_FILTER as NOTIFICATION_UNREAD_DB_FILTER };

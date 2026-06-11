@@ -4,6 +4,10 @@ import {
   type NotificationLifecycleRow,
 } from "@/lib/notification-state";
 import {
+  COMMS_COMPLETED_NOTIFICATION_TYPES,
+  deriveCommsWorkflowState,
+} from "@/lib/workflow-state";
+import {
   isListingClaimInterestWorkflowOpen,
   isListingEnquiryRequesterWorkflowOpen,
   isListingEnquiryWorkflowOpen,
@@ -13,6 +17,7 @@ export type CommsStatusFilter =
   | "all"
   | "unread"
   | "action_required"
+  | "completed"
   | "read"
   | "archived";
 
@@ -49,6 +54,24 @@ export function cardMatchesCommsStatusFilter(
     return !card.unread;
   }
 
+  if (filter === "completed") {
+    if (card.kind === "notification" && card.notificationType) {
+      const workflow = deriveCommsWorkflowState({
+        unread: card.unread,
+        archived: isArchived,
+        notificationType: card.notificationType,
+      });
+      return workflow === "completed" && !card.unread;
+    }
+    if (
+      card.kind === "owner_question" &&
+      card.questionStatus === "answered"
+    ) {
+      return true;
+    }
+    return card.status === "completed" || card.status === "approved";
+  }
+
   if (filter === "action_required") {
     if (card.kind === "owner_question" && card.questionStatus === "pending") {
       return true;
@@ -71,8 +94,16 @@ export function cardMatchesCommsStatusFilter(
           isListingEnquiryRequesterWorkflowOpen(card.workflowStatus)
         );
       }
+      if (ACTION_REQUIRED_NOTIFICATION_TYPES.has(type) && card.unread) {
+        const workflow = deriveCommsWorkflowState({
+          unread: card.unread,
+          archived: isArchived,
+          notificationType: type,
+        });
+        if (workflow === "action_required") return true;
+      }
       if (
-        ACTION_REQUIRED_NOTIFICATION_TYPES.has(type) &&
+        (type === "identity_submitted" || type === "bank_submitted") &&
         card.unread
       ) {
         return true;

@@ -236,10 +236,28 @@ function ClaimPageContent() {
     }
   }, [readyToSubmit, message]);
   const contactDisplay = contactClaimDisplay(claimReadiness.contactComplete);
-  const ownershipDisplay = ownershipClaimDisplay(claimReadiness, {
+  const ownershipDisplay = ownershipClaimDisplay({
+    hasOwnershipProof: claimReadiness.ownershipUploaded,
+    ownershipProofStatus:
+      ownershipProofStatus === "verified"
+        ? "verified"
+        : ownershipProofStatus === "rejected"
+          ? "rejected"
+          : ownershipProof
+            ? "pending"
+            : null,
     inheritedFromProperty: inheritedOwnership,
   });
-  const identityDisplay = identityClaimDisplay(claimReadiness);
+  const identityDisplay = identityClaimDisplay({
+    hasIdFront: idDocsReady.hasIdFront,
+    hasIdBack: idDocsReady.hasIdBack,
+    ownerVerificationStatus:
+      (completion?.owner.owner_verification_status as
+        | "pending"
+        | "verified"
+        | "rejected"
+        | null) ?? null,
+  });
   const stepStates = claimStepProgress(claimReadiness);
 
   const stepProgress = useMemo((): Partial<Record<ClaimWizardStep, ClaimStepProgress>> => {
@@ -564,6 +582,9 @@ function ClaimPageContent() {
               />
               <ClaimIdentityUpload
                 ownerId={ownerId}
+                ownerVerificationStatus={
+                  completion?.owner.owner_verification_status
+                }
                 disabled={!canEditSteps}
                 onStatusChange={setIdDocsReady}
                 onUploaded={() => void refreshCompletion()}

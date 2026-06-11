@@ -399,15 +399,19 @@ function notificationToCard(n: NotificationRow): NotificationCard | null {
     case "bank_submitted":
       from = "FindMySpace";
       regarding = "Verification";
-      status = "info";
+      status = n.role === "admin" && isNotificationUnread(n)
+        ? "action_required"
+        : isNotificationUnread(n)
+          ? "info"
+          : "completed";
       iconType = "verification";
-      ctaLabel = "View verification";
+      ctaLabel = "Review verification";
       break;
     case "identity_verified":
     case "bank_verified":
       from = "FindMySpace";
       regarding = "Verification";
-      status = "approved";
+      status = "completed";
       iconType = "approved";
       ctaLabel = "View verification";
       break;
@@ -860,7 +864,9 @@ export function CommsCenterContent({
   const [error, setError] = useState("");
   const [busyCardId, setBusyCardId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState<CommsStatusFilter>("all");
+  const [statusFilter, setStatusFilter] = useState<CommsStatusFilter>(
+    adminContext ? "action_required" : "all"
+  );
 
   const [platformCards, setPlatformCards] = useState<NotificationCard[]>([]);
   const [enquiryCards, setEnquiryCards] = useState<OwnerQuestionCard[]>([]);
@@ -1287,13 +1293,22 @@ export function CommsCenterContent({
             className="-mx-4 mb-4 flex gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:overflow-visible sm:px-0"
           >
             {(
-              [
-                ["all", "All"],
-                ["unread", "Unread"],
-                ["action_required", "Action required"],
-                ["read", "Read"],
-                ["archived", "Archived"],
-              ] as const
+              adminContext
+                ? ([
+                    ["action_required", "Action required"],
+                    ["unread", "Unread"],
+                    ["completed", "Completed"],
+                    ["archived", "Archived"],
+                    ["all", "All"],
+                  ] as const)
+                : ([
+                    ["all", "All"],
+                    ["unread", "Unread"],
+                    ["action_required", "Action required"],
+                    ["completed", "Completed"],
+                    ["read", "Read"],
+                    ["archived", "Archived"],
+                  ] as const)
             ).map(([key, label]) => (
               <button
                 key={key}

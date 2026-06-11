@@ -61,7 +61,9 @@ export function OwnerPropertySpaceSteps({ steps }: { steps: OwnerSpaceStep[] }) 
       {steps.map((step) => {
         const clickable =
           Boolean(step.href) &&
-          (step.state === "required" || step.state === "needs_attention");
+          (step.state === "required" ||
+            step.state === "needs_attention" ||
+            step.state === "pending_review");
         const content = (
           <div
             className={`flex items-start gap-3 rounded-lg border px-3 py-2.5 text-sm ${stepPillClass(step.state)} ${

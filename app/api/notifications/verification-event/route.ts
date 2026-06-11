@@ -11,6 +11,7 @@ import {
   buildIdentityRejectedCopy,
   buildIdentityVerifiedCopy,
 } from "@/lib/communication-copy";
+import { markNotificationsReadByProfile } from "@/lib/notification-lifecycle";
 import { getCanonicalPublicSiteUrl } from "@/lib/site-url";
 
 type VerificationEventType =
@@ -152,7 +153,7 @@ export async function POST(req: NextRequest) {
           .eq("type", eventType)
           .eq("related_entity_type", "profile")
           .eq("related_entity_id", hostProfile.id)
-          .eq("is_read", false)
+          .is("read_at", null)
           .limit(1);
 
         if ((existing || []).length > 0) continue;
@@ -163,7 +164,7 @@ export async function POST(req: NextRequest) {
           type: eventType,
           title,
           message: detail,
-          href: "/admin/verification",
+          href: `/admin/verification?profile=${hostProfile.id}`,
           related_entity_type: "profile",
           related_entity_id: hostProfile.id,
         });
@@ -255,6 +256,25 @@ export async function POST(req: NextRequest) {
           html: rendered.html,
           text: rendered.text,
         });
+      }
+
+      const clearSubmittedTypes =
+        eventType === "identity_verified" || eventType === "identity_rejected"
+          ? ["identity_submitted"]
+          : ["bank_submitted"];
+      await markNotificationsReadByProfile(supabaseAdmin, {
+        profileId: hostProfile.id,
+        types: clearSubmittedTypes,
+      });
+
+      if (
+        eventType === "identity_verified" ||
+        eventType === "identity_rejected"
+      ) {
+        await (supabaseAdmin.from("owner_verification_documents") as any)
+          .update({ status: eventType === "identity_verified" ? "verified" : "rejected" })
+          .eq("owner_id", hostProfile.id)
+          .in("document_type", ["id_front", "id_back"]);
       }
 
       return NextResponse.json({ ok: true });

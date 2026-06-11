@@ -1,4 +1,9 @@
 import type { ClaimStepUiState } from "@/app/components/ClaimStepStatusCard";
+import {
+  deriveVerificationUi,
+  verificationUiToClaimStepState,
+  type VerificationDecision,
+} from "@/lib/workflow-state";
 
 export type ClaimItemDisplay = {
   uiState: ClaimStepUiState;
@@ -96,52 +101,47 @@ export function contactClaimDisplay(
   return { uiState: "completed", statusLabel: "Completed" };
 }
 
-export function ownershipClaimDisplay(
-  readiness: Pick<
-    ClaimReadiness,
-    "ownershipUploaded" | "ownershipVerified" | "ownershipRejected"
-  >,
-  options?: { inheritedFromProperty?: boolean }
-): ClaimItemDisplay {
-  if (options?.inheritedFromProperty) {
-    return {
-      uiState: "completed",
-      statusLabel: "Confirmed through venue invitation",
-    };
-  }
-  if (!readiness.ownershipUploaded) {
-    return { uiState: "required", statusLabel: "Required" };
-  }
-  if (readiness.ownershipRejected) {
-    return { uiState: "needs_attention", statusLabel: "Needs attention" };
-  }
-  if (readiness.ownershipVerified) {
-    return { uiState: "completed", statusLabel: "Verified" };
-  }
+export function ownershipClaimDisplay(input: {
+  hasOwnershipProof: boolean;
+  ownershipProofStatus: VerificationDecision;
+  inheritedFromProperty?: boolean;
+}): ClaimItemDisplay {
+  const ui = deriveVerificationUi(
+    {
+      submitted: input.hasOwnershipProof,
+      profileStatus:
+        input.ownershipProofStatus === "verified"
+          ? "verified"
+          : input.ownershipProofStatus === "rejected"
+            ? "rejected"
+            : input.hasOwnershipProof
+              ? "pending"
+              : null,
+      inheritedFromProperty: input.inheritedFromProperty,
+    },
+    "Ownership"
+  );
   return {
-    uiState: "pending_review",
-    statusLabel: "Uploaded — awaiting admin verification",
+    uiState: verificationUiToClaimStepState(ui),
+    statusLabel: ui.shortLabel,
   };
 }
 
-export function identityClaimDisplay(
-  readiness: Pick<
-    ClaimReadiness,
-    "identitySubmitted" | "identityVerified" | "identityRejected"
-  >
-): ClaimItemDisplay {
-  if (!readiness.identitySubmitted) {
-    return { uiState: "required", statusLabel: "Required" };
-  }
-  if (readiness.identityRejected) {
-    return { uiState: "needs_attention", statusLabel: "Needs attention" };
-  }
-  if (readiness.identityVerified) {
-    return { uiState: "completed", statusLabel: "Verified" };
-  }
+export function identityClaimDisplay(input: {
+  hasIdFront: boolean;
+  hasIdBack: boolean;
+  ownerVerificationStatus: VerificationDecision;
+}): ClaimItemDisplay {
+  const ui = deriveVerificationUi(
+    {
+      submitted: input.hasIdFront && input.hasIdBack,
+      profileStatus: input.ownerVerificationStatus,
+    },
+    "Identity"
+  );
   return {
-    uiState: "pending_review",
-    statusLabel: "Submitted — awaiting admin verification",
+    uiState: verificationUiToClaimStepState(ui),
+    statusLabel: ui.shortLabel,
   };
 }
 

@@ -30,7 +30,12 @@ import {
   XCircle,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import { AdminNav } from "@/app/components/AdminNav";
+import {
+  AdminVerificationWorkspace,
+  type QueueFilter,
+} from "@/app/components/admin/AdminVerificationWorkspace";
+import { deriveAdminVerificationQueueFlags } from "@/lib/workflow-state";
+import { markNotificationsReadByRelatedClient } from "@/lib/mark-notifications-read-client";
 
 type ProfileRow = {
   id: string;
@@ -96,13 +101,11 @@ function AdminVerificationPageContent({
 }) {
   const [role, setRole] = useState<string | null>(null);
   const [records, setRecords] = useState<OwnerVerificationRecord[]>([]);
-  const [statusFilter, setStatusFilter] = useState("pending");
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
-  const [expandedSections, setExpandedSections] = useState<
-    Record<string, "identity" | "bank" | null>
-  >({});
+  const [queueFilter, setQueueFilter] = useState<QueueFilter>("identity_pending");
+  const [selectedOwnerId, setSelectedOwnerId] = useState<string | null>(null);
   const [previewDocument, setPreviewDocument] = useState<{
     title: string;
     url: string;
@@ -127,10 +130,8 @@ function AdminVerificationPageContent({
     if (!focusProfileId || loading) return;
     const found = records.find((r) => r.owner_id === focusProfileId);
     if (!found) return;
-    setStatusFilter("all");
-    setExpandedSections((prev) =>
-      prev[focusProfileId] ? prev : { ...prev, [focusProfileId]: "identity" }
-    );
+    setQueueFilter("all");
+    setSelectedOwnerId(focusProfileId);
   }, [focusProfileId, loading, records]);
 
   async function loadVerificationRecords() {
@@ -470,13 +471,6 @@ function AdminVerificationPageContent({
     return "Name not set";
   }
 
-  function toggleSection(ownerId: string, section: "identity" | "bank") {
-    setExpandedSections((current) => ({
-      ...current,
-      [ownerId]: current[ownerId] === section ? null : section,
-    }));
-  }
-
   function openDocumentPreview(title: string, url: string) {
     const lowerUrl = url.toLowerCase();
     const isImage =
@@ -512,55 +506,40 @@ function AdminVerificationPageContent({
       }`;
   }
 
-  const filteredRecords = useMemo(() => {
-    const normalizedSearch = searchQuery.trim().toLowerCase();
-
-    return records.filter((record) => {
-      const matchesStatus =
-        statusFilter === "all" ||
-        (record.owner_verification_status || "pending") === statusFilter ||
-        (record.bank_verification_status || "pending") === statusFilter;
-
-      if (!matchesStatus) return false;
-      if (!normalizedSearch) return true;
-
-      const hostName = `${record.first_name || ""} ${record.last_name || ""}`
-        .trim()
-        .toLowerCase();
-      const phone = (record.phone || "").toLowerCase();
-      const ownerId = record.owner_id.toLowerCase();
-      const listingTitles = record.listingTitles.join(" ").toLowerCase();
-
-      return (
-        hostName.includes(normalizedSearch) ||
-        phone.includes(normalizedSearch) ||
-        ownerId.includes(normalizedSearch) ||
-        listingTitles.includes(normalizedSearch)
-      );
-    });
-  }, [records, statusFilter, searchQuery]);
-
   const summaryCounts = useMemo(() => {
-    const pendingOwner = records.filter(
-      (record) => (record.owner_verification_status || "pending") === "pending"
-    ).length;
-
-    const pendingBank = records.filter(
-      (record) => (record.bank_verification_status || "pending") === "pending"
-    ).length;
-
-    const fullyVerified = records.filter(
-      (record) =>
-        (record.owner_verification_status || "pending") === "verified" &&
-        (record.bank_verification_status || "pending") === "verified"
-    ).length;
-
-    return {
-      pendingOwner,
-      pendingBank,
-      fullyVerified,
-    };
+    let identityPending = 0;
+    let bankPending = 0;
+    let completed = 0;
+    for (const record of records) {
+      const flags = deriveAdminVerificationQueueFlags({
+        ownerVerificationStatus: record.owner_verification_status,
+        bankVerificationStatus: record.bank_verification_status,
+        hasIdFront: Boolean(record.idFrontPath || record.idFrontUrl),
+        hasIdBack: Boolean(record.idBackPath || record.idBackUrl),
+        hasBankProof: Boolean(record.bankProofPath || record.bankProofUrl),
+      });
+      if (flags.identityPending || flags.identityRejected) identityPending += 1;
+      if (flags.bankPending || flags.bankRejected) bankPending += 1;
+      if (flags.fullyVerified) completed += 1;
+    }
+    return { identityPending, bankPending, completed };
   }, [records]);
+
+  useEffect(() => {
+    if (selectedOwnerId) return;
+    if (records.length > 0) {
+      setSelectedOwnerId(records[0].owner_id);
+    }
+  }, [records, selectedOwnerId]);
+
+  useEffect(() => {
+    if (!selectedOwnerId) return;
+    void markNotificationsReadByRelatedClient({
+      relatedEntityType: "profile",
+      relatedEntityId: selectedOwnerId,
+      types: ["identity_submitted", "bank_submitted"],
+    });
+  }, [selectedOwnerId]);
 
   if (loading) {
     return (
@@ -593,477 +572,38 @@ function AdminVerificationPageContent({
           Review owner identity and bank verification details.
         </p>
 
-        <AdminNav current="verification" />
-
-        <div className="mb-5 grid gap-3 md:grid-cols-3">
-          <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 shadow-sm">
-            <p className="text-[11px] font-medium uppercase tracking-wide text-blue-800">
-              Pending owner verification
-            </p>
-            <div className="mt-1 flex items-center justify-between gap-3">
-              <p className="text-2xl font-bold text-[#192a3a]">
-                {summaryCounts.pendingOwner}
-              </p>
-              <p className="text-xs text-blue-900">
-                Waiting for identity approval
-              </p>
-            </div>
-          </div>
-
-          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 shadow-sm">
-            <p className="text-[11px] font-medium uppercase tracking-wide text-amber-800">
-              Pending bank verification
-            </p>
-            <div className="mt-1 flex items-center justify-between gap-3">
-              <p className="text-2xl font-bold text-[#192a3a]">
-                {summaryCounts.pendingBank}
-              </p>
-              <p className="text-xs text-amber-900">
-                Waiting for bank review
-              </p>
-            </div>
-          </div>
-
-          <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 shadow-sm">
-            <p className="text-[11px] font-medium uppercase tracking-wide text-green-800">
-              Fully verified hosts
-            </p>
-            <div className="mt-1 flex items-center justify-between gap-3">
-              <p className="text-2xl font-bold text-[#192a3a]">
-                {summaryCounts.fullyVerified}
-              </p>
-              <p className="text-xs text-green-900">
-                Ready for listing activation
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="mb-4 rounded-lg border border-gray-200 bg-white p-3 shadow-sm">
-          <label
-            htmlFor="verification-search"
-            className="mb-1.5 block text-sm font-medium text-[#192a3a]"
-          >
-            Search host or listing
-          </label>
-          <input
-            id="verification-search"
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search by host name, phone, owner ID, or listing title"
-            className="w-full rounded-md border border-gray-300 px-4 py-2.5 text-sm outline-none focus:border-[#192a3a]"
-          />
-        </div>
-
-        <div className="mb-5 flex flex-wrap gap-2">
-          {["all", "pending", "verified", "rejected"].map((filter) => (
-            <button
-              key={filter}
-              type="button"
-              onClick={() => setStatusFilter(filter)}
-              className={`rounded-md border px-4 py-1.5 text-sm transition-colors ${statusFilter === filter
-                ? "border-[#192a3a] bg-[#192a3a] text-white"
-                : "border-gray-300 bg-white text-[#192a3a]"
-                }`}
-            >
-              {filter.charAt(0).toUpperCase() + filter.slice(1)}
-            </button>
-          ))}
-        </div>
-
-        {message && (
-          <div className="mb-6 rounded-lg bg-green-100 p-4 text-sm text-green-800">
+        {message ? (
+          <div className="mb-4 rounded-lg bg-green-100 p-4 text-sm text-green-800">
             {message}
           </div>
-        )}
+        ) : null}
 
-        {filteredRecords.length === 0 ? (
-          <div className="rounded-lg border border-gray-300 p-6 text-sm text-gray-600 shadow-sm">
-            No verification records found for the current filters or search.
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {filteredRecords.map((record) => {
-              const expandedSection = expandedSections[record.owner_id] || null;
-              return (
-                <div
-                  key={record.owner_id}
-                  id={`verification-profile-${record.owner_id}`}
-                  className={`rounded-md border border-gray-300 bg-white p-5 shadow-sm ${
-                    highlightedId === record.owner_id
-                      ? FOCUS_HIGHLIGHT_CLASS
-                      : ""
-                  }`}
-                >
-                  <div className="mb-3 flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
-                    <div className="flex-1">
-                      <h2 className="text-2xl font-semibold text-[#192a3a]">{displayName(record)}</h2>
-                      <p className="mt-1 text-sm text-gray-500">Owner verification</p>
+        <AdminVerificationWorkspace
+          records={records}
+          queueFilter={queueFilter}
+          onQueueFilterChange={setQueueFilter}
+          selectedOwnerId={selectedOwnerId}
+          onSelectOwner={setSelectedOwnerId}
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
+          ownerComment={ownerComment}
+          bankComment={bankComment}
+          onOwnerCommentChange={(ownerId, value) =>
+            setOwnerComment((prev) => ({ ...prev, [ownerId]: value }))
+          }
+          onBankCommentChange={(ownerId, value) =>
+            setBankComment((prev) => ({ ...prev, [ownerId]: value }))
+          }
+          onVerifyIdentity={(ownerId, status) =>
+            void updateOwnerVerificationStatus(ownerId, status)
+          }
+          onVerifyBank={(ownerId, status) =>
+            void updateBankVerificationStatus(ownerId, status)
+          }
+          onPreviewDocument={openDocumentPreview}
+          summaryCounts={summaryCounts}
+        />
 
-                      <div className="mt-3 flex flex-wrap gap-3 text-sm text-gray-700">
-                        <div className="min-w-[320px] flex-[2.2] rounded-sm border border-gray-200 bg-gray-50 px-4 py-2.5">
-                          <div className="flex items-center gap-2 text-gray-500">
-                            <List className="h-4 w-4" />
-                            <p className="text-[11px] uppercase tracking-wide">Listings</p>
-                          </div>
-                          <p className="mt-1 text-[#192a3a]">
-                            {record.listingTitles.length > 0
-                              ? record.listingTitles.join(", ")
-                              : "No listings yet"}
-                          </p>
-                        </div>
-
-                        <div className="min-w-[180px] flex-[0.9] rounded-sm border border-gray-200 bg-gray-50 px-4 py-2.5">
-                          <div className="flex items-center gap-2 text-gray-500">
-                            <Phone className="h-4 w-4" />
-                            <p className="text-[11px] uppercase tracking-wide">Phone</p>
-                          </div>
-                          <p className="mt-1 whitespace-nowrap text-[#192a3a]">
-                            {record.phone || "Phone not set"}
-                          </p>
-                        </div>
-
-                        <div className="min-w-[220px] flex-[1.15] rounded-sm border border-gray-200 bg-gray-50 px-4 py-2.5">
-                          <div className="flex items-center gap-2 text-gray-500">
-                            <Mail className="h-4 w-4" />
-                            <p className="text-[11px] uppercase tracking-wide">Email</p>
-                          </div>
-                          {record.email ? (
-                            <a
-                              href={`mailto:${record.email}`}
-                              className="mt-1 block truncate text-[#192a3a] underline-offset-2 hover:underline"
-                              title={record.email}
-                            >
-                              {record.email}
-                            </a>
-                          ) : (
-                            <p className="mt-1 text-[#192a3a]">Not set</p>
-                          )}
-                        </div>
-
-                        <div className="min-w-[260px] flex-[1.35] rounded-sm border border-gray-200 bg-gray-50 px-4 py-2.5">
-                          <div className="flex items-center gap-2 text-gray-500">
-                            <UserSquare2 className="h-4 w-4" />
-                            <p className="text-[11px] uppercase tracking-wide">Owner ID</p>
-                          </div>
-                          <p className="mt-1 truncate text-[#192a3a] lg:text-sm" title={record.owner_id}>
-                            {record.owner_id}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex flex-wrap gap-2 lg:justify-end">
-                      <span
-                        className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-medium ${getBadgeClass(
-                          record.owner_verification_status
-                        )}`}
-                      >
-                        Owner: {record.owner_verification_status || "pending"}
-                      </span>
-
-                      <span
-                        className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-medium ${getBadgeClass(
-                          record.bank_verification_status
-                        )}`}
-                      >
-                        Bank: {record.bank_verification_status || "pending"}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="mb-3 border-t border-gray-200" />
-
-                  <div className="grid gap-4 xl:grid-cols-2">
-                    <div
-                      className={`rounded-sm border ${record.owner_verification_status === "verified"
-                          ? "border-green-300 bg-green-50"
-                          : "border-gray-200 bg-gray-50"
-                        }`}
-                    >
-                      <button
-                        type="button"
-                        onClick={() => toggleSection(record.owner_id, "identity")}
-                        className="flex w-full items-center justify-between gap-3 px-4 py-4 text-left"
-                      >
-                        <div className="flex items-center gap-3">
-                          <FileText className="h-5 w-5 text-[#192a3a]" />
-                          <div>
-                            <h3 className="text-xl font-semibold text-[#192a3a]">Identity documents</h3>
-                            <p className="text-sm text-gray-500">Review ID front and back documents</p>
-                          </div>
-                        </div>
-                        {expandedSection === "identity" ? (
-                          <ChevronUp className="h-5 w-5 text-[#192a3a]" />
-                        ) : (
-                          <ChevronDown className="h-5 w-5 text-[#192a3a]" />
-                        )}
-                      </button>
-
-                      {expandedSection === "identity" && (
-                        <div className="border-t border-black/5 px-4 pb-4 pt-3">
-                          <div className="grid gap-3 sm:grid-cols-2">
-                            <div className="rounded-sm border border-white/70 bg-white/60 p-3">
-                              <p className="text-xs uppercase tracking-wide text-gray-500">ID front</p>
-                              <div className="mt-3">
-                                {record.idFrontUrl ? (
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      openDocumentPreview("ID document front", record.idFrontUrl as string)
-                                    }
-                                    className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-[#192a3a] hover:bg-gray-50"
-                                  >
-                                    <FileText className="h-4 w-4" />
-                                    View document
-                                  </button>
-                                ) : (
-                                  <span className="text-sm text-red-700">Missing</span>
-                                )}
-                              </div>
-                            </div>
-
-                            <div className="rounded-sm border border-white/70 bg-white/60 p-3">
-                              <p className="text-xs uppercase tracking-wide text-gray-500">ID back</p>
-                              <div className="mt-3">
-                                {record.idBackUrl ? (
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      openDocumentPreview("ID document back", record.idBackUrl as string)
-                                    }
-                                    className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-[#192a3a] hover:bg-gray-50"
-                                  >
-                                    <FileText className="h-4 w-4" />
-                                    View document
-                                  </button>
-                                ) : (
-                                  <span className="text-sm text-red-700">Missing</span>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-
-                          <textarea
-                            value={ownerComment[record.owner_id] || ""}
-                            onChange={(e) =>
-                              setOwnerComment((prev) => ({
-                                ...prev,
-                                [record.owner_id]: e.target.value,
-                              }))
-                            }
-                            placeholder="Add comment (reason for rejection or clarification)"
-                            className="mt-3 w-full rounded-md border border-gray-300 p-2 text-sm"
-                          />
-                          <div className="mt-4 flex flex-wrap gap-2 border-t border-black/5 pt-3">
-                            <button
-                              type="button"
-                              onClick={() =>
-                                updateOwnerVerificationStatus(record.owner_id, "verified")
-                              }
-                              disabled={record.owner_verification_status === "verified"}
-                              className={actionButtonClass(
-                                "verified",
-                                record.owner_verification_status === "verified"
-                              )}
-                            >
-                              <CheckCircle2 className="h-4 w-4" />
-                              Verified
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() =>
-                                updateOwnerVerificationStatus(record.owner_id, "pending")
-                              }
-                              disabled={record.owner_verification_status === "pending"}
-                              className={actionButtonClass(
-                                "pending",
-                                record.owner_verification_status === "pending"
-                              )}
-                            >
-                              <Clock3 className="h-4 w-4" />
-                              Pending
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() =>
-                                updateOwnerVerificationStatus(record.owner_id, "rejected")
-                              }
-                              disabled={record.owner_verification_status === "rejected"}
-                              className={actionButtonClass(
-                                "rejected",
-                                record.owner_verification_status === "rejected"
-                              )}
-                            >
-                              <XCircle className="h-4 w-4" />
-                              Rejected
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                    <div
-                      className={`rounded-sm border ${record.bank_verification_status === "verified"
-                          ? "border-green-300 bg-green-50"
-                          : "border-gray-200 bg-gray-50"
-                        }`}
-                    >
-                      <button
-                        type="button"
-                        onClick={() => toggleSection(record.owner_id, "bank")}
-                        className="flex w-full items-center justify-between gap-3 px-4 py-4 text-left"
-                      >
-                        <div className="flex items-center gap-3">
-                          <Landmark className="h-5 w-5 text-[#192a3a]" />
-                          <div>
-                            <h3 className="text-xl font-semibold text-[#192a3a]">Bank details</h3>
-                            <p className="text-sm text-gray-500">Review payout and proof of bank account</p>
-                          </div>
-                        </div>
-                        {expandedSection === "bank" ? (
-                          <ChevronUp className="h-5 w-5 text-[#192a3a]" />
-                        ) : (
-                          <ChevronDown className="h-5 w-5 text-[#192a3a]" />
-                        )}
-                      </button>
-
-                      {expandedSection === "bank" && (
-                        <div className="border-t border-black/5 px-4 pb-4 pt-3">
-                          <div className="grid gap-3 sm:grid-cols-2">
-                            <div className="rounded-sm border border-white/70 bg-white/60 p-3">
-                              <p className="text-xs uppercase tracking-wide text-gray-500">Account holder</p>
-                              <p className="mt-1 text-[#192a3a]">
-                                {record.bankDetails?.account_holder_name || "Not set"}
-                              </p>
-                            </div>
-
-                            <div className="rounded-sm border border-white/70 bg-white/60 p-3">
-                              <p className="text-xs uppercase tracking-wide text-gray-500">Bank name</p>
-                              <p className="mt-1 text-[#192a3a]">
-                                {record.bankDetails?.bank_name || "Not set"}
-                              </p>
-                            </div>
-
-                            <div className="rounded-sm border border-white/70 bg-white/60 p-3">
-                              <p className="text-xs uppercase tracking-wide text-gray-500">Account number</p>
-                              <p className="mt-1 text-[#192a3a]">
-                                {record.bankDetails?.account_number || "Not set"}
-                              </p>
-                            </div>
-
-                            <div className="rounded-sm border border-white/70 bg-white/60 p-3">
-                              <p className="text-xs uppercase tracking-wide text-gray-500">Account type</p>
-                              <p className="mt-1 text-[#192a3a]">
-                                {record.bankDetails?.account_type || "Not set"}
-                              </p>
-                            </div>
-
-                            <div className="rounded-sm border border-white/70 bg-white/60 p-3">
-                              <p className="text-xs uppercase tracking-wide text-gray-500">Branch code</p>
-                              <p className="mt-1 text-[#192a3a]">
-                                {record.bankDetails?.branch_code || "Not set"}
-                              </p>
-                            </div>
-
-                            <div className="rounded-sm border border-white/70 bg-white/60 p-3">
-                              <p className="text-xs uppercase tracking-wide text-gray-500">Bank proof</p>
-                              <div className="mt-3">
-                                {record.bankProofUrl ? (
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      openDocumentPreview("Bank proof", record.bankProofUrl as string)
-                                    }
-                                    className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-[#192a3a] hover:bg-gray-50"
-                                  >
-                                    <FileText className="h-4 w-4" />
-                                    View proof
-                                  </button>
-                                ) : (
-                                  <span className="text-sm text-red-700">Missing</span>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-
-                          <textarea
-                            value={bankComment[record.owner_id] || ""}
-                            onChange={(e) =>
-                              setBankComment((prev) => ({
-                                ...prev,
-                                [record.owner_id]: e.target.value,
-                              }))
-                            }
-                            placeholder="Add bank verification comment"
-                            className="mt-3 w-full rounded-md border border-gray-300 p-2 text-sm"
-                          />
-                          <div className="mt-4 flex flex-wrap gap-2 border-t border-black/5 pt-3">
-                            <button
-                              type="button"
-                              onClick={() =>
-                                updateBankVerificationStatus(record.owner_id, "verified")
-                              }
-                              disabled={record.bank_verification_status === "verified"}
-                              className={actionButtonClass(
-                                "verified",
-                                record.bank_verification_status === "verified"
-                              )}
-                            >
-                              <CheckCircle2 className="h-4 w-4" />
-                              Verified
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() =>
-                                updateBankVerificationStatus(record.owner_id, "pending")
-                              }
-                              disabled={record.bank_verification_status === "pending"}
-                              className={actionButtonClass(
-                                "pending",
-                                record.bank_verification_status === "pending"
-                              )}
-                            >
-                              <Clock3 className="h-4 w-4" />
-                              Pending
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() =>
-                                updateBankVerificationStatus(record.owner_id, "rejected")
-                              }
-                              disabled={record.bank_verification_status === "rejected"}
-                              className={actionButtonClass(
-                                "rejected",
-                                record.bank_verification_status === "rejected"
-                              )}
-                            >
-                              <XCircle className="h-4 w-4" />
-                              Rejected
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {(record.owner_verification_status !== "verified" ||
-                    record.bank_verification_status !== "verified") && (
-                      <div className="mt-4 rounded-sm border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
-                        Listings for this owner can only be activated once owner verification,
-                        bank verification, and listing ownership proof are all marked as verified.
-                      </div>
-                    )}
-                </div>
-              );
-            })}
-          </div>
-        )}
         {previewDocument && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4">
             <div className="relative flex h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-md bg-white shadow-2xl">

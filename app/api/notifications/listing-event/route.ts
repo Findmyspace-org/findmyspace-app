@@ -15,6 +15,7 @@ import {
 } from "@/lib/communication-copy";
 import { getCanonicalPublicSiteUrl } from "@/lib/site-url";
 import { requireListingEventAuth } from "@/lib/require-listing-event-auth";
+import { markNotificationsReadByRelatedEntity } from "@/lib/notification-lifecycle";
 
 type BasicProfile = {
   first_name?: string | null;
@@ -155,6 +156,14 @@ export async function POST(req: NextRequest) {
     const ownerCompleteUrl = `${appBaseUrl}/dashboard/listings/${space.id}/complete`;
     const resolvedComment = (adminComment || space.listing_admin_comment || "").trim() || null;
 
+    async function clearListingReviewQueueNotifications() {
+      await markNotificationsReadByRelatedEntity(supabaseAdmin, {
+        relatedEntityType: "space",
+        relatedEntityId: space.id,
+        types: ["listing_submitted", "listing_pending"],
+      });
+    }
+
     if (eventType === "listing_submitted") {
       // Admin email — admin copy isn't part of the user-facing copy module,
       // so we render inline through the shared layout for visual consistency.
@@ -274,6 +283,8 @@ export async function POST(req: NextRequest) {
         spaceId: space.id,
       });
 
+      await clearListingReviewQueueNotifications();
+
       return NextResponse.json({ ok: true });
     }
 
@@ -310,6 +321,8 @@ export async function POST(req: NextRequest) {
         href: "/dashboard/listings",
         spaceId: space.id,
       });
+
+      await clearListingReviewQueueNotifications();
 
       return NextResponse.json({ ok: true });
     }
@@ -348,6 +361,8 @@ export async function POST(req: NextRequest) {
         spaceId: space.id,
       });
 
+      await clearListingReviewQueueNotifications();
+
       return NextResponse.json({ ok: true });
     }
 
@@ -383,6 +398,8 @@ export async function POST(req: NextRequest) {
         href: `/spaces/${space.id}`,
         spaceId: space.id,
       });
+
+      await clearListingReviewQueueNotifications();
 
       return NextResponse.json({ ok: true });
     }
