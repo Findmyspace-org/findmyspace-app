@@ -23,6 +23,7 @@ import {
   LayoutDashboard,
   HousePlus,
   Building2,
+  CalendarCheck,
   ShieldCheck,
   Compass,
   LogIn,
@@ -841,9 +842,26 @@ export default function Header() {
   if (!loading && isLoggedIn) {
     menuSections.push({
       title: "My account",
-      items: [
-        { label: "My dashboard", href: "/dashboard", icon: LayoutDashboard },
-      ],
+      items: isHost
+        ? [
+            {
+              label: "My dashboard",
+              href: "/dashboard/owner",
+              icon: LayoutDashboard,
+            },
+            {
+              label: "My bookings",
+              href: "/dashboard",
+              icon: CalendarCheck,
+            },
+          ]
+        : [
+            {
+              label: "My dashboard",
+              href: "/dashboard",
+              icon: LayoutDashboard,
+            },
+          ],
     });
 
     menuSections.push({
@@ -851,9 +869,19 @@ export default function Header() {
       items: isHost
         ? [
             {
-              label: "Host dashboard",
-              href: "/dashboard/owner",
-              icon: LayoutDashboard,
+              label: "My properties",
+              href: "/dashboard/properties",
+              icon: Building2,
+            },
+            {
+              label: "My listings",
+              href: "/dashboard/listings",
+              icon: Building2,
+            },
+            {
+              label: "Verification & payouts",
+              href: "/dashboard/verification",
+              icon: ShieldCheck,
             },
           ]
         : [

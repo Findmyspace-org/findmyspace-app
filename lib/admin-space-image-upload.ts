@@ -107,6 +107,32 @@ export function classifySpaceImagesInsertError(message: string): string {
   return `Could not save image record: ${message}`;
 }
 
+export function classifyPropertyImagesInsertError(message: string): string {
+  const lower = message.toLowerCase();
+  if (
+    lower.includes("property_images") &&
+    (lower.includes("does not exist") || lower.includes("relation"))
+  ) {
+    return "Database migration required. Run supabase db push for migration 032.";
+  }
+  if (lower.includes("permission denied")) {
+    return `Database migration required. Run supabase db push for migration 032 (property_images grants). Details: ${message}`;
+  }
+  if (lower.includes("violates") || lower.includes("constraint")) {
+    return `Could not save image record: ${message}`;
+  }
+  return `Could not save image record: ${message}`;
+}
+
 export function missingServiceRoleMessage(): string {
   return "Server configuration error. SUPABASE_SERVICE_ROLE_KEY is not set.";
+}
+
+export function isPropertyImagesSchemaError(message: string): boolean {
+  const lower = message.toLowerCase();
+  return (
+    (lower.includes("property_images") &&
+      (lower.includes("does not exist") || lower.includes("relation"))) ||
+    (lower.includes("permission denied") && lower.includes("property_images"))
+  );
 }

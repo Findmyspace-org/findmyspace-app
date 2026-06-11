@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireOwnerPropertyApi } from "@/lib/require-owner-property-api";
 import { formatPropertyAddress } from "@/lib/admin-property";
+import { computeListingCompletion } from "@/lib/listing-completion";
 import { getOwnerListingStatusLabel } from "@/lib/listing-lifecycle";
 
 export async function GET(
@@ -33,17 +34,26 @@ export async function GET(
     return NextResponse.json({ error: spacesErr.message }, { status: 500 });
   }
 
-  const spaceRows = ((spaces || []) as {
+  const rawSpaces = (spaces || []) as {
     id: string;
     title: string | null;
     status: string | null;
     space_type: string | null;
     city: string | null;
     suburb: string | null;
-  }[]).map((space) => ({
-    ...space,
-    status_label: getOwnerListingStatusLabel(space.status),
-  }));
+  }[];
+
+  const spaceRows = await Promise.all(
+    rawSpaces.map(async (space) => {
+      const completion = await computeListingCompletion(auth.admin, space.id);
+      const canSubmit = completion?.canSubmit ?? false;
+      return {
+        ...space,
+        can_submit: canSubmit,
+        status_label: getOwnerListingStatusLabel(space.status, { canSubmit }),
+      };
+    })
+  );
 
   return NextResponse.json({
     property: {

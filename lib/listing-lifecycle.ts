@@ -137,14 +137,17 @@ export function getOwnerListingCompletionHref(spaceId: string): string {
   return `/dashboard/listings/${spaceId}/complete`;
 }
 
-export function getOwnerListingStatusLabel(status: string | null | undefined): string {
+export function getOwnerListingStatusLabel(
+  status: string | null | undefined,
+  options?: { canSubmit?: boolean }
+): string {
   switch (status) {
     case OWNER_CLAIMED_STATUS:
-      return "Setup required";
+      return options?.canSubmit ? "Ready to submit" : "Setup required";
     case NEEDS_CHANGES_STATUS:
-      return "Changes requested";
+      return "Needs attention";
     case PENDING_VERIFICATION_STATUS:
-      return "Under review";
+      return "Pending review";
     case "rejected":
       return "Rejected";
     case BOOKABLE_LISTING_STATUS:
@@ -191,9 +194,10 @@ export type OwnerListingNextAction = {
 /** Property dashboard: next action for a child space (extends owner listing helpers). */
 export function getPropertyChildSpaceNextAction(
   spaceId: string,
-  status: string | null | undefined
+  status: string | null | undefined,
+  options?: { canSubmit?: boolean }
 ): OwnerListingNextAction | null {
-  const existing = getOwnerListingNextAction(spaceId, status);
+  const existing = getOwnerListingNextAction(spaceId, status, options);
   if (existing) return existing;
 
   const editHref = `/spaces/${spaceId}/edit`;
@@ -214,7 +218,7 @@ export function getPropertyChildSpaceNextAction(
     case PENDING_VERIFICATION_STATUS:
     case "pending":
       return {
-        label: "Awaiting admin approval",
+        label: "Pending review",
         href: getOwnerListingClaimHref(spaceId),
         urgent: false,
         muted: true,
@@ -226,13 +230,22 @@ export function getPropertyChildSpaceNextAction(
 
 export function getOwnerListingNextAction(
   spaceId: string,
-  status: string | null | undefined
+  status: string | null | undefined,
+  options?: { canSubmit?: boolean }
 ): OwnerListingNextAction | null {
   const claimHref = getOwnerListingClaimHref(spaceId);
   const completionHref = getOwnerListingCompletionHref(spaceId);
 
   switch (status) {
     case OWNER_CLAIMED_STATUS:
+      if (options?.canSubmit) {
+        return {
+          label: "Submit for review",
+          href: `${claimHref}?step=submit`,
+          urgent: false,
+          muted: false,
+        };
+      }
       return { label: "Complete your claim", href: claimHref, urgent: false, muted: false };
     case NEEDS_CHANGES_STATUS:
       return {
@@ -243,7 +256,7 @@ export function getOwnerListingNextAction(
       };
     case PENDING_VERIFICATION_STATUS:
       return {
-        label: "Complete your claim",
+        label: "Pending review",
         href: claimHref,
         urgent: false,
         muted: true,

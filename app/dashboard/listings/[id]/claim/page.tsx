@@ -59,6 +59,8 @@ function ClaimPageContent() {
   const [savingProfile, setSavingProfile] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitSucceeded, setSubmitSucceeded] = useState(false);
+  const [confirmSubmitOpen, setConfirmSubmitOpen] = useState(false);
+  const [submittedPropertyId, setSubmittedPropertyId] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [completion, setCompletion] = useState<ListingCompletionResult | null>(
     null
@@ -295,9 +297,10 @@ function ClaimPageContent() {
   }
 
   async function handleSubmit() {
-    if (!spaceId || !readyToSubmit) return;
+    if (!spaceId || !readyToSubmit || submitting || underReview) return;
     setSubmitting(true);
     setMessage("");
+    setConfirmSubmitOpen(false);
     try {
       if (ownerId) {
         const { error: profileError } = await (supabase.from("profiles") as ReturnType<
@@ -322,8 +325,11 @@ function ClaimPageContent() {
       if (updated) {
         setCompletion(updated);
       }
+      const propertyId =
+        typeof result.propertyId === "string" ? result.propertyId : null;
+      setSubmittedPropertyId(propertyId);
       setSubmitSucceeded(true);
-      router.replace(returnToClaim);
+      router.replace(`${returnToClaim}?step=submit`);
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Submit failed.");
     }
@@ -364,7 +370,10 @@ function ClaimPageContent() {
           submitted={showSubmittedConfirmation}
         >
           {showSubmittedConfirmation ? (
-            <ClaimSubmittedConfirmation spaceId={spaceId} />
+            <ClaimSubmittedConfirmation
+              spaceId={spaceId}
+              propertyId={submittedPropertyId}
+            />
           ) : (
             <>
           {currentStep === "details" ? (
@@ -596,7 +605,7 @@ function ClaimPageContent() {
                     <button
                       type="button"
                       disabled={submitting}
-                      onClick={() => void handleSubmit()}
+                      onClick={() => setConfirmSubmitOpen(true)}
                       className="inline-flex items-center gap-2 rounded-lg bg-[#0f2740] px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
                     >
                       {submitting ? (
@@ -607,7 +616,7 @@ function ClaimPageContent() {
                       ) : (
                         <>
                           <Send className="h-4 w-4" />
-                          Submit claim for review
+                          Submit for review
                         </>
                       )}
                     </button>
@@ -629,6 +638,60 @@ function ClaimPageContent() {
             </>
           )}
         </ClaimOnboardingShell>
+
+        {confirmSubmitOpen ? (
+          <div
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4"
+            role="presentation"
+            onClick={() => {
+              if (!submitting) setConfirmSubmitOpen(false);
+            }}
+          >
+            <div
+              className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="confirm-submit-title"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3
+                id="confirm-submit-title"
+                className="text-lg font-semibold text-gray-900"
+              >
+                Submit this space for admin review?
+              </h3>
+              <p className="mt-2 text-sm text-gray-600">
+                We&apos;ll review your identity documents and ownership proof.
+                You won&apos;t be able to edit listing details until approved.
+              </p>
+              <div className="mt-6 flex flex-wrap justify-end gap-3">
+                <button
+                  type="button"
+                  disabled={submitting}
+                  onClick={() => setConfirmSubmitOpen(false)}
+                  className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={submitting}
+                  onClick={() => void handleSubmit()}
+                  className="inline-flex items-center gap-2 rounded-lg bg-[#0f2740] px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                >
+                  {submitting ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Submitting…
+                    </>
+                  ) : (
+                    "Submit for review"
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </main>
     </RequireAuth>
   );

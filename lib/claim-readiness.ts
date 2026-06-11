@@ -45,6 +45,36 @@ export function isClaimReadyToSubmit(readiness: ClaimReadiness): boolean {
   );
 }
 
+export function hasOwnershipProofUploaded(
+  ownershipProofStatus: string | null | undefined,
+  hasOwnershipDocument = false
+): boolean {
+  if (hasOwnershipDocument) return true;
+  return (
+    ownershipProofStatus === "pending" || ownershipProofStatus === "verified"
+  );
+}
+
+export function ownerClaimCanSubmitForSpace(input: {
+  contactComplete: boolean;
+  hasIdFront: boolean;
+  hasIdBack: boolean;
+  ownershipProofStatus: string | null | undefined;
+  hasOwnershipDocument?: boolean;
+}): boolean {
+  return isClaimReadyToSubmit(
+    buildClaimReadiness({
+      contactComplete: input.contactComplete,
+      hasOwnershipProof: hasOwnershipProofUploaded(
+        input.ownershipProofStatus,
+        input.hasOwnershipDocument
+      ),
+      hasIdFront: input.hasIdFront,
+      hasIdBack: input.hasIdBack,
+    })
+  );
+}
+
 export function claimSubmitBlockers(readiness: ClaimReadiness): string[] {
   const blockers: string[] = [];
   if (!readiness.contactComplete) blockers.push("Contact details");

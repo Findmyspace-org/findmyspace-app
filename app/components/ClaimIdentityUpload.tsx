@@ -14,6 +14,7 @@ type IdDoc = {
   id: string;
   document_type: string;
   file_path: string | null;
+  file_url: string | null;
   status: string | null;
 };
 
@@ -44,7 +45,7 @@ export function ClaimIdentityUpload({
     setLoading(true);
     const { data } = await supabase
       .from("owner_verification_documents")
-      .select("id, document_type, file_path, status")
+      .select("id, document_type, file_path, file_url, status")
       .eq("owner_id", ownerId);
 
     const list = (data as IdDoc[]) || [];
@@ -53,8 +54,18 @@ export function ClaimIdentityUpload({
     const idFront = list.find((d) => d.document_type === "id_front");
     const idBack = list.find((d) => d.document_type === "id_back");
     const [idFrontUrl, idBackUrl] = await Promise.all([
-      createVerificationSignedUrl(supabase, OWNER_VERIFICATION_BUCKET, idFront?.file_path),
-      createVerificationSignedUrl(supabase, OWNER_VERIFICATION_BUCKET, idBack?.file_path),
+      createVerificationSignedUrl(
+        supabase,
+        OWNER_VERIFICATION_BUCKET,
+        idFront?.file_path,
+        idFront?.file_url
+      ),
+      createVerificationSignedUrl(
+        supabase,
+        OWNER_VERIFICATION_BUCKET,
+        idBack?.file_path,
+        idBack?.file_url
+      ),
     ]);
     setPreviewUrls({ id_front: idFrontUrl, id_back: idBackUrl });
     onStatusChange?.({
@@ -68,8 +79,18 @@ export function ClaimIdentityUpload({
     void loadDocs();
   }, [loadDocs]);
 
-  const hasIdFront = docs.some((d) => d.document_type === "id_front");
-  const hasIdBack = docs.some((d) => d.document_type === "id_back");
+  const idFrontDoc = docs.find((d) => d.document_type === "id_front");
+  const idBackDoc = docs.find((d) => d.document_type === "id_back");
+  const hasIdFront = Boolean(idFrontDoc);
+  const hasIdBack = Boolean(idBackDoc);
+
+  function displayFileName(doc: IdDoc | undefined): string | null {
+    if (!doc) return null;
+    const path = doc.file_path || doc.file_url;
+    if (!path) return null;
+    const segment = path.split("/").pop();
+    return segment || null;
+  }
 
   async function handleUpload() {
     if (!idFrontFile && !idBackFile) {
@@ -177,6 +198,7 @@ export function ClaimIdentityUpload({
         selectedFile={idFrontFile}
         hasUploaded={hasIdFront}
         previewUrl={previewUrls.id_front}
+        uploadedFileName={displayFileName(idFrontDoc)}
         statusHint={
           hasIdFront
             ? "Uploaded — pending review"
@@ -191,6 +213,7 @@ export function ClaimIdentityUpload({
         selectedFile={idBackFile}
         hasUploaded={hasIdBack}
         previewUrl={previewUrls.id_back}
+        uploadedFileName={displayFileName(idBackDoc)}
         statusHint={
           hasIdBack
             ? "Uploaded — pending review"

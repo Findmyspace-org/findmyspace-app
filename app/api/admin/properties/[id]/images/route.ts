@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApi } from "@/lib/require-admin-api";
 import { createServiceAdminClient } from "@/lib/admin-unclaimed-space";
 import {
-  classifySpaceImagesInsertError,
+  classifyPropertyImagesInsertError,
   classifyStorageUploadError,
   missingServiceRoleMessage,
   normalizeFormUpload,
@@ -131,7 +131,7 @@ export async function POST(
 
   if (countErr) {
     return jsonError(
-      classifySpaceImagesInsertError(countErr.message),
+      classifyPropertyImagesInsertError(countErr.message),
       500,
       "property_images_read_denied"
     );
@@ -197,7 +197,7 @@ export async function POST(
       await admin.storage.from("space-images").remove([filePath]);
       failed.push({
         name: file.name,
-        error: classifySpaceImagesInsertError(insertErr?.message || "Insert failed."),
+        error: classifyPropertyImagesInsertError(insertErr?.message || "Insert failed."),
       });
       continue;
     }
@@ -274,7 +274,7 @@ export async function DELETE(
 
   if (delErr) {
     return jsonError(
-      classifySpaceImagesInsertError(delErr.message),
+      classifyPropertyImagesInsertError(delErr.message),
       500,
       "property_images_delete_denied"
     );

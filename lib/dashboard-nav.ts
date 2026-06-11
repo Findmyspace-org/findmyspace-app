@@ -98,7 +98,7 @@ export const HOST_NAV: DashboardNavItem[] = [
     matchPrefix: true,
   },
   {
-    label: "Verification & settings",
+    label: "Verification & payouts",
     href: "/dashboard/verification",
     icon: Settings,
     matchPrefix: true,

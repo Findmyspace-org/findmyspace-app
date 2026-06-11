@@ -17,12 +17,28 @@ export type VerificationStorageBucket =
  * Create a short-lived signed URL for a private storage object.
  * Prefer `file_path` from the database — stored `file_url` values expire.
  */
+function resolveVerificationStoragePath(
+  filePath: string | null | undefined,
+  fileUrl: string | null | undefined
+): string | null {
+  const path = filePath?.trim();
+  if (path) return path;
+
+  const legacy = fileUrl?.trim();
+  if (!legacy) return null;
+  if (legacy.startsWith("http://") || legacy.startsWith("https://")) {
+    return null;
+  }
+  return legacy;
+}
+
 export async function createVerificationSignedUrl(
   client: SupabaseClient,
   bucket: VerificationStorageBucket,
-  filePath: string | null | undefined
+  filePath: string | null | undefined,
+  fileUrl?: string | null
 ): Promise<string | null> {
-  const path = filePath?.trim();
+  const path = resolveVerificationStoragePath(filePath, fileUrl);
   if (!path) return null;
 
   const { data, error } = await client.storage

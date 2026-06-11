@@ -42,14 +42,16 @@ export async function POST(
   }
 
   const now = new Date().toISOString();
-  const { error: updateErr } = await auth.admin
+  const { data: spaceRow, error: updateErr } = await auth.admin
     .from("spaces")
     .update({
       status: "pending_verification",
       submitted_for_review_at: now,
     })
     .eq("id", id)
-    .eq("owner_id", auth.userId);
+    .eq("owner_id", auth.userId)
+    .select("property_id")
+    .maybeSingle();
 
   if (updateErr) {
     return NextResponse.json({ error: updateErr.message }, { status: 500 });
@@ -68,5 +70,10 @@ export async function POST(
   });
 
   const updated = await computeListingCompletion(auth.admin, id);
-  return NextResponse.json({ ok: true, completion: updated });
+  return NextResponse.json({
+    ok: true,
+    completion: updated,
+    propertyId:
+      (spaceRow as { property_id?: string | null } | null)?.property_id ?? null,
+  });
 }

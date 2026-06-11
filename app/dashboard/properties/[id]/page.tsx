@@ -26,6 +26,7 @@ type SpaceRow = {
   title: string | null;
   status: string | null;
   status_label: string;
+  can_submit?: boolean;
   space_type: string | null;
 };
 
@@ -105,7 +106,8 @@ function PropertyDetailContent() {
                   {spaces.map((space) => {
                     const nextAction = getPropertyChildSpaceNextAction(
                       space.id,
-                      space.status
+                      space.status,
+                      { canSubmit: space.can_submit }
                     );
                     return (
                       <li

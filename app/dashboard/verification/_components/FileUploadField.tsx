@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { CheckCircle2, FileUp, X } from "lucide-react";
+import { CheckCircle2, FileText, FileUp, ImageIcon, X } from "lucide-react";
+import { ClaimDocumentPreviewModal } from "@/app/components/ClaimDocumentPreviewModal";
 
 type FileUploadFieldProps = {
   label: string;
@@ -12,9 +13,19 @@ type FileUploadFieldProps = {
   uploadedLabel?: string;
   hasUploaded?: boolean;
   previewUrl?: string | null;
+  uploadedFileName?: string | null;
   onFileChange: (file: File | null) => void;
   disabled?: boolean;
 };
+
+function inferMimeFromName(
+  fileName: string | null | undefined
+): "image" | "pdf" | "unknown" {
+  const lower = (fileName || "").toLowerCase();
+  if (/\.(jpe?g|png|gif|webp|bmp|svg)(\?|$)/i.test(lower)) return "image";
+  if (/\.pdf(\?|$)/i.test(lower)) return "pdf";
+  return "unknown";
+}
 
 export default function FileUploadField({
   label,
@@ -24,6 +35,7 @@ export default function FileUploadField({
   uploadedLabel,
   hasUploaded = false,
   previewUrl,
+  uploadedFileName,
   onFileChange,
   disabled,
 }: FileUploadFieldProps) {
@@ -31,10 +43,25 @@ export default function FileUploadField({
   const [isDragging, setIsDragging] = useState(false);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [localPreviewUrl, setLocalPreviewUrl] = useState<string | null>(null);
+  const [remotePreviewBroken, setRemotePreviewBroken] = useState(false);
 
-  const displayName = selectedFile?.name || null;
+  const displayName = selectedFile?.name || uploadedFileName || null;
   const showConfirmedState = hasUploaded && !selectedFile;
   const effectivePreviewUrl = localPreviewUrl || previewUrl || null;
+  const mimeHint =
+    selectedFile?.type === "application/pdf"
+      ? "pdf"
+      : selectedFile?.type.startsWith("image/")
+        ? "image"
+        : inferMimeFromName(displayName);
+  const showImagePreview =
+    effectivePreviewUrl &&
+    !remotePreviewBroken &&
+    mimeHint === "image";
+
+  useEffect(() => {
+    setRemotePreviewBroken(false);
+  }, [previewUrl, uploadedFileName]);
 
   useEffect(() => {
     if (!selectedFile || !selectedFile.type.startsWith("image/")) {
@@ -67,6 +94,58 @@ export default function FileUploadField({
     },
     [disabled, onFileChange]
   );
+
+  function renderPreviewThumb(className: string) {
+    if (showImagePreview) {
+      return (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setLightboxOpen(true);
+          }}
+          className={`shrink-0 overflow-hidden rounded-md border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#192a3a]/30 ${className}`}
+          aria-label={`View ${label}`}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={effectivePreviewUrl!}
+            alt={`${label} preview`}
+            className="h-full w-full object-cover"
+            onError={() => setRemotePreviewBroken(true)}
+          />
+        </button>
+      );
+    }
+
+    if (mimeHint === "pdf") {
+      return (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (effectivePreviewUrl) setLightboxOpen(true);
+          }}
+          className={`inline-flex shrink-0 items-center justify-center rounded-md border border-gray-200 bg-white ${className}`}
+          aria-label={`View ${label}`}
+        >
+          <FileText className="h-8 w-8 text-[#0f2740]" />
+        </button>
+      );
+    }
+
+    if (showConfirmedState) {
+      return (
+        <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
+          <CheckCircle2 className="h-5 w-5" aria-hidden />
+        </span>
+      );
+    }
+
+    return <ImageIcon className="h-8 w-8 text-gray-400" />;
+  }
 
   return (
     <div>
@@ -111,34 +190,15 @@ export default function FileUploadField({
         />
         {showConfirmedState ? (
           <div className="flex w-full items-center gap-3 text-left">
-            {effectivePreviewUrl ? (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setLightboxOpen(true);
-                }}
-                className="shrink-0 rounded-md border border-emerald-200 focus:outline-none focus:ring-2 focus:ring-[#192a3a]/30"
-                aria-label={`View ${label}`}
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={effectivePreviewUrl}
-                  alt={`${label} preview`}
-                  className="h-12 w-12 rounded-md object-cover"
-                />
-              </button>
-            ) : (
-              <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
-                <CheckCircle2 className="h-5 w-5" aria-hidden />
-              </span>
-            )}
+            <div className="h-12 w-12">{renderPreviewThumb("h-12 w-12")}</div>
             <div className="min-w-0 flex-1">
               <p className="text-sm font-medium text-emerald-800">
                 {uploadedLabel || "Uploaded"}
               </p>
               <p className="mt-0.5 text-xs text-emerald-700">{statusHint}</p>
+              {displayName ? (
+                <p className="mt-0.5 truncate text-xs text-emerald-700">{displayName}</p>
+              ) : null}
             </div>
             <button
               type="button"
@@ -152,10 +212,24 @@ export default function FileUploadField({
             >
               Replace
             </button>
+            {effectivePreviewUrl ? (
+              <button
+                type="button"
+                disabled={disabled}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setLightboxOpen(true);
+                }}
+                className="shrink-0 text-xs font-medium text-[#192a3a] underline underline-offset-2 disabled:opacity-50"
+              >
+                View
+              </button>
+            ) : null}
           </div>
         ) : (
           <>
-            {effectivePreviewUrl ? (
+            {effectivePreviewUrl && mimeHint === "image" && !remotePreviewBroken ? (
               <button
                 type="button"
                 onClick={(e) => {
@@ -171,8 +245,11 @@ export default function FileUploadField({
                   src={effectivePreviewUrl}
                   alt={`${label} preview`}
                   className="h-16 w-16 rounded-md object-cover"
+                  onError={() => setRemotePreviewBroken(true)}
                 />
               </button>
+            ) : selectedFile && mimeHint === "pdf" ? (
+              <FileText className="h-8 w-8 text-[#0f2740]" aria-hidden />
             ) : (
               <FileUp className="h-5 w-5 text-gray-400" aria-hidden />
             )}
@@ -188,36 +265,14 @@ export default function FileUploadField({
         )}
       </div>
 
-      {lightboxOpen && effectivePreviewUrl ? (
-        <div
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-4"
-          role="presentation"
-          onClick={() => setLightboxOpen(false)}
-        >
-          <div
-            className="relative max-h-[90vh] max-w-4xl"
-            role="dialog"
-            aria-modal="true"
-            aria-label={`${label} full preview`}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <button
-              type="button"
-              onClick={() => setLightboxOpen(false)}
-              className="absolute -top-10 right-0 rounded-md p-1 text-white hover:bg-white/10"
-              aria-label="Close preview"
-            >
-              <X className="h-6 w-6" />
-            </button>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={effectivePreviewUrl}
-              alt={`${label} full size`}
-              className="max-h-[85vh] w-auto max-w-full rounded-md object-contain"
-            />
-          </div>
-        </div>
-      ) : null}
+      <ClaimDocumentPreviewModal
+        open={lightboxOpen}
+        onClose={() => setLightboxOpen(false)}
+        title={label}
+        fileName={displayName}
+        previewUrl={effectivePreviewUrl}
+        mimeHint={mimeHint}
+      />
     </div>
   );
 }

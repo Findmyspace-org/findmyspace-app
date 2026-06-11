@@ -133,7 +133,8 @@ function bankCard(input: HostActionInput): HostActionCard | null {
     return {
       id: "bank",
       title: "Bank verification",
-      description: "Add bank details before payouts can be processed.",
+      description:
+        "Complete bank details before receiving payouts — you can do this after submitting your claim.",
       status: "required",
       statusLabel: STATUS_LABEL.required,
       href: "/dashboard/verification?step=bank",

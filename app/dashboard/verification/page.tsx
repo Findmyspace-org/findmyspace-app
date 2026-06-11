@@ -503,12 +503,14 @@ function VerificationPageContent({
       createVerificationSignedUrl(
         supabase,
         OWNER_VERIFICATION_BUCKET,
-        idFront?.file_path
+        idFront?.file_path,
+        idFront?.file_url
       ),
       createVerificationSignedUrl(
         supabase,
         OWNER_VERIFICATION_BUCKET,
-        idBack?.file_path
+        idBack?.file_path,
+        idBack?.file_url
       ),
       createVerificationSignedUrl(
         supabase,
@@ -1258,6 +1260,13 @@ function VerificationPageContent({
                           existingDocs.find((doc) => doc.document_type === "id_front")
                         )}
                         previewUrl={documentPreviewUrls.id_front}
+                        uploadedFileName={(() => {
+                          const doc = existingDocs.find(
+                            (row) => row.document_type === "id_front"
+                          );
+                          const path = doc?.file_path || doc?.file_url;
+                          return path ? path.split("/").pop() || null : null;
+                        })()}
                         uploadedLabel="Front uploaded"
                         statusHint={
                           idFrontFile
@@ -1277,6 +1286,13 @@ function VerificationPageContent({
                           existingDocs.find((doc) => doc.document_type === "id_back")
                         )}
                         previewUrl={documentPreviewUrls.id_back}
+                        uploadedFileName={(() => {
+                          const doc = existingDocs.find(
+                            (row) => row.document_type === "id_back"
+                          );
+                          const path = doc?.file_path || doc?.file_url;
+                          return path ? path.split("/").pop() || null : null;
+                        })()}
                         uploadedLabel="Back uploaded"
                         statusHint={
                           idBackFile

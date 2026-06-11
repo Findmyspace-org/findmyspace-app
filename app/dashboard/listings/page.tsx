@@ -13,6 +13,7 @@ import {
   FOCUS_HIGHLIGHT_CLASS,
   useFocusHighlight,
 } from "@/lib/use-focus-highlight";
+import { ownerClaimCanSubmitForSpace } from "@/lib/claim-readiness";
 import {
   getOwnerListingNextAction,
   getOwnerListingStatusBadgeClass,
@@ -93,8 +94,16 @@ type SpaceImageRow = {
 type ProfileVerificationRow = {
   id: string;
   is_host: boolean | null;
+  first_name: string | null;
+  phone: string | null;
   owner_verification_status: string | null;
   bank_verification_status: string | null;
+};
+
+type ClaimContext = {
+  contactComplete: boolean;
+  hasIdFront: boolean;
+  hasIdBack: boolean;
 };
 
 
@@ -112,6 +121,11 @@ function MyListingsPageContent({
   const [message, setMessage] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [isHost, setIsHost] = useState(false);
+  const [claimContext, setClaimContext] = useState<ClaimContext>({
+    contactComplete: false,
+    hasIdFront: false,
+    hasIdBack: false,
+  });
 
   const [searchText, setSearchText] = useState("");
   const [selectedSpace, setSelectedSpace] = useState<Space | null>(null);
@@ -180,7 +194,9 @@ function MyListingsPageContent({
 
       const { data: rawProfileData, error: profileError } = await (supabase
         .from("profiles") as any)
-        .select("id, is_host, owner_verification_status, bank_verification_status")
+        .select(
+          "id, is_host, first_name, phone, owner_verification_status, bank_verification_status"
+        )
         .eq("id", user.id)
         .single();
 
@@ -198,6 +214,22 @@ function MyListingsPageContent({
       }
 
       setIsHost(true);
+
+      const { data: idDocRows } = await supabase
+        .from("owner_verification_documents")
+        .select("document_type")
+        .eq("owner_id", user.id);
+      const idTypes =
+        ((idDocRows as { document_type: string }[]) || []).map(
+          (row) => row.document_type
+        );
+      setClaimContext({
+        contactComplete: Boolean(
+          profileData.first_name?.trim() && profileData.phone?.trim()
+        ),
+        hasIdFront: idTypes.includes("id_front"),
+        hasIdBack: idTypes.includes("id_back"),
+      });
 
       const { data, error } = await supabase
         .from("spaces")
@@ -295,8 +327,24 @@ function MyListingsPageContent({
     return getOwnerListingStatusBadgeClass(status);
   }
 
-  function getStatusLabel(status: string | null) {
-    return getOwnerListingStatusLabel(status);
+  function getStatusLabel(space: Space) {
+    const canSubmit = ownerClaimCanSubmitForSpace({
+      contactComplete: claimContext.contactComplete,
+      hasIdFront: claimContext.hasIdFront,
+      hasIdBack: claimContext.hasIdBack,
+      ownershipProofStatus: space.ownership_proof_status,
+    });
+    return getOwnerListingStatusLabel(space.status, { canSubmit });
+  }
+
+  function getNextAction(space: Space) {
+    const canSubmit = ownerClaimCanSubmitForSpace({
+      contactComplete: claimContext.contactComplete,
+      hasIdFront: claimContext.hasIdFront,
+      hasIdBack: claimContext.hasIdBack,
+      ownershipProofStatus: space.ownership_proof_status,
+    });
+    return getOwnerListingNextAction(space.id, space.status, { canSubmit });
   }
 
   function nextActionButtonClass(action: NonNullable<ReturnType<typeof getOwnerListingNextAction>>) {
@@ -430,7 +478,7 @@ function MyListingsPageContent({
   }, [spaces]);
 
   const selectedPanelNextAction = selectedSpace
-    ? getOwnerListingNextAction(selectedSpace.id, selectedSpace.status)
+    ? getNextAction(selectedSpace)
     : null;
   const selectedPanelIsLive = selectedSpace
     ? selectedSpace.status === "active" || selectedSpace.status === "paused"
@@ -532,7 +580,7 @@ function MyListingsPageContent({
           ) : (
             <div className="space-y-4">
               {filteredSpaces.map((space) => {
-                const nextAction = getOwnerListingNextAction(space.id, space.status);
+                const nextAction = getNextAction(space);
                 const isLiveListing =
                   space.status === "active" || space.status === "paused";
                 return (
@@ -619,7 +667,7 @@ function MyListingsPageContent({
                             space.status
                           )}`}
                         >
-                          {getStatusLabel(space.status)}
+                          {getStatusLabel(space)}
                         </span>
 
                         {nextAction ? (
@@ -739,7 +787,7 @@ function MyListingsPageContent({
                               selectedSpace.status
                             )}`}
                           >
-                            {getStatusLabel(selectedSpace.status)}
+                            {getStatusLabel(selectedSpace)}
                           </span>
                         </div>
 
