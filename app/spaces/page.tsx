@@ -59,6 +59,14 @@ import {
   parseIntent,
   type SpaceIntentKey,
 } from "@/lib/space-intents";
+import {
+  parseSpaceIntent,
+  resolveBrowseIntentParam,
+} from "@/lib/space-intent-parser";
+import {
+  formatIntentSummary,
+  scoreSpaceForIntent,
+} from "@/lib/space-intent-ranking";
 import { PUBLIC_SPACE_SELECT } from "@/lib/public-space-columns";
 
 type Space = {
@@ -127,9 +135,12 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
   const [message, setMessage] = useState("");
 
   const [search, setSearch] = useState(params.get("q") || "");
+  const initialIntentParam = resolveBrowseIntentParam(params.get("intent"));
   const [intentFilter, setIntentFilter] = useState<SpaceIntentKey | null>(() =>
-    parseIntent(params.get("intent"))
+    parseIntent(initialIntentParam.browseIntentKey)
   );
+  const [nlQuery, setNlQuery] = useState(initialIntentParam.naturalLanguageQuery);
+  const [nlInput, setNlInput] = useState(initialIntentParam.naturalLanguageQuery);
   const [typeFilter, setTypeFilter] = useState(params.get("type") || "all");
   const [sportTypeFilters, setSportTypeFilters] = useState<string[]>(() =>
     parseSportTypeParam(params.get("sportType"))
@@ -182,7 +193,10 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
 
   useEffect(() => {
     const p = new URLSearchParams(searchParamsString);
-    setIntentFilter(parseIntent(p.get("intent")));
+    const resolvedIntent = resolveBrowseIntentParam(p.get("intent"));
+    setIntentFilter(parseIntent(resolvedIntent.browseIntentKey));
+    setNlQuery(resolvedIntent.naturalLanguageQuery);
+    setNlInput(resolvedIntent.naturalLanguageQuery);
     setTypeFilter(p.get("type") || "all");
     setSportTypeFilters(parseSportTypeParam(p.get("sportType")));
     const when = parseAppliedWhenFromParams(p);
@@ -252,7 +266,11 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
       if (q) p.set("q", q);
       const resolvedIntent =
         intentOverride !== undefined ? intentOverride : intentFilter;
-      if (resolvedIntent) p.set("intent", resolvedIntent);
+      if (nlQuery.trim()) {
+        p.set("intent", nlQuery.trim());
+      } else if (resolvedIntent) {
+        p.set("intent", resolvedIntent);
+      }
       if (typeFilter !== "all") p.set("type", typeFilter);
       if (sportTypeFilters.length > 0) {
         p.set("sportType", sportTypeFilters.join(","));
@@ -281,6 +299,7 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
     },
     [
       search,
+      nlQuery,
       typeFilter,
       sportTypeFilters,
       intentFilter,
@@ -448,6 +467,12 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
     }
   }, [bookingUnitFilter]);
 
+  const parsedNlIntent = useMemo(() => parseSpaceIntent(nlQuery), [nlQuery]);
+  const intentSummary = useMemo(
+    () => formatIntentSummary(parsedNlIntent),
+    [parsedNlIntent]
+  );
+
   const filteredSpaces = useMemo(() => {
     let result = [...spaces];
 
@@ -477,6 +502,55 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
         if ((space.space_type || "").toLowerCase() !== "sport_venue") return false;
         return spaceHasSportTypes(space.attributes, sportTypeFilters);
       });
+    } else if (
+      parsedNlIntent.sportTypes.length > 0 &&
+      parsedNlIntent.confidence !== "low"
+    ) {
+      result = result.filter((space) => {
+        if ((space.space_type || "").toLowerCase() !== "sport_venue") return false;
+        return spaceHasSportTypes(space.attributes, parsedNlIntent.sportTypes);
+      });
+    }
+
+    if (parsedNlIntent.rawQuery && parsedNlIntent.confidence !== "low") {
+      if (
+        parsedNlIntent.inferredSpaceTypes.length > 0 &&
+        typeFilter === "all" &&
+        !intentFilter
+      ) {
+        const types = new Set(parsedNlIntent.inferredSpaceTypes);
+        result = result.filter((space) =>
+          types.has((space.space_type || "").toLowerCase())
+        );
+      }
+
+      const effectiveLocation =
+        cityFilter !== "all" ? cityFilter : parsedNlIntent.location;
+      if (effectiveLocation) {
+        const loc = effectiveLocation.toLowerCase();
+        result = result.filter(
+          (space) =>
+            (space.city || "").toLowerCase().includes(loc) ||
+            (space.suburb || "").toLowerCase().includes(loc)
+        );
+      }
+    } else if (parsedNlIntent.rawQuery && parsedNlIntent.confidence === "low") {
+      const q = parsedNlIntent.rawQuery.toLowerCase();
+      result = result.filter(
+        (space) =>
+          scoreSpaceForIntent(space, parsedNlIntent) > 0 ||
+          [
+            space.title,
+            space.description,
+            space.city,
+            space.suburb,
+            buildAttributeSearchText(space.space_type, space.attributes || {}),
+          ]
+            .filter(Boolean)
+            .join(" ")
+            .toLowerCase()
+            .includes(q)
+      );
     }
 
     if (typeFilter !== "all") {
@@ -528,9 +602,13 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
       return price >= minPrice && price <= maxPrice;
     });
 
-    const searchQuery = search.trim();
+    const searchQuery = search.trim() || parsedNlIntent.rawQuery;
 
     result.sort((a, b) => {
+      const intentA = scoreSpaceForIntent(a, parsedNlIntent);
+      const intentB = scoreSpaceForIntent(b, parsedNlIntent);
+      if (intentA !== intentB) return intentB - intentA;
+
       const boostA = sportListingBoostScore({
         spaceType: a.space_type,
         attributes: a.attributes,
@@ -564,6 +642,8 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
   }, [
     spaces,
     search,
+    nlQuery,
+    parsedNlIntent,
     sportTypeFilters,
     typeFilter,
     intentFilter,
@@ -599,7 +679,9 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
   );
 
   const showSportTypeFilters =
-    typeFilter === "sport_venue" || sportTypeFilters.length > 0;
+    typeFilter === "sport_venue" ||
+    sportTypeFilters.length > 0 ||
+    parsedNlIntent.sportTypes.length > 0;
 
   function toggleSportTypeFilter(value: string) {
     const next = sportTypeFilters.includes(value)
@@ -622,8 +704,33 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
     return typeOptions.options.filter((opt) => !primaryValues.has(opt.value));
   }, [typeOptions.options, primaryTypeChips]);
 
+  function clearNaturalLanguageSearch() {
+    setNlInput("");
+    setNlQuery("");
+    const p = new URLSearchParams(searchParamsString);
+    const resolved = resolveBrowseIntentParam(p.get("intent"));
+    if (!resolved.browseIntentKey) {
+      p.delete("intent");
+    }
+    const qs = p.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  }
+
+  function submitNaturalLanguageSearch() {
+    const q = nlInput.trim();
+    if (!q) return;
+    const p = new URLSearchParams(searchParamsString);
+    p.set("intent", q);
+    setNlQuery(q);
+    setIntentFilter(null);
+    const qs = p.toString();
+    router.push(`${pathname}?${qs}#browse-search`);
+  }
+
   function clearAllFilters() {
     setSearch("");
+    setNlInput("");
+    setNlQuery("");
     setTypeFilter("all");
     setSportTypeFilters([]);
     setIntentFilter(null);
@@ -633,7 +740,7 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
     setBookingUnitFilter("all");
     setMinPrice(0);
     setMaxPrice(getDefaultMax("all"));
-    pushBrowseUrl(null, "all", null);
+    router.replace(pathname, { scroll: false });
   }
 
   async function handleToggleFavourite(spaceId: string) {
@@ -754,6 +861,60 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
 
       <section className="relative z-20 mx-auto -mt-16 max-w-6xl px-4 sm:-mt-20 sm:px-6">
         <div id="browse-search" className="scroll-mt-24 overflow-visible rounded-3xl border border-[#e5e7eb] bg-white p-4 shadow-[0_28px_65px_rgba(15,23,42,0.12)] sm:p-6">
+          <div className="mb-6 rounded-2xl border border-[#e8edf2] bg-[#f8fafc] p-4 sm:p-5">
+            <label className="mb-2 block text-sm font-semibold text-[#0f172a]">
+              What do you need space for?
+            </label>
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <input
+                value={nlInput}
+                onChange={(e) => setNlInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    submitNaturalLanguageSearch();
+                  }
+                }}
+                placeholder="What do you need space for?"
+                className="min-h-[48px] flex-1 rounded-xl border border-[#d4dbe2] bg-white px-4 py-2.5 text-sm shadow-sm outline-none transition focus:border-[#c1121f] focus:ring-2 focus:ring-[#c1121f]/20"
+                aria-label="Describe what you need space for"
+              />
+              <button
+                type="button"
+                onClick={submitNaturalLanguageSearch}
+                className="inline-flex min-h-[48px] shrink-0 items-center justify-center rounded-xl bg-[#c1121f] px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#a50f1a]"
+              >
+                Find spaces
+              </button>
+            </div>
+            <ul className="mt-3 space-y-1 text-xs text-[#64748b] sm:text-sm">
+              <li>Host a party for 30 people in Paarl</li>
+              <li>Play tennis tomorrow at 4pm</li>
+              <li>Store a caravan from January to December</li>
+              <li>Meeting room for 12 people</li>
+            </ul>
+            {nlQuery ? (
+              <div className="mt-4 flex flex-wrap items-center gap-3 rounded-xl border border-[#dbeafe] bg-[#eff6ff] px-3 py-2.5 text-sm text-[#1e3a5f]">
+                <span>
+                  Showing spaces for:{" "}
+                  <span className="font-medium">{intentSummary || nlQuery}</span>
+                </span>
+                {parsedNlIntent.confidence === "low" ? (
+                  <span className="text-xs text-[#475569]">
+                    Showing broad matches. You can refine using filters.
+                  </span>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={clearNaturalLanguageSearch}
+                  className="ml-auto text-xs font-semibold text-[#c1121f] underline"
+                >
+                  Clear search
+                </button>
+              </div>
+            ) : null}
+          </div>
+
           <div className="mb-3">
             <p className="text-sm font-medium text-[#1e293b]">What type of space do you need?</p>
           </div>
@@ -830,7 +991,11 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
               </p>
               <div className="flex flex-wrap gap-2">
                 {SPORT_TYPE_OPTIONS.map((opt) => {
-                  const selected = sportTypeFilters.includes(opt.value);
+                  const activeSportTypes =
+                    sportTypeFilters.length > 0
+                      ? sportTypeFilters
+                      : parsedNlIntent.sportTypes;
+                  const selected = activeSportTypes.includes(opt.value);
                   return (
                     <button
                       key={opt.value}

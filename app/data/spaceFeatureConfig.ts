@@ -220,18 +220,45 @@ export const SPORT_TYPE_OPTIONS: { value: string; label: string }[] = [
 const SPORT_TYPES_MULTI = multi(
   SPORT_TYPES_FIELD_KEY,
   "Sport types",
-  "Dumbbell",
+  "Users",
   SPORT_TYPE_OPTIONS
 );
 
-const SPORT_VENUE_CHECKS: SpaceFeatureCheckbox[] = [
-  cb("sf_sp_indoor", "Indoor", "Building2"),
-  cb("sf_sp_outdoor", "Outdoor", "Sun"),
-  cb("sf_sp_floodlights", "Floodlights", "Lightbulb"),
-  cb("sf_sp_changing_rooms", "Changing rooms", "DoorOpen"),
-  cb("sf_sp_spectator_seating", "Spectator seating", "Users"),
-  cb("sf_sp_equipment_hire", "Equipment hire", "Package"),
+const SPORT_VENUE_SUITABLE_CHECKS: SpaceFeatureCheckbox[] = [
+  cb("sf_sp_suit_fitness", "Fitness classes", "Users"),
+  cb("sf_sp_suit_coaching", "Coaching", "Mic"),
+  cb("sf_sp_suit_team_practice", "Team practice", "Users"),
+  cb("sf_sp_suit_tournaments", "Tournaments", "Sparkles"),
+  cb("sf_sp_suit_school_sports", "School sports days", "BookOpen"),
 ];
+
+const SPORT_FACILITIES_CHECKS: SpaceFeatureCheckbox[] = [
+  cb("sf_sp_floodlights", "Floodlights", "Lightbulb"),
+  cb("sf_sp_changing_rooms", "Change rooms", "DoorOpen"),
+  cb("sf_sp_toilets", "Toilets", "Bath"),
+  cb("sf_sp_seating", "Seating / stands", "Users"),
+  cb("sf_sp_parking", "Parking", "ParkingCircle"),
+  cb("sf_sp_clubhouse", "Clubhouse", "Building2"),
+  cb("sf_sp_equipment", "Equipment available", "Package"),
+  cb("sf_sp_scoreboard", "Scoreboard", "Tv"),
+  cb("sf_sp_water_access", "Water access", "Droplets"),
+  cb("sf_sp_first_aid", "First aid point", "ShieldCheck"),
+];
+
+const SPORT_SURFACE_RADIO = radio(
+  "sf_sp_surface",
+  "Surface",
+  "Layers",
+  [
+    { value: "indoor", label: "Indoor" },
+    { value: "outdoor", label: "Outdoor" },
+    { value: "grass", label: "Grass" },
+    { value: "astro", label: "Astro turf" },
+    { value: "hard_court", label: "Hard court" },
+    { value: "clay", label: "Clay court" },
+    { value: "pool", label: "Swimming pool" },
+  ]
+);
 
 const STORAGE_TYPE_RADIO = radio(
   "sf_storage_type",
@@ -494,7 +521,9 @@ export const spaceFeatureLayouts: Record<string, SpaceFeatureLayout> = {
   sport_venue: {
     sections: [
       section("sport_types", "Sport types", [SPORT_TYPES_MULTI]),
-      section("venue_features", "Venue features", SPORT_VENUE_CHECKS),
+      section("suitable_for", "Suitable for", SPORT_VENUE_SUITABLE_CHECKS),
+      section("facilities", "Facilities", SPORT_FACILITIES_CHECKS),
+      section("surface", "Surface", [SPORT_SURFACE_RADIO]),
       section("access_building", "Access & building", ACCESS_BUILDING_CHECKS),
     ],
   },
