@@ -27,12 +27,19 @@ import {
   CheckCircle2,
   BadgeCheck,
   SlidersHorizontal,
+  Dumbbell,
 } from "lucide-react";
 import MapView from "@/app/components/MapView";
 import {
   LISTING_SPACE_TYPE_OPTIONS,
+  SPORT_TYPE_OPTIONS,
   buildAttributeSearchText,
 } from "@/app/data/spaceFeatureConfig";
+import {
+  sportListingBoostScore,
+  sportSearchHaystackExtras,
+  spaceHasSportTypes,
+} from "@/lib/sport-search";
 import { BrowseWhenFilter } from "@/app/components/BrowseWhenFilter";
 import {
   parseAppliedWhenFromParams,
@@ -102,6 +109,14 @@ function parseNumberParam(value: string | null, fallback: number) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function parseSportTypeParam(value: string | null): string[] {
+  if (!value) return [];
+  return value
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
 function SpacesPageContent({ searchParamsString }: { searchParamsString: string }) {
   const params = useMemo(() => new URLSearchParams(searchParamsString), [searchParamsString]);
   const pathname = usePathname();
@@ -116,6 +131,9 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
     parseIntent(params.get("intent"))
   );
   const [typeFilter, setTypeFilter] = useState(params.get("type") || "all");
+  const [sportTypeFilters, setSportTypeFilters] = useState<string[]>(() =>
+    parseSportTypeParam(params.get("sportType"))
+  );
   const [cityFilter, setCityFilter] = useState(params.get("city") || "all");
   const [sortBy, setSortBy] = useState(
     params.get("sort") || "price_high_low"
@@ -165,6 +183,8 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
   useEffect(() => {
     const p = new URLSearchParams(searchParamsString);
     setIntentFilter(parseIntent(p.get("intent")));
+    setTypeFilter(p.get("type") || "all");
+    setSportTypeFilters(parseSportTypeParam(p.get("sportType")));
     const when = parseAppliedWhenFromParams(p);
     setAppliedWhen(when);
     const wu = p.get("whenUnit");
@@ -185,6 +205,7 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
     }
     if (typeFilter === "parking") return "month";
     if (typeFilter === "event_space") return "hour";
+    if (typeFilter === "sport_venue") return "hour";
     if (
       typeFilter === "office" ||
       typeFilter === "meeting_room" ||
@@ -233,6 +254,9 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
         intentOverride !== undefined ? intentOverride : intentFilter;
       if (resolvedIntent) p.set("intent", resolvedIntent);
       if (typeFilter !== "all") p.set("type", typeFilter);
+      if (sportTypeFilters.length > 0) {
+        p.set("sportType", sportTypeFilters.join(","));
+      }
       if (cityFilter !== "all") p.set("city", cityFilter);
       if (sortBy !== "price_high_low") p.set("sort", sortBy);
 
@@ -258,6 +282,7 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
     [
       search,
       typeFilter,
+      sportTypeFilters,
       intentFilter,
       cityFilter,
       sortBy,
@@ -437,12 +462,20 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
           space.suburb,
           space.city,
           buildAttributeSearchText(space.space_type, space.attributes || {}),
+          sportSearchHaystackExtras(space.space_type, space.attributes),
         ]
           .filter(Boolean)
           .join(" ")
           .toLowerCase();
 
         return haystack.includes(query);
+      });
+    }
+
+    if (sportTypeFilters.length > 0) {
+      result = result.filter((space) => {
+        if ((space.space_type || "").toLowerCase() !== "sport_venue") return false;
+        return spaceHasSportTypes(space.attributes, sportTypeFilters);
       });
     }
 
@@ -495,7 +528,21 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
       return price >= minPrice && price <= maxPrice;
     });
 
+    const searchQuery = search.trim();
+
     result.sort((a, b) => {
+      const boostA = sportListingBoostScore({
+        spaceType: a.space_type,
+        attributes: a.attributes,
+        query: searchQuery,
+      });
+      const boostB = sportListingBoostScore({
+        spaceType: b.space_type,
+        attributes: b.attributes,
+        query: searchQuery,
+      });
+      if (boostA !== boostB) return boostB - boostA;
+
       const getComparablePrice = (space: Space) => {
         if (bookingUnitFilter === "hour") return space.price_per_hour ?? 0;
         if (bookingUnitFilter === "month") return space.price_per_month ?? 0;
@@ -517,6 +564,7 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
   }, [
     spaces,
     search,
+    sportTypeFilters,
     typeFilter,
     intentFilter,
     cityFilter,
@@ -545,10 +593,29 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
       { key: "storage", label: "Storage", value: "storage", icon: Package },
       { key: "parking", label: "Parking", value: "parking", icon: Car },
       { key: "office", label: "Office", value: "office", icon: Briefcase },
-      { key: "event", label: "Event", value: "event_space", icon: BadgeCheck },
+      { key: "sport", label: "Sport", value: "sport_venue", icon: Dumbbell },
     ],
     []
   );
+
+  const showSportTypeFilters =
+    typeFilter === "sport_venue" || sportTypeFilters.length > 0;
+
+  function toggleSportTypeFilter(value: string) {
+    const next = sportTypeFilters.includes(value)
+      ? sportTypeFilters.filter((item) => item !== value)
+      : [...sportTypeFilters, value];
+    setSportTypeFilters(next);
+
+    const p = new URLSearchParams(searchParamsString);
+    if (next.length > 0) {
+      p.set("sportType", next.join(","));
+    } else {
+      p.delete("sportType");
+    }
+    const qs = p.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  }
 
   const moreTypeOptions = useMemo(() => {
     const primaryValues = new Set(primaryTypeChips.map((chip) => chip.value));
@@ -558,6 +625,7 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
   function clearAllFilters() {
     setSearch("");
     setTypeFilter("all");
+    setSportTypeFilters([]);
     setIntentFilter(null);
     setCityFilter("all");
     setSortBy("price_high_low");
@@ -754,6 +822,33 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
               ) : null}
             </div>
           </div>
+
+          {showSportTypeFilters ? (
+            <div className="mb-5">
+              <p className="mb-2 text-xs font-medium uppercase tracking-wide text-[#64748b]">
+                Sport type
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {SPORT_TYPE_OPTIONS.map((opt) => {
+                  const selected = sportTypeFilters.includes(opt.value);
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => toggleSportTypeFilter(opt.value)}
+                      className={`inline-flex min-h-[34px] items-center rounded-full border px-3 text-xs font-medium transition ${
+                        selected
+                          ? "border-[#047857] bg-[#ecfdf5] text-[#047857]"
+                          : "border-[#d7dde3] bg-white text-[#475569] hover:border-[#b8c2cc]"
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
 
           <select
             value={typeFilter}

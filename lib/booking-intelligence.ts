@@ -182,6 +182,7 @@ export function mapSpaceTypeToIntelCategory(
       "desk_coworking",
       "event_space",
       "workshop_studio",
+      "sport_venue",
       "workspace",
       "other",
     ].includes(t)

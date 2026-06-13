@@ -11,6 +11,7 @@ import SpaceMapSection from "./space-map-section";
 import {
   formatSpaceTypeLabel,
   getSectionCheckboxLabels,
+  getSportTypeBadgeLabels,
 } from "@/app/data/spaceFeatureConfig";
 import { formatListingAddress } from "@/lib/za-provinces";
 import {
@@ -166,6 +167,7 @@ export default async function Page({
     space.space_type === "event_space"
       ? getSectionCheckboxLabels(space.space_type, space.attributes, "suitable_for")
       : [];
+  const sportTypeLabels = getSportTypeBadgeLabels(space.space_type, space.attributes);
 
   const price =
     space.booking_unit === "hour"
@@ -336,6 +338,22 @@ export default async function Page({
                     <span
                       key={label}
                       className="inline-flex items-center rounded-full border border-[#d7dde3] bg-white px-3 py-1.5 text-xs font-medium text-[#334155]"
+                    >
+                      {label}
+                    </span>
+                  ))}
+                </div>
+              </section>
+            ) : null}
+
+            {sportTypeLabels.length > 0 ? (
+              <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+                <h2 className="text-xl font-semibold text-[#192a3a]">Sports</h2>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {sportTypeLabels.map((label) => (
+                    <span
+                      key={label}
+                      className="inline-flex items-center rounded-full bg-[#ecfdf5] px-3 py-1.5 text-xs font-medium text-[#047857] ring-1 ring-[#a7f3d0]"
                     >
                       {label}
                     </span>

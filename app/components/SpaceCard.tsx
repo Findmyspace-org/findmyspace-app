@@ -6,7 +6,7 @@ import {
   MapPin,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { formatSpaceTypeLabel } from "@/app/data/spaceFeatureConfig";
+import { formatSpaceTypeLabel, getSportTypeBadgeLabels } from "@/app/data/spaceFeatureConfig";
 import type { CardAvailabilityHint } from "@/lib/browse-availability-signals";
 import {
   shouldHideListingPricing,
@@ -32,6 +32,7 @@ type Space = {
   image_urls?: string[];
   status?: string | null;
   public_listing_mode?: string | null;
+  attributes?: Record<string, string[]>;
 };
 
 type Props = {
@@ -77,6 +78,7 @@ export default function SpaceCard({
 
   const coverImage = space.image_urls?.[0] || null;
   const locationLine = [space.suburb, space.city].filter(Boolean).join(", ") || "Location to be confirmed";
+  const sportBadges = getSportTypeBadgeLabels(space.space_type, space.attributes);
 
   return (
     <article
@@ -132,6 +134,19 @@ export default function SpaceCard({
         <h3 className="mt-2 line-clamp-2 text-[17px] font-semibold leading-snug text-[#0f172a]">
           {space.title}
         </h3>
+
+        {sportBadges.length > 0 ? (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {sportBadges.map((label) => (
+              <span
+                key={label}
+                className="inline-flex rounded-full bg-[#ecfdf5] px-2.5 py-0.5 text-[11px] font-medium text-[#047857] ring-1 ring-[#a7f3d0]"
+              >
+                {label}
+              </span>
+            ))}
+          </div>
+        ) : null}
 
         {hidePricing ? (
           <p className="mt-2 inline-flex rounded-full bg-amber-50 px-2.5 py-0.5 text-[11px] font-medium text-amber-900 ring-1 ring-amber-200">

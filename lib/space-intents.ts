@@ -48,6 +48,7 @@ export const SPACE_INTENTS: SpaceIntentDefinition[] = [
       "meeting_room",
       "boardroom",
       "event_space",
+      "sport_venue",
       "other",
     ],
   },
@@ -56,7 +57,7 @@ export const SPACE_INTENTS: SpaceIntentDefinition[] = [
     label: "Host something",
     shortLabel: "Host",
     allTypesLabel: "All hosting spaces",
-    mappedSpaceTypes: ["event_space", "workshop_studio", "other"],
+    mappedSpaceTypes: ["event_space", "workshop_studio", "sport_venue", "other"],
   },
 ];
 

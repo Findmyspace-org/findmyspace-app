@@ -60,6 +60,7 @@ export const SPACE_TYPE_LABELS: Record<string, string> = {
   storage: "Storage",
   event_space: "Event space",
   workshop_studio: "Workshop / studio",
+  sport_venue: "Sport venue",
   garage: "Garage",
   workspace: "Workspace / coworking",
   other: "Other",
@@ -195,6 +196,42 @@ const VEHICLE_MULTI = multi("sf_vehicle_types", "Vehicle suitability", "Truck", 
   { value: "caravan", label: "Caravan" },
   { value: "boat", label: "Boat" },
 ]);
+
+/** Sport sub-types for sport_venue listings (multiselect in space_attributes). */
+export const SPORT_TYPES_FIELD_KEY = "sf_sport_types";
+
+export const SPORT_TYPE_OPTIONS: { value: string; label: string }[] = [
+  { value: "tennis", label: "Tennis" },
+  { value: "padel", label: "Padel" },
+  { value: "netball", label: "Netball" },
+  { value: "rugby", label: "Rugby" },
+  { value: "soccer", label: "Soccer" },
+  { value: "hockey", label: "Hockey" },
+  { value: "cricket", label: "Cricket" },
+  { value: "basketball", label: "Basketball" },
+  { value: "swimming", label: "Swimming" },
+  { value: "athletics", label: "Athletics" },
+  { value: "squash", label: "Squash" },
+  { value: "golf", label: "Golf" },
+  { value: "cycling", label: "Cycling" },
+  { value: "multi_sport", label: "Multi-sport" },
+];
+
+const SPORT_TYPES_MULTI = multi(
+  SPORT_TYPES_FIELD_KEY,
+  "Sport types",
+  "Dumbbell",
+  SPORT_TYPE_OPTIONS
+);
+
+const SPORT_VENUE_CHECKS: SpaceFeatureCheckbox[] = [
+  cb("sf_sp_indoor", "Indoor", "Building2"),
+  cb("sf_sp_outdoor", "Outdoor", "Sun"),
+  cb("sf_sp_floodlights", "Floodlights", "Lightbulb"),
+  cb("sf_sp_changing_rooms", "Changing rooms", "DoorOpen"),
+  cb("sf_sp_spectator_seating", "Spectator seating", "Users"),
+  cb("sf_sp_equipment_hire", "Equipment hire", "Package"),
+];
 
 const STORAGE_TYPE_RADIO = radio(
   "sf_storage_type",
@@ -454,6 +491,14 @@ export const spaceFeatureLayouts: Record<string, SpaceFeatureLayout> = {
     ],
   },
 
+  sport_venue: {
+    sections: [
+      section("sport_types", "Sport types", [SPORT_TYPES_MULTI]),
+      section("venue_features", "Venue features", SPORT_VENUE_CHECKS),
+      section("access_building", "Access & building", ACCESS_BUILDING_CHECKS),
+    ],
+  },
+
   other: {
     sections: [
       section("access_building", "Access & building", ACCESS_BUILDING_CHECKS),
@@ -590,6 +635,19 @@ export function getSectionCheckboxLabels(
     .map((field) => field.label);
 }
 
+/** Badge labels for sport sub-types on listing cards and detail pages. */
+export function getSportTypeBadgeLabels(
+  spaceType: string | null | undefined,
+  attributes: Record<string, string[]> | undefined
+): string[] {
+  if ((spaceType || "").toLowerCase() !== "sport_venue") return [];
+  const field = getSpaceFeatureField(SPORT_TYPES_FIELD_KEY);
+  if (!field || field.kind !== "multiselect") return [];
+  const normalized = normalizeFeatureAttributes(attributes || {});
+  const values = normalized[SPORT_TYPES_FIELD_KEY] || [];
+  return values.map((value) => getOptionLabel(field, value)).filter(Boolean);
+}
+
 /** Human-readable attribute text for browse / map keyword search. */
 export function buildAttributeSearchText(
   spaceType: string | null | undefined,
@@ -629,6 +687,7 @@ export const LISTING_SPACE_TYPE_OPTIONS: { value: string; label: string }[] = [
   { value: "parking", label: "Parking" },
   { value: "event_space", label: "Event space" },
   { value: "workshop_studio", label: "Workshop / studio" },
+  { value: "sport_venue", label: "Sport venue" },
   { value: "other", label: "Other" },
   { value: "garage", label: "Garage" },
   { value: "workspace", label: "Workspace / coworking" },
