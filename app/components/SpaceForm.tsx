@@ -4,10 +4,17 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import Image from "next/image";
 import Link from "next/link";
-import { Check, CheckCircle2, Share2, X } from "lucide-react";
+import { Check, CheckCircle2, Loader2, Share2, X } from "lucide-react";
 import ListingFormStepNav, {
   type ListingFormStepMeta,
 } from "@/app/components/ListingFormStepNav";
+import { PhotoDropZone } from "@/app/components/PhotoDropZone";
+import {
+  googleMapsUrlErrorMessage,
+  resolveGoogleMapsUrlClient,
+} from "@/lib/google-maps-url-apply-client";
+import { isGoogleMapsUrl } from "@/lib/google-maps-url";
+import { ownerApiFetch } from "@/lib/owner-api-client";
 import { supabase } from "@/lib/supabase";
 import {
   DEFAULT_LISTING_BOOKING_REQUIREMENTS,
@@ -175,6 +182,8 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
   const [searchingAddress, setSearchingAddress] = useState(false);
   const [usingDeviceLocation, setUsingDeviceLocation] = useState(false);
   const [reverseGeocoding, setReverseGeocoding] = useState(false);
+  const [mapsUrl, setMapsUrl] = useState("");
+  const [mapsUrlLoading, setMapsUrlLoading] = useState(false);
   const [addressSuggestions, setAddressSuggestions] = useState<AddressSuggestion[]>([]);
   const [addressSuggestionsOpen, setAddressSuggestionsOpen] = useState(false);
   const [suburbTouched, setSuburbTouched] = useState(false);
@@ -754,6 +763,97 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
 
     return () => window.clearTimeout(timer);
   }, [streetAddress, suburb, city, province, country]);
+
+  async function geocodeQueryFromMapsLink(query: string): Promise<boolean> {
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&q=${encodeURIComponent(
+        query
+      )}&limit=1`
+    );
+    if (!res.ok) return false;
+
+    const data = (await res.json()) as Array<{
+      lat?: string;
+      lon?: string;
+      display_name?: string;
+      address?: Record<string, string | undefined>;
+    }>;
+
+    if (!data?.length) return false;
+
+    const result = data[0];
+    const lat = Number(result.lat);
+    const lng = Number(result.lon);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return false;
+
+    const fields = pickReverseAddressFields(
+      result.address || {},
+      result.display_name
+    );
+
+    setStreetAddress(fields.streetAddress);
+    setSuburb(fields.suburbValue);
+    setCity(fields.cityValue);
+    setProvince(fields.provinceValue);
+    setPostalCode(fields.postalCodeValue);
+    setCountry(fields.countryValue);
+    setLatitude(lat);
+    setLongitude(lng);
+    return true;
+  }
+
+  async function applyGoogleMapsUrl(rawInput?: string) {
+    const raw = (rawInput ?? mapsUrl).trim();
+    if (!raw) return;
+
+    if (!isGoogleMapsUrl(raw)) {
+      setMessage(googleMapsUrlErrorMessage("not_google_maps"));
+      return;
+    }
+
+    setMapsUrlLoading(true);
+    setMessage("");
+
+    try {
+      const resolved = await resolveGoogleMapsUrlClient(raw, (url) =>
+        ownerApiFetch(`/api/maps/resolve-url?url=${encodeURIComponent(url)}`)
+      );
+
+      if (!resolved.ok) {
+        setMessage(googleMapsUrlErrorMessage(resolved.error));
+        return;
+      }
+
+      const { coordinates, searchQuery } = resolved.data;
+
+      if (coordinates) {
+        setLatitude(coordinates.lat);
+        setLongitude(coordinates.lng);
+        await reverseGeocode(coordinates.lat, coordinates.lng, {
+          forcePopulate: true,
+        });
+        setAddressSuggestionsOpen(false);
+        setMessage("Location placed from Google Maps link.");
+        return;
+      }
+
+      if (searchQuery) {
+        const found = await geocodeQueryFromMapsLink(searchQuery);
+        setMessage(
+          found
+            ? "Address found from Google Maps link."
+            : googleMapsUrlErrorMessage("unparseable")
+        );
+        return;
+      }
+
+      setMessage(googleMapsUrlErrorMessage("unparseable"));
+    } catch {
+      setMessage(googleMapsUrlErrorMessage("unparseable"));
+    } finally {
+      setMapsUrlLoading(false);
+    }
+  }
 
   async function searchAddressOnMap() {
     setSearchingAddress(true);
@@ -1808,11 +1908,37 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
             </div>
           </div>
 
-          <div className="flex flex-wrap gap-3">
+          <div>
+            <label className="mb-1 block text-xs font-medium leading-5 text-[#475569]">
+              Google Maps link
+            </label>
+            <input
+              type="text"
+              value={mapsUrl}
+              onChange={(e) => setMapsUrl(e.target.value)}
+              onPaste={(e) => {
+                const pasted = e.clipboardData.getData("text");
+                if (!pasted.trim()) return;
+                window.setTimeout(() => {
+                  void applyGoogleMapsUrl(pasted);
+                }, 0);
+              }}
+              onBlur={() => {
+                if (mapsUrl.trim()) void applyGoogleMapsUrl();
+              }}
+              placeholder="Paste a Google Maps link or share URL"
+              className="w-full min-h-[44px] rounded-lg border border-[#d4dbe2] bg-white px-3 py-2 text-sm text-[#334155] shadow-sm outline-none transition-all duration-200 focus:border-[#c1121f] focus:ring-2 focus:ring-[#c1121f]/20"
+            />
+            <p className="mt-1 text-xs text-[#64748b]">
+              Paste a Google Maps location link to place the pin automatically.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3">
             <button
               type="button"
               onClick={searchAddressOnMap}
-              disabled={searchingAddress || reverseGeocoding}
+              disabled={searchingAddress || reverseGeocoding || mapsUrlLoading}
               className="rounded-full border border-[#d7dde3] bg-white px-4 py-2.5 text-sm font-medium text-[#334155] shadow-sm transition hover:border-[#b8c2cc] disabled:opacity-60"
             >
               {searchingAddress ? "Finding..." : "Find address on map"}
@@ -1821,11 +1947,18 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
             <button
               type="button"
               onClick={useMyLocation}
-              disabled={usingDeviceLocation || reverseGeocoding}
+              disabled={usingDeviceLocation || reverseGeocoding || mapsUrlLoading}
               className="rounded-full border border-[#d7dde3] bg-white px-4 py-2.5 text-sm font-medium text-[#334155] shadow-sm transition hover:border-[#b8c2cc] disabled:opacity-60"
             >
               {usingDeviceLocation ? "Locating..." : "Use current location"}
             </button>
+
+            {mapsUrlLoading ? (
+              <span className="inline-flex items-center gap-2 text-sm text-[#64748b]">
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                Reading Google Maps link…
+              </span>
+            ) : null}
           </div>
 
           <div>
@@ -1866,19 +1999,16 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
         )}
 
         <div className="space-y-4">
-          <div>
-            <label className="mb-1.5 block text-xs font-medium leading-5 text-[#475569]">Upload images</label>
-            <input
-              type="file"
-              accept="image/*"
-              multiple
-              onChange={(e) => addImageFiles(e.target.files)}
-              className="w-full min-h-[44px] rounded-lg border border-[#d4dbe2] bg-white px-3 py-2 text-sm text-[#334155] shadow-sm outline-none transition-all duration-200 focus:border-[#c1121f] focus:ring-2 focus:ring-[#c1121f]/20"
-            />
-            <p className="mt-1.5 text-xs text-[#64748b] sm:text-sm">
-              {imageFiles.length} image{imageFiles.length === 1 ? "" : "s"} selected
-            </p>
-          </div>
+          <PhotoDropZone
+            accept="image/*"
+            uploadButtonLabel="Choose photos"
+            onFiles={(files) => addImageFiles(files)}
+            message={
+              imageFiles.length > 0
+                ? `${imageFiles.length} image${imageFiles.length === 1 ? "" : "s"} selected`
+                : null
+            }
+          />
 
           {imagePreviews.length > 0 && (
             <div className="space-y-3 rounded-2xl border border-[#e5e7eb] bg-[#f8fafc] p-4 sm:p-5">

@@ -5,6 +5,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2, MapPin } from "lucide-react";
 import { adminApiFetch } from "@/lib/admin-api-client";
 import { buildAddressQuery, type GeocodedAddress } from "@/lib/geocoding";
+import {
+  googleMapsUrlErrorMessage,
+  resolveGoogleMapsUrlClient,
+} from "@/lib/google-maps-url-apply-client";
+import { isGoogleMapsUrl } from "@/lib/google-maps-url";
 import { ZA_PROVINCES } from "@/lib/za-provinces";
 
 const MapPicker = dynamic(() => import("@/app/components/MapPicker"), {
@@ -79,6 +84,8 @@ export function AdminLocationSection({
   const [searching, setSearching] = useState(false);
   const [reverseGeocoding, setReverseGeocoding] = useState(false);
   const [geoMessage, setGeoMessage] = useState<string | null>(null);
+  const [mapsUrl, setMapsUrl] = useState("");
+  const [mapsUrlLoading, setMapsUrlLoading] = useState(false);
   const suggestionAbortRef = useRef<AbortController | null>(null);
   const reverseGeocodeAbortRef = useRef<AbortController | null>(null);
   const reverseGeocodeRequestIdRef = useRef(0);
@@ -178,6 +185,93 @@ export function AdminLocationSection({
     },
     [clearPinSuggestionState, onChange]
   );
+
+  async function geocodeSearchQuery(query: string, successMessage: string) {
+    const result = await adminApiFetch(
+      `/api/admin/geocode?q=${encodeURIComponent(query)}&limit=1`
+    );
+    const matches = (result.results as GeocodedAddress[]) || [];
+    if (matches.length === 0) {
+      setGeoMessage(
+        "We could not read this Google Maps link. Try searching the address manually."
+      );
+      return false;
+    }
+
+    skipAutocompleteRef.current = true;
+    onChange(applyGeocodedAddress(valueRef.current, matches[0], true));
+    clearAddressSuggestionState();
+    clearPinSuggestionState();
+    setGeoMessage(successMessage);
+    return true;
+  }
+
+  async function applyCoordinatesFromMapsLink(
+    lat: number,
+    lng: number,
+    successMessage: string
+  ) {
+    reverseGeocodeRequestIdRef.current += 1;
+    const requestId = reverseGeocodeRequestIdRef.current;
+
+    clearAddressSuggestionState();
+    clearPinSuggestionState();
+    reverseGeocodeAbortRef.current?.abort();
+    reverseGeocodeAbortRef.current = null;
+
+    onChange({ latitude: lat, longitude: lng });
+    setGeoMessage(successMessage);
+    await reverseGeocodePin(lat, lng, requestId);
+  }
+
+  async function applyGoogleMapsUrl(rawInput?: string) {
+    const raw = (rawInput ?? mapsUrl).trim();
+    if (!raw || readOnly) return;
+
+    if (!isGoogleMapsUrl(raw)) {
+      setGeoMessage(googleMapsUrlErrorMessage("not_google_maps"));
+      return;
+    }
+
+    setMapsUrlLoading(true);
+    setGeoMessage(null);
+
+    try {
+      const resolved = await resolveGoogleMapsUrlClient(raw, (url) =>
+        adminApiFetch(`/api/admin/maps/resolve-url?url=${encodeURIComponent(url)}`)
+      );
+
+      if (!resolved.ok) {
+        setGeoMessage(googleMapsUrlErrorMessage(resolved.error));
+        return;
+      }
+
+      const { coordinates, searchQuery } = resolved.data;
+
+      if (coordinates) {
+        await applyCoordinatesFromMapsLink(
+          coordinates.lat,
+          coordinates.lng,
+          "Location placed from Google Maps link."
+        );
+        return;
+      }
+
+      if (searchQuery) {
+        await geocodeSearchQuery(
+          searchQuery,
+          "Address found from Google Maps link."
+        );
+        return;
+      }
+
+      setGeoMessage(googleMapsUrlErrorMessage("unparseable"));
+    } catch {
+      setGeoMessage(googleMapsUrlErrorMessage("unparseable"));
+    } finally {
+      setMapsUrlLoading(false);
+    }
+  }
 
   async function findAddressOnMap() {
     const query = buildAddressQuery({
@@ -406,21 +500,54 @@ export function AdminLocationSection({
       </div>
 
       {!readOnly ? (
-        <div className="mt-3">
-          <button
-            type="button"
-            onClick={() => void findAddressOnMap()}
-            disabled={searching || reverseGeocoding}
-            className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800 hover:bg-gray-50 disabled:opacity-60"
-          >
-            {searching ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <MapPin className="h-4 w-4" />
-            )}
-            {searching ? "Finding…" : "Find address on map"}
-          </button>
-        </div>
+        <>
+          <label className="mt-4 block sm:col-span-2">
+            <span className="mb-1 block text-sm font-medium text-gray-700">
+              Google Maps link
+            </span>
+            <input
+              value={mapsUrl}
+              onChange={(e) => setMapsUrl(e.target.value)}
+              onPaste={(e) => {
+                const pasted = e.clipboardData.getData("text");
+                if (!pasted.trim()) return;
+                window.setTimeout(() => {
+                  void applyGoogleMapsUrl(pasted);
+                }, 0);
+              }}
+              onBlur={() => {
+                if (mapsUrl.trim()) void applyGoogleMapsUrl();
+              }}
+              placeholder="Paste a Google Maps link or share URL"
+              className={FIELD_CLASS}
+            />
+            <p className="mt-1 text-xs text-gray-500">
+              Paste a Google Maps location link to place the pin automatically.
+            </p>
+          </label>
+
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => void findAddressOnMap()}
+              disabled={searching || reverseGeocoding || mapsUrlLoading}
+              className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800 hover:bg-gray-50 disabled:opacity-60"
+            >
+              {searching ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <MapPin className="h-4 w-4" />
+              )}
+              {searching ? "Finding…" : "Find address on map"}
+            </button>
+            {mapsUrlLoading ? (
+              <span className="inline-flex items-center gap-2 px-2 text-sm text-gray-600">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Reading Google Maps link…
+              </span>
+            ) : null}
+          </div>
+        </>
       ) : null}
 
       {geoMessage ? (

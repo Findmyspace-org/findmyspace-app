@@ -11,6 +11,7 @@ import RequireAuth from "@/app/components/RequireAuth";
 import DashboardShell from "@/app/components/DashboardShell";
 import { HOST_NAV } from "@/lib/dashboard-nav";
 import OwnerVerificationAlerts from "@/app/components/OwnerVerificationAlerts";
+import { PhotoDropZone } from "@/app/components/PhotoDropZone";
 import {
   DEFAULT_LISTING_BOOKING_REQUIREMENTS,
   emptyQuestionnaireDataForCategory,
@@ -460,7 +461,7 @@ export default function EditListingPage({ params }: PageProps) {
     await persistImageOrder(resequenced);
   }
 
-  async function handleUploadNewImages() {
+  async function uploadImageFiles(files: File[]) {
     setMessage("");
 
     if (!listingId) {
@@ -468,7 +469,7 @@ export default function EditListingPage({ params }: PageProps) {
       return;
     }
 
-    if (newImageFiles.length === 0) {
+    if (files.length === 0) {
       setMessage("Please select images first.");
       return;
     }
@@ -492,8 +493,8 @@ export default function EditListingPage({ params }: PageProps) {
 
     const imageRows: SpaceImageInsertRow[] = [];
 
-    for (let i = 0; i < newImageFiles.length; i++) {
-      const file = newImageFiles[i];
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
       const fileExt = file.name.split(".").pop() || "bin";
       const fileName = `${user.id}/${listingId}-${Date.now()}-${i}.${fileExt}`;
 
@@ -1406,30 +1407,22 @@ export default function EditListingPage({ params }: PageProps) {
                 )}
               </div>
 
-              <div>
-                <label className="mb-1 block text-xs font-medium text-gray-700">
-                  Upload additional images
-                </label>
-                <input
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  onChange={(e) => setNewImageFiles(Array.from(e.target.files || []))}
-                  className="w-full rounded-sm border border-gray-400 px-4 py-3 outline-none"
-                />
-                <p className="mt-1 text-xs text-gray-500">
-                  {newImageFiles.length} image{newImageFiles.length === 1 ? "" : "s"} selected
-                </p>
-
-                <button
-                  type="button"
-                  onClick={handleUploadNewImages}
-                  disabled={uploadingImages || newImageFiles.length === 0}
-                  className="mt-3 rounded-sm border px-4 py-2 text-sm disabled:opacity-60"
-                >
-                  {uploadingImages ? "Uploading..." : "Upload selected images"}
-                </button>
-              </div>
+              <PhotoDropZone
+                accept="image/*"
+                uploading={uploadingImages}
+                disabled={uploadingImages}
+                onFiles={(fileList) => {
+                  const picked = Array.from(fileList);
+                  setNewImageFiles(picked);
+                  void uploadImageFiles(picked);
+                }}
+                message={
+                  newImageFiles.length > 0 && !uploadingImages
+                    ? `${newImageFiles.length} image${newImageFiles.length === 1 ? "" : "s"} selected`
+                    : null
+                }
+                uploadButtonLabel="Upload selected images"
+              />
 
               <SpaceCategoryFields
                 spaceType={spaceType}

@@ -2,9 +2,10 @@
 
 import Image from "next/image";
 import { useMemo, useRef, useState } from "react";
-import { ChevronDown, ChevronUp, Loader2, Trash2, Upload } from "lucide-react";
+import { ChevronDown, ChevronUp, Trash2 } from "lucide-react";
 import { adminApiFetch } from "@/lib/admin-api-client";
 import { ADMIN_SPACE_IMAGE_MAX_BYTES } from "@/lib/admin-space-image-upload";
+import { PhotoDropZone } from "@/app/components/PhotoDropZone";
 
 export type PropertyGalleryImage = {
   id: string;
@@ -32,6 +33,14 @@ export function AdminPropertyGallery({
 }: AdminPropertyGalleryProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<{
+    current: number;
+    total: number;
+  } | null>(null);
+  const [dropMessage, setDropMessage] = useState<string | null>(null);
+  const [dropMessageTone, setDropMessageTone] = useState<
+    "default" | "error" | "success"
+  >("default");
   const [reordering, setReordering] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -84,21 +93,31 @@ export function AdminPropertyGallery({
     for (const file of files) {
       const ext = (file.name.split(".").pop() || "").toLowerCase();
       if (!allowed.has(file.type) && !allowedExt.has(ext)) {
-        onMessage?.(`Invalid file type "${file.name}". Use JPG, PNG, or WebP only.`);
+        const msg = `Invalid file type "${file.name}". Use JPG, PNG, or WebP only.`;
+        onMessage?.(msg);
+        setDropMessage(msg);
+        setDropMessageTone("error");
         return;
       }
       if (file.size > ADMIN_SPACE_IMAGE_MAX_BYTES) {
-        onMessage?.(`"${file.name}" is too large. Maximum size is ${maxMb} MB per image.`);
+        const msg = `"${file.name}" is too large. Maximum size is ${maxMb} MB per image.`;
+        onMessage?.(msg);
+        setDropMessage(msg);
+        setDropMessageTone("error");
         return;
       }
     }
 
     setUploading(true);
+    setDropMessage(null);
+    setDropMessageTone("default");
     onMessage?.(null);
     const added: PropertyGalleryImage[] = [];
     const failed: string[] = [];
 
-    for (const file of files) {
+    for (let i = 0; i < files.length; i++) {
+      setUploadProgress({ current: i + 1, total: files.length });
+      const file = files[i];
       try {
         const form = new FormData();
         form.append("files", file);
@@ -133,16 +152,24 @@ export function AdminPropertyGallery({
     }
 
     if (failed.length === 0) {
-      onMessage?.(`${added.length} photo(s) uploaded.`);
+      const successMsg = `${added.length} photo(s) uploaded.`;
+      onMessage?.(successMsg);
+      setDropMessage(successMsg);
+      setDropMessageTone("success");
     } else if (added.length > 0) {
-      onMessage?.(
-        `${added.length} uploaded, ${failed.length} failed: ${failed.join("; ")}`
-      );
+      const partialMsg = `${added.length} uploaded, ${failed.length} failed: ${failed.join("; ")}`;
+      onMessage?.(partialMsg);
+      setDropMessage(partialMsg);
+      setDropMessageTone("error");
     } else {
-      onMessage?.(`Upload failed: ${failed.join("; ")}`);
+      const failMsg = `Upload failed: ${failed.join("; ")}`;
+      onMessage?.(failMsg);
+      setDropMessage(failMsg);
+      setDropMessageTone("error");
     }
 
     setUploading(false);
+    setUploadProgress(null);
   }
 
   async function removeImage(imageId: string) {
@@ -252,32 +279,16 @@ export function AdminPropertyGallery({
         </div>
       )}
 
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
-        multiple
-        className="hidden"
-        tabIndex={-1}
-        disabled={uploading || reordering}
-        onChange={(e) => {
-          void uploadImages(e.target.files);
-          e.target.value = "";
-        }}
+      <PhotoDropZone
+        className="mt-4"
+        disabled={reordering}
+        uploading={uploading}
+        uploadProgress={uploadProgress}
+        message={dropMessage}
+        messageTone={dropMessageTone}
+        inputRef={fileInputRef}
+        onFiles={(files) => void uploadImages(files)}
       />
-      <button
-        type="button"
-        disabled={uploading || reordering}
-        onClick={() => fileInputRef.current?.click()}
-        className="mt-4 inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-gray-50 px-4 py-2 text-sm font-medium text-gray-800 hover:bg-gray-100 disabled:opacity-60"
-      >
-        {uploading ? (
-          <Loader2 className="h-4 w-4 animate-spin" />
-        ) : (
-          <Upload className="h-4 w-4" />
-        )}
-        {uploading ? "Uploading…" : "Upload photos"}
-      </button>
     </section>
   );
 }
