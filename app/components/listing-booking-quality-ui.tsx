@@ -414,7 +414,9 @@ export function ListingBookingQualityFormFields({
                     }
                     className="w-full min-h-[40px] rounded-lg border border-[#d4dbe2] bg-white px-3 py-2 text-sm outline-none transition focus:border-[#c1121f] focus:ring-2 focus:ring-[#c1121f]/20"
                   />
-                  <p className="mt-1 text-xs text-gray-500">Example: 10 to 80 people</p>
+                  <p className="mt-1 text-xs text-gray-500">
+                    Set the smallest and largest group this space can comfortably host.
+                  </p>
                 </div>
               </div>
               <div className="mb-4 grid gap-3 sm:grid-cols-2">

@@ -68,7 +68,9 @@ export function GroupSizeFields({
           className={inputClassName}
           placeholder="e.g. 80"
         />
-        <p className={helpClassName}>Example: 10 to 80 people</p>
+        <p className={helpClassName}>
+          Set the smallest and largest group this space can comfortably host.
+        </p>
       </label>
     </div>
   );

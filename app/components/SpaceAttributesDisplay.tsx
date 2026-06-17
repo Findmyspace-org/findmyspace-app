@@ -7,6 +7,7 @@ import {
   toCanonicalFeatureKey,
   type SpaceFeatureSection,
 } from "@/app/data/spaceFeatureConfig";
+import { DEPRECATED_GROUP_SIZE_ATTR_KEYS } from "@/lib/group-size";
 import { spaceFieldConfig, type SpaceField } from "@/app/data/spaceFieldConfig";
 import { SpaceFeatureIcon } from "@/app/components/space-feature-icons";
 import {
@@ -211,6 +212,7 @@ export default function SpaceAttributesDisplay({
 
     for (const field of sectionFields(sec)) {
       const canonical = toCanonicalFeatureKey(field.key);
+      if (DEPRECATED_GROUP_SIZE_ATTR_KEYS.has(canonical)) continue;
       const values = normalizedAttributes[canonical] || [];
       if (values.length === 0) continue;
       usedCanonical.add(canonical);
@@ -258,6 +260,7 @@ export default function SpaceAttributesDisplay({
   for (const key of allKeys) {
     const canonical = toCanonicalFeatureKey(key);
     if (usedCanonical.has(canonical)) continue;
+    if (DEPRECATED_GROUP_SIZE_ATTR_KEYS.has(canonical)) continue;
     const item = formatLegacyItem(
       spaceType,
       canonical,

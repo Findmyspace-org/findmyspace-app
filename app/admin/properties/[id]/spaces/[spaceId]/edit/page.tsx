@@ -30,6 +30,8 @@ type SpaceRow = {
   longitude: number | null;
   status: string | null;
   property_id: string | null;
+  min_group_size?: number | null;
+  max_group_size?: number | null;
 };
 
 export default function EditPropertySpacePage() {
@@ -214,10 +216,14 @@ export default function EditPropertySpacePage() {
             province: space.province || "",
             postalCode: space.postal_code || "",
             country: space.country || "South Africa",
-            latitude: space.latitude,
-            longitude: space.longitude,
-            attributes,
-          }}
+              latitude: space.latitude,
+              longitude: space.longitude,
+              minGroupSize:
+                space.min_group_size != null ? String(space.min_group_size) : "",
+              maxGroupSize:
+                space.max_group_size != null ? String(space.max_group_size) : "",
+              attributes,
+            }}
         />
       </div>
     </div>

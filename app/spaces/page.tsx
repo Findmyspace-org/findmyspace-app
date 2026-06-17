@@ -68,7 +68,12 @@ import {
   scoreSpaceForIntent,
 } from "@/lib/space-intent-ranking";
 import { PUBLIC_SPACE_SELECT } from "@/lib/public-space-columns";
-import { spaceMatchesGroupSize } from "@/lib/group-size";
+import {
+  GROUP_SIZE_FILTER_BUCKETS,
+  parseGroupSizeBucketFilter,
+  spaceMatchesGroupSize,
+  spaceMatchesGroupSizeBucket,
+} from "@/lib/group-size";
 
 type Space = {
   id: string;
@@ -576,20 +581,36 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
       result = result.filter((space) => space.city === cityFilter);
     }
 
-    const effectiveGroupSize = (() => {
+    const effectiveGroupSizeFilter = (() => {
       const manual = groupSizeFilter.trim();
       if (manual) {
+        const bucket = parseGroupSizeBucketFilter(manual);
+        if (bucket) {
+          return { kind: "bucket" as const, ...bucket };
+        }
         const n = Number(manual);
-        if (Number.isFinite(n) && n > 0) return n;
+        if (Number.isFinite(n) && n > 0) {
+          return { kind: "number" as const, value: n };
+        }
       }
       if (parsedNlIntent.groupSize && parsedNlIntent.confidence !== "low") {
-        return parsedNlIntent.groupSize;
+        return { kind: "number" as const, value: parsedNlIntent.groupSize };
       }
       return null;
     })();
 
-    if (effectiveGroupSize != null) {
-      result = result.filter((space) => spaceMatchesGroupSize(space, effectiveGroupSize));
+    if (effectiveGroupSizeFilter?.kind === "bucket") {
+      result = result.filter((space) =>
+        spaceMatchesGroupSizeBucket(
+          space,
+          effectiveGroupSizeFilter.min,
+          effectiveGroupSizeFilter.max
+        )
+      );
+    } else if (effectiveGroupSizeFilter?.kind === "number") {
+      result = result.filter((space) =>
+        spaceMatchesGroupSize(space, effectiveGroupSizeFilter.value)
+      );
     }
 
     result = result.filter((space) => {
@@ -1102,16 +1123,20 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
             </div>
 
             <div className="min-w-0">
-              <p className="mb-1.5 text-xs font-medium leading-5 text-[#475569]">Group Size</p>
-              <input
-                type="number"
-                min={1}
+              <p className="mb-1.5 text-xs font-medium leading-5 text-[#475569]">Group size</p>
+              <select
                 value={groupSizeFilter}
                 onChange={(e) => setGroupSizeFilter(e.target.value)}
-                placeholder="Number of attendees"
                 className="min-h-[48px] w-full rounded-xl border border-[#d4dbe2] bg-white px-4 py-2.5 text-sm shadow-sm outline-none transition-all duration-200 focus:border-[#c1121f] focus:ring-2 focus:ring-[#c1121f]/20"
                 aria-label="Group size"
-              />
+              >
+                <option value="">Any group size</option>
+                {GROUP_SIZE_FILTER_BUCKETS.map((bucket) => (
+                  <option key={bucket.value} value={bucket.value}>
+                    {bucket.label}
+                  </option>
+                ))}
+              </select>
             </div>
 
             <div className="min-w-0">

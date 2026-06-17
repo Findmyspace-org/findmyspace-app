@@ -124,18 +124,6 @@ const OFFICE_WORKSPACE_CHECKS: SpaceFeatureCheckbox[] = [
   cb("sf_meeting_room_access", "Meeting room access", "Users"),
 ];
 
-const MEETING_CAPACITY_RADIO = radio(
-  "sf_capacity_band",
-  "Capacity",
-  "Users",
-  [
-    { value: "2_4", label: "2–4 people" },
-    { value: "5_8", label: "5–8 people" },
-    { value: "9_15", label: "9–15 people" },
-    { value: "15_plus", label: "15+ people" },
-  ]
-);
-
 const MEETING_ROOM_CHECKS: SpaceFeatureCheckbox[] = [
   cb("sf_tv_screen", "TV / screen", "Tv"),
   cb("sf_projector", "Projector", "Projector"),
@@ -312,18 +300,6 @@ const EVENT_VENUE_RADIO = radio(
   ]
 );
 
-const EVENT_CAPACITY_RADIO = radio(
-  "sf_event_capacity",
-  "Capacity",
-  "Users",
-  [
-    { value: "up_to_20", label: "Up to 20" },
-    { value: "20_50", label: "20–50" },
-    { value: "50_100", label: "50–100" },
-    { value: "100_plus", label: "100+" },
-  ]
-);
-
 const EVENT_CHECKS: SpaceFeatureCheckbox[] = [
   cb("sf_ev_stage", "Stage / DJ area", "Music2"),
   cb("sf_ev_sound", "Sound system", "Speaker"),
@@ -450,7 +426,6 @@ export const spaceFeatureLayouts: Record<string, SpaceFeatureLayout> = {
 
   meeting_room: {
     sections: [
-      section("capacity", "Layout", [MEETING_CAPACITY_RADIO]),
       section("workspace_features", "Workspace features", MEETING_ROOM_CHECKS),
       section("connectivity_tech", "Connectivity & tech", MEETING_CONNECTIVITY_TECH_CHECKS),
       section("comfort_environment", "Comfort & environment", MEETING_COMFORT_ENVIRONMENT_CHECKS),
@@ -460,7 +435,6 @@ export const spaceFeatureLayouts: Record<string, SpaceFeatureLayout> = {
 
   boardroom: {
     sections: [
-      section("capacity", "Layout", [MEETING_CAPACITY_RADIO]),
       section("workspace_features", "Workspace features", MEETING_ROOM_CHECKS),
       section("connectivity_tech", "Connectivity & tech", MEETING_CONNECTIVITY_TECH_CHECKS),
       section("comfort_environment", "Comfort & environment", MEETING_COMFORT_ENVIRONMENT_CHECKS),
@@ -503,7 +477,7 @@ export const spaceFeatureLayouts: Record<string, SpaceFeatureLayout> = {
         subsection("social_private", "Social & private", EVENT_SUITABLE_SOCIAL_CHECKS),
         subsection("community", "Community", EVENT_SUITABLE_COMMUNITY_CHECKS),
       ]),
-      section("venue_features", "Venue features", [EVENT_VENUE_RADIO, EVENT_CAPACITY_RADIO, ...EVENT_CHECKS]),
+      section("venue_features", "Venue features", [EVENT_VENUE_RADIO, ...EVENT_CHECKS]),
       section("connectivity_business", "Connectivity & business facilities", EVENT_CONNECTIVITY_BUSINESS_CHECKS),
       section("facilities", "Facilities", EVENT_FACILITIES_CHECKS),
       section("services", "Services", EVENT_SERVICES_CHECKS),

@@ -3,7 +3,24 @@ export type GroupSizeFields = {
   max_group_size?: number | null;
 };
 
+/** Legacy attribute keys — group size now lives on spaces.min/max_group_size. */
+export const DEPRECATED_GROUP_SIZE_ATTR_KEYS = new Set([
+  "sf_capacity_band",
+  "sf_event_capacity",
+  "scout_capacity",
+]);
+
 const NON_GROUP_SPACE_TYPES = new Set(["storage", "parking"]);
+
+export const GROUP_SIZE_FILTER_BUCKETS = [
+  { value: "up_to_20", label: "Up to 20", min: 1, max: 20 },
+  { value: "20_50", label: "20–50", min: 20, max: 50 },
+  { value: "50_100", label: "50–100", min: 50, max: 100 },
+  { value: "100_plus", label: "100+", min: 100, max: Number.POSITIVE_INFINITY },
+] as const;
+
+export type GroupSizeFilterBucketValue =
+  (typeof GROUP_SIZE_FILTER_BUCKETS)[number]["value"];
 
 export function isGroupSizeApplicable(spaceType: string | null | undefined): boolean {
   if (!spaceType) return true;
@@ -34,18 +51,29 @@ export function validateGroupSizePair(
   return null;
 }
 
+/** Effective searchable range: null min → 1, null max → unlimited. */
+export function normalizeSpaceGroupSizeRange(space: GroupSizeFields): {
+  min: number;
+  max: number;
+} {
+  return {
+    min: space.min_group_size ?? 1,
+    max: space.max_group_size ?? Number.POSITIVE_INFINITY,
+  };
+}
+
 export function formatGroupSizePublic(
   min: number | null | undefined,
   max: number | null | undefined
 ): string | null {
   if (min != null && max != null) {
-    return `Suitable for groups of ${min}–${max} people`;
+    return `Suitable for ${min}–${max} people`;
   }
   if (max != null) {
     return `Up to ${max} people`;
   }
   if (min != null) {
-    return `Groups of ${min}+ people`;
+    return `Suitable for ${min}+ people`;
   }
   return null;
 }
@@ -54,16 +82,7 @@ export function formatGroupSizeShort(
   min: number | null | undefined,
   max: number | null | undefined
 ): string | null {
-  if (min != null && max != null) {
-    return `${min}–${max} people`;
-  }
-  if (max != null) {
-    return `Up to ${max} people`;
-  }
-  if (min != null) {
-    return `${min}+ people`;
-  }
-  return null;
+  return formatGroupSizePublic(min, max);
 }
 
 export function formatGroupSizeAdmin(
@@ -82,18 +101,31 @@ export function formatGroupSizeAdmin(
   return null;
 }
 
-/** Venue matches when desired count falls within the configured range. */
+export function parseGroupSizeBucketFilter(
+  value: string
+): { min: number; max: number } | null {
+  const bucket = GROUP_SIZE_FILTER_BUCKETS.find((b) => b.value === value.trim());
+  if (!bucket) return null;
+  return { min: bucket.min, max: bucket.max };
+}
+
+/** Space range overlaps the selected search bucket. */
+export function spaceMatchesGroupSizeBucket(
+  space: GroupSizeFields,
+  bucketMin: number,
+  bucketMax: number
+): boolean {
+  const { min: spaceMin, max: spaceMax } = normalizeSpaceGroupSizeRange(space);
+  return spaceMin <= bucketMax && spaceMax >= bucketMin;
+}
+
+/** Match a single attendee count against the space range. */
 export function spaceMatchesGroupSize(
   space: GroupSizeFields,
   desiredGroupSize: number
 ): boolean {
   if (!Number.isFinite(desiredGroupSize) || desiredGroupSize < 1) return true;
 
-  const min = space.min_group_size;
-  const max = space.max_group_size;
-
-  if (min == null && max == null) return true;
-  if (min != null && desiredGroupSize < min) return false;
-  if (max != null && desiredGroupSize > max) return false;
-  return true;
+  const { min: spaceMin, max: spaceMax } = normalizeSpaceGroupSizeRange(space);
+  return desiredGroupSize >= spaceMin && desiredGroupSize <= spaceMax;
 }
