@@ -22,6 +22,8 @@ export type SpaceFormDraftV1 = {
   minBookingHours: string;
   minBookingDays: string;
   minBookingMonths: string;
+  minGroupSize?: string;
+  maxGroupSize?: string;
   province: string;
   postalCode: string;
   country: string;

@@ -385,22 +385,39 @@ export function ListingBookingQualityFormFields({
 
         {intelCategory === "office_event" && (
           <>
-            <BqSection title="Capacity & access">
+            <BqSection title="Group size & access">
               <div className="mb-4 grid gap-3 sm:grid-cols-2">
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-gray-600">Capacity (people)</label>
+                  <label className="mb-1 block text-xs font-medium text-gray-600">Minimum Group Size</label>
                   <input
                     type="number"
-                    min={0}
-                    value={data.capacity_people != null ? String(data.capacity_people) : ""}
+                    min={1}
+                    value={data.min_group_size != null ? String(data.min_group_size) : ""}
                     onChange={(e) =>
                       patchRoot({
-                        capacity_people: e.target.value === "" ? null : Number(e.target.value),
+                        min_group_size: e.target.value === "" ? null : Number(e.target.value),
                       })
                     }
                     className="w-full min-h-[40px] rounded-lg border border-[#d4dbe2] bg-white px-3 py-2 text-sm outline-none transition focus:border-[#c1121f] focus:ring-2 focus:ring-[#c1121f]/20"
                   />
                 </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-600">Maximum Group Size</label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={data.max_group_size != null ? String(data.max_group_size) : ""}
+                    onChange={(e) =>
+                      patchRoot({
+                        max_group_size: e.target.value === "" ? null : Number(e.target.value),
+                      })
+                    }
+                    className="w-full min-h-[40px] rounded-lg border border-[#d4dbe2] bg-white px-3 py-2 text-sm outline-none transition focus:border-[#c1121f] focus:ring-2 focus:ring-[#c1121f]/20"
+                  />
+                  <p className="mt-1 text-xs text-gray-500">Example: 10 to 80 people</p>
+                </div>
+              </div>
+              <div className="mb-4 grid gap-3 sm:grid-cols-2">
                 <div>
                   <label className="mb-1 block text-xs font-medium text-gray-600">Parking bays on site (optional)</label>
                   <input

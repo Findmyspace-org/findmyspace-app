@@ -13,6 +13,11 @@ import { HOST_NAV } from "@/lib/dashboard-nav";
 import OwnerVerificationAlerts from "@/app/components/OwnerVerificationAlerts";
 import { PhotoDropZone } from "@/app/components/PhotoDropZone";
 import {
+  GroupSizeFields,
+  groupSizePayloadFromForm,
+  validateGroupSizeFormValues,
+} from "@/app/components/GroupSizeFields";
+import {
   DEFAULT_LISTING_BOOKING_REQUIREMENTS,
   emptyQuestionnaireDataForCategory,
   ListingBookingRequirements,
@@ -80,6 +85,8 @@ type SpaceEditRow = {
   min_booking_hours: number | null;
   min_booking_days: number | null;
   min_booking_months: number | null;
+  min_group_size?: number | null;
+  max_group_size?: number | null;
   status: string | null;
   ownership_proof_status: string | null;
   deposit_type: DepositType | null;
@@ -117,6 +124,8 @@ type SpaceUpdatePayload = {
   monthly_payment_day: number;
   deposit_required: boolean;
   deposit_amount: number | null;
+  min_group_size?: number | null;
+  max_group_size?: number | null;
 };
 
 type SpaceAttributeInsertRow = {
@@ -150,6 +159,8 @@ export default function EditListingPage({ params }: PageProps) {
   const [minBookingHours, setMinBookingHours] = useState("1");
   const [minBookingDays, setMinBookingDays] = useState("1");
   const [minBookingMonths, setMinBookingMonths] = useState("1");
+  const [minGroupSize, setMinGroupSize] = useState("");
+  const [maxGroupSize, setMaxGroupSize] = useState("");
   const [depositType, setDepositType] = useState<DepositType>("none");
   const [monthlyPaymentDay, setMonthlyPaymentDay] = useState("1");
   const [status, setStatus] = useState("pending");
@@ -234,7 +245,7 @@ export default function EditListingPage({ params }: PageProps) {
 
     const { data: rawData, error } = await (supabase.from("spaces") as any)
       .select(
-        "id, owner_id, title, description, city, suburb, street_address, province, postal_code, country, address_line_1, space_type, booking_unit, price_per_hour, price_per_day, price_per_month, min_booking_hours, min_booking_days, min_booking_months, status, ownership_proof_status, deposit_type, deposit_months, monthly_payment_day"
+        "id, owner_id, title, description, city, suburb, street_address, province, postal_code, country, address_line_1, space_type, booking_unit, price_per_hour, price_per_day, price_per_month, min_booking_hours, min_booking_days, min_booking_months, min_group_size, max_group_size, status, ownership_proof_status, deposit_type, deposit_months, monthly_payment_day"
       )
       .eq("id", id)
       .eq("owner_id", user.id)
@@ -282,6 +293,12 @@ export default function EditListingPage({ params }: PageProps) {
       typeof data.min_booking_months === "number"
         ? String(data.min_booking_months)
         : "1"
+    );
+    setMinGroupSize(
+      typeof data.min_group_size === "number" ? String(data.min_group_size) : ""
+    );
+    setMaxGroupSize(
+      typeof data.max_group_size === "number" ? String(data.max_group_size) : ""
     );
     setDepositType(data.deposit_type ?? "none");
     setMonthlyPaymentDay(String(data.monthly_payment_day ?? 1));
@@ -759,6 +776,13 @@ export default function EditListingPage({ params }: PageProps) {
       return;
     }
 
+    const groupSizeErr = validateGroupSizeFormValues(spaceType, minGroupSize, maxGroupSize);
+    if (groupSizeErr) {
+      setMessage(groupSizeErr);
+      setSaving(false);
+      return;
+    }
+
     const payload: SpaceUpdatePayload = {
       title,
       description,
@@ -788,6 +812,7 @@ export default function EditListingPage({ params }: PageProps) {
       monthly_payment_day: parsedMonthlyPaymentDay,
       deposit_required: bookingUnit === "month" && finalDepositType !== "none",
       deposit_amount: null,
+      ...groupSizePayloadFromForm(spaceType, minGroupSize, maxGroupSize),
     };
 
     const { error } = await (supabase.from("spaces") as any)
@@ -1139,6 +1164,18 @@ export default function EditListingPage({ params }: PageProps) {
                     </div>
                   </>
                 )}
+              </div>
+
+              <div className="mt-4">
+                <GroupSizeFields
+                  spaceType={spaceType}
+                  minGroupSize={minGroupSize}
+                  maxGroupSize={maxGroupSize}
+                  onMinChange={setMinGroupSize}
+                  onMaxChange={setMaxGroupSize}
+                  inputClassName="w-full rounded-sm border border-gray-400 px-4 py-3 outline-none"
+                  labelClassName="mb-1 block text-xs font-medium text-gray-700"
+                />
               </div>
 
               <div className="grid gap-4 md:grid-cols-3">

@@ -8,6 +8,7 @@ import {
 import { useRouter } from "next/navigation";
 import { formatSpaceTypeLabel, getSportTypeBadgeLabels } from "@/app/data/spaceFeatureConfig";
 import type { CardAvailabilityHint } from "@/lib/browse-availability-signals";
+import { formatGroupSizeShort } from "@/lib/group-size";
 import {
   shouldHideListingPricing,
   ENQUIRY_PRICING_LABEL,
@@ -29,6 +30,8 @@ type Space = {
   price_per_hour: number | null;
   price_per_day: number | null;
   price_per_month: number | null;
+  min_group_size?: number | null;
+  max_group_size?: number | null;
   image_urls?: string[];
   status?: string | null;
   public_listing_mode?: string | null;
@@ -79,6 +82,7 @@ export default function SpaceCard({
   const coverImage = space.image_urls?.[0] || null;
   const locationLine = [space.suburb, space.city].filter(Boolean).join(", ") || "Location to be confirmed";
   const sportBadges = getSportTypeBadgeLabels(space.space_type, space.attributes);
+  const groupSizeLine = formatGroupSizeShort(space.min_group_size, space.max_group_size);
 
   return (
     <article
@@ -134,6 +138,10 @@ export default function SpaceCard({
         <h3 className="mt-2 line-clamp-2 text-[17px] font-semibold leading-snug text-[#0f172a]">
           {space.title}
         </h3>
+
+        {groupSizeLine ? (
+          <p className="mt-1 text-xs text-[#64748b]">{groupSizeLine}</p>
+        ) : null}
 
         {sportBadges.length > 0 ? (
           <div className="mt-2 flex flex-wrap gap-1.5">

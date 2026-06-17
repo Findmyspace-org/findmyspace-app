@@ -22,6 +22,8 @@ export const PUBLIC_SPACE_SELECT = [
   "min_booking_hours",
   "min_booking_days",
   "min_booking_months",
+  "min_group_size",
+  "max_group_size",
   "latitude",
   "longitude",
   "status",

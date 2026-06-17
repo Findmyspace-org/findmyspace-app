@@ -3,6 +3,7 @@
 import { hasAdminUiAccess } from "@/lib/client-admin-access";
 
 import Link from "next/link";
+import Image from "next/image";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { Building2, Plus, Search } from "lucide-react";
 import { supabase } from "@/lib/supabase";
@@ -17,6 +18,7 @@ type PropertyRow = {
   owner_email: string | null;
   owner_status: string;
   space_count: number;
+  cover_image_url: string | null;
   crm_organisation_name: string | null;
   created_at: string;
 };
@@ -150,18 +152,40 @@ function AdminPropertiesPageContent() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {filtered.map((row) => (
+                {filtered.map((row) => {
+                  const location =
+                    [row.suburb, row.city].filter(Boolean).join(", ") || "—";
+
+                  return (
                   <tr key={row.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3">
                       <Link
                         href={`/admin/properties/${row.id}`}
-                        className="font-medium text-[#0f2740] hover:underline"
+                        className="flex items-center gap-3"
                       >
-                        {row.name}
+                        <div className="h-11 w-11 shrink-0 overflow-hidden rounded-lg bg-slate-100">
+                          {row.cover_image_url ? (
+                            <Image
+                              src={row.cover_image_url}
+                              alt={row.name}
+                              width={44}
+                              height={44}
+                              className="h-full w-full object-cover"
+                              unoptimized
+                            />
+                          ) : (
+                            <div className="flex h-full w-full items-center justify-center text-slate-400">
+                              <Building2 className="h-5 w-5" />
+                            </div>
+                          )}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="font-medium text-slate-900 hover:text-[#0f2740] hover:underline">
+                            {row.name}
+                          </p>
+                          <p className="text-sm text-slate-500">{location}</p>
+                        </div>
                       </Link>
-                      <p className="text-xs text-gray-500">
-                        {[row.suburb, row.city].filter(Boolean).join(", ") || "—"}
-                      </p>
                     </td>
                     <td className="px-4 py-3 text-gray-700">{row.space_count}</td>
                     <td className="px-4 py-3">
@@ -174,7 +198,8 @@ function AdminPropertiesPageContent() {
                       {row.crm_organisation_name || "—"}
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>

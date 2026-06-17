@@ -10,6 +10,11 @@ import ListingFormStepNav, {
 } from "@/app/components/ListingFormStepNav";
 import { PhotoDropZone } from "@/app/components/PhotoDropZone";
 import {
+  GroupSizeFields,
+  groupSizePayloadFromForm,
+  validateGroupSizeFormValues,
+} from "@/app/components/GroupSizeFields";
+import {
   googleMapsUrlErrorMessage,
   resolveGoogleMapsUrlClient,
 } from "@/lib/google-maps-url-apply-client";
@@ -100,6 +105,8 @@ type SpaceInsertPayload = {
   advisor_id?: string | null;
   advisor_code?: string | null;
   advisor_source?: string | null;
+  min_group_size?: number | null;
+  max_group_size?: number | null;
 };
 
 type AddressSuggestion = {
@@ -154,6 +161,8 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
   const [minBookingHours, setMinBookingHours] = useState("1");
   const [minBookingDays, setMinBookingDays] = useState("1");
   const [minBookingMonths, setMinBookingMonths] = useState("1");
+  const [minGroupSize, setMinGroupSize] = useState("");
+  const [maxGroupSize, setMaxGroupSize] = useState("");
 
   const [depositType, setDepositType] = useState<DepositType>("none");
 
@@ -292,6 +301,8 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
     setMinBookingHours(d.minBookingHours);
     setMinBookingDays(d.minBookingDays);
     setMinBookingMonths(d.minBookingMonths);
+    setMinGroupSize(d.minGroupSize || "");
+    setMaxGroupSize(d.maxGroupSize || "");
     setProvince(d.province);
     setPostalCode(d.postalCode);
     setCountry(d.country || "South Africa");
@@ -349,6 +360,8 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
         minBookingHours,
         minBookingDays,
         minBookingMonths,
+        minGroupSize,
+        maxGroupSize,
         province,
         postalCode,
         country,
@@ -379,6 +392,8 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
     minBookingHours,
     minBookingDays,
     minBookingMonths,
+    minGroupSize,
+    maxGroupSize,
     province,
     postalCode,
     country,
@@ -418,7 +433,7 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
       if (bookingUnit === "month" && Number(minBookingMonths || 0) < 1) {
         return "Minimum booking months must be at least 1.";
       }
-      return null;
+      return validateGroupSizeFormValues(spaceType, minGroupSize, maxGroupSize);
     }
     if (stepIndex === 1) {
       if (!streetAddress.trim()) return "Please enter a street address.";
@@ -1161,6 +1176,7 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
               advisor_source: advSource,
             }
           : {}),
+        ...groupSizePayloadFromForm(spaceType, minGroupSize, maxGroupSize),
       };
 
       const { data, error: spaceError } = await supabase
@@ -1695,6 +1711,19 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
               </div>
             </>
           ) : null}
+        </div>
+
+        <div className="mt-4">
+          <GroupSizeFields
+            spaceType={spaceType}
+            minGroupSize={minGroupSize}
+            maxGroupSize={maxGroupSize}
+            onMinChange={setMinGroupSize}
+            onMaxChange={setMaxGroupSize}
+            inputClassName="w-full min-h-[44px] rounded-lg border border-[#d4dbe2] bg-white px-3 py-2 text-sm text-[#334155] shadow-sm outline-none transition-all duration-200 focus:border-[#c1121f] focus:ring-2 focus:ring-[#c1121f]/20"
+            labelClassName="mb-1 block text-xs font-medium leading-5 text-[#475569]"
+            helpClassName="mt-1 text-xs leading-snug text-[#64748b]"
+          />
         </div>
 
         {bookingUnit === "hour" && pricePerHour && Number(pricePerHour) > 0 ? (() => {

@@ -20,6 +20,7 @@ import {
   matchesAdminListingFilter,
   type AdminListingFilterKey,
 } from "@/lib/admin-listing-status-display";
+import { formatGroupSizeAdmin } from "@/lib/group-size";
 
 type ListingRow = {
   id: string;
@@ -27,6 +28,8 @@ type ListingRow = {
   city: string | null;
   suburb: string | null;
   space_type: string | null;
+  min_group_size?: number | null;
+  max_group_size?: number | null;
   status: string | null;
   property_id: string | null;
   created_at: string;
@@ -210,6 +213,7 @@ function AdminUnclaimedListingsPageContent({
                   <th className="px-4 py-3">Title</th>
                   <th className="px-4 py-3">Status</th>
                   <th className="hidden px-4 py-3 md:table-cell">Category</th>
+                  <th className="hidden px-4 py-3 lg:table-cell">Group Size</th>
                   <th className="hidden px-4 py-3 lg:table-cell">Location</th>
                   <th className="hidden px-4 py-3 lg:table-cell">CRM</th>
                   <th className="px-4 py-3">Enquiries</th>
@@ -280,6 +284,9 @@ function AdminUnclaimedListingsPageContent({
                       </td>
                       <td className="hidden px-4 py-3 text-gray-600 md:table-cell">
                         {formatSpaceTypeLabel(row.space_type)}
+                      </td>
+                      <td className="hidden px-4 py-3 text-gray-600 lg:table-cell">
+                        {formatGroupSizeAdmin(row.min_group_size, row.max_group_size) || "—"}
                       </td>
                       <td className="hidden px-4 py-3 text-gray-600 lg:table-cell">
                         {location}

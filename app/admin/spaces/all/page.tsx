@@ -31,6 +31,7 @@ import {
 import { isLiveListingStatus } from "@/lib/admin-listing-routing";
 import type { PublicListingMode } from "@/lib/public-listing-mode";
 import { isArchivedSpace } from "@/lib/space-archive";
+import { formatGroupSizeAdmin } from "@/lib/group-size";
 
 type SpaceRow = {
   id: string;
@@ -41,6 +42,8 @@ type SpaceRow = {
   status: string | null;
   public_listing_mode: string | null;
   space_type: string | null;
+  min_group_size?: number | null;
+  max_group_size?: number | null;
   created_at: string | null;
   updated_at: string | null;
   property_id: string | null;
@@ -359,6 +362,7 @@ export default function AdminAllSpacesPage() {
                 <th className="px-4 py-3 font-semibold">Space</th>
                 <th className="px-4 py-3 font-semibold">Property / venue</th>
                 <th className="px-4 py-3 font-semibold">Location</th>
+                <th className="px-4 py-3 font-semibold">Group Size</th>
                 <th className="px-4 py-3 font-semibold">Status</th>
                 <th className="px-4 py-3 font-semibold">Visibility</th>
                 <th className="px-4 py-3 font-semibold">Owner</th>
@@ -370,7 +374,7 @@ export default function AdminAllSpacesPage() {
             <tbody className="divide-y divide-gray-100">
               {!loading && spaces.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-4 py-8 text-center text-gray-500">
+                  <td colSpan={10} className="px-4 py-8 text-center text-gray-500">
                     No spaces match your filters.
                   </td>
                 </tr>
@@ -431,6 +435,9 @@ export default function AdminAllSpacesPage() {
                       )}
                     </td>
                     <td className="px-4 py-3 text-gray-600">{location}</td>
+                    <td className="px-4 py-3 text-gray-600">
+                      {formatGroupSizeAdmin(space.min_group_size, space.max_group_size) || "—"}
+                    </td>
                     <td className="px-4 py-3">
                       <span className={adminListingStatusBadgeClass(space.status)}>
                         {adminListingStatusLabel(space.status)}

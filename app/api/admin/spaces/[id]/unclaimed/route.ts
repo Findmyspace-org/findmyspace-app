@@ -144,6 +144,8 @@ export async function PATCH(
   if (d.country !== undefined) patch.country = d.country ?? "South Africa";
   if (d.latitude !== undefined) patch.latitude = d.latitude;
   if (d.longitude !== undefined) patch.longitude = d.longitude;
+  if (d.min_group_size !== undefined) patch.min_group_size = d.min_group_size;
+  if (d.max_group_size !== undefined) patch.max_group_size = d.max_group_size;
   if (d.crm_organisation_id !== undefined) {
     patch.crm_organisation_id = d.crm_organisation_id;
   }

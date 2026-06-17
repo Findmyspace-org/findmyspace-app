@@ -3,6 +3,7 @@ import {
   formatSpaceTypeLabel,
   getSportTypeBadgeLabels,
 } from "@/app/data/spaceFeatureConfig";
+import { spaceMatchesGroupSize } from "@/lib/group-size";
 import type { ParsedSpaceIntent } from "@/lib/space-intent-parser";
 import { spaceHasSportTypes } from "@/lib/sport-search";
 
@@ -14,40 +15,10 @@ export type SpaceIntentMatchInput = {
   suburb: string | null;
   address_line_1?: string | null;
   space_type: string | null;
+  min_group_size?: number | null;
+  max_group_size?: number | null;
   attributes?: Record<string, string[]>;
 };
-
-const CAPACITY_BAND_MIN: Record<string, number> = {
-  "2_4": 2,
-  "5_8": 5,
-  "9_15": 9,
-  "15_plus": 15,
-  up_to_20: 1,
-  "20_50": 20,
-  "50_100": 50,
-  "100_plus": 100,
-};
-
-function capacityBandMatches(
-  attributes: Record<string, string[]> | undefined,
-  requested: number
-): boolean {
-  if (!attributes || !requested) return false;
-  const bands = [
-    ...(attributes.sf_capacity_band || []),
-    ...(attributes.sf_event_capacity || []),
-    ...(attributes.scout_capacity || []),
-  ];
-  for (const band of bands) {
-    const min = CAPACITY_BAND_MIN[band];
-    if (min != null && requested <= min + (band.includes("plus") || band.includes("_100") ? 999 : 50)) {
-      return true;
-    }
-    const numeric = Number(band);
-    if (Number.isFinite(numeric) && numeric >= requested) return true;
-  }
-  return false;
-}
 
 function attributeHasSuitableFor(
   attributes: Record<string, string[]> | undefined,
@@ -103,11 +74,13 @@ export function scoreSpaceForIntent(
     }
   }
 
-  if (parsed.capacity) {
-    if (capacityBandMatches(attrs, parsed.capacity)) {
-      score += 25;
-    } else if (haystack.includes(String(parsed.capacity))) {
-      score += 10;
+  if (parsed.groupSize) {
+    if (spaceMatchesGroupSize(space, parsed.groupSize)) {
+      score += 30;
+    } else if (haystack.includes(String(parsed.groupSize))) {
+      score += 8;
+    } else {
+      score -= 20;
     }
   }
 
@@ -136,8 +109,8 @@ export function formatIntentSummary(parsed: ParsedSpaceIntent): string {
     parts.push("Multiple space types");
   }
 
-  if (parsed.capacity) {
-    parts.push(`${parsed.capacity} people`);
+  if (parsed.groupSize) {
+    parts.push(`${parsed.groupSize} people`);
   }
 
   if (parsed.sportTypes.length === 1) {

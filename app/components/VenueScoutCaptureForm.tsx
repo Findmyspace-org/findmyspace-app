@@ -17,6 +17,11 @@ import {
   scoutFormFromAttributes,
   VENUE_SCOUT_QUICK_TAGS,
 } from "@/lib/venue-scout-tags";
+import {
+  GroupSizeFields,
+  groupSizePayloadFromForm,
+  validateGroupSizeFormValues,
+} from "@/app/components/GroupSizeFields";
 
 const FIELD_CLASS =
   "w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-[#0f2740] focus:ring-1 focus:ring-[#0f2740]";
@@ -36,7 +41,8 @@ type ScoutFormState = {
   website: string;
   phone: string;
   adminNotes: string;
-  capacity: string;
+  minGroupSize: string;
+  maxGroupSize: string;
   tags: string[];
 };
 
@@ -48,7 +54,6 @@ function payloadFromState(
   const scoutAttrs = scoutAttributesFromForm({
     website: state.website,
     phone: state.phone,
-    capacity: state.capacity,
     tags: state.tags,
   });
 
@@ -65,6 +70,7 @@ function payloadFromState(
     country: state.country,
     latitude: state.latitude,
     longitude: state.longitude,
+    ...groupSizePayloadFromForm(state.spaceType, state.minGroupSize, state.maxGroupSize),
     attributes: mergeScoutAttributes(extraAttributes, scoutAttrs),
     crm_organisation_id: crmLink.crm_organisation_id,
     crm_contact_id: crmLink.crm_contact_id,
@@ -115,7 +121,8 @@ export function VenueScoutCaptureForm({
     website: initial?.website ?? scoutDefaults.website,
     phone: initial?.phone ?? scoutDefaults.phone,
     adminNotes: initial?.adminNotes ?? initialAdminNotes,
-    capacity: initial?.capacity ?? scoutDefaults.capacity,
+    minGroupSize: initial?.minGroupSize ?? "",
+    maxGroupSize: initial?.maxGroupSize ?? "",
     tags: initial?.tags ?? scoutDefaults.tags,
   });
   const [baseAttributes] = useState(initialAttributes);
@@ -140,7 +147,8 @@ export function VenueScoutCaptureForm({
         ...initial,
         website: initial.website ?? scout.website,
         phone: initial.phone ?? scout.phone,
-        capacity: initial.capacity ?? scout.capacity,
+        minGroupSize: initial.minGroupSize ?? prev.minGroupSize,
+        maxGroupSize: initial.maxGroupSize ?? prev.maxGroupSize,
         tags: initial.tags ?? scout.tags,
       }));
     }
@@ -189,6 +197,15 @@ export function VenueScoutCaptureForm({
     if (readOnly) return;
     if (!state.title.trim()) {
       setMessage("Space name is required.");
+      return;
+    }
+    const groupSizeErr = validateGroupSizeFormValues(
+      state.spaceType,
+      state.minGroupSize,
+      state.maxGroupSize
+    );
+    if (groupSizeErr) {
+      setMessage(groupSizeErr);
       return;
     }
     setSaving(true);
@@ -405,17 +422,14 @@ export function VenueScoutCaptureForm({
               </p>
             </label>
             </div>
-            <label className="block">
-              <span className="mb-1 block text-sm font-medium text-gray-700">
-                Suggested capacity
-              </span>
-              <input
-                value={state.capacity}
-                onChange={(e) => setState((s) => ({ ...s, capacity: e.target.value }))}
-                className={FIELD_CLASS}
-                placeholder="e.g. 50 people, 20 desks"
-              />
-            </label>
+            <GroupSizeFields
+              spaceType={state.spaceType}
+              minGroupSize={state.minGroupSize}
+              maxGroupSize={state.maxGroupSize}
+              disabled={readOnly}
+              onMinChange={(value) => setState((s) => ({ ...s, minGroupSize: value }))}
+              onMaxChange={(value) => setState((s) => ({ ...s, maxGroupSize: value }))}
+            />
             <label className="block">
               <span className="mb-1 block text-sm font-medium text-gray-700">Admin notes</span>
               <textarea

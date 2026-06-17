@@ -14,6 +14,7 @@ import {
   type ListingBookingRequirements,
   type RenterRequirementFieldKey,
 } from "@/lib/booking-intelligence";
+import { formatGroupSizePublic } from "@/lib/group-size";
 
 function getAdminClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -72,6 +73,8 @@ type SpaceRow = {
   min_booking_hours: number | null;
   min_booking_days: number | null;
   min_booking_months: number | null;
+  min_group_size?: number | null;
+  max_group_size?: number | null;
   status: string | null;
   public_listing_mode: string | null;
 };
@@ -107,6 +110,7 @@ type AssistantContext = {
    * them without re-parsing per-category schemas.
    */
   questionnaireFacts: { label: string; value: string }[];
+  groupSizeLine: string | null;
 };
 
 type IntentKind =
@@ -231,7 +235,7 @@ async function loadAssistantContext(
   const { data: spaceRow, error: spaceErr } = await supabase
     .from("spaces")
     .select(
-      "id, title, description, suburb, city, space_type, booking_unit, price_per_hour, price_per_day, price_per_month, min_booking_hours, min_booking_days, min_booking_months, status, public_listing_mode"
+      "id, title, description, suburb, city, space_type, booking_unit, price_per_hour, price_per_day, price_per_month, min_booking_hours, min_booking_days, min_booking_months, min_group_size, max_group_size, status, public_listing_mode"
     )
     .eq("id", spaceId)
     .single();
@@ -336,6 +340,7 @@ async function loadAssistantContext(
     requirements,
     confirmedQas,
     questionnaireFacts,
+    groupSizeLine: formatGroupSizePublic(space.min_group_size, space.max_group_size),
   };
 }
 
@@ -512,7 +517,7 @@ function classifyIntent(question: string): IntentKind {
   if (/\b(secure|safe|safety|cctv|gated|guard|guarded|locked?|lockable|theft|security)\b/.test(lower))
     return "security";
 
-  if (/\b(size|dimension|fit|capacity|how (much|many)|big enough|small enough|space (does|is))\b/.test(lower))
+  if (/\b(size|dimension|fit|group size|how (much|many)|big enough|small enough|space (does|is))\b/.test(lower))
     return "size_capacity";
 
   if (/\b(price|cost|how much|pricing|rate|deposit)\b/.test(lower)) return "price";
@@ -623,11 +628,10 @@ function answerSecurity(ctx: AssistantContext): string | null {
 function answerSizeCapacity(ctx: AssistantContext): string | null {
   const lines: string[] = [];
   const size = findValue(ctx.features, /^size$/i) || findValue(ctx.features, /storage size/i);
-  const capacity = findValue(ctx.features, /capacity/i);
   const venue = findValue(ctx.features, /venue type/i);
   const parkingType = findValue(ctx.features, /parking type/i);
+  if (ctx.groupSizeLine) lines.push(ctx.groupSizeLine);
   if (size) lines.push(`Size: ${size}`);
-  if (capacity) lines.push(`Capacity: ${capacity}`);
   if (venue) lines.push(`Venue type: ${venue}`);
   if (parkingType) lines.push(`Parking type: ${parkingType}`);
   if (lines.length === 0) return null;

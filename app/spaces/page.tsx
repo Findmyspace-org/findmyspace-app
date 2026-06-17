@@ -68,6 +68,7 @@ import {
   scoreSpaceForIntent,
 } from "@/lib/space-intent-ranking";
 import { PUBLIC_SPACE_SELECT } from "@/lib/public-space-columns";
+import { spaceMatchesGroupSize } from "@/lib/group-size";
 
 type Space = {
   id: string;
@@ -88,6 +89,8 @@ type Space = {
   min_booking_hours: number | null;
   min_booking_days: number | null;
   min_booking_months: number | null;
+  min_group_size?: number | null;
+  max_group_size?: number | null;
   image_urls?: string[];
   attributes?: Record<string, string[]>;
   status?: string | null;
@@ -146,6 +149,7 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
     parseSportTypeParam(params.get("sportType"))
   );
   const [cityFilter, setCityFilter] = useState(params.get("city") || "all");
+  const [groupSizeFilter, setGroupSizeFilter] = useState(params.get("groupSize") || "");
   const [sortBy, setSortBy] = useState(
     params.get("sort") || "price_high_low"
   );
@@ -199,6 +203,7 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
     setNlInput(resolvedIntent.naturalLanguageQuery);
     setTypeFilter(p.get("type") || "all");
     setSportTypeFilters(parseSportTypeParam(p.get("sportType")));
+    setGroupSizeFilter(p.get("groupSize") || "");
     const when = parseAppliedWhenFromParams(p);
     setAppliedWhen(when);
     const wu = p.get("whenUnit");
@@ -276,6 +281,7 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
         p.set("sportType", sportTypeFilters.join(","));
       }
       if (cityFilter !== "all") p.set("city", cityFilter);
+      if (groupSizeFilter.trim()) p.set("groupSize", groupSizeFilter.trim());
       if (sortBy !== "price_high_low") p.set("sort", sortBy);
 
       const buResolved =
@@ -304,6 +310,7 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
       sportTypeFilters,
       intentFilter,
       cityFilter,
+      groupSizeFilter,
       sortBy,
       bookingUnitFilter,
       minPrice,
@@ -569,6 +576,22 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
       result = result.filter((space) => space.city === cityFilter);
     }
 
+    const effectiveGroupSize = (() => {
+      const manual = groupSizeFilter.trim();
+      if (manual) {
+        const n = Number(manual);
+        if (Number.isFinite(n) && n > 0) return n;
+      }
+      if (parsedNlIntent.groupSize && parsedNlIntent.confidence !== "low") {
+        return parsedNlIntent.groupSize;
+      }
+      return null;
+    })();
+
+    if (effectiveGroupSize != null) {
+      result = result.filter((space) => spaceMatchesGroupSize(space, effectiveGroupSize));
+    }
+
     result = result.filter((space) => {
       if (
         bookingUnitFilter !== "all" &&
@@ -648,6 +671,7 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
     typeFilter,
     intentFilter,
     cityFilter,
+    groupSizeFilter,
     bookingUnitFilter,
     appliedWhen,
     minPrice,
@@ -735,6 +759,7 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
     setSportTypeFilters([]);
     setIntentFilter(null);
     setCityFilter("all");
+    setGroupSizeFilter("");
     setSortBy("price_high_low");
     setAppliedWhen(null);
     setBookingUnitFilter("all");
@@ -1037,7 +1062,7 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
             ))}
           </select>
 
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-[1fr_1fr_1fr_112px]">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-[1fr_1fr_1fr_1fr_112px]">
             <div className="min-w-0">
               <p className="mb-1.5 text-xs font-medium leading-5 text-[#475569]">Where do you need it?</p>
               <div className="relative">
@@ -1074,6 +1099,19 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
                   }}
                 />
               </div>
+            </div>
+
+            <div className="min-w-0">
+              <p className="mb-1.5 text-xs font-medium leading-5 text-[#475569]">Group Size</p>
+              <input
+                type="number"
+                min={1}
+                value={groupSizeFilter}
+                onChange={(e) => setGroupSizeFilter(e.target.value)}
+                placeholder="Number of attendees"
+                className="min-h-[48px] w-full rounded-xl border border-[#d4dbe2] bg-white px-4 py-2.5 text-sm shadow-sm outline-none transition-all duration-200 focus:border-[#c1121f] focus:ring-2 focus:ring-[#c1121f]/20"
+                aria-label="Group size"
+              />
             </div>
 
             <div className="min-w-0">

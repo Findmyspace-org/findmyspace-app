@@ -45,18 +45,68 @@ export async function GET(req: NextRequest) {
 
   const propertyIds = rows.map((r) => r.id as string);
   const spaceCountByProperty = new Map<string, number>();
+  const spacesByProperty = new Map<string, string[]>();
+  const coverImageByProperty = new Map<string, string>();
 
   if (propertyIds.length > 0) {
-    const { data: spaces } = await admin
-      .from("spaces")
-      .select("property_id")
-      .in("property_id", propertyIds);
+    const [{ data: spaces }, { data: propertyImages }] = await Promise.all([
+      admin.from("spaces").select("id, property_id").in("property_id", propertyIds),
+      admin
+        .from("property_images")
+        .select("property_id, image_url, sort_order")
+        .in("property_id", propertyIds)
+        .order("sort_order", { ascending: true }),
+    ]);
 
-    for (const space of (spaces as { property_id: string }[]) || []) {
+    for (const space of (spaces as { id: string; property_id: string }[]) || []) {
       spaceCountByProperty.set(
         space.property_id,
         (spaceCountByProperty.get(space.property_id) || 0) + 1
       );
+      const list = spacesByProperty.get(space.property_id) || [];
+      list.push(space.id);
+      spacesByProperty.set(space.property_id, list);
+    }
+
+    for (const row of (propertyImages as {
+      property_id: string;
+      image_url: string;
+    }[]) || []) {
+      if (!coverImageByProperty.has(row.property_id)) {
+        coverImageByProperty.set(row.property_id, row.image_url);
+      }
+    }
+
+    // TODO: add a dedicated properties.cover_image_url once property galleries are
+    // always populated; until then fall back to the first linked space image.
+    const missingPropertyIds = propertyIds.filter((id) => !coverImageByProperty.has(id));
+    const fallbackSpaceIds = missingPropertyIds.flatMap(
+      (id) => spacesByProperty.get(id) || []
+    );
+
+    if (fallbackSpaceIds.length > 0) {
+      const { data: spaceImages } = await admin
+        .from("space_images")
+        .select("space_id, image_url, sort_order")
+        .in("space_id", fallbackSpaceIds)
+        .order("sort_order", { ascending: true });
+
+      const imageBySpace = new Map<string, string>();
+      for (const row of (spaceImages as { space_id: string; image_url: string }[]) || []) {
+        if (!imageBySpace.has(row.space_id)) {
+          imageBySpace.set(row.space_id, row.image_url);
+        }
+      }
+
+      for (const propertyId of missingPropertyIds) {
+        for (const spaceId of spacesByProperty.get(propertyId) || []) {
+          const url = imageBySpace.get(spaceId);
+          if (url) {
+            coverImageByProperty.set(propertyId, url);
+            break;
+          }
+        }
+      }
     }
   }
 
@@ -71,6 +121,7 @@ export async function GET(req: NextRequest) {
     return {
       ...row,
       space_count: spaceCountByProperty.get(row.id as string) || 0,
+      cover_image_url: coverImageByProperty.get(row.id as string) || null,
       crm_organisation_name: row.crm_organisation_id
         ? orgNameById.get(row.crm_organisation_id as string) || null
         : null,

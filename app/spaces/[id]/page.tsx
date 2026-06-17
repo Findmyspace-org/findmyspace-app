@@ -28,6 +28,7 @@ import { UnclaimedListingPricingSection } from "@/app/components/UnclaimedListin
 import { UnclaimedListingSidebar } from "@/app/components/UnclaimedListingSidebar";
 import { getListingEnquiryCount } from "@/lib/listing-enquiry-count";
 import { PUBLIC_SPACE_SELECT } from "@/lib/public-space-columns";
+import { formatGroupSizePublic } from "@/lib/group-size";
 
 import {
   ArrowLeft,
@@ -62,6 +63,8 @@ type Space = {
   min_booking_hours: number | null;
   min_booking_days: number | null;
   min_booking_months: number | null;
+  min_group_size?: number | null;
+  max_group_size?: number | null;
   latitude: number | null;
   longitude: number | null;
   image_urls: string[];
@@ -168,6 +171,7 @@ export default async function Page({
       ? getSectionCheckboxLabels(space.space_type, space.attributes, "suitable_for")
       : [];
   const sportTypeLabels = getSportTypeBadgeLabels(space.space_type, space.attributes);
+  const groupSizeLabel = formatGroupSizePublic(space.min_group_size, space.max_group_size);
 
   const price =
     space.booking_unit === "hour"
@@ -305,6 +309,10 @@ export default async function Page({
                     </p>
                   ) : null}
                 </div>
+
+                {groupSizeLabel ? (
+                  <p className="mt-3 text-sm text-gray-600">{groupSizeLabel}</p>
+                ) : null}
 
                 <label
                   htmlFor="space-map-toggle"

@@ -14,6 +14,11 @@ import {
 } from "@/app/components/AdminSpacePhotosPanel";
 import type { SpaceCrmLinkSummary } from "@/lib/space-crm-link";
 import { sortSpaceImages } from "@/lib/sort-space-images";
+import {
+  GroupSizeFields,
+  groupSizePayloadFromForm,
+  validateGroupSizeFormValues,
+} from "@/app/components/GroupSizeFields";
 
 type FormState = {
   title: string;
@@ -28,6 +33,8 @@ type FormState = {
   country: string;
   latitude: number | null;
   longitude: number | null;
+  minGroupSize: string;
+  maxGroupSize: string;
   attributes: Record<string, string[]>;
 };
 
@@ -54,6 +61,7 @@ function payloadFromState(state: FormState, crmLink: CrmLinkState) {
     latitude: state.latitude,
     longitude: state.longitude,
     attributes: state.attributes,
+    ...groupSizePayloadFromForm(state.spaceType, state.minGroupSize, state.maxGroupSize),
     crm_organisation_id: crmLink.crm_organisation_id,
     crm_contact_id: crmLink.crm_contact_id,
   };
@@ -73,6 +81,8 @@ function formStateFromInitial(initial?: Partial<FormState>): FormState {
     country: initial?.country ?? "South Africa",
     latitude: initial?.latitude ?? null,
     longitude: initial?.longitude ?? null,
+    minGroupSize: initial?.minGroupSize ?? "",
+    maxGroupSize: initial?.maxGroupSize ?? "",
     attributes: initial?.attributes ?? {},
   };
 }
@@ -167,6 +177,17 @@ export function AdminUnclaimedSpaceForm({
       setSaving(true);
       setMessage(null);
       try {
+        const groupSizeErr = validateGroupSizeFormValues(
+          state.spaceType,
+          state.minGroupSize,
+          state.maxGroupSize
+        );
+        if (groupSizeErr) {
+          setMessage(groupSizeErr);
+          setSaving(false);
+          return;
+        }
+
         const body = payloadFromState(state, crmLink);
 
         if (activeMode === "create") {
@@ -196,6 +217,9 @@ export function AdminUnclaimedSpaceForm({
               : "Draft saved. You can upload photos below."
           );
           onCreated?.(newId);
+          if (!stayOnPage) {
+            onSavedAndExit?.();
+          }
         } else if (activeSpaceId) {
           await adminApiFetch(`/api/admin/spaces/${activeSpaceId}/unclaimed`, {
             method: "PATCH",
@@ -363,6 +387,17 @@ export function AdminUnclaimedSpaceForm({
               </select>
             </label>
           </div>
+          <GroupSizeFields
+            spaceType={state.spaceType}
+            minGroupSize={state.minGroupSize}
+            maxGroupSize={state.maxGroupSize}
+            disabled={readOnly}
+            onMinChange={(value) => setState((s) => ({ ...s, minGroupSize: value }))}
+            onMaxChange={(value) => setState((s) => ({ ...s, maxGroupSize: value }))}
+            onValidationError={(err) => {
+              if (err) setMessage(err);
+            }}
+          />
         </fieldset>
       </section>
 
@@ -465,6 +500,25 @@ export function AdminUnclaimedSpaceForm({
                   className="rounded-lg border border-gray-300 bg-white px-5 py-2.5 text-sm font-semibold text-gray-800 hover:bg-gray-50 disabled:opacity-60"
                 >
                   Save &amp; continue editing
+                </button>
+              </>
+            ) : propertyId ? (
+              <>
+                <button
+                  type="button"
+                  disabled={saving || publishing}
+                  onClick={() => void saveDraft(false)}
+                  className="rounded-lg bg-[#0f2740] px-5 py-2.5 text-sm font-semibold text-white hover:opacity-95 disabled:opacity-60"
+                >
+                  {saving ? "Saving…" : "Save & return to property"}
+                </button>
+                <button
+                  type="button"
+                  disabled={saving || publishing}
+                  onClick={() => void saveDraft(true)}
+                  className="rounded-lg border border-gray-300 bg-white px-5 py-2.5 text-sm font-semibold text-gray-800 hover:bg-gray-50 disabled:opacity-60"
+                >
+                  {saving ? "Saving…" : "Save draft"}
                 </button>
               </>
             ) : (

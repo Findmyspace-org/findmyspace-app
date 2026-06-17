@@ -275,8 +275,14 @@ function storageSizeSectionAnswered(
 }
 
 function officeCapacityAccessSectionAnswered(data: Record<string, unknown>): boolean {
-  const cap = data.capacity_people;
-  if (typeof cap === "number" && Number.isFinite(cap) && cap > 0) return true;
+  const min = data.min_group_size;
+  const max = data.max_group_size;
+  if (typeof min === "number" && Number.isFinite(min) && min > 0) return true;
+  if (typeof max === "number" && Number.isFinite(max) && max > 0) return true;
+  const legacyCap = data.capacity_people;
+  if (typeof legacyCap === "number" && Number.isFinite(legacyCap) && legacyCap > 0) {
+    return true;
+  }
   const ca = data.capacity_access as Record<string, unknown> | undefined;
   if (!ca || typeof ca !== "object") return false;
   const bays = ca.parking_bays;
@@ -379,7 +385,7 @@ export function getMissingListingQualitySignalLabels(
     }
   } else {
     if (!officeCapacityAccessSectionAnswered(data)) {
-      missing.push("Capacity & access");
+      missing.push("Group size & access");
     }
     if (!checkboxSubgroupAnswered(data.use_suitability)) {
       missing.push("Use & suitability");
@@ -416,7 +422,8 @@ export function emptyQuestionnaireDataForCategory(
     };
   }
   return {
-    capacity_people: null as number | null,
+    min_group_size: null as number | null,
+    max_group_size: null as number | null,
     capacity_access: {
       parking_bays: null as number | null,
       after_hours_access: null as boolean | null,
@@ -488,12 +495,22 @@ export function mergeQuestionnaireData(
     typeof raw.setup_teardown_notes === "string" ? raw.setup_teardown_notes.trim() : "";
 
   const mergedOffice = {
-    capacity_people:
-      typeof raw.capacity_people === "number"
-        ? raw.capacity_people
-        : raw.capacity_people === null
+    min_group_size:
+      typeof raw.min_group_size === "number"
+        ? raw.min_group_size
+        : raw.min_group_size === null
           ? null
-          : (base.capacity_people as number | null),
+          : typeof raw.capacity_people === "number"
+            ? 1
+            : (base.min_group_size as number | null),
+    max_group_size:
+      typeof raw.max_group_size === "number"
+        ? raw.max_group_size
+        : raw.max_group_size === null
+          ? null
+          : typeof raw.capacity_people === "number"
+            ? raw.capacity_people
+            : (base.max_group_size as number | null),
     capacity_access: {
       ...(base.capacity_access as object),
       ...((raw.capacity_access as object) || {}),

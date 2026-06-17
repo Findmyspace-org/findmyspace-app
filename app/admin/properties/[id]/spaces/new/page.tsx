@@ -3,7 +3,7 @@
 import { hasAdminUiAccess } from "@/lib/client-admin-access";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { AdminUnclaimedSpaceForm } from "@/app/components/AdminUnclaimedSpaceForm";
@@ -12,6 +12,7 @@ import { adminApiFetch } from "@/lib/admin-api-client";
 
 export default function NewPropertySpacePage() {
   const params = useParams();
+  const router = useRouter();
   const propertyId = typeof params.id === "string" ? params.id : "";
 
   const [role, setRole] = useState<string | null>(null);
@@ -124,6 +125,9 @@ export default function NewPropertySpacePage() {
               "",
               `/admin/properties/${propertyId}/spaces/${newSpaceId}/edit`
             );
+          }}
+          onSavedAndExit={() => {
+            router.push(`/admin/properties/${propertyId}?saved=1`);
           }}
         />
       </div>

@@ -3,6 +3,11 @@ import { LISTING_SPACE_TYPE_OPTIONS } from "@/app/data/spaceFeatureConfig";
 import { UNCLAIMED_LISTING_STATUS } from "@/lib/listing-lifecycle";
 import { parseSpaceCrmLinkInput } from "@/lib/space-crm-link";
 import { validateMinimumPublicContent } from "@/lib/admin-public-listing-mode";
+import {
+  isGroupSizeApplicable,
+  parseGroupSizeInput,
+  validateGroupSizePair,
+} from "@/lib/group-size";
 
 export const ADMIN_UNCLAIMED_STATUSES = ["draft", "unclaimed"] as const;
 export type AdminUnclaimedStatus = (typeof ADMIN_UNCLAIMED_STATUSES)[number];
@@ -35,6 +40,8 @@ export type UnclaimedSpaceInput = {
   latitude?: number | null;
   longitude?: number | null;
   attributes?: Record<string, string[]>;
+  min_group_size?: number | null;
+  max_group_size?: number | null;
   crm_organisation_id?: string | null;
   crm_contact_id?: string | null;
 };
@@ -58,6 +65,19 @@ function trimOrNull(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
   return trimmed === "" ? null : trimmed;
+}
+
+function parseGroupSizeField(value: unknown): number | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Math.floor(value);
+  }
+  if (typeof value === "string") {
+    if (value.trim() === "") return null;
+    return parseGroupSizeInput(value);
+  }
+  return undefined;
 }
 
 function parseCoord(value: unknown): number | null | undefined {
@@ -125,6 +145,36 @@ export function parseUnclaimedSpaceInput(
     const v = parseCoord(body.longitude);
     if (v === undefined) return { ok: false, error: "Invalid longitude." };
     data.longitude = v;
+  }
+
+  if ("min_group_size" in body) {
+    const v = parseGroupSizeField(body.min_group_size);
+    if (v === undefined && body.min_group_size !== null && body.min_group_size !== "") {
+      return { ok: false, error: "Invalid minimum group size." };
+    }
+    data.min_group_size = v ?? null;
+  }
+  if ("max_group_size" in body) {
+    const v = parseGroupSizeField(body.max_group_size);
+    if (v === undefined && body.max_group_size !== null && body.max_group_size !== "") {
+      return { ok: false, error: "Invalid maximum group size." };
+    }
+    data.max_group_size = v ?? null;
+  }
+
+  const spaceTypeForValidation = data.space_type ?? trimOrNull(body.space_type);
+  if (
+    (data.min_group_size !== undefined || data.max_group_size !== undefined) &&
+    spaceTypeForValidation &&
+    !isGroupSizeApplicable(spaceTypeForValidation)
+  ) {
+    data.min_group_size = null;
+    data.max_group_size = null;
+  } else if (data.min_group_size !== undefined || data.max_group_size !== undefined) {
+    const min = data.min_group_size ?? null;
+    const max = data.max_group_size ?? null;
+    const err = validateGroupSizePair(min, max);
+    if (err) return { ok: false, error: err };
   }
 
   if ("attributes" in body) {
@@ -196,6 +246,12 @@ export function buildUnclaimedSpaceRow(
     ownership_proof_status: "pending",
     crm_organisation_id: input.crm_organisation_id ?? null,
     crm_contact_id: input.crm_contact_id ?? null,
+    min_group_size: isGroupSizeApplicable(input.space_type)
+      ? (input.min_group_size ?? null)
+      : null,
+    max_group_size: isGroupSizeApplicable(input.space_type)
+      ? (input.max_group_size ?? null)
+      : null,
   };
 }
 

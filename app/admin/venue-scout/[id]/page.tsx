@@ -27,6 +27,8 @@ type SpaceRow = {
   latitude: number | null;
   longitude: number | null;
   status: string | null;
+  min_group_size?: number | null;
+  max_group_size?: number | null;
   listing_admin_comment?: string | null;
 };
 
@@ -153,7 +155,10 @@ function VenueScoutEditContent() {
               longitude: space.longitude,
               website: scout.website,
               phone: scout.phone,
-              capacity: scout.capacity,
+              minGroupSize:
+                space.min_group_size != null ? String(space.min_group_size) : "",
+              maxGroupSize:
+                space.max_group_size != null ? String(space.max_group_size) : "",
               tags: scout.tags,
             }}
           />

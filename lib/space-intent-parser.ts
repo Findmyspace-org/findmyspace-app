@@ -9,7 +9,7 @@ export type ParsedSpaceIntent = {
   rawQuery: string;
   inferredSpaceTypes: string[];
   location?: string;
-  capacity?: number;
+  groupSize?: number;
   dateText?: string;
   timeText?: string;
   durationType?: "hourly" | "daily" | "monthly";
@@ -197,12 +197,15 @@ function containsAny(haystack: string, triggers: string[]): boolean {
   return triggers.some((t) => haystack.includes(t));
 }
 
-function extractCapacity(query: string): number | undefined {
+function extractGroupSize(query: string): number | undefined {
   const patterns = [
-    /\bfor\s+(\d{1,4})\s+(?:people|guests|pax|persons)\b/i,
-    /\b(\d{1,4})\s+(?:people|guests|pax|persons)\b/i,
+    /\bfor\s+(\d{1,4})\s+(?:people|guests|pax|persons|attendees|players)\b/i,
+    /\b(\d{1,4})\s+(?:people|guests|pax|persons|attendees|players)\b/i,
     /\bteam\s+of\s+(\d{1,4})\b/i,
     /\b(\d{1,4})\s+person\b/i,
+    /\bvenue\s+for\s+(\d{1,4})\b/i,
+    /\broom\s+for\s+(\d{1,4})\b/i,
+    /\bfor\s+(\d{1,4})\s*$/i,
   ];
   for (const pattern of patterns) {
     const match = query.match(pattern);
@@ -359,7 +362,7 @@ export function parseSpaceIntent(query: string): ParsedSpaceIntent {
   }
 
   const haystack = normalizeQuery(rawQuery);
-  const capacity = extractCapacity(rawQuery);
+  const groupSize = extractGroupSize(rawQuery);
   const location = extractLocation(rawQuery);
   const { dateText, timeText, startDate, endDate } = extractDateTime(rawQuery);
   const durationType = extractDurationType(haystack);
@@ -450,7 +453,7 @@ export function parseSpaceIntent(query: string): ParsedSpaceIntent {
   const signals =
     (uniqueTypes.length > 0 ? 1 : 0) +
     (location ? 1 : 0) +
-    (capacity ? 1 : 0) +
+    (groupSize ? 1 : 0) +
     (uniqueSports.length > 0 ? 1 : 0) +
     (uniqueSuitable.length > 0 ? 1 : 0);
 
@@ -464,7 +467,7 @@ export function parseSpaceIntent(query: string): ParsedSpaceIntent {
     rawQuery,
     inferredSpaceTypes: uniqueTypes,
     location,
-    capacity,
+    groupSize,
     dateText,
     timeText,
     durationType,

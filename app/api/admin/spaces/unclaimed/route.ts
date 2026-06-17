@@ -33,7 +33,7 @@ export async function GET(req: NextRequest) {
   const { data: spaces, error } = await admin
     .from("spaces")
     .select(
-      "id, title, city, suburb, space_type, status, created_at, property_id, crm_organisation_id, crm_contact_id"
+      "id, title, city, suburb, space_type, status, created_at, property_id, crm_organisation_id, crm_contact_id, min_group_size, max_group_size"
     )
     .eq("created_by_admin", true)
     .in("status", overviewStatuses)
