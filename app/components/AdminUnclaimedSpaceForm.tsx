@@ -280,7 +280,10 @@ export function AdminUnclaimedSpaceForm({
             onCreated?.(newId);
           }
         } else if (activeSpaceId) {
-          await adminApiFetch(`/api/admin/spaces/${activeSpaceId}/unclaimed`, {
+          const patchUrl = propertyId
+            ? `/api/admin/properties/${propertyId}/spaces/${activeSpaceId}`
+            : `/api/admin/spaces/${activeSpaceId}/unclaimed`;
+          await adminApiFetch(patchUrl, {
             method: "PATCH",
             body: JSON.stringify(
               status === "draft" ? { ...body, status: "draft" as const } : body

@@ -341,6 +341,37 @@ export async function fetchAdminCreatedListing(
   return { space: data, readOnly: row.status === "owner_claimed" };
 }
 
+export async function fetchAdminPropertySpace(
+  admin: SupabaseClient,
+  propertyId: string,
+  spaceId: string
+) {
+  const { data, error } = await admin
+    .from("spaces")
+    .select("*")
+    .eq("id", spaceId)
+    .maybeSingle();
+
+  if (error || !data) {
+    return { error: error?.message || "Space not found." };
+  }
+
+  const row = data as {
+    property_id: string | null;
+    status: string | null;
+  };
+
+  if (row.property_id !== propertyId) {
+    return { error: "This space does not belong to the selected property." };
+  }
+
+  const status = row.status || "";
+  const readOnly =
+    status === "owner_claimed" || status === "deleted";
+
+  return { space: data, readOnly };
+}
+
 export async function fetchAdminUnclaimedSpace(
   admin: SupabaseClient,
   spaceId: string

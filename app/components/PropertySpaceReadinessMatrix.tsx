@@ -23,6 +23,7 @@ import {
   type MatrixStatusValue,
 } from "@/lib/admin-space-matrix";
 import { adminSpacePublicViewHref } from "@/lib/admin-space-visibility";
+import { adminPropertySpaceEditHref } from "@/lib/admin-listing-routing";
 import type { PropertySpaceRow } from "@/lib/property-space-ops";
 import { formatSpaceTypeLabel } from "@/app/data/spaceFeatureConfig";
 
@@ -53,10 +54,6 @@ const BOOKABLE_OPTIONS = [
   { value: true, label: "Yes" },
   { value: false, label: "No" },
 ];
-
-function propertySpaceEditHref(propertyId: string, spaceId: string): string {
-  return `/admin/properties/${propertyId}/spaces/${spaceId}/edit`;
-}
 
 function ReadinessCell({
   complete,
@@ -236,7 +233,7 @@ function useMatrixRowActions(
     public_listing_mode: space.public_listing_mode,
   });
   const statusValue = matrixStatusSelectValue(matrixStatus);
-  const editHref = propertySpaceEditHref(propertyId, space.id);
+  const editHref = adminPropertySpaceEditHref(propertyId, space.id);
   const viewHref =
     adminSpacePublicViewHref({
       id: space.id,

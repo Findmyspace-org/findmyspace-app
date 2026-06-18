@@ -34,13 +34,14 @@ export function adminLiveSpaceEditHref(spaceId: string): string {
   return `/admin/listings?space=${encodeURIComponent(spaceId)}`;
 }
 
-const PROPERTY_FORM_EDIT_STATUSES = [
-  "draft",
-  "unclaimed",
-  "owner_claimed",
-] as const;
+export function adminPropertySpaceEditHref(
+  propertyId: string,
+  spaceId: string
+): string {
+  return `/admin/properties/${propertyId}/spaces/${spaceId}/edit`;
+}
 
-/** Single source of truth for admin Edit links across property hub, all spaces, and queues. */
+/** Single source of truth for admin Edit links across property hub, matrix, and queues. */
 export function adminSpaceEditHref(space: {
   id: string;
   status?: string | null;
@@ -50,13 +51,8 @@ export function adminSpaceEditHref(space: {
   const propertyId = space.property_id;
   const id = space.id;
 
-  if (
-    propertyId &&
-    PROPERTY_FORM_EDIT_STATUSES.includes(
-      status as (typeof PROPERTY_FORM_EDIT_STATUSES)[number]
-    )
-  ) {
-    return `/admin/properties/${propertyId}/spaces/${id}/edit`;
+  if (propertyId) {
+    return adminPropertySpaceEditHref(propertyId, id);
   }
 
   if (needsReviewWorkflow(status)) {

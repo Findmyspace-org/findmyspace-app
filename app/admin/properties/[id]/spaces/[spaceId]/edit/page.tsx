@@ -76,24 +76,16 @@ function EditPropertySpacePageContent() {
     setLoading(true);
     try {
       const [spaceResult, propertyResult] = await Promise.all([
-        adminApiFetch(`/api/admin/spaces/${spaceId}/unclaimed`),
+        adminApiFetch(`/api/admin/properties/${propertyId}/spaces/${spaceId}`),
         adminApiFetch(`/api/admin/properties/${propertyId}`),
       ]);
 
-      let spaceRow = spaceResult.space as SpaceRow;
+      const spaceRow = spaceResult.space as SpaceRow;
       if (spaceRow.property_id && spaceRow.property_id !== propertyId) {
         setMessage("This space does not belong to the selected property.");
         setSpace(null);
         setLoading(false);
         return;
-      }
-
-      if (!spaceRow.property_id) {
-        await adminApiFetch(`/api/admin/spaces/${spaceId}/unclaimed`, {
-          method: "PATCH",
-          body: JSON.stringify({ property_id: propertyId, status: "draft" }),
-        });
-        spaceRow = { ...spaceRow, property_id: propertyId };
       }
 
       setSpace(spaceRow);
