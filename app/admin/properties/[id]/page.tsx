@@ -14,7 +14,6 @@ import { AdminPropertySpaceBreadcrumb } from "@/app/components/AdminPropertySpac
 import { AdminPropertyForm } from "@/app/components/AdminPropertyForm";
 import { AdminPropertySummaryCards } from "@/app/components/AdminPropertySummaryCards";
 import { AdminPropertySpacesHub } from "@/app/components/AdminPropertySpacesHub";
-import { AdminPropertyOnboardingProgress } from "@/app/components/AdminPropertyOnboardingProgress";
 import {
   AdminPropertyGallery,
   type PropertyGalleryImage,
@@ -344,18 +343,15 @@ function AdminPropertyDetailContent({
           <>
             {onboardingProgress ? (
               <div className="mt-6">
-                <AdminPropertyOnboardingProgress progress={onboardingProgress} />
+                <AdminPropertySummaryCards
+                  summary={summary}
+                  health={health}
+                  healthFilter={healthFilter}
+                  onHealthFilterChange={setHealthFilter}
+                  progress={onboardingProgress}
+                />
               </div>
             ) : null}
-
-            <div className="mt-6">
-              <AdminPropertySummaryCards
-                summary={summary}
-                health={health}
-                healthFilter={healthFilter}
-                onHealthFilterChange={setHealthFilter}
-              />
-            </div>
 
             <div className="mt-6 grid gap-6 lg:grid-cols-2">
               <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
