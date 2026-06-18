@@ -44,6 +44,10 @@ export type PropertyReadinessDashboardProps = {
   matrixSpaces?: PropertySpaceRow[];
   onMatrixSpaceUpdated?: (spaceId: string, patch: Partial<PropertySpaceRow>) => void;
   onMatrixReload?: () => Promise<void>;
+  propertyId?: string;
+  matrixArchivedCount?: number;
+  matrixShowArchived?: boolean;
+  onMatrixToggleArchived?: () => void;
 };
 
 function StatStripItem({
@@ -107,6 +111,10 @@ export function PropertyReadinessDashboard({
   matrixSpaces,
   onMatrixSpaceUpdated,
   onMatrixReload,
+  propertyId,
+  matrixArchivedCount,
+  matrixShowArchived,
+  onMatrixToggleArchived,
 }: PropertyReadinessDashboardProps) {
   const [breakdownOpen, setBreakdownOpen] = useState(false);
 
@@ -231,14 +239,18 @@ export function PropertyReadinessDashboard({
       </p>
 
       <div className="mt-4 space-y-3 border-t border-gray-100 pt-4">
-        {variant === "admin" && matrixSpaces && onMatrixSpaceUpdated ? (
+        {variant === "admin" && matrixSpaces && onMatrixSpaceUpdated && propertyId ? (
           <div>
-            <SectionLabel>Space readiness matrix</SectionLabel>
+            <SectionLabel>Space management</SectionLabel>
             <div className="mt-2">
               <PropertySpaceReadinessMatrix
+                propertyId={propertyId}
                 spaces={matrixSpaces}
                 onSpaceUpdated={onMatrixSpaceUpdated}
                 onReload={onMatrixReload}
+                archivedCount={matrixArchivedCount}
+                showArchived={matrixShowArchived}
+                onToggleArchived={onMatrixToggleArchived}
               />
             </div>
           </div>

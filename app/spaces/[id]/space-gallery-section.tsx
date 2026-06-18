@@ -114,6 +114,7 @@ export default function SpaceGallerySection({
   }
 
   const main = imageUrls[0];
+  const hasMultiple = imageUrls.length > 1;
   // Show at most 2 secondaries — every other photo lives behind "View all photos".
   const secondaries = imageUrls.slice(1, 3);
   const hasSecondaries = secondaries.length > 0;
@@ -154,13 +155,15 @@ export default function SpaceGallerySection({
           className={`grid gap-2 ${
             hasSecondaries
               ? "md:h-[340px] md:grid-cols-[2fr_1fr] md:grid-rows-2"
-              : ""
+              : "md:h-[340px]"
           }`}
         >
-          {/* Main image — full width on mobile, spans both rows on desktop. */}
+          {/* Main image — full width on mobile; explicit height when solo (fill needs it). */}
           <div
-            className={`relative h-[280px] sm:h-[320px] md:h-auto ${
-              hasSecondaries ? "md:row-span-2" : ""
+            className={`relative ${
+              hasSecondaries
+                ? "h-[280px] sm:h-[320px] md:h-auto md:row-span-2"
+                : "h-[280px] sm:h-[320px] md:h-[340px]"
             }`}
           >
             <button
@@ -206,7 +209,7 @@ export default function SpaceGallerySection({
             {/* Mobile-only "View all photos" pill — bottom-right of the main
                 image. Hidden on desktop because the secondary tiles take
                 over there. */}
-            {imageUrls.length > 1 && (
+            {hasMultiple && (
               <button
                 type="button"
                 onClick={() => openAtIndex(0)}

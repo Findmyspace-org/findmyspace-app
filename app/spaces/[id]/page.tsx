@@ -29,6 +29,7 @@ import { UnclaimedListingPricingSection } from "@/app/components/UnclaimedListin
 import { UnclaimedListingSidebar } from "@/app/components/UnclaimedListingSidebar";
 import { getListingEnquiryCount } from "@/lib/listing-enquiry-count";
 import { PUBLIC_SPACE_SELECT } from "@/lib/public-space-columns";
+import { sortSpaceImages } from "@/lib/sort-space-images";
 import { formatGroupSizePublic } from "@/lib/group-size";
 import {
   formatSpaceDepositDetail,
@@ -102,7 +103,7 @@ async function getSpace(id: string) {
 
   const { data: images } = await supabase
     .from("space_images")
-    .select("image_url, sort_order")
+    .select("id, image_url, sort_order")
     .eq("space_id", id)
     .order("sort_order", { ascending: true });
 
@@ -124,7 +125,9 @@ async function getSpace(id: string) {
   return {
     space: {
       ...(rawSpace as Omit<Space, "image_urls" | "attributes">),
-      image_urls: (images || []).map((i: { image_url: string }) => i.image_url),
+      image_urls: sortSpaceImages(
+        (images || []) as { id: string; image_url: string; sort_order: number | null }[]
+      ).map((image) => image.image_url),
       attributes: grouped,
     },
     errorMessage: null,

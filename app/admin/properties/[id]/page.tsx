@@ -5,7 +5,7 @@ import { hasAdminUiAccess } from "@/lib/client-admin-access";
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
-import { ExternalLink, Pencil, Plus } from "lucide-react";
+import { ExternalLink, Pencil } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { AdminNav } from "@/app/components/AdminNav";
 import { adminApiFetch } from "@/lib/admin-api-client";
@@ -13,17 +13,17 @@ import { AdminPropertyInvitePanel } from "@/app/components/AdminPropertyInvitePa
 import { AdminPropertySpaceBreadcrumb } from "@/app/components/AdminPropertySpaceBreadcrumb";
 import { AdminPropertyForm } from "@/app/components/AdminPropertyForm";
 import { AdminPropertySummaryCards } from "@/app/components/AdminPropertySummaryCards";
-import { AdminPropertySpacesHub } from "@/app/components/AdminPropertySpacesHub";
 import {
   AdminPropertyGallery,
   type PropertyGalleryImage,
 } from "@/app/components/AdminPropertyGallery";
 import { computePropertyOnboardingProgress } from "@/lib/property-onboarding-progress";
-import type {
-  PropertySpacesHealth,
-  PropertySpacesSummary,
-  PropertySpaceHealthFilter,
-  PropertySpaceRow,
+import {
+  matchesPropertySpaceHealthFilter,
+  type PropertySpacesHealth,
+  type PropertySpacesSummary,
+  type PropertySpaceHealthFilter,
+  type PropertySpaceRow,
 } from "@/lib/property-space-ops";
 
 type PropertyDetail = {
@@ -84,6 +84,7 @@ function AdminPropertyDetailContent({
   });
   const [propertyImages, setPropertyImages] = useState<PropertyGalleryImage[]>([]);
   const [healthFilter, setHealthFilter] = useState<PropertySpaceHealthFilter>(null);
+  const [showArchivedMatrix, setShowArchivedMatrix] = useState(false);
   const [message, setMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
   const [galleryMessage, setGalleryMessage] = useState<string | null>(null);
@@ -173,10 +174,13 @@ function AdminPropertyDetailContent({
     void init();
   }, [load]);
 
-  const matrixSpaces = useMemo(
-    () => [...spaces, ...archivedSpaces],
-    [archivedSpaces, spaces]
-  );
+  const matrixSpaces = useMemo(() => {
+    const list = showArchivedMatrix
+      ? [...spaces, ...archivedSpaces]
+      : spaces;
+    if (!healthFilter) return list;
+    return list.filter((space) => matchesPropertySpaceHealthFilter(space, healthFilter));
+  }, [archivedSpaces, healthFilter, showArchivedMatrix, spaces]);
 
   const handleMatrixSpaceUpdated = useCallback(
     (spaceId: string, patch: Partial<PropertySpaceRow>) => {
@@ -320,13 +324,6 @@ function AdminPropertyDetailContent({
                 Edit property
               </button>
             ) : null}
-            <Link
-              href={`/admin/properties/${propertyId}/spaces/new`}
-              className="inline-flex items-center gap-2 rounded-lg bg-[#0f2740] px-4 py-2 text-sm font-semibold text-white"
-            >
-              <Plus className="h-4 w-4" />
-              Add space
-            </Link>
           </div>
         </div>
 
@@ -391,9 +388,15 @@ function AdminPropertyDetailContent({
                   healthFilter={healthFilter}
                   onHealthFilterChange={setHealthFilter}
                   progress={onboardingProgress}
+                  propertyId={propertyId}
                   matrixSpaces={matrixSpaces}
                   onMatrixSpaceUpdated={handleMatrixSpaceUpdated}
                   onMatrixReload={load}
+                  matrixArchivedCount={archivedSpaces.length}
+                  matrixShowArchived={showArchivedMatrix}
+                  onMatrixToggleArchived={() =>
+                    setShowArchivedMatrix((value) => !value)
+                  }
                 />
               </div>
             ) : null}
@@ -425,17 +428,6 @@ function AdminPropertyDetailContent({
                 propertyName={property.name}
                 ownerEmailDefault={property.owner_email}
                 hasOwner={hasOwner}
-              />
-            </div>
-
-            <div className="mt-6">
-              <AdminPropertySpacesHub
-                propertyId={propertyId}
-                spaces={spaces}
-                archivedSpaces={archivedSpaces}
-                healthFilter={healthFilter}
-                onReload={load}
-                onMessage={setMessage}
               />
             </div>
 

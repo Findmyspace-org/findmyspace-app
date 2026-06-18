@@ -22,6 +22,10 @@ type AdminPropertySummaryCardsProps = {
   matrixSpaces?: PropertySpaceRow[];
   onMatrixSpaceUpdated?: (spaceId: string, patch: Partial<PropertySpaceRow>) => void;
   onMatrixReload?: () => Promise<void>;
+  propertyId: string;
+  matrixArchivedCount?: number;
+  matrixShowArchived?: boolean;
+  onMatrixToggleArchived?: () => void;
 };
 
 export function AdminPropertySummaryCards(props: AdminPropertySummaryCardsProps) {
@@ -37,6 +41,10 @@ export function AdminPropertySummaryCards(props: AdminPropertySummaryCardsProps)
       matrixSpaces={props.matrixSpaces}
       onMatrixSpaceUpdated={props.onMatrixSpaceUpdated}
       onMatrixReload={props.onMatrixReload}
+      propertyId={props.propertyId}
+      matrixArchivedCount={props.matrixArchivedCount}
+      matrixShowArchived={props.matrixShowArchived}
+      onMatrixToggleArchived={props.onMatrixToggleArchived}
     />
   );
 }

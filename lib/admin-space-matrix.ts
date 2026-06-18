@@ -1,7 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   validateAdminPublicListingModeChange,
+  validateMinimumPublicContent,
 } from "@/lib/admin-public-listing-mode";
+import { isLiveListingStatus } from "@/lib/admin-listing-routing";
 import {
   PUBLIC_LISTING_MODE_OFF,
   normalizePublicListingMode,
@@ -20,10 +22,22 @@ import {
   spaceHasPricing,
 } from "@/lib/property-space-ops";
 
-export const MATRIX_STATUS_VALUES = ["hidden", "live", "archived"] as const;
+export const MATRIX_STATUS_VALUES = [
+  "hidden",
+  "live",
+  "paused",
+  "enquiry",
+  "archived",
+] as const;
 export type MatrixStatusValue = (typeof MATRIX_STATUS_VALUES)[number];
 
-export type MatrixStatusDisplay = MatrixStatusValue | "enquiry";
+export type MatrixStatusDisplay = MatrixStatusValue;
+
+export const PAUSED_STATUS_ERROR =
+  "Only active live listings can be paused. Approve the listing first.";
+
+export const ENQUIRY_READINESS_ERROR =
+  "Space cannot be set to enquiry until photos and location are complete.";
 
 export const LIVE_READINESS_ERROR =
   "Space cannot be made live until photos, pricing and location are complete.";
@@ -36,16 +50,25 @@ export function resolveMatrixStatus(space: {
   public_listing_mode: string | null;
 }): MatrixStatusDisplay {
   if (isArchivedSpace(space.status)) return "archived";
+  if ((space.status || "") === "paused") return "paused";
   const mode = normalizePublicListingMode(space.public_listing_mode);
   if (mode === "live") return "live";
   if (mode === "enquiry") return "enquiry";
   return "hidden";
 }
 
+export function matrixStatusSelectValue(
+  display: MatrixStatusDisplay
+): MatrixStatusValue {
+  return display;
+}
+
 export function matrixStatusLabel(status: MatrixStatusDisplay): string {
   switch (status) {
     case "live":
       return "Live";
+    case "paused":
+      return "Paused";
     case "enquiry":
       return "Enquiry";
     case "archived":
@@ -60,6 +83,8 @@ export function matrixStatusPillClass(status: MatrixStatusDisplay): string {
   switch (status) {
     case "live":
       return `${base} bg-green-100 text-green-800`;
+    case "paused":
+      return `${base} bg-amber-100 text-amber-900`;
     case "enquiry":
       return `${base} bg-amber-100 text-amber-900`;
     case "archived":
@@ -262,6 +287,78 @@ export async function applyAdminMatrixStatusChange(
       public_listing_mode: PUBLIC_LISTING_MODE_OFF,
       is_bookable: Boolean(next?.is_bookable),
       matrix_status: "hidden",
+    };
+  }
+
+  if (status === "enquiry") {
+    const content = await validateMinimumPublicContent(admin, spaceId);
+    if (!content.ok) {
+      return { ok: false, error: ENQUIRY_READINESS_ERROR };
+    }
+
+    const validation = await validateAdminPublicListingModeChange(
+      admin,
+      spaceId,
+      "enquiry"
+    );
+    if (!validation.ok) {
+      return { ok: false, error: validation.error, blockers: validation.blockers };
+    }
+
+    const { error: updateErr } = await admin
+      .from("spaces")
+      .update({ ...validation.patch, is_bookable: false })
+      .eq("id", spaceId);
+
+    if (updateErr) {
+      return { ok: false, error: updateErr.message };
+    }
+
+    const { data: updated } = await admin
+      .from("spaces")
+      .select("status, public_listing_mode, is_bookable")
+      .eq("id", spaceId)
+      .maybeSingle();
+
+    const next = updated as {
+      status: string | null;
+      public_listing_mode: string | null;
+      is_bookable: boolean | null;
+    };
+
+    return {
+      ok: true,
+      status: next?.status ?? validation.patch.status ?? row.status,
+      public_listing_mode: "enquiry",
+      is_bookable: false,
+      matrix_status: "enquiry",
+    };
+  }
+
+  if (status === "paused") {
+    if (!isLiveListingStatus(row.status) && row.status !== "paused") {
+      return { ok: false, error: PAUSED_STATUS_ERROR };
+    }
+
+    const { error: updateErr } = await admin
+      .from("spaces")
+      .update({
+        status: "paused",
+        public_listing_mode: PUBLIC_LISTING_MODE_OFF,
+        is_bookable: false,
+      })
+      .eq("id", spaceId);
+
+    if (updateErr) {
+      return { ok: false, error: updateErr.message };
+    }
+
+    return {
+      ok: true,
+      status: "paused",
+      public_listing_mode: PUBLIC_LISTING_MODE_OFF,
+      is_bookable: false,
+      matrix_status: "paused",
     };
   }
 

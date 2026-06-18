@@ -55,7 +55,10 @@ export async function PATCH(
     const status = body.status as string;
     if (!MATRIX_STATUS_VALUES.includes(status as MatrixStatusValue)) {
       return NextResponse.json(
-        { ok: false, error: "status must be hidden, live, or archived." },
+        {
+          ok: false,
+          error: "status must be hidden, live, paused, enquiry, or archived.",
+        },
         { status: 400 }
       );
     }
