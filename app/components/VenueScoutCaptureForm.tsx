@@ -383,7 +383,6 @@ export function VenueScoutCaptureForm({
           images={images}
           onImagesChange={setImages}
           readOnly={readOnly}
-          onMessage={setMessage}
           compact
         />
       </section>

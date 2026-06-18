@@ -24,5 +24,15 @@ export function formatAiKnowledgeError(err: unknown): string {
     return "AI Information storage bucket is missing: listing-ai-knowledge.";
   }
 
+  if (
+    /unable to extract text from pdf|DOMMatrix|pdfjs|pdf\.js|canvas/i.test(message)
+  ) {
+    return "Unable to extract text from PDF";
+  }
+
+  if (/unable to extract text from docx/i.test(message)) {
+    return "Unable to extract text from DOCX";
+  }
+
   return message;
 }

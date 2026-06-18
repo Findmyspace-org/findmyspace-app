@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { format } from "date-fns";
 import { FileUp, Loader2 } from "lucide-react";
 import MarkdownDescriptionEditor from "@/app/components/MarkdownDescriptionEditor";
+import { SectionInlineAlert } from "@/app/components/SectionInlineAlert";
 import { adminApiFetch } from "@/lib/admin-api-client";
 import { ownerApiFetch } from "@/lib/owner-api-client";
 import {
@@ -11,6 +12,7 @@ import {
   SPACE_AI_MAX_BYTES,
   type SpaceAiDocumentRow,
 } from "@/lib/space-ai-knowledge";
+import { useSectionFeedback } from "@/lib/use-section-feedback";
 
 type ApiMode = "admin" | "owner";
 
@@ -18,7 +20,6 @@ type SpaceAiInformationPanelProps = {
   spaceId?: string;
   apiMode: ApiMode;
   readOnly?: boolean;
-  onMessage?: (message: string | null) => void;
   embedded?: boolean;
 };
 
@@ -28,6 +29,23 @@ function aiKnowledgeSavePayload(text: string) {
 
 function logAiKnowledgeError(action: string, err: unknown) {
   console.error(`AI Information ${action} failed:`, err);
+}
+
+function aiKnowledgeUploadError(err: unknown): string {
+  if (err instanceof Error) {
+    const message = err.message.trim();
+    if (
+      /unable to extract text from pdf|DOMMatrix|pdfjs|pdf\.js|__next_error__/i.test(
+        message
+      )
+    ) {
+      return "Unable to read this PDF. Please try another PDF or upload a DOCX file.";
+    }
+    if (message && !message.includes("<!DOCTYPE")) {
+      return message;
+    }
+  }
+  return "Upload failed. Please try again.";
 }
 
 function aiKnowledgeUserError(err: unknown, fallback: string): string {
@@ -50,7 +68,6 @@ export function SpaceAiInformationPanel({
   spaceId,
   apiMode,
   readOnly = false,
-  onMessage,
   embedded = false,
 }: SpaceAiInformationPanelProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -62,6 +79,7 @@ export function SpaceAiInformationPanel({
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const { status, error, setSuccess, setFailure, clearForAction } = useSectionFeedback();
 
   const fetchJson = apiMode === "admin" ? adminApiFetch : ownerApiFetch;
   const maxMb = Math.floor(SPACE_AI_MAX_BYTES / (1024 * 1024));
@@ -82,7 +100,6 @@ export function SpaceAiInformationPanel({
   const loadDocument = useCallback(async () => {
     if (!spaceId) return;
     setLoading(true);
-    onMessage?.(null);
     try {
       const result = await fetchJson(aiDocumentsPath(spaceId, apiMode));
       const document =
@@ -93,29 +110,30 @@ export function SpaceAiInformationPanel({
           null);
       applyDocument(document);
     } catch (err) {
-      onMessage?.(
+      logAiKnowledgeError("load", err);
+      setFailure(
         err instanceof Error ? err.message : "Could not load AI Information."
       );
     } finally {
       setLoading(false);
     }
-  }, [apiMode, applyDocument, fetchJson, onMessage, spaceId]);
+  }, [apiMode, applyDocument, fetchJson, setFailure, spaceId]);
 
   const saveText = useCallback(async () => {
     if (readOnly) return;
     const trimmed = text.trim();
     if (!trimmed) {
-      onMessage?.("Enter AI Information before saving.");
+      setFailure("Enter AI Information before saving.");
       return;
     }
     if (!spaceId) {
       pendingFlushRef.current = true;
-      onMessage?.("Save the space first, then click Save AI Information.");
+      setFailure("Save the space first, then click Save AI Information.");
       return;
     }
 
     setSaving(true);
-    onMessage?.(null);
+    clearForAction();
     try {
       await fetchJson(aiDocumentsPath(spaceId, apiMode), {
         method: "PATCH",
@@ -124,10 +142,10 @@ export function SpaceAiInformationPanel({
       setFileName("Manual entry");
       setUpdatedAt(new Date().toISOString());
       pendingFlushRef.current = false;
-      onMessage?.("AI Information saved.");
+      setSuccess("AI Information saved.");
     } catch (err) {
       logAiKnowledgeError("save", err);
-      onMessage?.(
+      setFailure(
         aiKnowledgeUserError(
           err,
           "AI Information could not be saved. Please try again."
@@ -136,7 +154,16 @@ export function SpaceAiInformationPanel({
     } finally {
       setSaving(false);
     }
-  }, [apiMode, fetchJson, onMessage, readOnly, spaceId, text]);
+  }, [
+    apiMode,
+    clearForAction,
+    fetchJson,
+    readOnly,
+    setFailure,
+    setSuccess,
+    spaceId,
+    text,
+  ]);
 
   useEffect(() => {
     if (!spaceId) return;
@@ -148,7 +175,7 @@ export function SpaceAiInformationPanel({
         if (!trimmed) return;
 
         setSaving(true);
-        onMessage?.(null);
+        clearForAction();
         try {
           await fetchJson(aiDocumentsPath(spaceId, apiMode), {
             method: "PATCH",
@@ -156,10 +183,10 @@ export function SpaceAiInformationPanel({
           });
           setFileName("Manual entry");
           setUpdatedAt(new Date().toISOString());
-          onMessage?.("AI Information saved.");
+          setSuccess("AI Information saved.");
         } catch (err) {
           logAiKnowledgeError("auto-save", err);
-          onMessage?.(
+          setFailure(
             aiKnowledgeUserError(
               err,
               "AI Information could not be saved. Please try again."
@@ -173,7 +200,7 @@ export function SpaceAiInformationPanel({
 
       await loadDocument();
     })();
-  }, [apiMode, fetchJson, loadDocument, onMessage, spaceId]);
+  }, [apiMode, clearForAction, fetchJson, loadDocument, setFailure, setSuccess, spaceId]);
 
   async function handleUpload(fileList: FileList | null) {
     if (readOnly || !spaceId || !fileList?.length) return;
@@ -188,15 +215,15 @@ export function SpaceAiInformationPanel({
       ext === "docx";
 
     if (!mimeOk) {
-      onMessage?.("Invalid file type. Upload PDF or DOCX only.");
+      setFailure("Invalid file type. Upload PDF or DOCX only.");
       return;
     }
     if (file.size <= 0) {
-      onMessage?.("File is empty.");
+      setFailure("File is empty.");
       return;
     }
     if (file.size > SPACE_AI_MAX_BYTES) {
-      onMessage?.(`File is too large. Maximum size is ${maxMb} MB.`);
+      setFailure(`File is too large. Maximum size is ${maxMb} MB.`);
       return;
     }
 
@@ -210,7 +237,7 @@ export function SpaceAiInformationPanel({
     }
 
     setUploading(true);
-    onMessage?.(null);
+    clearForAction();
     try {
       const form = new FormData();
       form.append("file", file);
@@ -219,9 +246,10 @@ export function SpaceAiInformationPanel({
         body: form,
       });
       await loadDocument();
-      onMessage?.("Document uploaded and text extracted.");
+      setSuccess("Document uploaded and text extracted.");
     } catch (err) {
-      onMessage?.(err instanceof Error ? err.message : "Upload failed.");
+      logAiKnowledgeError("upload", err);
+      setFailure(aiKnowledgeUploadError(err));
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -287,46 +315,50 @@ export function SpaceAiInformationPanel({
         </div>
 
         {!readOnly ? (
-          <div className="flex flex-wrap items-center gap-3">
-            <button
-              type="button"
-              disabled={saving || loading || uploading}
-              onClick={() => void saveText()}
-              className="rounded-lg bg-[#0f2740] px-4 py-2 text-sm font-semibold text-white hover:opacity-95 disabled:opacity-60"
-            >
-              {saving ? "Saving…" : "Save AI Information"}
-            </button>
+          <>
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                disabled={saving || loading || uploading}
+                onClick={() => void saveText()}
+                className="rounded-lg bg-[#0f2740] px-4 py-2 text-sm font-semibold text-white hover:opacity-95 disabled:opacity-60"
+              >
+                {saving ? "Saving…" : "Save AI Information"}
+              </button>
 
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-              className="hidden"
-              disabled={!spaceId || uploading || saving}
-              onChange={(event) => void handleUpload(event.target.files)}
-            />
-            <button
-              type="button"
-              disabled={!spaceId || uploading || saving || loading}
-              onClick={() => fileInputRef.current?.click()}
-              className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {uploading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                className="hidden"
+                disabled={!spaceId || uploading || saving}
+                onChange={(event) => void handleUpload(event.target.files)}
+              />
+              <button
+                type="button"
+                disabled={!spaceId || uploading || saving || loading}
+                onClick={() => fileInputRef.current?.click()}
+                className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {uploading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <FileUp className="h-4 w-4" />
+                )}
+                {uploading ? "Uploading…" : "Upload document"}
+              </button>
+
+              {!spaceId ? (
+                <p className="text-xs text-gray-500">
+                  Save the space first to upload a document.
+                </p>
               ) : (
-                <FileUp className="h-4 w-4" />
+                <p className="text-xs text-gray-500">PDF or DOCX, up to {maxMb} MB.</p>
               )}
-              {uploading ? "Uploading…" : "Upload document"}
-            </button>
+            </div>
 
-            {!spaceId ? (
-              <p className="text-xs text-gray-500">
-                Save the space first to upload a document.
-              </p>
-            ) : (
-              <p className="text-xs text-gray-500">PDF or DOCX, up to {maxMb} MB.</p>
-            )}
-          </div>
+            <SectionInlineAlert status={status} error={error} />
+          </>
         ) : null}
       </div>
     </section>

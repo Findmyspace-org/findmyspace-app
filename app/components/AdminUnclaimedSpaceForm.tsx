@@ -14,8 +14,10 @@ import {
   type AdminSpaceImage,
 } from "@/app/components/AdminSpacePhotosPanel";
 import { SpaceAiInformationPanel } from "@/app/components/SpaceAiInformationPanel";
+import { SectionInlineAlert } from "@/app/components/SectionInlineAlert";
 import type { SpaceCrmLinkSummary } from "@/lib/space-crm-link";
 import { sortSpaceImages } from "@/lib/sort-space-images";
+import { useSectionFeedback } from "@/lib/use-section-feedback";
 import {
   GroupSizeFields,
   groupSizePayloadFromForm,
@@ -140,7 +142,13 @@ export function AdminUnclaimedSpaceForm({
     sortSpaceImages(initialImages)
   );
   const [status, setStatus] = useState(initialStatus || "draft");
-  const [message, setMessage] = useState<string | null>(null);
+  const {
+    status: saveStatus,
+    error: saveError,
+    setSuccess: setSaveSuccess,
+    setFailure: setSaveFailure,
+    clearForAction: clearSaveFeedback,
+  } = useSectionFeedback();
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [crmLink, setCrmLink] = useState<CrmLinkState>({
@@ -179,7 +187,7 @@ export function AdminUnclaimedSpaceForm({
     async (stayOnPage: boolean) => {
       if (readOnly) return;
       setSaving(true);
-      setMessage(null);
+      clearSaveFeedback();
       try {
         const groupSizeErr = validateGroupSizeFormValues(
           state.spaceType,
@@ -187,7 +195,7 @@ export function AdminUnclaimedSpaceForm({
           state.maxGroupSize
         );
         if (groupSizeErr) {
-          setMessage(groupSizeErr);
+          setSaveFailure(groupSizeErr);
           setSaving(false);
           return;
         }
@@ -227,12 +235,12 @@ export function AdminUnclaimedSpaceForm({
               onSavedAndExit?.();
             }
           } else if (stayOnPage) {
-            setMessage(
+            setSaveSuccess(
               "Draft saved. You can upload photos and AI Information below."
             );
             onCreated?.(newId);
           } else {
-            setMessage("Draft saved. You can upload photos below.");
+            setSaveSuccess("Draft saved. You can upload photos below.");
             onCreated?.(newId);
           }
         } else if (activeSpaceId) {
@@ -243,7 +251,7 @@ export function AdminUnclaimedSpaceForm({
             ),
           });
           if (stayOnPage) {
-            setMessage("Saved.");
+            setSaveSuccess("Saved successfully.");
           } else if (propertyId) {
             router.push(`/admin/properties/${propertyId}?saved=1`);
             onSavedAndExit?.();
@@ -252,7 +260,8 @@ export function AdminUnclaimedSpaceForm({
           }
         }
       } catch (err) {
-        setMessage(err instanceof Error ? err.message : "Save failed.");
+        console.error("Space save failed:", err);
+        setSaveFailure(err instanceof Error ? err.message : "Save failed.");
       } finally {
         setSaving(false);
       }
@@ -266,6 +275,9 @@ export function AdminUnclaimedSpaceForm({
       propertyId,
       readOnly,
       router,
+      clearSaveFeedback,
+      setSaveFailure,
+      setSaveSuccess,
       state,
       status,
     ]
@@ -274,7 +286,7 @@ export function AdminUnclaimedSpaceForm({
   const publish = useCallback(async () => {
     if (readOnly) return;
     if (!activeSpaceId) {
-      setMessage("Save as draft first, then add photos and publish.");
+      setSaveFailure("Save as draft first, then add photos and publish.");
       return;
     }
     if (
@@ -283,13 +295,13 @@ export function AdminUnclaimedSpaceForm({
       !Number.isFinite(state.latitude) ||
       !Number.isFinite(state.longitude)
     ) {
-      setMessage(
+      setSaveFailure(
         "This listing does not have a map pin yet. Find the address on the map or place the pin manually before publishing."
       );
       return;
     }
     setPublishing(true);
-    setMessage(null);
+    clearSaveFeedback();
     try {
       await adminApiFetch(`/api/admin/spaces/${activeSpaceId}/unclaimed`, {
         method: "PATCH",
@@ -299,13 +311,14 @@ export function AdminUnclaimedSpaceForm({
         method: "POST",
       });
       setStatus("unclaimed");
-      setMessage("Published as unclaimed. It is now visible publicly (not bookable).");
+      setSaveSuccess("Published as unclaimed. It is now visible publicly (not bookable).");
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : "Publish failed.");
+      console.error("Publish failed:", err);
+      setSaveFailure(err instanceof Error ? err.message : "Publish failed.");
     } finally {
       setPublishing(false);
     }
-  }, [activeSpaceId, crmLink, readOnly, state]);
+  }, [activeSpaceId, clearSaveFeedback, crmLink, readOnly, setSaveFailure, setSaveSuccess, state]);
 
   const statusBadge =
     status === "unclaimed"
@@ -414,9 +427,6 @@ export function AdminUnclaimedSpaceForm({
             disabled={readOnly}
             onMinChange={(value) => setState((s) => ({ ...s, minGroupSize: value }))}
             onMaxChange={(value) => setState((s) => ({ ...s, maxGroupSize: value }))}
-            onValidationError={(err) => {
-              if (err) setMessage(err);
-            }}
           />
         </fieldset>
       </section>
@@ -475,7 +485,6 @@ export function AdminUnclaimedSpaceForm({
         spaceId={activeSpaceId ?? undefined}
         apiMode="admin"
         readOnly={readOnly}
-        onMessage={setMessage}
       />
 
       <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
@@ -485,23 +494,8 @@ export function AdminUnclaimedSpaceForm({
           images={images}
           onImagesChange={setImages}
           readOnly={readOnly}
-          onMessage={setMessage}
         />
       </section>
-
-      {message ? (
-        <p
-          className={`text-sm ${
-            /failed|denied|too large|invalid|error|required|not found|could not/i.test(
-              message
-            ) && !message.includes("uploaded")
-              ? "text-red-600"
-              : "text-green-700"
-          }`}
-        >
-          {message}
-        </p>
-      ) : null}
 
       {!readOnly ? (
         <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
@@ -569,6 +563,7 @@ export function AdminUnclaimedSpaceForm({
               </button>
             ) : null}
           </div>
+          <SectionInlineAlert status={saveStatus} error={saveError} className="mt-3" />
           <div className="flex flex-wrap items-center gap-4 border-t border-gray-100 pt-3 text-sm">
             <Link
               href={resolvedBackHref}

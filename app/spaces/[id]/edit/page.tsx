@@ -19,6 +19,8 @@ import {
 } from "@/app/components/GroupSizeFields";
 import MarkdownDescriptionEditor from "@/app/components/MarkdownDescriptionEditor";
 import { SpaceAiInformationPanel } from "@/app/components/SpaceAiInformationPanel";
+import { SectionInlineAlert } from "@/app/components/SectionInlineAlert";
+import { useSectionFeedback } from "@/lib/use-section-feedback";
 import {
   DEFAULT_LISTING_BOOKING_REQUIREMENTS,
   emptyQuestionnaireDataForCategory,
@@ -144,6 +146,19 @@ export default function EditListingPage({ params }: PageProps) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
+  const {
+    status: saveStatus,
+    error: saveError,
+    setFailure: setSaveFailure,
+    clearForAction: clearSaveFeedback,
+  } = useSectionFeedback();
+  const {
+    status: photoStatus,
+    error: photoError,
+    setSuccess: setPhotoSuccess,
+    setFailure: setPhotoFailure,
+    clearForAction: clearPhotoFeedback,
+  } = useSectionFeedback();
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -442,7 +457,7 @@ export default function EditListingPage({ params }: PageProps) {
   }
 
   async function handleDeleteImage(image: SpaceImageRow) {
-    setMessage("");
+    clearPhotoFeedback();
     setDeletingImageId(image.id);
 
     if (image.file_path) {
@@ -451,7 +466,8 @@ export default function EditListingPage({ params }: PageProps) {
         .remove([image.file_path]);
 
       if (storageError) {
-        setMessage(storageError.message);
+        console.error("Image delete storage failed:", storageError);
+        setPhotoFailure("Could not delete image. Please try again.");
         setDeletingImageId(null);
         return;
       }
@@ -463,7 +479,8 @@ export default function EditListingPage({ params }: PageProps) {
       .eq("id", image.id);
 
     if (dbError) {
-      setMessage(dbError.message);
+      console.error("Image delete failed:", dbError);
+      setPhotoFailure("Could not delete image. Please try again.");
       setDeletingImageId(null);
       return;
     }
@@ -476,20 +493,21 @@ export default function EditListingPage({ params }: PageProps) {
 
     setImages(resequenced);
     setDeletingImageId(null);
+    setPhotoSuccess("Photo removed.");
 
     await persistImageOrder(resequenced);
   }
 
   async function uploadImageFiles(files: File[]) {
-    setMessage("");
+    clearPhotoFeedback();
 
     if (!listingId) {
-      setMessage("Listing not loaded yet.");
+      setPhotoFailure("Listing not loaded yet.");
       return;
     }
 
     if (files.length === 0) {
-      setMessage("Please select images first.");
+      setPhotoFailure("Please select images first.");
       return;
     }
 
@@ -500,7 +518,7 @@ export default function EditListingPage({ params }: PageProps) {
     } = await supabase.auth.getUser();
 
     if (!user) {
-      setMessage("Please log in first.");
+      setPhotoFailure("Please log in first.");
       setUploadingImages(false);
       return;
     }
@@ -525,7 +543,8 @@ export default function EditListingPage({ params }: PageProps) {
         });
 
       if (uploadError) {
-        setMessage(`Image upload failed: ${uploadError.message}`);
+        console.error("Image upload failed:", uploadError);
+        setPhotoFailure("Could not upload photos. Please try again.");
         setUploadingImages(false);
         return;
       }
@@ -548,7 +567,8 @@ export default function EditListingPage({ params }: PageProps) {
       .select("id, image_url, file_path, sort_order");
 
     if (imageInsertError) {
-      setMessage(`Saving images failed: ${imageInsertError.message}`);
+      console.error("Saving images failed:", imageInsertError);
+      setPhotoFailure("Could not save photos. Please try again.");
       setUploadingImages(false);
       return;
     }
@@ -559,7 +579,7 @@ export default function EditListingPage({ params }: PageProps) {
     ]);
     setNewImageFiles([]);
     setUploadingImages(false);
-    setMessage("Images uploaded successfully.");
+    setPhotoSuccess("Photos uploaded.");
   }
 
   async function handleUploadOwnershipProof() {
@@ -694,7 +714,7 @@ export default function EditListingPage({ params }: PageProps) {
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
-    setMessage("");
+    clearSaveFeedback();
 
     let parsedDepositMonths = 0;
     let parsedMonthlyPaymentDay = 1;
@@ -702,13 +722,13 @@ export default function EditListingPage({ params }: PageProps) {
 
     if (bookingUnit === "hour") {
       if (!pricePerHour || Number(pricePerHour) <= 0) {
-        setMessage("Please enter a valid hourly price.");
+        setSaveFailure("Please enter a valid hourly price.");
         setSaving(false);
         return;
       }
 
       if (Number(minBookingHours || 0) < 1) {
-        setMessage("Minimum booking hours must be at least 1.");
+        setSaveFailure("Minimum booking hours must be at least 1.");
         setSaving(false);
         return;
       }
@@ -716,13 +736,13 @@ export default function EditListingPage({ params }: PageProps) {
 
     if (bookingUnit === "day") {
       if (!pricePerDay || Number(pricePerDay) <= 0) {
-        setMessage("Please enter a valid daily price.");
+        setSaveFailure("Please enter a valid daily price.");
         setSaving(false);
         return;
       }
 
       if (Number(minBookingDays || 0) < 1) {
-        setMessage("Minimum booking days must be at least 1.");
+        setSaveFailure("Minimum booking days must be at least 1.");
         setSaving(false);
         return;
       }
@@ -740,32 +760,32 @@ export default function EditListingPage({ params }: PageProps) {
       parsedMonthlyPaymentDay = Number(monthlyPaymentDay || "1");
 
       if (!["none", "one_month", "two_months"].includes(finalDepositType)) {
-        setMessage("Please select a valid deposit option.");
+        setSaveFailure("Please select a valid deposit option.");
         setSaving(false);
         return;
       }
 
       if (parsedMonthlyPaymentDay < 1 || parsedMonthlyPaymentDay > 28) {
-        setMessage("Monthly payment day must be between 1 and 28.");
+        setSaveFailure("Monthly payment day must be between 1 and 28.");
         setSaving(false);
         return;
       }
 
       if (!pricePerMonth || Number(pricePerMonth) <= 0) {
-        setMessage("Please enter a valid monthly price.");
+        setSaveFailure("Please enter a valid monthly price.");
         setSaving(false);
         return;
       }
 
       if (Number(minBookingMonths || 0) < 1) {
-        setMessage("Minimum booking months must be at least 1.");
+        setSaveFailure("Minimum booking months must be at least 1.");
         setSaving(false);
         return;
       }
     }
 
     if (isOwnerListingLockedForEdit(status)) {
-      setMessage(
+      setSaveFailure(
         "This listing cannot be edited while it is under review. Open the completion checklist for next steps."
       );
       setSaving(false);
@@ -773,14 +793,14 @@ export default function EditListingPage({ params }: PageProps) {
     }
 
     if (!canOwnerEditListing(status)) {
-      setMessage("You cannot edit this listing in its current status.");
+      setSaveFailure("You cannot edit this listing in its current status.");
       setSaving(false);
       return;
     }
 
     const groupSizeErr = validateGroupSizeFormValues(spaceType, minGroupSize, maxGroupSize);
     if (groupSizeErr) {
-      setMessage(groupSizeErr);
+      setSaveFailure(groupSizeErr);
       setSaving(false);
       return;
     }
@@ -822,7 +842,8 @@ export default function EditListingPage({ params }: PageProps) {
       .eq("id", listingId);
 
     if (error) {
-      setMessage(error.message);
+      console.error("Listing save failed:", error);
+      setSaveFailure("Could not save changes. Please try again.");
       setSaving(false);
       return;
     }
@@ -833,7 +854,8 @@ export default function EditListingPage({ params }: PageProps) {
       .eq("space_id", listingId);
 
     if (deleteAttributesError) {
-      setMessage(deleteAttributesError.message);
+      console.error("Listing save failed:", deleteAttributesError);
+      setSaveFailure("Could not save changes. Please try again.");
       setSaving(false);
       return;
     }
@@ -854,7 +876,8 @@ export default function EditListingPage({ params }: PageProps) {
         .insert(attributeRows);
 
       if (insertAttributesError) {
-        setMessage(insertAttributesError.message);
+        console.error("Listing save failed:", insertAttributesError);
+        setSaveFailure("Could not save changes. Please try again.");
         setSaving(false);
         return;
       }
@@ -867,11 +890,8 @@ export default function EditListingPage({ params }: PageProps) {
       requirements: bookingRequirements,
     });
     if (intelSave.questionnaireError || intelSave.requirementsError) {
-      setMessage(
-        intelSave.questionnaireError ||
-          intelSave.requirementsError ||
-          "Could not save booking quality details."
-      );
+      console.error("Booking quality save failed:", intelSave);
+      setSaveFailure("Could not save booking quality details. Please try again.");
       setSaving(false);
       return;
     }
@@ -1277,7 +1297,6 @@ export default function EditListingPage({ params }: PageProps) {
                 spaceId={listingId || undefined}
                 apiMode="owner"
                 readOnly={editingLocked}
-                onMessage={(msg) => setMessage(msg ?? "")}
               />
 
               <section
@@ -1470,6 +1489,8 @@ export default function EditListingPage({ params }: PageProps) {
                 uploadButtonLabel="Upload selected images"
               />
 
+              <SectionInlineAlert status={photoStatus} error={photoError} />
+
               <SpaceCategoryFields
                 spaceType={spaceType}
                 attributes={attributes}
@@ -1483,6 +1504,7 @@ export default function EditListingPage({ params }: PageProps) {
               >
                 {saving ? "Saving..." : "Save changes"}
               </button>
+              <SectionInlineAlert status={saveStatus} error={saveError} />
               </fieldset>
             </form>
           )}

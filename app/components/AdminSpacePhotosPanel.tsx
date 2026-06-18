@@ -7,6 +7,8 @@ import { adminApiFetch } from "@/lib/admin-api-client";
 import { ADMIN_SPACE_IMAGE_MAX_BYTES } from "@/lib/admin-space-image-upload";
 import { normalizeSpaceImages, sortSpaceImages } from "@/lib/sort-space-images";
 import { PhotoDropZone } from "@/app/components/PhotoDropZone";
+import { SectionInlineAlert } from "@/app/components/SectionInlineAlert";
+import { sanitizeSectionMessage, useSectionFeedback } from "@/lib/use-section-feedback";
 
 export type AdminSpaceImage = {
   id: string;
@@ -19,7 +21,6 @@ type AdminSpacePhotosPanelProps = {
   images: AdminSpaceImage[];
   onImagesChange: (images: AdminSpaceImage[]) => void;
   readOnly?: boolean;
-  onMessage?: (message: string | null) => void;
   compact?: boolean;
 };
 
@@ -28,7 +29,6 @@ export function AdminSpacePhotosPanel({
   images,
   onImagesChange,
   readOnly = false,
-  onMessage,
   compact = false,
 }: AdminSpacePhotosPanelProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -44,6 +44,7 @@ export function AdminSpacePhotosPanel({
   const [dropMessageTone, setDropMessageTone] = useState<
     "default" | "error" | "success"
   >("default");
+  const { status, error, setSuccess, setFailure, clearForAction } = useSectionFeedback();
 
   const sortedImages = useMemo(() => sortSpaceImages(images), [images]);
 
@@ -74,11 +75,13 @@ export function AdminSpacePhotosPanel({
     next.splice(target, 0, item);
 
     setReordering(true);
-    onMessage?.(null);
+    clearForAction();
     try {
       await persistImageOrder(next);
+      setSuccess("Photo order updated.");
     } catch (err) {
-      onMessage?.(err instanceof Error ? err.message : "Could not reorder photos.");
+      console.error("Photo reorder failed:", err);
+      setFailure(err instanceof Error ? err.message : "Could not reorder photos.");
     } finally {
       setReordering(false);
     }
@@ -96,16 +99,16 @@ export function AdminSpacePhotosPanel({
       const ext = (file.name.split(".").pop() || "").toLowerCase();
       if (!allowed.has(file.type) && !allowedExt.has(ext)) {
         const msg = `Invalid file type "${file.name}". Use JPG, PNG, or WebP only.`;
-        onMessage?.(msg);
         setDropMessage(msg);
         setDropMessageTone("error");
+        setFailure(msg);
         return;
       }
       if (file.size > ADMIN_SPACE_IMAGE_MAX_BYTES) {
         const msg = `"${file.name}" is too large. Maximum size is ${maxMb} MB per image.`;
-        onMessage?.(msg);
         setDropMessage(msg);
         setDropMessageTone("error");
+        setFailure(msg);
         return;
       }
     }
@@ -113,7 +116,7 @@ export function AdminSpacePhotosPanel({
     setUploading(true);
     setDropMessage(null);
     setDropMessageTone("default");
-    onMessage?.(null);
+    clearForAction();
     const added: AdminSpaceImage[] = [];
     const failed: string[] = [];
 
@@ -134,8 +137,11 @@ export function AdminSpacePhotosPanel({
           failed.push(`${f.name}: ${f.error}`);
         }
       } catch (err) {
+        console.error("Photo upload failed:", err);
         failed.push(
-          `${file.name}: ${err instanceof Error ? err.message : "Upload failed."}`
+          `${file.name}: ${sanitizeSectionMessage(
+            err instanceof Error ? err.message : "Upload failed."
+          )}`
         );
       }
     }
@@ -145,20 +151,19 @@ export function AdminSpacePhotosPanel({
     }
 
     if (failed.length === 0) {
-      const successMsg = `${added.length} photo(s) uploaded.`;
-      onMessage?.(successMsg);
-      setDropMessage(successMsg);
-      setDropMessageTone("success");
+      setSuccess("Photos uploaded.");
+      setDropMessage(null);
+      setDropMessageTone("default");
     } else if (added.length > 0) {
-      const partialMsg = `${added.length} uploaded, ${failed.length} failed: ${failed.join("; ")}`;
-      onMessage?.(partialMsg);
+      const partialMsg = `${added.length} uploaded, ${failed.length} failed. ${failed.join("; ")}`;
       setDropMessage(partialMsg);
       setDropMessageTone("error");
+      setFailure(partialMsg);
     } else {
-      const failMsg = `Upload failed: ${failed.join("; ")}`;
-      onMessage?.(failMsg);
+      const failMsg = `Upload failed. ${failed.join("; ")}`;
       setDropMessage(failMsg);
       setDropMessageTone("error");
+      setFailure(failMsg);
     }
 
     setUploading(false);
@@ -168,7 +173,7 @@ export function AdminSpacePhotosPanel({
   async function removeImage(imageId: string) {
     if (readOnly || !spaceId) return;
     setDeletingId(imageId);
-    onMessage?.(null);
+    clearForAction();
     try {
       await adminApiFetch(`/api/admin/spaces/${spaceId}/images`, {
         method: "DELETE",
@@ -181,9 +186,10 @@ export function AdminSpacePhotosPanel({
         onImagesChange([]);
       }
       setConfirmDeleteId(null);
-      onMessage?.("Photo removed.");
+      setSuccess("Photo removed.");
     } catch (err) {
-      onMessage?.(err instanceof Error ? err.message : "Could not remove image.");
+      console.error("Photo delete failed:", err);
+      setFailure(err instanceof Error ? err.message : "Could not remove image.");
     } finally {
       setDeletingId(null);
     }
@@ -287,20 +293,23 @@ export function AdminSpacePhotosPanel({
         </div>
       ) : null}
       {!readOnly ? (
-        <PhotoDropZone
-          className="mt-4"
-          disabled={!spaceId || reordering}
-          uploading={uploading}
-          uploadProgress={uploadProgress}
-          message={
-            !spaceId
-              ? "Save the space first to upload photos."
-              : dropMessage
-          }
-          messageTone={!spaceId ? "default" : dropMessageTone}
-          inputRef={fileInputRef}
-          onFiles={(files) => void uploadImages(files)}
-        />
+        <>
+          <PhotoDropZone
+            className="mt-4"
+            disabled={!spaceId || reordering}
+            uploading={uploading}
+            uploadProgress={uploadProgress}
+            message={
+              !spaceId
+                ? "Save the space first to upload photos."
+                : dropMessage
+            }
+            messageTone={!spaceId ? "default" : dropMessageTone}
+            inputRef={fileInputRef}
+            onFiles={(files) => void uploadImages(files)}
+          />
+          <SectionInlineAlert status={status} error={error} className="mt-3" />
+        </>
       ) : null}
     </div>
   );
