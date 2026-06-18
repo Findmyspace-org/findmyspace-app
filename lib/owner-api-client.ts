@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { parseApiFetchError } from "@/lib/api-fetch-errors";
 
 export async function ownerApiFetch(path: string, init?: RequestInit) {
   const {
@@ -16,9 +17,27 @@ export async function ownerApiFetch(path: string, init?: RequestInit) {
     },
   });
 
-  const json = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    throw new Error(json.error || res.statusText || "Request failed.");
+  const raw = await res.text();
+  let json: Record<string, unknown> = {};
+  if (raw) {
+    try {
+      json = JSON.parse(raw) as Record<string, unknown>;
+    } catch {
+      if (!res.ok) {
+        throw new Error(parseApiFetchError(res, raw, json));
+      }
+    }
   }
+
+  if (!res.ok) {
+    throw new Error(parseApiFetchError(res, raw, json));
+  }
+
+  if (json.ok === false) {
+    throw new Error(
+      (typeof json.error === "string" && json.error) || "Request failed."
+    );
+  }
+
   return json;
 }

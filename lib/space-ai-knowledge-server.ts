@@ -1,5 +1,4 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { extractTextFromAiDocument } from "@/lib/space-ai-document-extract";
 import {
   chunkAiKnowledgeText,
   hasAiKnowledgeContent,
@@ -8,6 +7,10 @@ import {
   SPACE_AI_MAX_BYTES,
   type SpaceAiDocumentRow,
 } from "@/lib/space-ai-knowledge";
+import {
+  formatAiKnowledgeError,
+  textByteLength,
+} from "@/lib/space-ai-knowledge-errors";
 
 async function insertAiKnowledgeChunks(
   admin: SupabaseClient,
@@ -27,7 +30,7 @@ async function insertAiKnowledgeChunks(
     }))
   );
 
-  if (chunkErr) throw new Error(chunkErr.message);
+  if (chunkErr) throw new Error(formatAiKnowledgeError(chunkErr));
   return chunks.length;
 }
 
@@ -35,26 +38,36 @@ export async function deleteAllAiKnowledgeForSpace(
   admin: SupabaseClient,
   spaceId: string
 ): Promise<void> {
-  const docs = await listAiKnowledgeDocumentsForSpace(admin, spaceId);
+  let docs: SpaceAiDocumentRow[] = [];
+  try {
+    docs = await listAiKnowledgeDocumentsForSpace(admin, spaceId);
+  } catch (err) {
+    throw new Error(formatAiKnowledgeError(err));
+  }
 
   const { error: chunkErr } = await admin
     .from("space_ai_document_chunks")
     .delete()
     .eq("space_id", spaceId);
-  if (chunkErr) throw new Error(chunkErr.message);
+  if (chunkErr) throw new Error(formatAiKnowledgeError(chunkErr));
 
   const { error: docErr } = await admin
     .from("space_ai_documents")
     .delete()
     .eq("space_id", spaceId);
-  if (docErr) throw new Error(docErr.message);
+  if (docErr) throw new Error(formatAiKnowledgeError(docErr));
 
   const storagePaths = docs
     .map((doc) => doc.file_path)
     .filter((path) => path && !path.startsWith("manual/"));
 
   if (storagePaths.length > 0) {
-    await admin.storage.from(SPACE_AI_KNOWLEDGE_BUCKET).remove(storagePaths);
+    const { error: storageErr } = await admin.storage
+      .from(SPACE_AI_KNOWLEDGE_BUCKET)
+      .remove(storagePaths);
+    if (storageErr) {
+      throw new Error(formatAiKnowledgeError(storageErr));
+    }
   }
 }
 
@@ -86,7 +99,7 @@ export async function saveAiKnowledgeText(params: {
       file_name: "Manual entry",
       file_path: `manual/${params.spaceId}`,
       mime_type: "text/plain",
-      file_size: Buffer.byteLength(trimmed, "utf8"),
+      file_size: textByteLength(trimmed),
       extracted_text: trimmed,
       uploaded_by: params.uploadedBy,
     })
@@ -94,18 +107,22 @@ export async function saveAiKnowledgeText(params: {
     .single();
 
   if (docErr || !docRow) {
-    throw new Error(docErr?.message || "Could not save AI Information.");
+    throw new Error(formatAiKnowledgeError(docErr || "Could not save AI Information."));
   }
 
   const documentId = (docRow as { id: string }).id;
-  const chunkCount = await insertAiKnowledgeChunks(
-    params.admin,
-    documentId,
-    params.spaceId,
-    trimmed
-  );
-
-  return { documentId, chunkCount };
+  try {
+    const chunkCount = await insertAiKnowledgeChunks(
+      params.admin,
+      documentId,
+      params.spaceId,
+      trimmed
+    );
+    return { documentId, chunkCount };
+  } catch (err) {
+    await params.admin.from("space_ai_documents").delete().eq("id", documentId);
+    throw err;
+  }
 }
 
 export function validateAiKnowledgeUploadFile(file: File): string | null {
@@ -139,6 +156,7 @@ export async function storeAiKnowledgeDocument(params: {
   await deleteAllAiKnowledgeForSpace(params.admin, params.spaceId);
 
   const buffer = Buffer.from(await params.file.arrayBuffer());
+  const { extractTextFromAiDocument } = await import("@/lib/space-ai-document-extract");
   const extractedText = await extractTextFromAiDocument(
     buffer,
     params.file.type,
@@ -186,7 +204,7 @@ export async function storeAiKnowledgeDocument(params: {
 
   if (docErr || !docRow) {
     await params.admin.storage.from(SPACE_AI_KNOWLEDGE_BUCKET).remove([filePath]);
-    throw new Error(docErr?.message || "Could not save document record.");
+    throw new Error(formatAiKnowledgeError(docErr || "Could not save document record."));
   }
 
   const documentId = (docRow as { id: string }).id;
@@ -216,7 +234,7 @@ export async function loadAiKnowledgeChunksForSpace(
     .order("document_id", { ascending: true })
     .order("chunk_index", { ascending: true });
 
-  if (error) throw new Error(error.message);
+  if (error) throw new Error(formatAiKnowledgeError(error));
   return (data || []) as import("@/lib/space-ai-knowledge").SpaceAiDocumentChunkRow[];
 }
 
@@ -232,6 +250,6 @@ export async function listAiKnowledgeDocumentsForSpace(
     .eq("space_id", spaceId)
     .order("created_at", { ascending: false });
 
-  if (error) throw new Error(error.message);
+  if (error) throw new Error(formatAiKnowledgeError(error));
   return (data || []) as import("@/lib/space-ai-knowledge").SpaceAiDocumentRow[];
 }

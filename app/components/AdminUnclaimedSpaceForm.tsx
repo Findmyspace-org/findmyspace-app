@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft } from "lucide-react";
 import SpaceCategoryFields from "@/app/components/SpaceCategoryFields";
@@ -133,6 +134,7 @@ export function AdminUnclaimedSpaceForm({
   onCreated,
   onSavedAndExit,
 }: AdminUnclaimedSpaceFormProps) {
+  const router = useRouter();
   const [state, setState] = useState<FormState>(() => formStateFromInitial(initial));
   const [images, setImages] = useState<AdminSpaceImage[]>(() =>
     sortSpaceImages(initialImages)
@@ -192,7 +194,7 @@ export function AdminUnclaimedSpaceForm({
 
         const body = payloadFromState(state, crmLink);
 
-        if (activeMode === "create") {
+        if (mode === "create") {
           if (propertyId && !propertyId.match(/^[0-9a-f-]{36}$/i)) {
             throw new Error("Invalid property context. Reload and try again.");
           }
@@ -213,15 +215,22 @@ export function AdminUnclaimedSpaceForm({
             throw new Error("Draft saved but listing id was missing. Please reload.");
           }
           setCreatedSpaceId(newId);
-          if (stayOnPage) {
+
+          if (propertyId) {
+            if (stayOnPage) {
+              router.replace(
+                `/admin/properties/${propertyId}/spaces/${newId}/edit?saved=1`
+              );
+              onCreated?.(newId);
+            } else {
+              router.push(`/admin/properties/${propertyId}?saved=1`);
+              onSavedAndExit?.();
+            }
+          } else if (stayOnPage) {
             setMessage(
-              propertyId
-                ? "Space saved. You can now add photos and AI Information."
-                : "Draft saved. You can upload photos and AI Information below."
+              "Draft saved. You can upload photos and AI Information below."
             );
             onCreated?.(newId);
-          } else if (propertyId) {
-            onSavedAndExit?.();
           } else {
             setMessage("Draft saved. You can upload photos below.");
             onCreated?.(newId);
@@ -235,6 +244,9 @@ export function AdminUnclaimedSpaceForm({
           });
           if (stayOnPage) {
             setMessage("Saved.");
+          } else if (propertyId) {
+            router.push(`/admin/properties/${propertyId}?saved=1`);
+            onSavedAndExit?.();
           } else {
             onSavedAndExit?.();
           }
@@ -246,13 +258,14 @@ export function AdminUnclaimedSpaceForm({
       }
     },
     [
-      activeMode,
       activeSpaceId,
       crmLink,
+      mode,
       onCreated,
       onSavedAndExit,
       propertyId,
       readOnly,
+      router,
       state,
       status,
     ]
@@ -521,18 +534,18 @@ export function AdminUnclaimedSpaceForm({
                 <button
                   type="button"
                   disabled={saving || publishing}
-                  onClick={() => void saveDraft(false)}
+                  onClick={() => void saveDraft(true)}
                   className="rounded-lg bg-[#0f2740] px-5 py-2.5 text-sm font-semibold text-white hover:opacity-95 disabled:opacity-60"
                 >
-                  {saving ? "Saving…" : "Save & return to property"}
+                  {saving ? "Saving…" : "Save draft"}
                 </button>
                 <button
                   type="button"
                   disabled={saving || publishing}
-                  onClick={() => void saveDraft(true)}
+                  onClick={() => void saveDraft(false)}
                   className="rounded-lg border border-gray-300 bg-white px-5 py-2.5 text-sm font-semibold text-gray-800 hover:bg-gray-50 disabled:opacity-60"
                 >
-                  {saving ? "Saving…" : "Save draft"}
+                  {saving ? "Saving…" : "Save & return to property"}
                 </button>
               </>
             ) : (

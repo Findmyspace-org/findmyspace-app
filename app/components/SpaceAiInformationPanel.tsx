@@ -22,6 +22,24 @@ type SpaceAiInformationPanelProps = {
   embedded?: boolean;
 };
 
+function aiKnowledgeSavePayload(text: string) {
+  return JSON.stringify({ text, text_content: text });
+}
+
+function logAiKnowledgeError(action: string, err: unknown) {
+  console.error(`AI Information ${action} failed:`, err);
+}
+
+function aiKnowledgeUserError(err: unknown, fallback: string): string {
+  if (err instanceof Error) {
+    const message = err.message.trim();
+    if (message && !message.includes("<!DOCTYPE") && !message.includes("__next_error__")) {
+      return message;
+    }
+  }
+  return fallback;
+}
+
 function aiDocumentsPath(spaceId: string, apiMode: ApiMode) {
   return apiMode === "admin"
     ? `/api/admin/spaces/${spaceId}/ai-documents`
@@ -101,14 +119,20 @@ export function SpaceAiInformationPanel({
     try {
       await fetchJson(aiDocumentsPath(spaceId, apiMode), {
         method: "PATCH",
-        body: JSON.stringify({ text: trimmed }),
+        body: aiKnowledgeSavePayload(trimmed),
       });
       setFileName("Manual entry");
       setUpdatedAt(new Date().toISOString());
       pendingFlushRef.current = false;
       onMessage?.("AI Information saved.");
     } catch (err) {
-      onMessage?.(err instanceof Error ? err.message : "Save failed.");
+      logAiKnowledgeError("save", err);
+      onMessage?.(
+        aiKnowledgeUserError(
+          err,
+          "AI Information could not be saved. Please try again."
+        )
+      );
     } finally {
       setSaving(false);
     }
@@ -128,13 +152,19 @@ export function SpaceAiInformationPanel({
         try {
           await fetchJson(aiDocumentsPath(spaceId, apiMode), {
             method: "PATCH",
-            body: JSON.stringify({ text: trimmed }),
+            body: aiKnowledgeSavePayload(trimmed),
           });
           setFileName("Manual entry");
           setUpdatedAt(new Date().toISOString());
           onMessage?.("AI Information saved.");
         } catch (err) {
-          onMessage?.(err instanceof Error ? err.message : "Save failed.");
+          logAiKnowledgeError("auto-save", err);
+          onMessage?.(
+            aiKnowledgeUserError(
+              err,
+              "AI Information could not be saved. Please try again."
+            )
+          );
         } finally {
           setSaving(false);
         }
