@@ -27,6 +27,13 @@ import {
   spacePricingFormFromRow,
   spacePricingPayloadFromForm,
 } from "@/lib/space-pricing";
+import { SpaceMinBookingFields } from "@/app/components/SpaceMinBookingFields";
+import {
+  minBookingFormFromRow,
+  minBookingPayloadFromForm,
+  validateMinBookingFormValues,
+  type MinBookingDurationUnit,
+} from "@/lib/space-min-booking";
 import { SectionInlineAlert } from "@/app/components/SectionInlineAlert";
 import { useSectionFeedback } from "@/lib/use-section-feedback";
 import {
@@ -188,9 +195,8 @@ export default function EditListingPage({ params }: PageProps) {
   const [priceUnit, setPriceUnit] = useState("day");
   const [depositRequired, setDepositRequired] = useState(false);
   const [depositAmount, setDepositAmount] = useState("");
-  const [minBookingHours, setMinBookingHours] = useState("1");
-  const [minBookingDays, setMinBookingDays] = useState("1");
-  const [minBookingMonths, setMinBookingMonths] = useState("1");
+  const [minBookingDuration, setMinBookingDuration] = useState("");
+  const [minBookingUnit, setMinBookingUnit] = useState<MinBookingDurationUnit | "">("");
   const [minGroupSize, setMinGroupSize] = useState("");
   const [maxGroupSize, setMaxGroupSize] = useState("");
   const [monthlyPaymentDay, setMonthlyPaymentDay] = useState("1");
@@ -306,21 +312,9 @@ export default function EditListingPage({ params }: PageProps) {
     setPriceUnit(pricingForm.priceUnit);
     setDepositRequired(pricingForm.depositRequired);
     setDepositAmount(pricingForm.depositAmount);
-    setMinBookingHours(
-      typeof data.min_booking_hours === "number"
-        ? String(data.min_booking_hours)
-        : "1"
-    );
-    setMinBookingDays(
-      typeof data.min_booking_days === "number"
-        ? String(data.min_booking_days)
-        : "1"
-    );
-    setMinBookingMonths(
-      typeof data.min_booking_months === "number"
-        ? String(data.min_booking_months)
-        : "1"
-    );
+    const minBookingForm = minBookingFormFromRow(data);
+    setMinBookingDuration(minBookingForm.duration);
+    setMinBookingUnit(minBookingForm.unit);
     setMinGroupSize(
       typeof data.min_group_size === "number" ? String(data.min_group_size) : ""
     );
@@ -757,20 +751,24 @@ export default function EditListingPage({ params }: PageProps) {
       return;
     }
 
-    if (effectiveBookingUnit === "hour") {
-      if (Number(minBookingHours || 0) < 1) {
-        setSaveFailure("Minimum booking hours must be at least 1.");
-        setSaving(false);
-        return;
-      }
+    const minBookingErr = validateMinBookingFormValues(
+      minBookingDuration,
+      minBookingUnit
+    );
+    if (minBookingErr) {
+      setSaveFailure(minBookingErr);
+      setSaving(false);
+      return;
     }
 
-    if (effectiveBookingUnit === "day") {
-      if (Number(minBookingDays || 0) < 1) {
-        setSaveFailure("Minimum booking days must be at least 1.");
-        setSaving(false);
-        return;
-      }
+    const minBookingPayload = minBookingPayloadFromForm(
+      minBookingDuration,
+      minBookingUnit
+    );
+    if (!minBookingPayload.ok) {
+      setSaveFailure(minBookingPayload.error);
+      setSaving(false);
+      return;
     }
 
     if (effectiveBookingUnit === "month") {
@@ -778,12 +776,6 @@ export default function EditListingPage({ params }: PageProps) {
 
       if (parsedMonthlyPaymentDay < 1 || parsedMonthlyPaymentDay > 28) {
         setSaveFailure("Monthly payment day must be between 1 and 28.");
-        setSaving(false);
-        return;
-      }
-
-      if (Number(minBookingMonths || 0) < 1) {
-        setSaveFailure("Minimum booking months must be at least 1.");
         setSaving(false);
         return;
       }
@@ -821,18 +813,20 @@ export default function EditListingPage({ params }: PageProps) {
       country,
       address_line_1: streetAddress,
       space_type: spaceType,
-      booking_unit: pricingPayload.data.booking_unit,
+      booking_unit:
+        minBookingPayload.data.min_booking_hours != null
+          ? "hour"
+          : minBookingPayload.data.min_booking_days != null
+            ? "day"
+            : minBookingPayload.data.min_booking_months != null
+              ? "month"
+              : pricingPayload.data.booking_unit,
       price_amount: pricingPayload.data.price_amount,
       price_unit: pricingPayload.data.price_unit,
       price_per_hour: pricingPayload.data.price_per_hour,
       price_per_day: pricingPayload.data.price_per_day,
       price_per_month: pricingPayload.data.price_per_month,
-      min_booking_hours:
-        effectiveBookingUnit === "hour" ? Number(minBookingHours || 1) : null,
-      min_booking_days:
-        effectiveBookingUnit === "day" ? Number(minBookingDays || 1) : null,
-      min_booking_months:
-        effectiveBookingUnit === "month" ? Number(minBookingMonths || 1) : null,
+      ...minBookingPayload.data,
       deposit_type: "none",
       deposit_months: 0,
       monthly_payment_day: parsedMonthlyPaymentDay,
@@ -1094,76 +1088,46 @@ export default function EditListingPage({ params }: PageProps) {
                   />
                 </div>
 
-                {(priceUnit === "hour" || priceUnit === "day" || priceUnit === "month") && (
-                  <div className="mt-4 grid gap-4 md:grid-cols-2">
-                    {priceUnit === "hour" ? (
-                      <div>
-                        <label className="mb-1 block text-xs font-medium text-gray-700">
-                          Minimum booking hours
-                        </label>
-                        <input
-                          type="number"
-                          min="1"
-                          value={minBookingHours}
-                          onChange={(e) => setMinBookingHours(e.target.value)}
-                          className="w-full rounded-sm border border-gray-400 px-4 py-3 outline-none"
-                        />
-                      </div>
-                    ) : null}
-                    {priceUnit === "day" ? (
-                      <div>
-                        <label className="mb-1 block text-xs font-medium text-gray-700">
-                          Minimum booking days
-                        </label>
-                        <input
-                          type="number"
-                          min="1"
-                          value={minBookingDays}
-                          onChange={(e) => setMinBookingDays(e.target.value)}
-                          className="w-full rounded-sm border border-gray-400 px-4 py-3 outline-none"
-                        />
-                      </div>
-                    ) : null}
-                    {priceUnit === "month" ? (
-                      <>
-                        <div>
-                          <label className="mb-1 block text-xs font-medium text-gray-700">
-                            Minimum booking months
-                          </label>
-                          <input
-                            type="number"
-                            min="1"
-                            value={minBookingMonths}
-                            onChange={(e) => setMinBookingMonths(e.target.value)}
-                            className="w-full rounded-sm border border-gray-400 px-4 py-3 outline-none"
-                          />
-                        </div>
-                        <div>
-                          <label className="mb-1 block text-xs font-medium text-gray-700">
-                            Monthly payment day
-                          </label>
-                          <select
-                            value={monthlyPaymentDay}
-                            onChange={(e) => setMonthlyPaymentDay(e.target.value)}
-                            className="w-full rounded-sm border border-gray-400 px-4 py-3 outline-none"
-                          >
-                            {Array.from({ length: 28 }, (_, index) => {
-                              const day = index + 1;
-                              return (
-                                <option key={day} value={day}>
-                                  Day {day}
-                                </option>
-                              );
-                            })}
-                          </select>
-                          <p className="mt-1 text-xs text-gray-500">
-                            Due date for each monthly payment.
-                          </p>
-                        </div>
-                      </>
-                    ) : null}
+                {priceUnit === "month" ? (
+                  <div className="mt-4">
+                    <label className="mb-1 block text-xs font-medium text-gray-700">
+                      Monthly payment day
+                    </label>
+                    <select
+                      value={monthlyPaymentDay}
+                      onChange={(e) => setMonthlyPaymentDay(e.target.value)}
+                      disabled={editingLocked}
+                      className="w-full rounded-sm border border-gray-400 px-4 py-3 outline-none"
+                    >
+                      {Array.from({ length: 28 }, (_, index) => {
+                        const day = index + 1;
+                        return (
+                          <option key={day} value={day}>
+                            Day {day}
+                          </option>
+                        );
+                      })}
+                    </select>
+                    <p className="mt-1 text-xs text-gray-500">
+                      Due date for each monthly payment.
+                    </p>
                   </div>
-                )}
+                ) : null}
+              </div>
+
+              <div className="mt-6 rounded-lg border border-gray-200 bg-gray-50 p-4">
+                <h3 className="text-sm font-semibold text-gray-900">Booking duration</h3>
+                <div className="mt-3">
+                  <SpaceMinBookingFields
+                    duration={minBookingDuration}
+                    unit={minBookingUnit}
+                    disabled={editingLocked}
+                    onDurationChange={setMinBookingDuration}
+                    onUnitChange={setMinBookingUnit}
+                    inputClassName="w-full rounded-sm border border-gray-400 px-4 py-3 outline-none"
+                    labelClassName="mb-1 block text-xs font-medium text-gray-700"
+                  />
+                </div>
               </div>
 
               <div className="grid gap-4 md:grid-cols-3">

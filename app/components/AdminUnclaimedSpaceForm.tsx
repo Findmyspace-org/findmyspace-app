@@ -29,6 +29,12 @@ import {
   spacePricingPayloadFromForm,
   validateSpacePricingFormValues,
 } from "@/app/components/SpacePricingFields";
+import { SpaceMinBookingFields } from "@/app/components/SpaceMinBookingFields";
+import {
+  minBookingPayloadFromForm,
+  validateMinBookingFormValues,
+  type MinBookingDurationUnit,
+} from "@/lib/space-min-booking";
 import MarkdownDescriptionEditor from "@/app/components/MarkdownDescriptionEditor";
 
 type FormState = {
@@ -50,6 +56,8 @@ type FormState = {
   priceUnit: string;
   depositRequired: boolean;
   depositAmount: string;
+  minBookingDuration: string;
+  minBookingUnit: MinBookingDurationUnit | "";
   attributes: Record<string, string[]>;
 };
 
@@ -72,6 +80,14 @@ function payloadFromState(state: FormState, crmLink: CrmLinkState) {
     throw new Error(pricing.error);
   }
 
+  const minBooking = minBookingPayloadFromForm(
+    state.minBookingDuration,
+    state.minBookingUnit
+  );
+  if (!minBooking.ok) {
+    throw new Error(minBooking.error);
+  }
+
   return {
     title: state.title,
     description: state.description,
@@ -87,6 +103,7 @@ function payloadFromState(state: FormState, crmLink: CrmLinkState) {
     attributes: state.attributes,
     ...groupSizePayloadFromForm(state.spaceType, state.minGroupSize, state.maxGroupSize),
     ...pricing.data,
+    ...minBooking.data,
     crm_organisation_id: crmLink.crm_organisation_id,
     crm_contact_id: crmLink.crm_contact_id,
   };
@@ -112,6 +129,8 @@ function formStateFromInitial(initial?: Partial<FormState>): FormState {
     priceUnit: initial?.priceUnit ?? "day",
     depositRequired: initial?.depositRequired ?? false,
     depositAmount: initial?.depositAmount ?? "",
+    minBookingDuration: initial?.minBookingDuration ?? "",
+    minBookingUnit: initial?.minBookingUnit ?? "",
     attributes: initial?.attributes ?? {},
   };
 }
@@ -232,6 +251,16 @@ export function AdminUnclaimedSpaceForm({
         );
         if (pricingErr) {
           setSaveFailure(pricingErr);
+          setSaving(false);
+          return;
+        }
+
+        const minBookingErr = validateMinBookingFormValues(
+          state.minBookingDuration,
+          state.minBookingUnit
+        );
+        if (minBookingErr) {
+          setSaveFailure(minBookingErr);
           setSaving(false);
           return;
         }
@@ -494,6 +523,23 @@ export function AdminUnclaimedSpaceForm({
             }
             onDepositAmountChange={(value) =>
               setState((s) => ({ ...s, depositAmount: value }))
+            }
+          />
+        </fieldset>
+      </section>
+
+      <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+        <h2 className="text-lg font-semibold text-gray-900">Booking duration</h2>
+        <fieldset disabled={readOnly} className="mt-4 disabled:opacity-80">
+          <SpaceMinBookingFields
+            duration={state.minBookingDuration}
+            unit={state.minBookingUnit}
+            disabled={readOnly}
+            onDurationChange={(value) =>
+              setState((s) => ({ ...s, minBookingDuration: value }))
+            }
+            onUnitChange={(value) =>
+              setState((s) => ({ ...s, minBookingUnit: value }))
             }
           />
         </fieldset>

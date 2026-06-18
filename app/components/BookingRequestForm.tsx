@@ -630,7 +630,7 @@ export default function BookingRequestForm({
     const quantity = calculateQuantity(startAt, endAt);
     if (quantity >= minimum) return "";
 
-    return `Minimum booking is ${getMinimumLabel(minimum)}.`;
+    return `This space has a minimum booking duration of ${getMinimumLabel(minimum)}.`;
   }, [
     bookingUnit,
     hourDate,
@@ -985,7 +985,9 @@ export default function BookingRequestForm({
       }
       const minimum = getMinimumQuantity();
       if (minimum > 0 && quantity < minimum) {
-        setStatusMessage(`Minimum booking is ${getMinimumLabel(minimum)}.`);
+        setStatusMessage(
+          `This space has a minimum booking duration of ${getMinimumLabel(minimum)}.`
+        );
         setLoading(false);
         return;
       }

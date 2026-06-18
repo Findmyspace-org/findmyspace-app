@@ -169,6 +169,21 @@ export async function PATCH(
     patch.crm_organisation_id = d.crm_organisation_id;
   }
   if (d.crm_contact_id !== undefined) patch.crm_contact_id = d.crm_contact_id;
+  if (d.min_booking_hours !== undefined) patch.min_booking_hours = d.min_booking_hours;
+  if (d.min_booking_days !== undefined) patch.min_booking_days = d.min_booking_days;
+  if (d.min_booking_months !== undefined) patch.min_booking_months = d.min_booking_months;
+  if (
+    d.min_booking_hours != null ||
+    d.min_booking_days != null ||
+    d.min_booking_months != null
+  ) {
+    patch.booking_unit =
+      d.min_booking_hours != null
+        ? "hour"
+        : d.min_booking_days != null
+          ? "day"
+          : "month";
+  }
 
   const street = d.street_address ?? d.address_line_1;
   if (street !== undefined || d.address_line_1 !== undefined) {

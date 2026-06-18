@@ -31,6 +31,7 @@ import {
   type SpaceAiDocumentChunkRow,
 } from "@/lib/space-ai-knowledge";
 import { loadAiKnowledgeChunksForSpace } from "@/lib/space-ai-knowledge-server";
+import { formatMinBookingDetailLabel } from "@/lib/space-min-booking";
 
 function getAdminClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -185,16 +186,8 @@ function priceLine(space: SpaceRow): string | null {
 }
 
 function minBookingNote(space: SpaceRow): string | null {
-  if (space.booking_unit === "hour" && space.min_booking_hours) {
-    return `Minimum booking: ${space.min_booking_hours} hour${space.min_booking_hours === 1 ? "" : "s"}.`;
-  }
-  if (space.booking_unit === "day" && space.min_booking_days) {
-    return `Minimum booking: ${space.min_booking_days} day${space.min_booking_days === 1 ? "" : "s"}.`;
-  }
-  if (space.booking_unit === "month" && space.min_booking_months) {
-    return `Minimum booking: ${space.min_booking_months} month${space.min_booking_months === 1 ? "" : "s"}.`;
-  }
-  return null;
+  const label = formatMinBookingDetailLabel(space);
+  return label ? `${label}.` : null;
 }
 
 function summariseFeatures(

@@ -35,6 +35,10 @@ import {
   formatSpaceDepositDetail,
   formatSpacePriceDisplay,
 } from "@/lib/space-pricing";
+import {
+  formatMinBookingDuration,
+  resolveMinBookingUnit,
+} from "@/lib/space-min-booking";
 
 import {
   ArrowLeft,
@@ -187,6 +191,8 @@ export default async function Page({
 
   const priceLabel = formatSpacePriceDisplay(space);
   const depositLabel = formatSpaceDepositDetail(space);
+  const minBookingLabel = formatMinBookingDuration(space);
+  const bookingUnit = resolveMinBookingUnit(space);
 
   const address = formatListingAddress({
     street_address: space.street_address,
@@ -417,6 +423,12 @@ export default async function Page({
               {depositLabel ? (
                 <p className="mt-2 text-sm text-gray-600">{depositLabel}</p>
               ) : null}
+              {minBookingLabel ? (
+                <p className="mt-2 text-sm text-gray-600">
+                  Minimum booking:{" "}
+                  <span className="font-medium text-[#192a3a]">{minBookingLabel}</span>
+                </p>
+              ) : null}
 
               <div className="mt-5 rounded-xl border border-[#e2e8f0] bg-[#fafbfc] p-3">
                 <p className="text-xs font-medium uppercase tracking-[0.08em] text-gray-500">
@@ -521,7 +533,7 @@ export default async function Page({
               <BookingRequestForm
                 spaceId={space.id}
                 ownerId={space.owner_id!}
-                bookingUnit={space.booking_unit}
+                bookingUnit={bookingUnit}
                 pricePerHour={space.price_per_hour}
                 pricePerDay={space.price_per_day}
                 pricePerMonth={space.price_per_month}

@@ -13,6 +13,7 @@ import {
   parseGroupSizeInput,
   validateGroupSizePair,
 } from "@/lib/group-size";
+import { parseMinBookingInput } from "@/lib/space-min-booking";
 
 export const ADMIN_UNCLAIMED_STATUSES = ["draft", "unclaimed"] as const;
 export type AdminUnclaimedStatus = (typeof ADMIN_UNCLAIMED_STATUSES)[number];
@@ -53,6 +54,9 @@ export type UnclaimedSpaceInput = {
   price_unit?: string | null;
   deposit_required?: boolean | null;
   deposit_amount?: number | null;
+  min_booking_hours?: number | null;
+  min_booking_days?: number | null;
+  min_booking_months?: number | null;
 };
 
 export function createServiceAdminClient(): SupabaseClient | null {
@@ -231,6 +235,28 @@ export function parseUnclaimedSpaceInput(
     data.booking_unit = pricingParsed.data.booking_unit;
   }
 
+  const minBookingParsed = parseMinBookingInput(body);
+  if (!minBookingParsed.ok) {
+    return { ok: false, error: minBookingParsed.error };
+  }
+  if (minBookingParsed.data) {
+    data.min_booking_hours = minBookingParsed.data.min_booking_hours;
+    data.min_booking_days = minBookingParsed.data.min_booking_days;
+    data.min_booking_months = minBookingParsed.data.min_booking_months;
+    if (
+      minBookingParsed.data.min_booking_hours ||
+      minBookingParsed.data.min_booking_days ||
+      minBookingParsed.data.min_booking_months
+    ) {
+      data.booking_unit =
+        minBookingParsed.data.min_booking_hours != null
+          ? "hour"
+          : minBookingParsed.data.min_booking_days != null
+            ? "day"
+            : "month";
+    }
+  }
+
   return { ok: true, data };
 }
 
@@ -280,6 +306,9 @@ export function buildUnclaimedSpaceRow(
     price_unit: input.price_unit ?? null,
     deposit_required: input.deposit_required ?? false,
     deposit_amount: input.deposit_amount ?? null,
+    min_booking_hours: input.min_booking_hours ?? null,
+    min_booking_days: input.min_booking_days ?? null,
+    min_booking_months: input.min_booking_months ?? null,
   };
 }
 

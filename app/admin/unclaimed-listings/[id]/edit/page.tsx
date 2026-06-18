@@ -13,6 +13,7 @@ import { AdminListingClaimPanel } from "@/app/components/AdminListingClaimPanel"
 import { UnclaimedListingEnquirySocialProof } from "@/app/components/UnclaimedListingEnquirySocialProof";
 import { sortSpaceImages } from "@/lib/sort-space-images";
 import { spacePricingFormFromRow } from "@/lib/space-pricing";
+import { minBookingFormFromRow } from "@/lib/space-min-booking";
 import type { SpaceCrmLinkSummary } from "@/lib/space-crm-link";
 
 type SpaceRow = {
@@ -235,6 +236,13 @@ export default function EditUnclaimedListingPage() {
                   priceUnit: pricing.priceUnit,
                   depositRequired: pricing.depositRequired,
                   depositAmount: pricing.depositAmount,
+                };
+              })(),
+              ...(() => {
+                const minBooking = minBookingFormFromRow(space);
+                return {
+                  minBookingDuration: minBooking.duration,
+                  minBookingUnit: minBooking.unit,
                 };
               })(),
               attributes,
