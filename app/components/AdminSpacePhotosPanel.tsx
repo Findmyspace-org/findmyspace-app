@@ -196,11 +196,14 @@ export function AdminSpacePhotosPanel({
           First photo is the cover image. Use up/down to reorder.
         </p>
       ) : null}
-      {!spaceId ? (
-        <p className="mt-2 text-sm text-gray-600">Save the draft first to upload photos.</p>
-      ) : sortedImages.length === 0 ? (
+      {!spaceId && !readOnly ? (
+        <p className="mt-2 text-sm text-amber-800">
+          Save the space first to upload photos.
+        </p>
+      ) : null}
+      {spaceId && sortedImages.length === 0 ? (
         <p className="mt-3 text-sm text-gray-500">No photos yet.</p>
-      ) : (
+      ) : spaceId ? (
         <div className={`space-y-3 ${compact ? "mt-2" : "mt-4"}`}>
           {sortedImages.map((img, index) => (
             <div
@@ -282,15 +285,19 @@ export function AdminSpacePhotosPanel({
             </div>
           ))}
         </div>
-      )}
-      {!readOnly && spaceId ? (
+      ) : null}
+      {!readOnly ? (
         <PhotoDropZone
           className="mt-4"
-          disabled={reordering}
+          disabled={!spaceId || reordering}
           uploading={uploading}
           uploadProgress={uploadProgress}
-          message={dropMessage}
-          messageTone={dropMessageTone}
+          message={
+            !spaceId
+              ? "Save the space first to upload photos."
+              : dropMessage
+          }
+          messageTone={!spaceId ? "default" : dropMessageTone}
           inputRef={fileInputRef}
           onFiles={(files) => void uploadImages(files)}
         />

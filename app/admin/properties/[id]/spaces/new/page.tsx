@@ -120,10 +120,8 @@ export default function NewPropertySpacePage() {
           backHref={`/admin/properties/${propertyId}`}
           backLabel="Back to property"
           onCreated={(newSpaceId) => {
-            window.history.replaceState(
-              null,
-              "",
-              `/admin/properties/${propertyId}/spaces/${newSpaceId}/edit`
+            router.replace(
+              `/admin/properties/${propertyId}/spaces/${newSpaceId}/edit?saved=1`
             );
           }}
           onSavedAndExit={() => {

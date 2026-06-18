@@ -3,8 +3,8 @@
 import { hasAdminUiAccess } from "@/lib/client-admin-access";
 
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import { Eye } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { adminApiFetch } from "@/lib/admin-api-client";
@@ -35,8 +35,18 @@ type SpaceRow = {
 };
 
 export default function EditPropertySpacePage() {
+  return (
+    <Suspense fallback={<div className="text-gray-600">Loading…</div>}>
+      <EditPropertySpacePageContent />
+    </Suspense>
+  );
+}
+
+function EditPropertySpacePageContent() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const showSavedBanner = searchParams.get("saved") === "1";
   const propertyId = typeof params.id === "string" ? params.id : "";
   const spaceId = typeof params.spaceId === "string" ? params.spaceId : "";
 
@@ -183,6 +193,12 @@ export default function EditPropertySpacePage() {
         Save your draft, upload photos, then publish when ready. This space is linked
         to {propertyName || "the property"}.
       </p>
+
+      {showSavedBanner ? (
+        <p className="mt-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-900">
+          Space saved. You can now add photos.
+        </p>
+      ) : null}
 
       {enquiryCount > 0 ? (
         <div className="mt-4">

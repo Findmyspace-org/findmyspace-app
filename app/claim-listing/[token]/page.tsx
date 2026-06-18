@@ -8,6 +8,7 @@ import { Loader2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { sanitizeNextPath } from "@/lib/auth-redirect";
 import { formatSpaceTypeLabel } from "@/app/data/spaceFeatureConfig";
+import { stripMarkdownForExcerpt } from "@/lib/markdown-description";
 
 type ClaimPreview = {
   valid: boolean;
@@ -166,7 +167,7 @@ function ClaimListingContent() {
               </h2>
               {listing.description ? (
                 <p className="mt-2 line-clamp-4 text-sm text-gray-600">
-                  {listing.description}
+                  {stripMarkdownForExcerpt(listing.description, 280)}
                 </p>
               ) : null}
             </div>

@@ -17,6 +17,7 @@ import {
   groupSizePayloadFromForm,
   validateGroupSizeFormValues,
 } from "@/app/components/GroupSizeFields";
+import MarkdownDescriptionEditor from "@/app/components/MarkdownDescriptionEditor";
 import {
   DEFAULT_LISTING_BOOKING_REQUIREMENTS,
   emptyQuestionnaireDataForCategory,
@@ -1263,11 +1264,11 @@ export default function EditListingPage({ params }: PageProps) {
                 <label className="mb-1 block text-xs font-medium text-gray-700">
                   Description
                 </label>
-                <textarea
+                <MarkdownDescriptionEditor
                   value={description}
-                  onChange={(e) => setDescription(e.target.value)}
+                  onChange={setDescription}
                   rows={5}
-                  className="w-full rounded-sm border border-gray-400 px-4 py-3 outline-none"
+                  textareaClassName="w-full px-4 py-3 text-sm outline-none"
                 />
               </div>
 

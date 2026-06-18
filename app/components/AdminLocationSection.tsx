@@ -4,7 +4,12 @@ import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2, MapPin } from "lucide-react";
 import { adminApiFetch } from "@/lib/admin-api-client";
-import { buildAddressQuery, type GeocodedAddress } from "@/lib/geocoding";
+import {
+  buildAddressQuery,
+  type GeocodedAddress,
+  applyForwardGeocodedLocation,
+  applyReverseGeocodedLocation,
+} from "@/lib/geocoding";
 import {
   googleMapsUrlErrorMessage,
   resolveGoogleMapsUrlClient,
@@ -41,38 +46,6 @@ type AdminLocationSectionProps = {
   onChange: (patch: Partial<AdminLocationValue>) => void;
 };
 
-function applyGeocodedAddress(
-  current: AdminLocationValue,
-  result: GeocodedAddress,
-  forcePopulate: boolean
-): Partial<AdminLocationValue> {
-  const patch: Partial<AdminLocationValue> = {
-    latitude: result.latitude,
-    longitude: result.longitude,
-  };
-
-  if (forcePopulate || !current.streetAddress.trim()) {
-    patch.streetAddress = result.streetAddress || current.streetAddress;
-  }
-  if (forcePopulate || !current.suburb.trim()) {
-    patch.suburb = result.suburb || current.suburb;
-  }
-  if (forcePopulate || !current.city.trim()) {
-    patch.city = result.city || current.city;
-  }
-  if (forcePopulate || !current.province.trim()) {
-    patch.province = result.province || current.province;
-  }
-  if (forcePopulate || !current.postalCode.trim()) {
-    patch.postalCode = result.postalCode || current.postalCode;
-  }
-  if (result.country) {
-    patch.country = result.country;
-  }
-
-  return patch;
-}
-
 export function AdminLocationSection({
   value,
   readOnly = false,
@@ -80,7 +53,6 @@ export function AdminLocationSection({
 }: AdminLocationSectionProps) {
   const [suggestions, setSuggestions] = useState<GeocodedAddress[]>([]);
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
-  const [pinSuggestions, setPinSuggestions] = useState<GeocodedAddress[]>([]);
   const [searching, setSearching] = useState(false);
   const [reverseGeocoding, setReverseGeocoding] = useState(false);
   const [geoMessage, setGeoMessage] = useState<string | null>(null);
@@ -104,10 +76,6 @@ export function AdminLocationSection({
 
   const mapLat = hasPin ? value.latitude! : DEFAULT_LAT;
   const mapLng = hasPin ? value.longitude! : DEFAULT_LNG;
-
-  const clearPinSuggestionState = useCallback(() => {
-    setPinSuggestions([]);
-  }, []);
 
   const clearAddressSuggestionState = useCallback(() => {
     suggestionAbortRef.current?.abort();
@@ -169,21 +137,12 @@ export function AdminLocationSection({
 
   const selectSuggestion = useCallback(
     (result: GeocodedAddress) => {
-      onChange(applyGeocodedAddress(valueRef.current, result, true));
+      skipAutocompleteRef.current = true;
+      onChange(applyForwardGeocodedLocation(valueRef.current, result, true));
       clearAddressSuggestionState();
-      clearPinSuggestionState();
       setGeoMessage("Address selected. Pin placed on map.");
     },
-    [clearAddressSuggestionState, clearPinSuggestionState, onChange]
-  );
-
-  const selectPinSuggestion = useCallback(
-    (result: GeocodedAddress) => {
-      onChange(applyGeocodedAddress(valueRef.current, result, true));
-      clearPinSuggestionState();
-      setGeoMessage("Location selected from map.");
-    },
-    [clearPinSuggestionState, onChange]
+    [clearAddressSuggestionState, onChange]
   );
 
   async function geocodeSearchQuery(query: string, successMessage: string) {
@@ -199,9 +158,8 @@ export function AdminLocationSection({
     }
 
     skipAutocompleteRef.current = true;
-    onChange(applyGeocodedAddress(valueRef.current, matches[0], true));
+    onChange(applyForwardGeocodedLocation(valueRef.current, matches[0], true));
     clearAddressSuggestionState();
-    clearPinSuggestionState();
     setGeoMessage(successMessage);
     return true;
   }
@@ -215,7 +173,6 @@ export function AdminLocationSection({
     const requestId = reverseGeocodeRequestIdRef.current;
 
     clearAddressSuggestionState();
-    clearPinSuggestionState();
     reverseGeocodeAbortRef.current?.abort();
     reverseGeocodeAbortRef.current = null;
 
@@ -289,7 +246,6 @@ export function AdminLocationSection({
 
     setSearching(true);
     setGeoMessage(null);
-    clearPinSuggestionState();
     try {
       const result = await adminApiFetch(
         `/api/admin/geocode?q=${encodeURIComponent(query)}&limit=1`
@@ -303,7 +259,7 @@ export function AdminLocationSection({
       }
 
       skipAutocompleteRef.current = true;
-      onChange(applyGeocodedAddress(valueRef.current, matches[0], true));
+      onChange(applyForwardGeocodedLocation(valueRef.current, matches[0], true));
       setGeoMessage("Address found. Pin placed on map.");
     } catch (err) {
       setGeoMessage(
@@ -330,46 +286,40 @@ export function AdminLocationSection({
         if (reverseGeocodeRequestIdRef.current !== requestId) return;
 
         const geocoded = result.result as GeocodedAddress | undefined;
+        skipAutocompleteRef.current = true;
+        onChange(
+          applyReverseGeocodedLocation(
+            valueRef.current,
+            geocoded ?? null,
+            { lat, lng },
+            { forcePopulate: true }
+          )
+        );
+
         if (geocoded) {
-          skipAutocompleteRef.current = true;
-          onChange(
-            applyGeocodedAddress(
-              { ...valueRef.current, latitude: lat, longitude: lng },
-              geocoded,
-              false
-            )
+          setGeoMessage(`Pin placed at ${lat.toFixed(6)}, ${lng.toFixed(6)}`);
+        } else {
+          setGeoMessage(
+            "Address could not be resolved. You can edit the address manually."
           );
-
-          const searchQuery =
-            geocoded.label?.trim() ||
-            buildAddressQuery({
-              streetAddress: geocoded.streetAddress,
-              suburb: geocoded.suburb,
-              city: geocoded.city,
-              province: geocoded.province,
-              country: geocoded.country,
-            });
-
-          if (searchQuery.length >= 3) {
-            try {
-              const nearby = await adminApiFetch(
-                `/api/admin/geocode?q=${encodeURIComponent(searchQuery)}&limit=5`,
-                { signal: controller.signal }
-              );
-              if (reverseGeocodeRequestIdRef.current !== requestId) return;
-              const options = (nearby.results as GeocodedAddress[]) || [];
-              setPinSuggestions(options.length > 0 ? options : [geocoded]);
-            } catch (nearbyErr) {
-              if ((nearbyErr as Error).name === "AbortError") return;
-              setPinSuggestions([geocoded]);
-            }
-          } else {
-            setPinSuggestions([geocoded]);
-          }
         }
       } catch (err) {
         if ((err as Error).name === "AbortError") return;
         console.error("Reverse geocoding failed", err);
+        if (reverseGeocodeRequestIdRef.current === requestId) {
+          skipAutocompleteRef.current = true;
+          onChange(
+            applyReverseGeocodedLocation(
+              valueRef.current,
+              null,
+              { lat, lng },
+              { forcePopulate: true }
+            )
+          );
+          setGeoMessage(
+            "Address could not be resolved. You can edit the address manually."
+          );
+        }
       } finally {
         if (reverseGeocodeRequestIdRef.current === requestId) {
           setReverseGeocoding(false);
@@ -387,7 +337,6 @@ export function AdminLocationSection({
       const requestId = reverseGeocodeRequestIdRef.current;
 
       clearAddressSuggestionState();
-      clearPinSuggestionState();
       reverseGeocodeAbortRef.current?.abort();
       reverseGeocodeAbortRef.current = null;
 
@@ -395,13 +344,7 @@ export function AdminLocationSection({
       setGeoMessage(`Pin placed at ${lat.toFixed(6)}, ${lng.toFixed(6)}`);
       void reverseGeocodePin(lat, lng, requestId);
     },
-    [
-      clearAddressSuggestionState,
-      clearPinSuggestionState,
-      onChange,
-      readOnly,
-      reverseGeocodePin,
-    ]
+    [clearAddressSuggestionState, onChange, readOnly, reverseGeocodePin]
   );
 
   return (
@@ -554,6 +497,7 @@ export function AdminLocationSection({
         <p
           className={`mt-3 text-sm ${
             geoMessage.includes("could not find") ||
+            geoMessage.includes("could not be resolved") ||
             geoMessage.includes("Enter an address")
               ? "text-amber-800"
               : "text-green-700"
@@ -568,6 +512,7 @@ export function AdminLocationSection({
           latitude={mapLat}
           longitude={mapLng}
           zoom={DEFAULT_ZOOM}
+          showMarker={hasPin}
           onChange={handleMapPinChange}
         />
         {hasPin ? (
@@ -581,26 +526,6 @@ export function AdminLocationSection({
         )}
         {reverseGeocoding ? (
           <p className="mt-1 text-xs text-gray-500">Updating address from map pin…</p>
-        ) : null}
-        {!readOnly && pinSuggestions.length > 0 ? (
-          <div className="mt-3 rounded-xl border border-gray-200 bg-gray-50 p-2">
-            <p className="mb-2 px-1 text-xs font-medium text-gray-600">
-              Choose the best match for this pin
-            </p>
-            <ul className="max-h-48 space-y-1 overflow-auto">
-              {pinSuggestions.map((suggestion, idx) => (
-                <li key={`pin-${suggestion.latitude}-${suggestion.longitude}-${idx}`}>
-                  <button
-                    type="button"
-                    onClick={() => selectPinSuggestion(suggestion)}
-                    className="w-full rounded-lg border border-transparent bg-white px-3 py-2 text-left text-sm text-gray-700 hover:border-gray-200 hover:bg-gray-50"
-                  >
-                    {suggestion.label}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
         ) : null}
         {!readOnly ? (
           <p className="mt-1 text-xs text-gray-500">

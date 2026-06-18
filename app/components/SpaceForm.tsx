@@ -14,6 +14,7 @@ import {
   groupSizePayloadFromForm,
   validateGroupSizeFormValues,
 } from "@/app/components/GroupSizeFields";
+import MarkdownDescriptionEditor from "@/app/components/MarkdownDescriptionEditor";
 import {
   googleMapsUrlErrorMessage,
   resolveGoogleMapsUrlClient,
@@ -219,6 +220,9 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
     advisor_source: string | null;
   } | null>(null);
   const suggestionAbortRef = useRef<AbortController | null>(null);
+  const reverseGeocodeAbortRef = useRef<AbortController | null>(null);
+  const reverseGeocodeRequestIdRef = useRef(0);
+  const skipAutocompleteRef = useRef(false);
 
   const intelCategory = useMemo(() => mapSpaceTypeToIntelCategory(spaceType), [spaceType]);
 
@@ -641,18 +645,27 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
   async function reverseGeocode(
     lat: number,
     lng: number,
-    options?: { forcePopulate?: boolean }
+    options?: { forcePopulate?: boolean; requestId?: number }
   ) {
+    const requestId = options?.requestId ?? ++reverseGeocodeRequestIdRef.current;
+
+    reverseGeocodeAbortRef.current?.abort();
+    const controller = new AbortController();
+    reverseGeocodeAbortRef.current = controller;
+
     setReverseGeocoding(true);
     try {
       const res = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}`
+        `https://nominatim.openstreetmap.org/reverse?format=jsonv2&addressdetails=1&lat=${lat}&lon=${lng}`,
+        { signal: controller.signal }
       );
       if (!res.ok) {
         throw new Error("Reverse geocoding failed.");
       }
 
       const data = await res.json();
+      if (reverseGeocodeRequestIdRef.current !== requestId) return;
+
       const addr = data.address || {};
       const {
         streetAddress: nextStreetAddress,
@@ -666,10 +679,14 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
         (data.display_name as string | undefined) || ""
       );
       const forcePopulate = Boolean(options?.forcePopulate);
+      skipAutocompleteRef.current = true;
 
       setStreetAddress((current) => {
         if (forcePopulate && nextStreetAddress) return nextStreetAddress;
-        if (!current) return nextStreetAddress;
+        if (forcePopulate && !nextStreetAddress && !current.trim()) {
+          return "Selected location";
+        }
+        if (!current) return nextStreetAddress || "Selected location";
 
         const hasNumber = /\d/.test(current);
 
@@ -708,13 +725,30 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
       );
       if (countryValue) setCountry(countryValue);
     } catch (error) {
+      if ((error as Error).name === "AbortError") return;
       console.error("Reverse geocoding failed", error);
+      if (reverseGeocodeRequestIdRef.current === requestId) {
+        skipAutocompleteRef.current = true;
+        setStreetAddress((current) =>
+          current.trim() ? current : "Selected location"
+        );
+        setMessage(
+          "Address could not be resolved. You can edit the address manually."
+        );
+      }
     } finally {
-      setReverseGeocoding(false);
+      if (reverseGeocodeRequestIdRef.current === requestId) {
+        setReverseGeocoding(false);
+      }
     }
   }
 
   useEffect(() => {
+    if (skipAutocompleteRef.current) {
+      skipAutocompleteRef.current = false;
+      return;
+    }
+
     const query = [streetAddress.trim(), suburb.trim(), city.trim(), province.trim(), country.trim()]
       .filter(Boolean)
       .join(", ");
@@ -842,10 +876,13 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
       const { coordinates, searchQuery } = resolved.data;
 
       if (coordinates) {
+        reverseGeocodeRequestIdRef.current += 1;
+        const requestId = reverseGeocodeRequestIdRef.current;
         setLatitude(coordinates.lat);
         setLongitude(coordinates.lng);
         await reverseGeocode(coordinates.lat, coordinates.lng, {
           forcePopulate: true,
+          requestId,
         });
         setAddressSuggestionsOpen(false);
         setMessage("Location placed from Google Maps link.");
@@ -905,9 +942,11 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
       const lat = Number(result.lat);
       const lng = Number(result.lon);
 
+      reverseGeocodeRequestIdRef.current += 1;
+      const requestId = reverseGeocodeRequestIdRef.current;
       setLatitude(lat);
       setLongitude(lng);
-      await reverseGeocode(lat, lng, { forcePopulate: true });
+      await reverseGeocode(lat, lng, { forcePopulate: true, requestId });
       setMessage("Address found on map.");
     } catch (error) {
       console.error("Address search failed", error);
@@ -929,9 +968,11 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
         const lat = position.coords.latitude;
         const lng = position.coords.longitude;
 
+        reverseGeocodeRequestIdRef.current += 1;
+        const requestId = reverseGeocodeRequestIdRef.current;
         setLatitude(lat);
         setLongitude(lng);
-        await reverseGeocode(lat, lng, { forcePopulate: true });
+        await reverseGeocode(lat, lng, { forcePopulate: true, requestId });
         setMessage("Location found.");
         setUsingDeviceLocation(false);
       },
@@ -1558,12 +1599,11 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
 
           <div>
             <label className="mb-1 block text-xs font-medium leading-5 text-[#475569]">Description</label>
-            <textarea
+            <MarkdownDescriptionEditor
               value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Covered parking with remote access"
-              rows={3}
-              className="w-full rounded-lg border border-[#d4dbe2] bg-white px-3 py-2.5 text-sm text-[#334155] shadow-sm outline-none transition-all duration-200 focus:border-[#c1121f] focus:ring-2 focus:ring-[#c1121f]/20"
+              onChange={setDescription}
+              rows={5}
+              textareaClassName="w-full bg-white px-3 py-2.5 text-sm text-[#334155] outline-none"
             />
           </div>
         </div>
@@ -1997,10 +2037,14 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
             <MapPicker
               latitude={latitude}
               longitude={longitude}
-              onChange={async (lat, lng) => {
+              onChange={(lat, lng) => {
+                reverseGeocodeRequestIdRef.current += 1;
+                const requestId = reverseGeocodeRequestIdRef.current;
+                reverseGeocodeAbortRef.current?.abort();
+                reverseGeocodeAbortRef.current = null;
                 setLatitude(lat);
                 setLongitude(lng);
-                await reverseGeocode(lat, lng, { forcePopulate: true });
+                void reverseGeocode(lat, lng, { forcePopulate: true, requestId });
               }}
             />
             <p className="mt-2 text-sm text-gray-600">

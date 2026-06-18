@@ -19,6 +19,7 @@ import {
   groupSizePayloadFromForm,
   validateGroupSizeFormValues,
 } from "@/app/components/GroupSizeFields";
+import MarkdownDescriptionEditor from "@/app/components/MarkdownDescriptionEditor";
 
 type FormState = {
   title: string;
@@ -211,14 +212,18 @@ export function AdminUnclaimedSpaceForm({
             throw new Error("Draft saved but listing id was missing. Please reload.");
           }
           setCreatedSpaceId(newId);
-          setMessage(
-            propertyId
-              ? "Draft saved. You can upload photos below."
-              : "Draft saved. You can upload photos below."
-          );
-          onCreated?.(newId);
-          if (!stayOnPage) {
+          if (stayOnPage) {
+            setMessage(
+              propertyId
+                ? "Space saved. You can now add photos."
+                : "Draft saved. You can upload photos below."
+            );
+            onCreated?.(newId);
+          } else if (propertyId) {
             onSavedAndExit?.();
+          } else {
+            setMessage("Draft saved. You can upload photos below.");
+            onCreated?.(newId);
           }
         } else if (activeSpaceId) {
           await adminApiFetch(`/api/admin/spaces/${activeSpaceId}/unclaimed`, {
@@ -348,11 +353,12 @@ export function AdminUnclaimedSpaceForm({
             <span className="mb-1 block text-sm font-medium text-gray-700">
               Description
             </span>
-            <textarea
+            <MarkdownDescriptionEditor
               value={state.description}
-              onChange={(e) => setState((s) => ({ ...s, description: e.target.value }))}
+              onChange={(description) => setState((s) => ({ ...s, description }))}
               rows={5}
-              className={FIELD_CLASS}
+              disabled={readOnly}
+              textareaClassName="w-full px-3 py-2 text-sm outline-none"
             />
           </label>
           <div className="grid gap-4 sm:grid-cols-2">

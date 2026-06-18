@@ -22,6 +22,7 @@ import {
   groupSizePayloadFromForm,
   validateGroupSizeFormValues,
 } from "@/app/components/GroupSizeFields";
+import MarkdownDescriptionEditor from "@/app/components/MarkdownDescriptionEditor";
 
 const FIELD_CLASS =
   "w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-[#0f2740] focus:ring-1 focus:ring-[#0f2740]";
@@ -329,14 +330,14 @@ export function VenueScoutCaptureForm({
 
           <label className="block">
             <span className="mb-1 block text-sm font-medium text-gray-700">
-              Short description <span className="text-red-600">*</span>
+              Description <span className="text-red-600">*</span>
             </span>
-            <textarea
+            <MarkdownDescriptionEditor
               value={state.description}
-              onChange={(e) => setState((s) => ({ ...s, description: e.target.value }))}
-              rows={3}
-              className={FIELD_CLASS}
-              placeholder="One or two sentences — enough for browse cards and enquiries."
+              onChange={(description) => setState((s) => ({ ...s, description }))}
+              rows={4}
+              disabled={readOnly}
+              textareaClassName="w-full px-3 py-2 text-sm outline-none"
             />
           </label>
         </fieldset>

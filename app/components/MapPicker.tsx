@@ -15,6 +15,8 @@ type MapPickerProps = {
   longitude: number;
   zoom?: number;
   onChange: (lat: number, lng: number) => void;
+  /** When false, map is clickable but no pin is shown until coordinates are set. */
+  showMarker?: boolean;
 };
 
 function ClickHandler({
@@ -96,6 +98,7 @@ export default function MapPicker({
   longitude,
   zoom = 13,
   onChange,
+  showMarker = true,
 }: MapPickerProps) {
   useEffect(() => {
     const L = require("leaflet");
@@ -127,11 +130,13 @@ export default function MapPicker({
 
         <RecenterMap latitude={latitude} longitude={longitude} />
         <ClickHandler onChange={onChange} />
-        <DraggableMarker
-          latitude={latitude}
-          longitude={longitude}
-          onChange={onChange}
-        />
+        {showMarker ? (
+          <DraggableMarker
+            latitude={latitude}
+            longitude={longitude}
+            onChange={onChange}
+          />
+        ) : null}
       </MapContainer>
     </div>
   );

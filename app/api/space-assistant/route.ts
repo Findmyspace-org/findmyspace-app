@@ -15,6 +15,22 @@ import {
   type RenterRequirementFieldKey,
 } from "@/lib/booking-intelligence";
 import { formatGroupSizePublic } from "@/lib/group-size";
+import {
+  canRevealAssistantRestrictedInfo,
+  resolveAssistantAccessContext,
+  type AssistantAccessContext,
+} from "@/lib/space-assistant-access";
+import {
+  classifyContactRequest,
+  contactRequestBlockedReply,
+  sanitizeAssistantAnswerForAccess,
+} from "@/lib/space-assistant-contact-gating";
+import {
+  formatAiKnowledgeExcerpt,
+  searchAiKnowledgeChunks,
+  type SpaceAiDocumentChunkRow,
+} from "@/lib/space-ai-knowledge";
+import { loadAiKnowledgeChunksForSpace } from "@/lib/space-ai-knowledge-server";
 
 function getAdminClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -25,14 +41,33 @@ function getAdminClient() {
   });
 }
 
+async function resolveOptionalUserId(req: Request): Promise<string | null> {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!supabaseUrl || !anonKey) return null;
+
+  const authHeader = req.headers.get("authorization");
+  if (!authHeader?.startsWith("Bearer ")) return null;
+
+  const userClient = createClient(supabaseUrl, anonKey, {
+    global: { headers: { Authorization: authHeader } },
+    auth: { persistSession: false },
+  });
+
+  const {
+    data: { user },
+  } = await userClient.auth.getUser();
+  return user?.id ?? null;
+}
+
 /**
  * Space Assistant API — controlled, context-based answers about a single listing.
  *
  * v1 behaviour:
  *   - Validates input (spaceId + question).
- *   - Blocks contact-sharing requests with a clear platform-policy reply.
- *   - Loads safe listing context (no host email/phone/exact address).
- *   - Generates an answer from listing data + a small intent matcher.
+ *   - Applies booking-stage access rules before revealing contacts or access info.
+ *   - Loads listing context + AI Information chunks (stored in full at rest).
+ *   - Generates an answer from listing data + knowledge chunks + intent matcher.
  *
  * TODO: swap the templated `buildAnswer` for an OpenAI / Vercel AI SDK call
  *       (use `buildSystemContext` output as the system prompt + RAG payload).
@@ -45,9 +80,6 @@ export const runtime = "nodejs";
 
 const MAX_QUESTION_LENGTH = 600;
 
-const SAFETY_CONTACT_REPLY =
-  "Contact details and exact access information are shared only after a booking is approved and payment is completed.";
-
 const FALLBACK_UNKNOWN_REPLY =
   "The host has not provided that detail yet. You can include this question in your booking request and the host will confirm it before payment.";
 
@@ -57,6 +89,7 @@ const ENCOURAGE_BOOKING_NOTE =
 type RequestBody = {
   spaceId?: string;
   question?: string;
+  bookingId?: string;
 };
 
 type SpaceRow = {
@@ -103,14 +136,10 @@ type AssistantContext = {
   features: FeatureSummary;
   requirements: string[];
   confirmedQas: ConfirmedQa[];
-  /**
-   * Free-form host quality details captured under "Booking quality details"
-   * in the listing flow (saved into `listing_questionnaires.data`). Already
-   * pre-flattened to label/value pairs here so the templated answers can use
-   * them without re-parsing per-category schemas.
-   */
   questionnaireFacts: { label: string; value: string }[];
   groupSizeLine: string | null;
+  knowledgeChunks: SpaceAiDocumentChunkRow[];
+  access: AssistantAccessContext;
 };
 
 type IntentKind =
@@ -124,28 +153,17 @@ type IntentKind =
   | "general";
 
 // ---------------------------------------------------------------------------
-// Safety
+// Safety — contact / operational gating (response time only)
 // ---------------------------------------------------------------------------
 
-function detectContactRequest(question: string): boolean {
-  const lower = question.toLowerCase();
-
-  const directContact =
-    /\b(phone|cell|cellphone|mobile|whats ?app|whatsapp|email|e-?mail|telegram|signal|imessage|sms|text message)\b/;
-  if (directContact.test(lower)) return true;
-
-  const numberAsk = /\b(number|contact details?|contact info|reach (the )?host)\b/;
-  if (numberAsk.test(lower)) return true;
-
-  const offPlatform =
-    /\b(off[ -]?platform|outside( the)? (app|platform|site)|direct(ly)?|in person|meet up|meet in person)\b/;
-  if (offPlatform.test(lower)) return true;
-
-  const exactAddress =
-    /\b(home address|exact address|street address|full address|directions|where exactly|where is it located exactly|gps|coordinates)\b/;
-  if (exactAddress.test(lower)) return true;
-
-  return false;
+function finalizeAssistantAnswer(
+  answer: string,
+  access: AssistantAccessContext
+): string {
+  return sanitizeAssistantAnswerForAccess(
+    answer,
+    canRevealAssistantRestrictedInfo(access)
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -230,7 +248,8 @@ function summariseRequirements(req: ListingBookingRequirements | null): string[]
 }
 
 async function loadAssistantContext(
-  spaceId: string
+  spaceId: string,
+  access: AssistantAccessContext
 ): Promise<AssistantContext | null> {
   const { data: spaceRow, error: spaceErr } = await supabase
     .from("spaces")
@@ -301,10 +320,10 @@ async function loadAssistantContext(
     (reqRow as ListingBookingRequirements | null) ?? null
   );
 
-  // Reuse answered yes/no questions as host-confirmed FAQ. RLS on this table
-  // is strict (renter+owner only), so we read via the service role.
   const admin = getAdminClient();
   const confirmedQas: ConfirmedQa[] = [];
+  let knowledgeChunks: SpaceAiDocumentChunkRow[] = [];
+
   if (admin) {
     const { data: qaRows } = await (admin.from("listing_yes_no_questions") as any)
       .select("question, answer")
@@ -324,6 +343,12 @@ async function loadAssistantContext(
         });
       }
     });
+
+    try {
+      knowledgeChunks = await loadAiKnowledgeChunksForSpace(admin, spaceId);
+    } catch (knowledgeErr) {
+      console.warn("space-assistant: knowledge fetch failed", knowledgeErr);
+    }
   }
 
   return {
@@ -341,6 +366,8 @@ async function loadAssistantContext(
     confirmedQas,
     questionnaireFacts,
     groupSizeLine: formatGroupSizePublic(space.min_group_size, space.max_group_size),
+    knowledgeChunks,
+    access,
   };
 }
 
@@ -645,14 +672,40 @@ function answerPrice(ctx: AssistantContext): string | null {
   return [intro(ctx), joinBullets(lines), ENCOURAGE_BOOKING_NOTE].join("\n\n");
 }
 
+function answerFromKnowledge(
+  ctx: AssistantContext,
+  userQuestion: string
+): string | null {
+  if (!ctx.knowledgeChunks.length) return null;
+
+  const relevant = searchAiKnowledgeChunks(ctx.knowledgeChunks, userQuestion, 3);
+  if (!relevant.length) return null;
+
+  const excerpt = formatAiKnowledgeExcerpt(
+    relevant,
+    canRevealAssistantRestrictedInfo(ctx.access)
+  );
+  if (!excerpt?.trim()) return null;
+
+  const note = canRevealAssistantRestrictedInfo(ctx.access)
+    ? "Here are the operational details from the host's information pack:"
+    : "Here's what the host has shared about this space:";
+
+  return [intro(ctx), note, excerpt, ENCOURAGE_BOOKING_NOTE].join("\n\n");
+}
+
 function answerGeneral(ctx: AssistantContext): string | null {
   const lines: string[] = [];
+  const canReveal = canRevealAssistantRestrictedInfo(ctx.access);
+
   if (ctx.description) {
     const trimmed =
       ctx.description.length > 320
         ? ctx.description.slice(0, 320).trimEnd() + "…"
         : ctx.description;
-    lines.push(trimmed);
+    lines.push(
+      finalizeAssistantAnswer(trimmed, ctx.access)
+    );
   }
   const headlineFeatures = ctx.features.flatBooleanLabels.slice(0, 5);
   if (headlineFeatures.length) lines.push(`Highlights: ${headlineFeatures.join(", ")}.`);
@@ -660,7 +713,12 @@ function answerGeneral(ctx: AssistantContext): string | null {
   if (ctx.questionnaireFacts.length) {
     const facts = ctx.questionnaireFacts
       .slice(0, 4)
-      .map((f) => `${f.label}: ${f.value}`);
+      .map((f) => {
+        const value = canReveal
+          ? f.value
+          : sanitizeAssistantAnswerForAccess(f.value, false);
+        return `${f.label}: ${value}`;
+      });
     lines.push(`Host details: ${facts.join("; ")}.`);
   }
   if (lines.length === 0) return null;
@@ -703,6 +761,8 @@ export async function POST(req: Request) {
 
   const spaceId = (body?.spaceId || "").trim();
   const rawQuestion = (body?.question || "").trim();
+  const bookingId = (body?.bookingId || "").trim() || null;
+
   if (!spaceId) {
     return NextResponse.json({ error: "Missing spaceId" }, { status: 400 });
   }
@@ -711,17 +771,41 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Missing question" }, { status: 400 });
   }
 
-  if (detectContactRequest(question)) {
-    // TODO: log moderation event for safety analytics.
+  const contactKind = classifyContactRequest(question);
+  if (contactKind) {
     return NextResponse.json({
       kind: "safety",
-      answer: SAFETY_CONTACT_REPLY,
+      answer: contactRequestBlockedReply(contactKind),
     });
+  }
+
+  const admin = getAdminClient();
+  let access: AssistantAccessContext = {
+    viewerRole: "guest",
+    bookingStatus: null,
+    paymentStatus: null,
+    bookingId: null,
+    userId: null,
+    canRevealContactDetails: false,
+    canRevealOperationalInfo: false,
+  };
+
+  try {
+    const userId = await resolveOptionalUserId(req);
+    if (admin) {
+      access = await resolveAssistantAccessContext(admin, {
+        spaceId,
+        userId,
+        bookingId,
+      });
+    }
+  } catch (accessErr) {
+    console.warn("space-assistant: access resolution failed", accessErr);
   }
 
   let ctx: AssistantContext | null = null;
   try {
-    ctx = await loadAssistantContext(spaceId);
+    ctx = await loadAssistantContext(spaceId, access);
   } catch {
     return NextResponse.json({ error: "Failed to load listing context" }, { status: 500 });
   }
@@ -733,23 +817,34 @@ export async function POST(req: Request) {
     );
   }
 
-  // Prefer host-confirmed Q&A when the new question matches a previously
-  // answered yes/no question on the same listing.
   const confirmed = answerFromConfirmedQa(ctx, question);
   if (confirmed) {
-    return NextResponse.json({ kind: "context", answer: confirmed });
+    return NextResponse.json({
+      kind: "context",
+      answer: finalizeAssistantAnswer(confirmed, access),
+    });
+  }
+
+  const knowledge = answerFromKnowledge(ctx, question);
+  if (knowledge) {
+    return NextResponse.json({
+      kind: "context",
+      answer: finalizeAssistantAnswer(knowledge, access),
+    });
   }
 
   const intent = classifyIntent(question);
   const answer = buildAnswer(intent, ctx);
 
   if (!answer) {
-    // TODO: persist this question to a `listing_faq` queue for the host to fill.
     return NextResponse.json({
       kind: "fallback",
       answer: FALLBACK_UNKNOWN_REPLY,
     });
   }
 
-  return NextResponse.json({ kind: "context", answer });
+  return NextResponse.json({
+    kind: "context",
+    answer: finalizeAssistantAnswer(answer, access),
+  });
 }

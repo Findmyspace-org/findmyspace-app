@@ -159,9 +159,14 @@ export default function SpaceAssistant({
     setInput("");
     setIsThinking(true);
     try {
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
       const res = await fetch("/api/space-assistant", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({ spaceId, question: text }),
       });
       const payload = (await res.json().catch(() => null)) as

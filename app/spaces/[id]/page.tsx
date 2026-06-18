@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabase";
 import BookingRequestForm from "@/app/components/BookingRequestForm";
 import SpaceAssistant from "@/app/components/SpaceAssistant";
 import SpaceAttributesDisplay from "@/app/components/SpaceAttributesDisplay";
+import MarkdownDescriptionDisplay from "@/app/components/MarkdownDescriptionDisplay";
 import SpaceGallerySection from "./space-gallery-section";
 import SpaceMapSection from "./space-map-section";
 import {
@@ -333,9 +334,9 @@ export default async function Page({
 
             <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
               <h2 className="text-xl font-semibold text-[#192a3a]">About this space</h2>
-              <p className="mt-3 text-base leading-relaxed text-gray-700">
-                {space.description || "No description added yet."}
-              </p>
+              <div className="mt-3">
+                <MarkdownDescriptionDisplay content={space.description} />
+              </div>
             </section>
 
             {suitableForLabels.length > 0 ? (

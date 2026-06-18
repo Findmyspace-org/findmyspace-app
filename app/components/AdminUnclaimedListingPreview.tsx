@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { MapPin } from "lucide-react";
+import MarkdownDescriptionDisplay from "@/app/components/MarkdownDescriptionDisplay";
 import SpaceAttributesDisplay from "@/app/components/SpaceAttributesDisplay";
 import { UnclaimedListingClaimSection } from "@/app/components/UnclaimedListingClaimSection";
 import { UnclaimedListingPricingSection } from "@/app/components/UnclaimedListingPricingSection";
@@ -106,9 +107,9 @@ export function AdminUnclaimedListingPreview({
 
           <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
             <h2 className="text-xl font-semibold text-[#192a3a]">About this space</h2>
-            <p className="mt-3 text-base leading-relaxed text-gray-700">
-              {listing.description || "No description added yet."}
-            </p>
+            <div className="mt-3">
+              <MarkdownDescriptionDisplay content={listing.description} />
+            </div>
           </section>
 
           <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5">

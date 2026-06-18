@@ -11,6 +11,7 @@ const TileLayer = dynamic(() => import("react-leaflet").then(m => m.TileLayer), 
 import "leaflet/dist/leaflet.css";
 
 import { MapPin, Tag, Wallet, CalendarDays, FileText } from "lucide-react";
+import { stripMarkdownForExcerpt } from "@/lib/markdown-description";
 
 type Space = {
   id: string;
@@ -312,7 +313,7 @@ export default function MapView({ spaces }: Props) {
                     {firstSpace.description ? (
                       <div className="flex items-start gap-2">
                         <FileText className="mt-0.5 h-4 w-4 shrink-0 text-gray-500" />
-                        <span>{firstSpace.description}</span>
+                        <span>{stripMarkdownForExcerpt(firstSpace.description, 220)}</span>
                       </div>
                     ) : null}
                   </div>
