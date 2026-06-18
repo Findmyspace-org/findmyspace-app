@@ -4,6 +4,11 @@ import { UNCLAIMED_LISTING_STATUS } from "@/lib/listing-lifecycle";
 import { parseSpaceCrmLinkInput } from "@/lib/space-crm-link";
 import { validateMinimumPublicContent } from "@/lib/admin-public-listing-mode";
 import {
+  parseSpacePricingInput,
+  syncLegacyPriceFields,
+  type SpacePriceUnit,
+} from "@/lib/space-pricing";
+import {
   isGroupSizeApplicable,
   parseGroupSizeInput,
   validateGroupSizePair,
@@ -44,6 +49,10 @@ export type UnclaimedSpaceInput = {
   max_group_size?: number | null;
   crm_organisation_id?: string | null;
   crm_contact_id?: string | null;
+  price_amount?: number | null;
+  price_unit?: string | null;
+  deposit_required?: boolean | null;
+  deposit_amount?: number | null;
 };
 
 export function createServiceAdminClient(): SupabaseClient | null {
@@ -210,6 +219,18 @@ export function parseUnclaimedSpaceInput(
     data.crm_contact_id = crmParsed.data.crm_contact_id;
   }
 
+  const pricingParsed = parseSpacePricingInput(body);
+  if (!pricingParsed.ok) {
+    return { ok: false, error: pricingParsed.error };
+  }
+  if (pricingParsed.data) {
+    data.price_amount = pricingParsed.data.price_amount;
+    data.price_unit = pricingParsed.data.price_unit;
+    data.deposit_required = pricingParsed.data.deposit_required;
+    data.deposit_amount = pricingParsed.data.deposit_amount;
+    data.booking_unit = pricingParsed.data.booking_unit;
+  }
+
   return { ok: true, data };
 }
 
@@ -220,6 +241,9 @@ export function buildUnclaimedSpaceRow(
   options?: { propertyId?: string | null }
 ): Record<string, unknown> {
   const street = input.street_address ?? input.address_line_1 ?? null;
+  const priceUnit = (input.price_unit as SpacePriceUnit | null) ?? null;
+  const legacy = syncLegacyPriceFields(input.price_amount ?? null, priceUnit);
+
   return {
     owner_id: null,
     created_by_admin: true,
@@ -229,7 +253,7 @@ export function buildUnclaimedSpaceRow(
     title: input.title?.trim() || "Untitled listing",
     description: input.description ?? null,
     space_type: input.space_type ?? null,
-    booking_unit: input.booking_unit ?? "day",
+    booking_unit: input.booking_unit ?? legacy.booking_unit,
     city: input.city ?? null,
     suburb: input.suburb ?? null,
     street_address: street,
@@ -239,9 +263,9 @@ export function buildUnclaimedSpaceRow(
     address_line_1: street,
     latitude: input.latitude ?? null,
     longitude: input.longitude ?? null,
-    price_per_hour: null,
-    price_per_day: null,
-    price_per_month: null,
+    price_per_hour: legacy.price_per_hour,
+    price_per_day: legacy.price_per_day,
+    price_per_month: legacy.price_per_month,
     verification_status: "pending",
     ownership_proof_status: "pending",
     crm_organisation_id: input.crm_organisation_id ?? null,
@@ -252,6 +276,10 @@ export function buildUnclaimedSpaceRow(
     max_group_size: isGroupSizeApplicable(input.space_type)
       ? (input.max_group_size ?? null)
       : null,
+    price_amount: input.price_amount ?? null,
+    price_unit: input.price_unit ?? null,
+    deposit_required: input.deposit_required ?? false,
+    deposit_amount: input.deposit_amount ?? null,
   };
 }
 

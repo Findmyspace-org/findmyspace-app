@@ -12,6 +12,7 @@ import "leaflet/dist/leaflet.css";
 
 import { MapPin, Tag, Wallet, CalendarDays, FileText } from "lucide-react";
 import { stripMarkdownForExcerpt } from "@/lib/markdown-description";
+import { formatSpacePriceDisplay } from "@/lib/space-pricing";
 
 type Space = {
   id: string;
@@ -22,6 +23,8 @@ type Space = {
   address_line_1?: string | null;
   space_type?: string | null;
   booking_unit?: string | null;
+  price_amount?: number | null;
+  price_unit?: string | null;
   price_per_hour?: number | null;
   price_per_day?: number | null;
   price_per_month?: number | null;
@@ -68,19 +71,7 @@ function formatBookingUnit(value?: string | null) {
 }
 
 function getPriceLabel(space: Space) {
-  if (space.booking_unit === "hour" && space.price_per_hour) {
-    return `R${space.price_per_hour} / hour`;
-  }
-
-  if (space.booking_unit === "month" && space.price_per_month) {
-    return `R${space.price_per_month} / month`;
-  }
-
-  if (space.price_per_day) {
-    return `R${space.price_per_day} / day`;
-  }
-
-  return "Price not set";
+  return formatSpacePriceDisplay(space);
 }
 
 function getPrimaryAddress(space: Space) {

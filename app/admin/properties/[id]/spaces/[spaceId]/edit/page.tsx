@@ -12,6 +12,7 @@ import { AdminUnclaimedSpaceForm } from "@/app/components/AdminUnclaimedSpaceFor
 import { AdminPropertySpaceBreadcrumb } from "@/app/components/AdminPropertySpaceBreadcrumb";
 import { UnclaimedListingEnquirySocialProof } from "@/app/components/UnclaimedListingEnquirySocialProof";
 import { sortSpaceImages } from "@/lib/sort-space-images";
+import { spacePricingFormFromRow } from "@/lib/space-pricing";
 import type { SpaceCrmLinkSummary } from "@/lib/space-crm-link";
 
 type SpaceRow = {
@@ -32,6 +33,13 @@ type SpaceRow = {
   property_id: string | null;
   min_group_size?: number | null;
   max_group_size?: number | null;
+  price_amount?: number | null;
+  price_unit?: string | null;
+  deposit_required?: boolean | null;
+  deposit_amount?: number | null;
+  price_per_hour?: number | null;
+  price_per_day?: number | null;
+  price_per_month?: number | null;
 };
 
 export default function EditPropertySpacePage() {
@@ -238,6 +246,15 @@ function EditPropertySpacePageContent() {
                 space.min_group_size != null ? String(space.min_group_size) : "",
               maxGroupSize:
                 space.max_group_size != null ? String(space.max_group_size) : "",
+              ...(() => {
+                const pricing = spacePricingFormFromRow(space);
+                return {
+                  priceAmount: pricing.priceAmount,
+                  priceUnit: pricing.priceUnit,
+                  depositRequired: pricing.depositRequired,
+                  depositAmount: pricing.depositAmount,
+                };
+              })(),
               attributes,
             }}
         />

@@ -30,6 +30,10 @@ import { UnclaimedListingSidebar } from "@/app/components/UnclaimedListingSideba
 import { getListingEnquiryCount } from "@/lib/listing-enquiry-count";
 import { PUBLIC_SPACE_SELECT } from "@/lib/public-space-columns";
 import { formatGroupSizePublic } from "@/lib/group-size";
+import {
+  formatSpaceDepositDetail,
+  formatSpacePriceDisplay,
+} from "@/lib/space-pricing";
 
 import {
   ArrowLeft,
@@ -58,6 +62,10 @@ type Space = {
   address_line_1: string | null;
   space_type: string | null;
   booking_unit: string | null;
+  price_amount: number | null;
+  price_unit: string | null;
+  deposit_required: boolean | null;
+  deposit_amount: number | null;
   price_per_hour: number | null;
   price_per_day: number | null;
   price_per_month: number | null;
@@ -174,19 +182,8 @@ export default async function Page({
   const sportTypeLabels = getSportTypeBadgeLabels(space.space_type, space.attributes);
   const groupSizeLabel = formatGroupSizePublic(space.min_group_size, space.max_group_size);
 
-  const price =
-    space.booking_unit === "hour"
-      ? space.price_per_hour
-      : space.booking_unit === "month"
-      ? space.price_per_month
-      : space.price_per_day;
-
-  const suffix =
-    space.booking_unit === "hour"
-      ? "/ hour"
-      : space.booking_unit === "month"
-      ? "/ month"
-      : "/ day";
+  const priceLabel = formatSpacePriceDisplay(space);
+  const depositLabel = formatSpaceDepositDetail(space);
 
   const address = formatListingAddress({
     street_address: space.street_address,
@@ -412,9 +409,11 @@ export default async function Page({
                 From
               </p>
               <p className="mt-2 text-4xl font-semibold leading-none text-[#192a3a]">
-                {price ? `R${price}` : "Not set"}
+                {priceLabel}
               </p>
-              <p className="mt-2 text-sm text-gray-600">{suffix}</p>
+              {depositLabel ? (
+                <p className="mt-2 text-sm text-gray-600">{depositLabel}</p>
+              ) : null}
 
               <div className="mt-5 rounded-xl border border-[#e2e8f0] bg-[#fafbfc] p-3">
                 <p className="text-xs font-medium uppercase tracking-[0.08em] text-gray-500">

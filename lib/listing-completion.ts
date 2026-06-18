@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { spaceHasCompletePricing } from "@/lib/space-pricing";
 import {
   buildClaimReadiness,
   claimSubmitBlockers,
@@ -54,6 +55,10 @@ type SpaceRow = {
   suburb: string | null;
   status: string | null;
   owner_id: string | null;
+  price_amount: number | null;
+  price_unit: string | null;
+  deposit_required: boolean | null;
+  deposit_amount: number | null;
   price_per_hour: number | null;
   price_per_day: number | null;
   price_per_month: number | null;
@@ -92,10 +97,7 @@ function uploadedVerificationState(
 }
 
 function hasPricing(space: SpaceRow): boolean {
-  const unit = space.booking_unit || "day";
-  if (unit === "hour") return (space.price_per_hour ?? 0) > 0;
-  if (unit === "month") return (space.price_per_month ?? 0) > 0;
-  return (space.price_per_day ?? 0) > 0;
+  return spaceHasCompletePricing(space);
 }
 
 function basicsComplete(space: SpaceRow): boolean {
@@ -114,7 +116,7 @@ export async function computeListingCompletion(
   const { data: space, error } = await admin
     .from("spaces")
     .select(
-      "id, title, description, space_type, booking_unit, city, suburb, status, owner_id, property_id, public_listing_mode, price_per_hour, price_per_day, price_per_month, ownership_proof_status, listing_admin_comment, submitted_for_review_at"
+      "id, title, description, space_type, booking_unit, city, suburb, status, owner_id, property_id, public_listing_mode, price_amount, price_unit, deposit_required, deposit_amount, price_per_hour, price_per_day, price_per_month, ownership_proof_status, listing_admin_comment, submitted_for_review_at"
     )
     .eq("id", spaceId)
     .maybeSingle();

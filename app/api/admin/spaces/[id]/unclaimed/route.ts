@@ -8,6 +8,7 @@ import {
   parseUnclaimedSpaceInput,
   syncSpaceAttributes,
 } from "@/lib/admin-unclaimed-space";
+import { parseSpacePricingInput } from "@/lib/space-pricing";
 import {
   fetchSpaceCrmLinkSummary,
   validateSpaceCrmLink,
@@ -137,6 +138,24 @@ export async function PATCH(
   if (d.description !== undefined) patch.description = d.description;
   if (d.space_type !== undefined) patch.space_type = d.space_type;
   if (d.booking_unit !== undefined) patch.booking_unit = d.booking_unit ?? "day";
+  if (d.price_amount !== undefined) patch.price_amount = d.price_amount;
+  if (d.price_unit !== undefined) patch.price_unit = d.price_unit;
+  if (d.deposit_required !== undefined) patch.deposit_required = d.deposit_required;
+  if (d.deposit_amount !== undefined) patch.deposit_amount = d.deposit_amount;
+  if (d.price_unit !== undefined || d.price_amount !== undefined) {
+    const pricingParsed = parseSpacePricingInput({
+      price_amount: d.price_amount,
+      price_unit: d.price_unit,
+      deposit_required: d.deposit_required ?? false,
+      deposit_amount: d.deposit_amount ?? null,
+    });
+    if (pricingParsed.ok && pricingParsed.data) {
+      patch.booking_unit = pricingParsed.data.booking_unit;
+      patch.price_per_hour = pricingParsed.data.price_per_hour;
+      patch.price_per_day = pricingParsed.data.price_per_day;
+      patch.price_per_month = pricingParsed.data.price_per_month;
+    }
+  }
   if (d.city !== undefined) patch.city = d.city;
   if (d.suburb !== undefined) patch.suburb = d.suburb;
   if (d.province !== undefined) patch.province = d.province;

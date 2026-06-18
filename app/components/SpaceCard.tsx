@@ -13,6 +13,12 @@ import {
   shouldHideListingPricing,
   ENQUIRY_PRICING_LABEL,
 } from "@/lib/listing-lifecycle";
+import {
+  formatSpaceDepositDetail,
+  formatSpacePriceDisplay,
+  formatSpacePriceShort,
+  formatSpacePriceSuffix,
+} from "@/lib/space-pricing";
 
 type Space = {
   id: string;
@@ -27,6 +33,10 @@ type Space = {
   address_line_1: string | null;
   space_type: string | null;
   booking_unit: string | null;
+  price_amount?: number | null;
+  price_unit?: string | null;
+  deposit_required?: boolean | null;
+  deposit_amount?: number | null;
   price_per_hour: number | null;
   price_per_day: number | null;
   price_per_month: number | null;
@@ -55,24 +65,16 @@ export default function SpaceCard({
 }: Props) {
   const router = useRouter();
 
-  function getPriceValue() {
-    if (space.booking_unit === "hour") return space.price_per_hour;
-    if (space.booking_unit === "month") return space.price_per_month;
-    return space.price_per_day;
-  }
-
-  function getPriceSuffix() {
-    if (space.booking_unit === "hour") return "/ hour";
-    if (space.booking_unit === "month") return "/ month";
-    return "/ day";
-  }
-
   const hidePricing = shouldHideListingPricing(space);
 
   function getPriceLabel() {
     if (hidePricing) return ENQUIRY_PRICING_LABEL;
-    const price = getPriceValue();
-    return price ? `R${price}` : "Price not set";
+    return formatSpacePriceShort(space);
+  }
+
+  function getPriceSuffix() {
+    if (hidePricing) return null;
+    return formatSpacePriceSuffix(space);
   }
 
   function formatSpaceType(value?: string | null) {
@@ -163,8 +165,8 @@ export default function SpaceCard({
         ) : null}
 
         <p className="mt-3 text-base font-semibold text-[#0f172a]">
-          {getPriceLabel()}{" "}
-          {!hidePricing ? (
+          {getPriceLabel()}
+          {getPriceSuffix() ? (
             <span className="font-normal text-[#475569]">{getPriceSuffix()}</span>
           ) : null}
         </p>

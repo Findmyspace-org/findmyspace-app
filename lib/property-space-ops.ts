@@ -8,6 +8,10 @@ import {
   normalizePublicListingMode,
   type PublicListingMode,
 } from "@/lib/public-listing-mode";
+import {
+  spaceHasCompletePricing,
+  type SpacePricingInput,
+} from "@/lib/space-pricing";
 import { isArchivedSpace } from "@/lib/space-archive";
 
 export type PropertySpaceHealthInput = {
@@ -15,6 +19,10 @@ export type PropertySpaceHealthInput = {
   status: string | null;
   public_listing_mode: string | null;
   booking_unit: string | null;
+  price_amount: number | null;
+  price_unit: string | null;
+  deposit_required: boolean | null;
+  deposit_amount: number | null;
   price_per_hour: number | null;
   price_per_day: number | null;
   price_per_month: number | null;
@@ -70,20 +78,8 @@ export type PropertySpaceRow = {
   is_archived: boolean;
 };
 
-export function spaceHasPricing(
-  space: Pick<
-    PropertySpaceHealthInput,
-    "booking_unit" | "price_per_hour" | "price_per_day" | "price_per_month"
-  >
-): boolean {
-  const unit = space.booking_unit || "day";
-  if (unit === "hour") {
-    return space.price_per_hour != null && space.price_per_hour > 0;
-  }
-  if (unit === "month") {
-    return space.price_per_month != null && space.price_per_month > 0;
-  }
-  return space.price_per_day != null && space.price_per_day > 0;
+export function spaceHasPricing(space: SpacePricingInput): boolean {
+  return spaceHasCompletePricing(space);
 }
 
 export function spaceHasLocation(
@@ -190,6 +186,10 @@ type RawPropertySpace = {
   public_listing_mode: string | null;
   space_type: string | null;
   booking_unit: string | null;
+  price_amount: number | null;
+  price_unit: string | null;
+  deposit_required: boolean | null;
+  deposit_amount: number | null;
   price_per_hour: number | null;
   price_per_day: number | null;
   price_per_month: number | null;

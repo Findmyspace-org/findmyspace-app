@@ -19,6 +19,14 @@ import {
 } from "@/app/components/GroupSizeFields";
 import MarkdownDescriptionEditor from "@/app/components/MarkdownDescriptionEditor";
 import { SpaceAiInformationPanel } from "@/app/components/SpaceAiInformationPanel";
+import {
+  SpacePricingFields,
+  validateSpacePricingFormValues,
+} from "@/app/components/SpacePricingFields";
+import {
+  spacePricingFormFromRow,
+  spacePricingPayloadFromForm,
+} from "@/lib/space-pricing";
 import { SectionInlineAlert } from "@/app/components/SectionInlineAlert";
 import { useSectionFeedback } from "@/lib/use-section-feedback";
 import {
@@ -83,6 +91,10 @@ type SpaceEditRow = {
   address_line_1: string | null;
   space_type: string | null;
   booking_unit: string | null;
+  price_amount: number | null;
+  price_unit: string | null;
+  deposit_required: boolean | null;
+  deposit_amount: number | null;
   price_per_hour: number | null;
   price_per_day: number | null;
   price_per_month: number | null;
@@ -117,6 +129,8 @@ type SpaceUpdatePayload = {
   address_line_1: string;
   space_type: string;
   booking_unit: string;
+  price_amount: number | null;
+  price_unit: string;
   price_per_hour: number | null;
   price_per_day: number | null;
   price_per_month: number | null;
@@ -170,15 +184,15 @@ export default function EditListingPage({ params }: PageProps) {
   const [country, setCountry] = useState("South Africa");
   const [spaceType, setSpaceType] = useState("storage");
   const [bookingUnit, setBookingUnit] = useState("day");
-  const [pricePerHour, setPricePerHour] = useState("");
-  const [pricePerDay, setPricePerDay] = useState("");
-  const [pricePerMonth, setPricePerMonth] = useState("");
+  const [priceAmount, setPriceAmount] = useState("");
+  const [priceUnit, setPriceUnit] = useState("day");
+  const [depositRequired, setDepositRequired] = useState(false);
+  const [depositAmount, setDepositAmount] = useState("");
   const [minBookingHours, setMinBookingHours] = useState("1");
   const [minBookingDays, setMinBookingDays] = useState("1");
   const [minBookingMonths, setMinBookingMonths] = useState("1");
   const [minGroupSize, setMinGroupSize] = useState("");
   const [maxGroupSize, setMaxGroupSize] = useState("");
-  const [depositType, setDepositType] = useState<DepositType>("none");
   const [monthlyPaymentDay, setMonthlyPaymentDay] = useState("1");
   const [status, setStatus] = useState("pending");
   const [ownershipProofStatus, setOwnershipProofStatus] = useState("pending");
@@ -262,7 +276,7 @@ export default function EditListingPage({ params }: PageProps) {
 
     const { data: rawData, error } = await (supabase.from("spaces") as any)
       .select(
-        "id, owner_id, title, description, city, suburb, street_address, province, postal_code, country, address_line_1, space_type, booking_unit, price_per_hour, price_per_day, price_per_month, min_booking_hours, min_booking_days, min_booking_months, min_group_size, max_group_size, status, ownership_proof_status, deposit_type, deposit_months, monthly_payment_day"
+        "id, owner_id, title, description, city, suburb, street_address, province, postal_code, country, address_line_1, space_type, booking_unit, price_amount, price_unit, deposit_required, deposit_amount, price_per_hour, price_per_day, price_per_month, min_booking_hours, min_booking_days, min_booking_months, min_group_size, max_group_size, status, ownership_proof_status, deposit_type, deposit_months, monthly_payment_day"
       )
       .eq("id", id)
       .eq("owner_id", user.id)
@@ -287,15 +301,11 @@ export default function EditListingPage({ params }: PageProps) {
     setCountry(data.country ?? "South Africa");
     setSpaceType(data.space_type ?? "storage");
     setBookingUnit(data.booking_unit ?? "day");
-    setPricePerHour(
-      typeof data.price_per_hour === "number" ? String(data.price_per_hour) : ""
-    );
-    setPricePerDay(
-      typeof data.price_per_day === "number" ? String(data.price_per_day) : ""
-    );
-    setPricePerMonth(
-      typeof data.price_per_month === "number" ? String(data.price_per_month) : ""
-    );
+    const pricingForm = spacePricingFormFromRow(data);
+    setPriceAmount(pricingForm.priceAmount);
+    setPriceUnit(pricingForm.priceUnit);
+    setDepositRequired(pricingForm.depositRequired);
+    setDepositAmount(pricingForm.depositAmount);
     setMinBookingHours(
       typeof data.min_booking_hours === "number"
         ? String(data.min_booking_hours)
@@ -317,7 +327,6 @@ export default function EditListingPage({ params }: PageProps) {
     setMaxGroupSize(
       typeof data.max_group_size === "number" ? String(data.max_group_size) : ""
     );
-    setDepositType(data.deposit_type ?? "none");
     setMonthlyPaymentDay(String(data.monthly_payment_day ?? 1));
     const loadedStatus = data.status ?? "pending";
     setStatus(loadedStatus);
@@ -716,17 +725,39 @@ export default function EditListingPage({ params }: PageProps) {
     setSaving(true);
     clearSaveFeedback();
 
-    let parsedDepositMonths = 0;
     let parsedMonthlyPaymentDay = 1;
-    let finalDepositType: DepositType = "none";
+    const effectiveBookingUnit =
+      priceUnit === "hour" || priceUnit === "day" || priceUnit === "month"
+        ? priceUnit
+        : priceUnit === "event"
+          ? "day"
+          : bookingUnit;
 
-    if (bookingUnit === "hour") {
-      if (!pricePerHour || Number(pricePerHour) <= 0) {
-        setSaveFailure("Please enter a valid hourly price.");
-        setSaving(false);
-        return;
-      }
+    const pricingErr = validateSpacePricingFormValues(
+      priceAmount,
+      priceUnit,
+      depositRequired,
+      depositAmount
+    );
+    if (pricingErr) {
+      setSaveFailure(pricingErr);
+      setSaving(false);
+      return;
+    }
 
+    const pricingPayload = spacePricingPayloadFromForm(
+      priceAmount,
+      priceUnit,
+      depositRequired,
+      depositAmount
+    );
+    if (!pricingPayload.ok) {
+      setSaveFailure(pricingPayload.error);
+      setSaving(false);
+      return;
+    }
+
+    if (effectiveBookingUnit === "hour") {
       if (Number(minBookingHours || 0) < 1) {
         setSaveFailure("Minimum booking hours must be at least 1.");
         setSaving(false);
@@ -734,13 +765,7 @@ export default function EditListingPage({ params }: PageProps) {
       }
     }
 
-    if (bookingUnit === "day") {
-      if (!pricePerDay || Number(pricePerDay) <= 0) {
-        setSaveFailure("Please enter a valid daily price.");
-        setSaving(false);
-        return;
-      }
-
+    if (effectiveBookingUnit === "day") {
       if (Number(minBookingDays || 0) < 1) {
         setSaveFailure("Minimum booking days must be at least 1.");
         setSaving(false);
@@ -748,31 +773,11 @@ export default function EditListingPage({ params }: PageProps) {
       }
     }
 
-    if (bookingUnit === "month") {
-      finalDepositType = depositType;
-      parsedDepositMonths =
-        depositType === "one_month"
-          ? 1
-          : depositType === "two_months"
-          ? 2
-          : 0;
-
+    if (effectiveBookingUnit === "month") {
       parsedMonthlyPaymentDay = Number(monthlyPaymentDay || "1");
-
-      if (!["none", "one_month", "two_months"].includes(finalDepositType)) {
-        setSaveFailure("Please select a valid deposit option.");
-        setSaving(false);
-        return;
-      }
 
       if (parsedMonthlyPaymentDay < 1 || parsedMonthlyPaymentDay > 28) {
         setSaveFailure("Monthly payment day must be between 1 and 28.");
-        setSaving(false);
-        return;
-      }
-
-      if (!pricePerMonth || Number(pricePerMonth) <= 0) {
-        setSaveFailure("Please enter a valid monthly price.");
         setSaving(false);
         return;
       }
@@ -816,24 +821,23 @@ export default function EditListingPage({ params }: PageProps) {
       country,
       address_line_1: streetAddress,
       space_type: spaceType,
-      booking_unit: bookingUnit,
-      price_per_hour:
-        bookingUnit === "hour" && pricePerHour ? Number(pricePerHour) : null,
-      price_per_day:
-        bookingUnit === "day" && pricePerDay ? Number(pricePerDay) : null,
-      price_per_month:
-        bookingUnit === "month" && pricePerMonth ? Number(pricePerMonth) : null,
+      booking_unit: pricingPayload.data.booking_unit,
+      price_amount: pricingPayload.data.price_amount,
+      price_unit: pricingPayload.data.price_unit,
+      price_per_hour: pricingPayload.data.price_per_hour,
+      price_per_day: pricingPayload.data.price_per_day,
+      price_per_month: pricingPayload.data.price_per_month,
       min_booking_hours:
-        bookingUnit === "hour" ? Number(minBookingHours || 1) : null,
+        effectiveBookingUnit === "hour" ? Number(minBookingHours || 1) : null,
       min_booking_days:
-        bookingUnit === "day" ? Number(minBookingDays || 1) : null,
+        effectiveBookingUnit === "day" ? Number(minBookingDays || 1) : null,
       min_booking_months:
-        bookingUnit === "month" ? Number(minBookingMonths || 1) : null,
-      deposit_type: finalDepositType,
-      deposit_months: parsedDepositMonths,
+        effectiveBookingUnit === "month" ? Number(minBookingMonths || 1) : null,
+      deposit_type: "none",
+      deposit_months: 0,
       monthly_payment_day: parsedMonthlyPaymentDay,
-      deposit_required: bookingUnit === "month" && finalDepositType !== "none",
-      deposit_amount: null,
+      deposit_required: pricingPayload.data.deposit_required,
+      deposit_amount: pricingPayload.data.deposit_amount,
       ...groupSizePayloadFromForm(spaceType, minGroupSize, maxGroupSize),
     };
 
@@ -1021,7 +1025,7 @@ export default function EditListingPage({ params }: PageProps) {
                 />
               </div>
 
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+              <div className="grid gap-4 md:grid-cols-2">
                 <div>
                   <label className="mb-1 block text-xs font-medium text-gray-700">
                     Space type
@@ -1049,143 +1053,6 @@ export default function EditListingPage({ params }: PageProps) {
                     ))}
                   </select>
                 </div>
-
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-gray-700">
-                    Booking unit
-                  </label>
-                  <select
-                    value={bookingUnit}
-                    onChange={(e) => setBookingUnit(e.target.value)}
-                    className="w-full rounded-sm border border-gray-400 px-4 py-3 outline-none"
-                  >
-                    <option value="hour">By hour</option>
-                    <option value="day">By day</option>
-                    <option value="month">By month</option>
-                  </select>
-                </div>
-
-                {bookingUnit === "hour" && (
-                  <div>
-                    <label className="mb-1 block text-xs font-medium text-gray-700">
-                      Price per hour
-                    </label>
-                    <input
-                      type="number"
-                      value={pricePerHour}
-                      onChange={(e) => setPricePerHour(e.target.value)}
-                      className="w-full rounded-sm border border-gray-400 px-4 py-3 outline-none"
-                    />
-                  </div>
-                )}
-                {bookingUnit === "hour" && (
-                  <div>
-                    <label className="mb-1 block text-xs font-medium text-gray-700">
-                      Minimum booking hours
-                    </label>
-                    <input
-                      type="number"
-                      min="1"
-                      value={minBookingHours}
-                      onChange={(e) => setMinBookingHours(e.target.value)}
-                      className="w-full rounded-sm border border-gray-400 px-4 py-3 outline-none"
-                    />
-                  </div>
-                )}
-
-                {bookingUnit === "day" && (
-                  <div>
-                    <label className="mb-1 block text-xs font-medium text-gray-700">
-                      Price per day
-                    </label>
-                    <input
-                      type="number"
-                      value={pricePerDay}
-                      onChange={(e) => setPricePerDay(e.target.value)}
-                      className="w-full rounded-sm border border-gray-400 px-4 py-3 outline-none"
-                    />
-                  </div>
-                )}
-                {bookingUnit === "day" && (
-                  <div>
-                    <label className="mb-1 block text-xs font-medium text-gray-700">
-                      Minimum booking days
-                    </label>
-                    <input
-                      type="number"
-                      min="1"
-                      value={minBookingDays}
-                      onChange={(e) => setMinBookingDays(e.target.value)}
-                      className="w-full rounded-sm border border-gray-400 px-4 py-3 outline-none"
-                    />
-                  </div>
-                )}
-
-                {bookingUnit === "month" && (
-                  <>
-                    <div>
-                      <label className="mb-1 block text-xs font-medium text-gray-700">
-                        Price per month
-                      </label>
-                      <input
-                        type="number"
-                        value={pricePerMonth}
-                        onChange={(e) => setPricePerMonth(e.target.value)}
-                        className="w-full rounded-sm border border-gray-400 px-4 py-3 outline-none"
-                      />
-                    </div>
-                    <div>
-                      <label className="mb-1 block text-xs font-medium text-gray-700">
-                        Minimum booking months
-                      </label>
-                      <input
-                        type="number"
-                        min="1"
-                        value={minBookingMonths}
-                        onChange={(e) => setMinBookingMonths(e.target.value)}
-                        className="w-full rounded-sm border border-gray-400 px-4 py-3 outline-none"
-                      />
-                    </div>
-                    <div>
-                      <label className="mb-1 block text-xs font-medium text-gray-700">
-                        Deposit required
-                      </label>
-                      <select
-                        value={depositType}
-                        onChange={(e) =>
-                          setDepositType(e.target.value as DepositType)
-                        }
-                        className="w-full rounded-sm border border-gray-400 px-4 py-3 outline-none"
-                      >
-                        <option value="none">No deposit</option>
-                        <option value="one_month">1 month deposit</option>
-                        <option value="two_months">2 months deposit</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="mb-1 block text-xs font-medium text-gray-700">
-                        Monthly payment day
-                      </label>
-                      <select
-                        value={monthlyPaymentDay}
-                        onChange={(e) => setMonthlyPaymentDay(e.target.value)}
-                        className="w-full rounded-sm border border-gray-400 px-4 py-3 outline-none"
-                      >
-                        {Array.from({ length: 28 }, (_, index) => {
-                          const day = index + 1;
-                          return (
-                            <option key={day} value={day}>
-                              Day {day}
-                            </option>
-                          );
-                        })}
-                      </select>
-                      <p className="mt-1 text-xs text-gray-500">
-                        Due date for each monthly payment.
-                      </p>
-                    </div>
-                  </>
-                )}
               </div>
 
               <div className="mt-4">
@@ -1198,6 +1065,105 @@ export default function EditListingPage({ params }: PageProps) {
                   inputClassName="w-full rounded-sm border border-gray-400 px-4 py-3 outline-none"
                   labelClassName="mb-1 block text-xs font-medium text-gray-700"
                 />
+              </div>
+
+              <div className="mt-6 rounded-lg border border-gray-200 bg-gray-50 p-4">
+                <h3 className="text-sm font-semibold text-gray-900">Pricing</h3>
+                <div className="mt-3">
+                  <SpacePricingFields
+                    priceAmount={priceAmount}
+                    priceUnit={priceUnit}
+                    depositRequired={depositRequired}
+                    depositAmount={depositAmount}
+                    disabled={editingLocked}
+                    onPriceAmountChange={setPriceAmount}
+                    onPriceUnitChange={(value) => {
+                      setPriceUnit(value);
+                      if (value === "on_request") setPriceAmount("");
+                      if (value === "hour" || value === "day" || value === "month") {
+                        setBookingUnit(value);
+                      }
+                    }}
+                    onDepositRequiredChange={(value) => {
+                      setDepositRequired(value);
+                      if (!value) setDepositAmount("");
+                    }}
+                    onDepositAmountChange={setDepositAmount}
+                    inputClassName="w-full rounded-sm border border-gray-400 px-4 py-3 outline-none"
+                    labelClassName="mb-1 block text-xs font-medium text-gray-700"
+                  />
+                </div>
+
+                {(priceUnit === "hour" || priceUnit === "day" || priceUnit === "month") && (
+                  <div className="mt-4 grid gap-4 md:grid-cols-2">
+                    {priceUnit === "hour" ? (
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-gray-700">
+                          Minimum booking hours
+                        </label>
+                        <input
+                          type="number"
+                          min="1"
+                          value={minBookingHours}
+                          onChange={(e) => setMinBookingHours(e.target.value)}
+                          className="w-full rounded-sm border border-gray-400 px-4 py-3 outline-none"
+                        />
+                      </div>
+                    ) : null}
+                    {priceUnit === "day" ? (
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-gray-700">
+                          Minimum booking days
+                        </label>
+                        <input
+                          type="number"
+                          min="1"
+                          value={minBookingDays}
+                          onChange={(e) => setMinBookingDays(e.target.value)}
+                          className="w-full rounded-sm border border-gray-400 px-4 py-3 outline-none"
+                        />
+                      </div>
+                    ) : null}
+                    {priceUnit === "month" ? (
+                      <>
+                        <div>
+                          <label className="mb-1 block text-xs font-medium text-gray-700">
+                            Minimum booking months
+                          </label>
+                          <input
+                            type="number"
+                            min="1"
+                            value={minBookingMonths}
+                            onChange={(e) => setMinBookingMonths(e.target.value)}
+                            className="w-full rounded-sm border border-gray-400 px-4 py-3 outline-none"
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-1 block text-xs font-medium text-gray-700">
+                            Monthly payment day
+                          </label>
+                          <select
+                            value={monthlyPaymentDay}
+                            onChange={(e) => setMonthlyPaymentDay(e.target.value)}
+                            className="w-full rounded-sm border border-gray-400 px-4 py-3 outline-none"
+                          >
+                            {Array.from({ length: 28 }, (_, index) => {
+                              const day = index + 1;
+                              return (
+                                <option key={day} value={day}>
+                                  Day {day}
+                                </option>
+                              );
+                            })}
+                          </select>
+                          <p className="mt-1 text-xs text-gray-500">
+                            Due date for each monthly payment.
+                          </p>
+                        </div>
+                      </>
+                    ) : null}
+                  </div>
+                )}
               </div>
 
               <div className="grid gap-4 md:grid-cols-3">

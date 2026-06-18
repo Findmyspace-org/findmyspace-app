@@ -23,6 +23,12 @@ import {
   groupSizePayloadFromForm,
   validateGroupSizeFormValues,
 } from "@/app/components/GroupSizeFields";
+import {
+  SpacePricingFields,
+  spacePricingFormFromRow,
+  spacePricingPayloadFromForm,
+  validateSpacePricingFormValues,
+} from "@/app/components/SpacePricingFields";
 import MarkdownDescriptionEditor from "@/app/components/MarkdownDescriptionEditor";
 
 type FormState = {
@@ -40,6 +46,10 @@ type FormState = {
   longitude: number | null;
   minGroupSize: string;
   maxGroupSize: string;
+  priceAmount: string;
+  priceUnit: string;
+  depositRequired: boolean;
+  depositAmount: string;
   attributes: Record<string, string[]>;
 };
 
@@ -52,11 +62,20 @@ type CrmLinkState = {
 };
 
 function payloadFromState(state: FormState, crmLink: CrmLinkState) {
+  const pricing = spacePricingPayloadFromForm(
+    state.priceAmount,
+    state.priceUnit,
+    state.depositRequired,
+    state.depositAmount
+  );
+  if (!pricing.ok) {
+    throw new Error(pricing.error);
+  }
+
   return {
     title: state.title,
     description: state.description,
     space_type: state.spaceType,
-    booking_unit: state.bookingUnit,
     city: state.city,
     suburb: state.suburb,
     street_address: state.streetAddress,
@@ -67,6 +86,7 @@ function payloadFromState(state: FormState, crmLink: CrmLinkState) {
     longitude: state.longitude,
     attributes: state.attributes,
     ...groupSizePayloadFromForm(state.spaceType, state.minGroupSize, state.maxGroupSize),
+    ...pricing.data,
     crm_organisation_id: crmLink.crm_organisation_id,
     crm_contact_id: crmLink.crm_contact_id,
   };
@@ -88,6 +108,10 @@ function formStateFromInitial(initial?: Partial<FormState>): FormState {
     longitude: initial?.longitude ?? null,
     minGroupSize: initial?.minGroupSize ?? "",
     maxGroupSize: initial?.maxGroupSize ?? "",
+    priceAmount: initial?.priceAmount ?? "",
+    priceUnit: initial?.priceUnit ?? "day",
+    depositRequired: initial?.depositRequired ?? false,
+    depositAmount: initial?.depositAmount ?? "",
     attributes: initial?.attributes ?? {},
   };
 }
@@ -196,6 +220,18 @@ export function AdminUnclaimedSpaceForm({
         );
         if (groupSizeErr) {
           setSaveFailure(groupSizeErr);
+          setSaving(false);
+          return;
+        }
+
+        const pricingErr = validateSpacePricingFormValues(
+          state.priceAmount,
+          state.priceUnit,
+          state.depositRequired,
+          state.depositAmount
+        );
+        if (pricingErr) {
+          setSaveFailure(pricingErr);
           setSaving(false);
           return;
         }
@@ -353,7 +389,7 @@ export function AdminUnclaimedSpaceForm({
           </span>
         ) : null}
         <span className="text-xs text-gray-500">
-          Pricing is hidden publicly — shown as “Pricing to be confirmed”.
+          Set venue pricing below. Unclaimed listings may still show pricing as to be confirmed publicly until published.
         </span>
       </div>
 
@@ -427,6 +463,35 @@ export function AdminUnclaimedSpaceForm({
             disabled={readOnly}
             onMinChange={(value) => setState((s) => ({ ...s, minGroupSize: value }))}
             onMaxChange={(value) => setState((s) => ({ ...s, maxGroupSize: value }))}
+          />
+        </fieldset>
+      </section>
+
+      <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+        <h2 className="text-lg font-semibold text-gray-900">Pricing</h2>
+        <fieldset disabled={readOnly} className="mt-4 disabled:opacity-80">
+          <SpacePricingFields
+            priceAmount={state.priceAmount}
+            priceUnit={state.priceUnit}
+            depositRequired={state.depositRequired}
+            depositAmount={state.depositAmount}
+            disabled={readOnly}
+            onPriceAmountChange={(value) =>
+              setState((s) => ({ ...s, priceAmount: value }))
+            }
+            onPriceUnitChange={(value) =>
+              setState((s) => ({ ...s, priceUnit: value, priceAmount: value === "on_request" ? "" : s.priceAmount }))
+            }
+            onDepositRequiredChange={(value) =>
+              setState((s) => ({
+                ...s,
+                depositRequired: value,
+                depositAmount: value ? s.depositAmount : "",
+              }))
+            }
+            onDepositAmountChange={(value) =>
+              setState((s) => ({ ...s, depositAmount: value }))
+            }
           />
         </fieldset>
       </section>

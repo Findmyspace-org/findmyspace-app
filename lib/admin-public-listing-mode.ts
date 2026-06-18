@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { spaceHasLegacyBookablePrice } from "@/lib/space-pricing";
 import { computeListingCompletion } from "@/lib/listing-completion";
 import {
   canAdminSetEnquiryMode,
@@ -83,10 +84,7 @@ function hasBookablePricing(space: {
   price_per_day: number | null;
   price_per_month: number | null;
 }): boolean {
-  const unit = space.booking_unit || "day";
-  if (unit === "hour") return (space.price_per_hour ?? 0) > 0;
-  if (unit === "month") return (space.price_per_month ?? 0) > 0;
-  return (space.price_per_day ?? 0) > 0;
+  return spaceHasLegacyBookablePrice(space);
 }
 
 export type AdminListingModeValidation =
