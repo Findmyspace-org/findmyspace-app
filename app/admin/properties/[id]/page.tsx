@@ -12,6 +12,7 @@ import { adminApiFetch } from "@/lib/admin-api-client";
 import { AdminPropertyInvitePanel } from "@/app/components/AdminPropertyInvitePanel";
 import { AdminPropertySpaceBreadcrumb } from "@/app/components/AdminPropertySpaceBreadcrumb";
 import { AdminPropertyForm } from "@/app/components/AdminPropertyForm";
+import { AdminPropertyLogo } from "@/app/components/AdminPropertyLogo";
 import { AdminPropertySummaryCards } from "@/app/components/AdminPropertySummaryCards";
 import {
   AdminPropertyGallery,
@@ -30,6 +31,7 @@ type PropertyDetail = {
   id: string;
   name: string;
   description: string | null;
+  logo_url: string | null;
   formatted_address: string;
   address_line1: string | null;
   suburb: string | null;
@@ -65,6 +67,7 @@ function AdminPropertyDetailContent({
   const [role, setRole] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [property, setProperty] = useState<PropertyDetail | null>(null);
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [spaces, setSpaces] = useState<PropertySpaceRow[]>([]);
   const [archivedSpaces, setArchivedSpaces] = useState<PropertySpaceRow[]>([]);
   const [summary, setSummary] = useState<PropertySpacesSummary>({
@@ -109,6 +112,7 @@ function AdminPropertyDetailContent({
     try {
       const result = await adminApiFetch(`/api/admin/properties/${propertyId}`);
       setProperty(result.property as PropertyDetail);
+      setLogoUrl(((result.property as PropertyDetail).logo_url as string | null) ?? null);
       setSpaces((result.spaces as PropertySpaceRow[]) || []);
       setArchivedSpaces((result.archived_spaces as PropertySpaceRow[]) || []);
       setSummary(
@@ -275,12 +279,20 @@ function AdminPropertyDetailContent({
         />
 
         <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="min-w-0">
-            <h1 className="text-2xl font-semibold text-gray-900">{property.name}</h1>
-            {property.formatted_address ? (
-              <p className="mt-1 text-sm text-gray-600">{property.formatted_address}</p>
-            ) : null}
-            <dl className="mt-3 flex flex-wrap gap-x-6 gap-y-2 text-sm">
+          <div className="flex min-w-0 flex-1 items-start gap-4">
+            <AdminPropertyLogo
+              propertyId={propertyId}
+              logoUrl={logoUrl}
+              onLogoChange={setLogoUrl}
+              onMessage={(msg) => setMessage(msg ?? "")}
+              variant="header"
+            />
+            <div className="min-w-0">
+              <h1 className="text-2xl font-semibold text-gray-900">{property.name}</h1>
+              {property.formatted_address ? (
+                <p className="mt-1 text-sm text-gray-600">{property.formatted_address}</p>
+              ) : null}
+              <dl className="mt-3 flex flex-wrap gap-x-6 gap-y-2 text-sm">
               {property.crm_organisation ? (
                 <div>
                   <dt className="text-gray-500">CRM organisation</dt>
@@ -312,6 +324,7 @@ function AdminPropertyDetailContent({
                 <dd className="font-medium text-gray-900">{property.invite_status}</dd>
               </div>
             </dl>
+            </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {!editing ? (
@@ -352,6 +365,8 @@ function AdminPropertyDetailContent({
             <AdminPropertyForm
               mode="edit"
               propertyId={propertyId}
+              logoUrl={logoUrl}
+              onLogoChange={setLogoUrl}
               initial={{
                 name: property.name,
                 description: property.description || "",

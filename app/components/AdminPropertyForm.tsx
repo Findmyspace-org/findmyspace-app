@@ -11,6 +11,7 @@ import {
   AdminLocationSection,
   type AdminLocationValue,
 } from "@/app/components/AdminLocationSection";
+import { AdminPropertyBrandingSection } from "@/app/components/AdminPropertyLogo";
 import { applyCrmOrgToPropertyFields } from "@/lib/property-crm-prefill";
 
 const FIELD_CLASS =
@@ -29,6 +30,8 @@ type Props = {
   mode: "create" | "edit";
   propertyId?: string;
   initial: AdminPropertyFormValues;
+  logoUrl?: string | null;
+  onLogoChange?: (logoUrl: string | null) => void;
   defaultOrganisationId?: string;
   defaultOrganisationName?: string;
   submitLabel?: string;
@@ -40,6 +43,8 @@ export function AdminPropertyForm({
   mode,
   propertyId,
   initial,
+  logoUrl = null,
+  onLogoChange,
   defaultOrganisationId,
   defaultOrganisationName,
   submitLabel,
@@ -186,6 +191,15 @@ export function AdminPropertyForm({
 
   return (
     <form onSubmit={(e) => void handleSubmit(e)} className="space-y-6">
+      {mode === "edit" && propertyId && onLogoChange ? (
+        <AdminPropertyBrandingSection
+          propertyId={propertyId}
+          logoUrl={logoUrl}
+          onLogoChange={onLogoChange}
+          onMessage={setMessage}
+        />
+      ) : null}
+
       <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm space-y-4">
         <label className="block">
           <span className="mb-1 block text-sm font-medium text-gray-700">

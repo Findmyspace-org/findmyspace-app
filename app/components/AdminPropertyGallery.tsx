@@ -197,10 +197,10 @@ export function AdminPropertyGallery({
 
   return (
     <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-      <h2 className="text-lg font-semibold text-gray-900">Property gallery</h2>
+      <h2 className="text-lg font-semibold text-gray-900">Property photos</h2>
       <p className="mt-1 text-sm text-gray-600">
-        Venue-level photos such as entrance, parking, and reception. Separate from
-        individual space photos.
+        Venue-level photos such as entrance, parking, reception, and property overview.
+        Separate from the property logo and individual space photos.
       </p>
 
       {sortedImages.length === 0 ? (
