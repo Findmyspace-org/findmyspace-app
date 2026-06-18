@@ -73,6 +73,7 @@ export type PropertySpaceRow = {
   has_pricing: boolean;
   has_location: boolean;
   has_ai_information: boolean;
+  is_bookable: boolean;
   visibility_label: string;
   bookability_label: string;
   is_archived: boolean;
@@ -184,6 +185,7 @@ type RawPropertySpace = {
   title: string | null;
   status: string | null;
   public_listing_mode: string | null;
+  is_bookable?: boolean | null;
   space_type: string | null;
   booking_unit: string | null;
   price_amount: number | null;
@@ -243,6 +245,7 @@ export function buildPropertySpaceRow(
     has_pricing: spaceHasPricing(space),
     has_location: spaceHasLocation(space),
     has_ai_information: hasAiInformation,
+    is_bookable: Boolean(space.is_bookable),
     visibility_label: visibility.visibilityLabel,
     bookability_label: visibility.bookabilityLabel,
     is_archived: archived,

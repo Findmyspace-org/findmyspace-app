@@ -5,20 +5,10 @@ import { useMemo, useState, type ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 import {
   AlertTriangle,
-  Archive,
-  BadgeDollarSign,
-  Bot,
-  Building2,
   CalendarCheck,
   Check,
-  CircleCheck,
   Eye,
-  EyeOff,
   Heart,
-  Image,
-  ImageOff,
-  MailQuestion,
-  MapPinOff,
   MessagesSquare,
 } from "lucide-react";
 import type { PropertyOnboardingProgress } from "@/lib/property-onboarding-progress";
@@ -31,7 +21,9 @@ import type {
   PropertySpacesHealth,
   PropertySpacesSummary,
   PropertySpaceHealthFilter,
+  PropertySpaceRow,
 } from "@/lib/property-space-ops";
+import { PropertySpaceReadinessMatrix } from "@/app/components/PropertySpaceReadinessMatrix";
 
 export type PropertyActivitySummary = {
   bookings?: number;
@@ -49,6 +41,9 @@ export type PropertyReadinessDashboardProps = {
   onHealthFilterChange?: (filter: PropertySpaceHealthFilter) => void;
   attentionHrefs?: Record<string, string>;
   activity?: PropertyActivitySummary;
+  matrixSpaces?: PropertySpaceRow[];
+  onMatrixSpaceUpdated?: (spaceId: string, patch: Partial<PropertySpaceRow>) => void;
+  onMatrixReload?: () => Promise<void>;
 };
 
 function StatStripItem({
@@ -109,6 +104,9 @@ export function PropertyReadinessDashboard({
   onHealthFilterChange,
   attentionHrefs = {},
   activity,
+  matrixSpaces,
+  onMatrixSpaceUpdated,
+  onMatrixReload,
 }: PropertyReadinessDashboardProps) {
   const [breakdownOpen, setBreakdownOpen] = useState(false);
 
@@ -233,47 +231,18 @@ export function PropertyReadinessDashboard({
       </p>
 
       <div className="mt-4 space-y-3 border-t border-gray-100 pt-4">
-        <div>
-          <SectionLabel>Space status</SectionLabel>
-          <div className="mt-1.5 grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-5">
-            <StatStripItem icon={Building2} value={summary.total} label="Total" tone="blue" />
-            <StatStripItem icon={EyeOff} value={summary.hidden} label="Hidden" tone="grey" />
-            <StatStripItem icon={MailQuestion} value={summary.enquiry} label="Enquiry" tone="amber" />
-            <StatStripItem icon={CircleCheck} value={summary.live} label="Live" tone="green" />
-            <StatStripItem icon={Archive} value={summary.archived} label="Archived" tone="grey" />
+        {variant === "admin" && matrixSpaces && onMatrixSpaceUpdated ? (
+          <div>
+            <SectionLabel>Space readiness matrix</SectionLabel>
+            <div className="mt-2">
+              <PropertySpaceReadinessMatrix
+                spaces={matrixSpaces}
+                onSpaceUpdated={onMatrixSpaceUpdated}
+                onReload={onMatrixReload}
+              />
+            </div>
           </div>
-        </div>
-
-        <div>
-          <SectionLabel>Publication readiness</SectionLabel>
-          <div className="mt-1.5 grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-5">
-            <StatStripItem icon={Image} value={health.withPhotos} label="With photos" tone="green" />
-            <StatStripItem
-              icon={ImageOff}
-              value={health.missingPhotos}
-              label="Missing photos"
-              tone={health.missingPhotos > 0 ? "amber" : "neutral"}
-            />
-            <StatStripItem
-              icon={BadgeDollarSign}
-              value={health.missingPricing}
-              label="Missing pricing"
-              tone={health.missingPricing > 0 ? "amber" : "neutral"}
-            />
-            <StatStripItem
-              icon={MapPinOff}
-              value={health.missingLocation}
-              label="Missing location"
-              tone={health.missingLocation > 0 ? "amber" : "neutral"}
-            />
-            <StatStripItem
-              icon={Bot}
-              value={health.missingAiInformation}
-              label="Missing AI info"
-              tone={health.missingAiInformation > 0 ? "amber" : "neutral"}
-            />
-          </div>
-        </div>
+        ) : null}
 
         {attentionItems.length > 0 ? (
           <div>

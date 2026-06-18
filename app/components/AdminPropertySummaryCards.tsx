@@ -5,6 +5,7 @@ import type {
   PropertySpacesHealth,
   PropertySpacesSummary,
   PropertySpaceHealthFilter,
+  PropertySpaceRow,
 } from "@/lib/property-space-ops";
 import {
   PropertyReadinessDashboard,
@@ -18,6 +19,9 @@ type AdminPropertySummaryCardsProps = {
   onHealthFilterChange: (filter: PropertySpaceHealthFilter) => void;
   progress: PropertyOnboardingProgress;
   activity?: PropertyActivitySummary;
+  matrixSpaces?: PropertySpaceRow[];
+  onMatrixSpaceUpdated?: (spaceId: string, patch: Partial<PropertySpaceRow>) => void;
+  onMatrixReload?: () => Promise<void>;
 };
 
 export function AdminPropertySummaryCards(props: AdminPropertySummaryCardsProps) {
@@ -30,6 +34,9 @@ export function AdminPropertySummaryCards(props: AdminPropertySummaryCardsProps)
       healthFilter={props.healthFilter}
       onHealthFilterChange={props.onHealthFilterChange}
       activity={props.activity}
+      matrixSpaces={props.matrixSpaces}
+      onMatrixSpaceUpdated={props.onMatrixSpaceUpdated}
+      onMatrixReload={props.onMatrixReload}
     />
   );
 }

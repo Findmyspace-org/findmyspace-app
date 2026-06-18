@@ -90,22 +90,35 @@ export type SpaceBookabilityInput =
   | string
   | null
   | undefined
-  | SpaceListingModeFields;
+  | (SpaceListingModeFields & { is_bookable?: boolean | null });
 
 function resolveBookabilityFields(
   input: SpaceBookabilityInput
-): SpaceListingModeFields {
+): SpaceListingModeFields & { is_bookable?: boolean | null } {
   if (typeof input === "string" || input === null || input === undefined) {
     return { status: input ?? null, public_listing_mode: PUBLIC_LISTING_MODE_LIVE };
   }
   return input;
 }
 
+function resolveIsBookableFlag(
+  input: SpaceBookabilityInput,
+  publicListingMode: string | null | undefined
+): boolean {
+  if (typeof input === "object" && input !== null && "is_bookable" in input) {
+    return Boolean(input.is_bookable);
+  }
+  return (
+    isLiveBookableMode(publicListingMode ?? PUBLIC_LISTING_MODE_LIVE)
+  );
+}
+
 export function isSpaceBookable(input: SpaceBookabilityInput): boolean {
   const { status, public_listing_mode } = resolveBookabilityFields(input);
   return (
     status === BOOKABLE_LISTING_STATUS &&
-    isLiveBookableMode(public_listing_mode ?? PUBLIC_LISTING_MODE_LIVE)
+    isLiveBookableMode(public_listing_mode ?? PUBLIC_LISTING_MODE_LIVE) &&
+    resolveIsBookableFlag(input, public_listing_mode)
   );
 }
 

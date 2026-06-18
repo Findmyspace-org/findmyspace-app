@@ -467,7 +467,7 @@ export function AdminUnclaimedSpaceForm({
         </fieldset>
       </section>
 
-      <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+      <section id="pricing" className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
         <h2 className="text-lg font-semibold text-gray-900">Pricing</h2>
         <fieldset disabled={readOnly} className="mt-4 disabled:opacity-80">
           <SpacePricingFields
@@ -496,20 +496,22 @@ export function AdminUnclaimedSpaceForm({
         </fieldset>
       </section>
 
-      <AdminLocationSection
-        readOnly={readOnly}
-        value={{
-          streetAddress: state.streetAddress,
-          suburb: state.suburb,
-          city: state.city,
-          province: state.province,
-          postalCode: state.postalCode,
-          country: state.country,
-          latitude: state.latitude,
-          longitude: state.longitude,
-        }}
-        onChange={(patch) => setState((s) => ({ ...s, ...patch }))}
-      />
+      <div id="location">
+        <AdminLocationSection
+          readOnly={readOnly}
+          value={{
+            streetAddress: state.streetAddress,
+            suburb: state.suburb,
+            city: state.city,
+            province: state.province,
+            postalCode: state.postalCode,
+            country: state.country,
+            latitude: state.latitude,
+            longitude: state.longitude,
+          }}
+          onChange={(patch) => setState((s) => ({ ...s, ...patch }))}
+        />
+      </div>
 
       <AdminCrmLinkSection
         spaceId={activeSpaceId ?? undefined}
@@ -546,13 +548,15 @@ export function AdminUnclaimedSpaceForm({
         </div>
       </section>
 
-      <SpaceAiInformationPanel
-        spaceId={activeSpaceId ?? undefined}
-        apiMode="admin"
-        readOnly={readOnly}
-      />
+      <div id="ai-information">
+        <SpaceAiInformationPanel
+          spaceId={activeSpaceId ?? undefined}
+          apiMode="admin"
+          readOnly={readOnly}
+        />
+      </div>
 
-      <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+      <section id="photos" className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
         <h2 className="text-lg font-semibold text-gray-900">Photos</h2>
         <AdminSpacePhotosPanel
           spaceId={activeSpaceId ?? undefined}

@@ -77,7 +77,7 @@ export async function GET(
   const { data: spaces, error: spacesErr } = await admin
     .from("spaces")
     .select(
-      "id, title, status, public_listing_mode, space_type, booking_unit, price_amount, price_unit, deposit_required, deposit_amount, price_per_hour, price_per_day, price_per_month, latitude, longitude, city, suburb, created_at, submitted_for_review_at, property_id"
+      "id, title, status, public_listing_mode, is_bookable, space_type, booking_unit, price_amount, price_unit, deposit_required, deposit_amount, price_per_hour, price_per_day, price_per_month, latitude, longitude, city, suburb, created_at, submitted_for_review_at, property_id"
     )
     .eq("property_id", id)
     .order("title", { ascending: true });

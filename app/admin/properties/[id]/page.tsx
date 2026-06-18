@@ -173,6 +173,48 @@ function AdminPropertyDetailContent({
     void init();
   }, [load]);
 
+  const matrixSpaces = useMemo(
+    () => [...spaces, ...archivedSpaces],
+    [archivedSpaces, spaces]
+  );
+
+  const handleMatrixSpaceUpdated = useCallback(
+    (spaceId: string, patch: Partial<PropertySpaceRow>) => {
+      function applyPatch(list: PropertySpaceRow[]) {
+        return list.map((space) =>
+          space.id === spaceId ? { ...space, ...patch } : space
+        );
+      }
+
+      setSpaces((current) => applyPatch(current));
+      setArchivedSpaces((current) => {
+        const next = applyPatch(current);
+        if (patch.is_archived === false) {
+          const restored = next.find((space) => space.id === spaceId);
+          if (restored) {
+            setSpaces((active) =>
+              active.some((space) => space.id === spaceId)
+                ? applyPatch(active)
+                : [...active, restored]
+            );
+            return next.filter((space) => space.id !== spaceId);
+          }
+        }
+        if (patch.is_archived === true) {
+          setSpaces((active) => active.filter((space) => space.id !== spaceId));
+          const archived = [...spaces, ...archivedSpaces].find(
+            (space) => space.id === spaceId
+          );
+          if (archived && !next.some((space) => space.id === spaceId)) {
+            return [...next, { ...archived, ...patch }];
+          }
+        }
+        return next;
+      });
+    },
+    [archivedSpaces, spaces]
+  );
+
   const onboardingProgress = useMemo(() => {
     if (!property) return null;
     return computePropertyOnboardingProgress({
@@ -349,6 +391,9 @@ function AdminPropertyDetailContent({
                   healthFilter={healthFilter}
                   onHealthFilterChange={setHealthFilter}
                   progress={onboardingProgress}
+                  matrixSpaces={matrixSpaces}
+                  onMatrixSpaceUpdated={handleMatrixSpaceUpdated}
+                  onMatrixReload={load}
                 />
               </div>
             ) : null}
