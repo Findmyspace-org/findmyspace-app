@@ -1,3 +1,9 @@
+import {
+  AI_KNOWLEDGE_BUCKET_MISSING_MESSAGE,
+  AI_KNOWLEDGE_TABLES_MISSING_MESSAGE,
+  isAiKnowledgeStorageBucketMissingError,
+} from "@/lib/space-ai-knowledge-setup";
+
 export function textByteLength(text: string): number {
   return new TextEncoder().encode(text).byteLength;
 }
@@ -17,11 +23,15 @@ export function formatAiKnowledgeError(err: unknown): string {
       message
     )
   ) {
-    return "AI Information tables are not set up. Please apply migration 036.";
+    return AI_KNOWLEDGE_TABLES_MISSING_MESSAGE;
+  }
+
+  if (isAiKnowledgeStorageBucketMissingError(message)) {
+    return AI_KNOWLEDGE_BUCKET_MISSING_MESSAGE;
   }
 
   if (/listing-ai-knowledge|bucket not found|Bucket not found/i.test(message)) {
-    return "AI Information storage bucket is missing: listing-ai-knowledge.";
+    return AI_KNOWLEDGE_BUCKET_MISSING_MESSAGE;
   }
 
   if (

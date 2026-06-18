@@ -11,6 +11,7 @@ import {
   formatAiKnowledgeError,
   textByteLength,
 } from "@/lib/space-ai-knowledge-errors";
+import { isAiKnowledgeStorageBucketMissingError } from "@/lib/space-ai-knowledge-setup";
 
 async function insertAiKnowledgeChunks(
   admin: SupabaseClient,
@@ -65,7 +66,7 @@ export async function deleteAllAiKnowledgeForSpace(
     const { error: storageErr } = await admin.storage
       .from(SPACE_AI_KNOWLEDGE_BUCKET)
       .remove(storagePaths);
-    if (storageErr) {
+    if (storageErr && !isAiKnowledgeStorageBucketMissingError(storageErr.message)) {
       throw new Error(formatAiKnowledgeError(storageErr));
     }
   }

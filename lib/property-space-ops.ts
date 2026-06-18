@@ -47,6 +47,7 @@ export type PropertySpaceHealthFilter =
   | "missing_photos"
   | "missing_pricing"
   | "missing_location"
+  | "missing_ai_info"
   | null;
 
 export type PropertySpaceRow = {
@@ -163,7 +164,7 @@ export function computePropertySpacesHealth(
 export function matchesPropertySpaceHealthFilter(
   space: Pick<
     PropertySpaceRow,
-    "is_archived" | "has_photos" | "has_pricing" | "has_location"
+    "is_archived" | "has_photos" | "has_pricing" | "has_location" | "has_ai_information"
   >,
   filter: PropertySpaceHealthFilter
 ): boolean {
@@ -171,6 +172,7 @@ export function matchesPropertySpaceHealthFilter(
   if (filter === "missing_photos") return !space.has_photos;
   if (filter === "missing_pricing") return !space.has_pricing;
   if (filter === "missing_location") return !space.has_location;
+  if (filter === "missing_ai_info") return !space.has_ai_information;
   return true;
 }
 

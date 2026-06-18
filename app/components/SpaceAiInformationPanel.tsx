@@ -13,6 +13,7 @@ import {
   type SpaceAiDocumentRow,
 } from "@/lib/space-ai-knowledge";
 import { useSectionFeedback } from "@/lib/use-section-feedback";
+import type { AiKnowledgeSetupHealth } from "@/lib/space-ai-knowledge-setup";
 
 type ApiMode = "admin" | "owner";
 
@@ -79,6 +80,7 @@ export function SpaceAiInformationPanel({
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [setupHealth, setSetupHealth] = useState<AiKnowledgeSetupHealth | null>(null);
   const { status, error, setSuccess, setFailure, clearForAction } = useSectionFeedback();
 
   const fetchJson = apiMode === "admin" ? adminApiFetch : ownerApiFetch;
@@ -202,6 +204,22 @@ export function SpaceAiInformationPanel({
     })();
   }, [apiMode, clearForAction, fetchJson, loadDocument, setFailure, setSuccess, spaceId]);
 
+  useEffect(() => {
+    if (apiMode !== "admin") return;
+    void (async () => {
+      try {
+        const health = (await adminApiFetch(
+          "/api/admin/ai-knowledge/setup-health"
+        )) as AiKnowledgeSetupHealth;
+        setSetupHealth(health);
+      } catch (err) {
+        console.error("AI Information setup health check failed:", err);
+      }
+    })();
+  }, [apiMode]);
+
+  const documentUploadReady = setupHealth?.documentUploadReady ?? true;
+
   async function handleUpload(fileList: FileList | null) {
     if (readOnly || !spaceId || !fileList?.length) return;
 
@@ -276,6 +294,18 @@ export function SpaceAiInformationPanel({
         </>
       ) : null}
 
+      {apiMode === "admin" &&
+      setupHealth &&
+      setupHealth.manualTextSaveReady &&
+      !setupHealth.documentUploadReady ? (
+        <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+          Document upload requires a private Supabase storage bucket named{" "}
+          <span className="font-medium">listing-ai-knowledge</span>. Manual text
+          save works without it. See{" "}
+          <code className="rounded bg-amber-100 px-1">docs/ai-information-supabase-setup.md</code>.
+        </p>
+      ) : null}
+
       <div className={embedded ? "space-y-4" : "mt-4 space-y-4"}>
         {loading ? (
           <p className="flex items-center gap-2 text-sm text-gray-500">
@@ -331,13 +361,20 @@ export function SpaceAiInformationPanel({
                 type="file"
                 accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                 className="hidden"
-                disabled={!spaceId || uploading || saving}
-                onChange={(event) => void handleUpload(event.target.files)}
-              />
-              <button
-                type="button"
-                disabled={!spaceId || uploading || saving || loading}
-                onClick={() => fileInputRef.current?.click()}
+              disabled={!spaceId || uploading || saving}
+              onChange={(event) => void handleUpload(event.target.files)}
+            />
+            <button
+              type="button"
+              disabled={
+                !spaceId || uploading || saving || loading || !documentUploadReady
+              }
+              title={
+                !documentUploadReady
+                  ? "Create private storage bucket listing-ai-knowledge to enable uploads"
+                  : undefined
+              }
+              onClick={() => fileInputRef.current?.click()}
                 className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {uploading ? (

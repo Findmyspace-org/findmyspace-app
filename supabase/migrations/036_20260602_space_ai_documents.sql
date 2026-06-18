@@ -39,3 +39,6 @@ ALTER TABLE public.space_ai_document_chunks ENABLE ROW LEVEL SECURITY;
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.space_ai_documents TO service_role;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.space_ai_document_chunks TO service_role;
+
+-- Source PDF/DOCX files: private bucket listing-ai-knowledge (migration 037).
+-- Manual text entry uses file_path manual/{space_id} and does not require Storage.
