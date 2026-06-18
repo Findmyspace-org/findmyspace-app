@@ -128,6 +128,17 @@ export function computePropertyOnboardingProgress(input: {
       done: spaceCount > 0 && health.missingLocation === 0,
       warning: health.missingLocation > 0,
     },
+    {
+      id: "space-ai-info",
+      label:
+        health.missingAiInformation === 0
+          ? "All spaces have AI information"
+          : health.withAiInformation === 0
+            ? "No spaces have AI information"
+            : `${health.missingAiInformation} space${health.missingAiInformation === 1 ? "" : "s"} missing AI information`,
+      done: spaceCount > 0 && health.missingAiInformation === 0,
+      warning: health.missingAiInformation > 0,
+    },
   ];
 
   const ownershipItems: PropertyOnboardingChecklistItem[] = [
@@ -258,6 +269,9 @@ function pickNextAction(input: {
   }
   if (input.health.missingLocation > 0) {
     return `Next action: Set location for ${input.health.missingLocation} space${input.health.missingLocation === 1 ? "" : "s"}`;
+  }
+  if (input.health.missingAiInformation > 0) {
+    return `Next action: Add AI information for ${input.health.missingAiInformation} space${input.health.missingAiInformation === 1 ? "" : "s"}`;
   }
   if (!input.hasPropertyPhotos) {
     return "Next action: Upload property photos";

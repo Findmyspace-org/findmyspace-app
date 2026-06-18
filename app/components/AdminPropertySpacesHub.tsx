@@ -421,6 +421,16 @@ export function AdminPropertySpacesHub({
                               {formatSpaceTypeLabel(space.space_type)}
                             </p>
                           ) : null}
+                          <p
+                            className={`mt-0.5 text-xs ${
+                              space.has_ai_information
+                                ? "text-green-700"
+                                : "text-amber-800"
+                            }`}
+                          >
+                            AI Information:{" "}
+                            {space.has_ai_information ? "✓ Added" : "⚠ Missing"}
+                          </p>
                         </div>
                       </div>
                     </td>

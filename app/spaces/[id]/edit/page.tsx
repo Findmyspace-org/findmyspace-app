@@ -18,6 +18,7 @@ import {
   validateGroupSizeFormValues,
 } from "@/app/components/GroupSizeFields";
 import MarkdownDescriptionEditor from "@/app/components/MarkdownDescriptionEditor";
+import { SpaceAiInformationPanel } from "@/app/components/SpaceAiInformationPanel";
 import {
   DEFAULT_LISTING_BOOKING_REQUIREMENTS,
   emptyQuestionnaireDataForCategory,
@@ -1271,6 +1272,13 @@ export default function EditListingPage({ params }: PageProps) {
                   textareaClassName="w-full px-4 py-3 text-sm outline-none"
                 />
               </div>
+
+              <SpaceAiInformationPanel
+                spaceId={listingId || undefined}
+                apiMode="owner"
+                readOnly={editingLocked}
+                onMessage={(msg) => setMessage(msg ?? "")}
+              />
 
               <section
                 id="booking-quality"

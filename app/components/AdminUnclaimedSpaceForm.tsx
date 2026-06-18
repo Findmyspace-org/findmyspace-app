@@ -12,6 +12,7 @@ import {
   AdminSpacePhotosPanel,
   type AdminSpaceImage,
 } from "@/app/components/AdminSpacePhotosPanel";
+import { SpaceAiInformationPanel } from "@/app/components/SpaceAiInformationPanel";
 import type { SpaceCrmLinkSummary } from "@/lib/space-crm-link";
 import { sortSpaceImages } from "@/lib/sort-space-images";
 import {
@@ -215,8 +216,8 @@ export function AdminUnclaimedSpaceForm({
           if (stayOnPage) {
             setMessage(
               propertyId
-                ? "Space saved. You can now add photos."
-                : "Draft saved. You can upload photos below."
+                ? "Space saved. You can now add photos and AI Information."
+                : "Draft saved. You can upload photos and AI Information below."
             );
             onCreated?.(newId);
           } else if (propertyId) {
@@ -456,6 +457,13 @@ export function AdminUnclaimedSpaceForm({
           />
         </div>
       </section>
+
+      <SpaceAiInformationPanel
+        spaceId={activeSpaceId ?? undefined}
+        apiMode="admin"
+        readOnly={readOnly}
+        onMessage={setMessage}
+      />
 
       <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
         <h2 className="text-lg font-semibold text-gray-900">Photos</h2>

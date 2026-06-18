@@ -23,6 +23,7 @@ export type PropertySpaceHealthInput = {
   city: string | null;
   suburb: string | null;
   image_count: number;
+  has_ai_information: boolean;
 };
 
 export type PropertySpacesSummary = {
@@ -38,6 +39,8 @@ export type PropertySpacesHealth = {
   missingPhotos: number;
   missingPricing: number;
   missingLocation: number;
+  withAiInformation: number;
+  missingAiInformation: number;
 };
 
 export type PropertySpaceHealthFilter =
@@ -60,6 +63,7 @@ export type PropertySpaceRow = {
   has_photos: boolean;
   has_pricing: boolean;
   has_location: boolean;
+  has_ai_information: boolean;
   visibility_label: string;
   bookability_label: string;
   is_archived: boolean;
@@ -134,15 +138,26 @@ export function computePropertySpacesHealth(
   let missingPhotos = 0;
   let missingPricing = 0;
   let missingLocation = 0;
+  let withAiInformation = 0;
+  let missingAiInformation = 0;
 
   for (const space of active) {
     if (spaceHasPhotos(space.image_count)) withPhotos++;
     else missingPhotos++;
     if (!spaceHasPricing(space)) missingPricing++;
     if (!spaceHasLocation(space)) missingLocation++;
+    if (space.has_ai_information) withAiInformation++;
+    else missingAiInformation++;
   }
 
-  return { withPhotos, missingPhotos, missingPricing, missingLocation };
+  return {
+    withPhotos,
+    missingPhotos,
+    missingPricing,
+    missingLocation,
+    withAiInformation,
+    missingAiInformation,
+  };
 }
 
 export function matchesPropertySpaceHealthFilter(
@@ -189,7 +204,8 @@ export function buildPropertySpaceRow(
   space: RawPropertySpace,
   propertyId: string,
   coverImageUrl: string | null,
-  imageCount: number
+  imageCount: number,
+  hasAiInformation = false
 ): PropertySpaceRow {
   const status = space.status;
   const publicListingMode = space.public_listing_mode;
@@ -224,6 +240,7 @@ export function buildPropertySpaceRow(
     has_photos: spaceHasPhotos(imageCount),
     has_pricing: spaceHasPricing(space),
     has_location: spaceHasLocation(space),
+    has_ai_information: hasAiInformation,
     visibility_label: visibility.visibilityLabel,
     bookability_label: visibility.bookabilityLabel,
     is_archived: archived,

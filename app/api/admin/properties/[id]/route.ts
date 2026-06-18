@@ -3,6 +3,7 @@ import { requireAdminApi } from "@/lib/require-admin-api";
 import { adminAudit } from "@/lib/admin-audit";
 import { createServiceAdminClient } from "@/lib/admin-unclaimed-space";
 import { formatPropertyAddress, parsePropertyInput } from "@/lib/admin-property";
+import { hasAiKnowledgeContent } from "@/lib/space-ai-knowledge";
 import {
   buildPropertySpaceRow,
   computePropertySpacesHealth,
@@ -89,6 +90,7 @@ export async function GET(
   const spaceIds = spaceRows.map((space) => space.id as string);
   const coverImages: Record<string, string> = {};
   const imageCounts: Record<string, number> = {};
+  const aiInfoBySpace: Record<string, boolean> = {};
 
   if (spaceIds.length > 0) {
     const { data: images } = await admin
@@ -104,6 +106,17 @@ export async function GET(
       imageCounts[image.space_id] = (imageCounts[image.space_id] || 0) + 1;
       if (!coverImages[image.space_id]) {
         coverImages[image.space_id] = image.image_url;
+      }
+    }
+
+    const { data: aiDocs } = await admin
+      .from("space_ai_documents")
+      .select("space_id, extracted_text")
+      .in("space_id", spaceIds);
+
+    for (const doc of (aiDocs as { space_id: string; extracted_text: string }[]) || []) {
+      if (hasAiKnowledgeContent(doc.extracted_text)) {
+        aiInfoBySpace[doc.space_id] = true;
       }
     }
   }
@@ -123,6 +136,7 @@ export async function GET(
       city: space.city as string | null,
       suburb: space.suburb as string | null,
       image_count: imageCounts[spaceId] || 0,
+      has_ai_information: Boolean(aiInfoBySpace[spaceId]),
     };
   });
 
@@ -132,7 +146,8 @@ export async function GET(
       space as Parameters<typeof buildPropertySpaceRow>[0],
       id,
       coverImages[spaceId] || null,
-      imageCounts[spaceId] || 0
+      imageCounts[spaceId] || 0,
+      Boolean(aiInfoBySpace[spaceId])
     );
   });
 

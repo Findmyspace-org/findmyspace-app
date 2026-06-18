@@ -10,7 +10,7 @@ export async function ownerApiFetch(path: string, init?: RequestInit) {
   const res = await fetch(path, {
     ...init,
     headers: {
-      "Content-Type": "application/json",
+      ...(init?.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
       Authorization: `Bearer ${token}`,
       ...(init?.headers || {}),
     },

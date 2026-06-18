@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdminApi } from "@/lib/require-admin-api";
 import {
+  getActiveAiKnowledgeDocument,
   listAiKnowledgeDocumentsForSpace,
+  saveAiKnowledgeText,
   storeAiKnowledgeDocument,
 } from "@/lib/space-ai-knowledge-server";
 
@@ -30,7 +32,8 @@ export async function GET(
 
   try {
     const documents = await listAiKnowledgeDocumentsForSpace(admin, id);
-    return NextResponse.json({ documents });
+    const document = await getActiveAiKnowledgeDocument(admin, id);
+    return NextResponse.json({ documents, document });
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Failed to load AI Information." },
@@ -69,6 +72,46 @@ export async function POST(
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Upload failed." },
+      { status: 400 }
+    );
+  }
+}
+
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const auth = await requireAdminApi(req);
+  if ("response" in auth) return auth.response;
+
+  const { id } = await params;
+  const admin = getAdminClient();
+  if (!admin) {
+    return NextResponse.json({ error: "Server configuration error." }, { status: 500 });
+  }
+
+  let body: { text?: unknown };
+  try {
+    body = (await req.json()) as { text?: unknown };
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON." }, { status: 400 });
+  }
+
+  if (typeof body.text !== "string") {
+    return NextResponse.json({ error: "text is required." }, { status: 400 });
+  }
+
+  try {
+    const result = await saveAiKnowledgeText({
+      admin,
+      spaceId: id,
+      uploadedBy: auth.userId,
+      text: body.text,
+    });
+    return NextResponse.json({ ok: true, ...result });
+  } catch (err) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Save failed." },
       { status: 400 }
     );
   }

@@ -33,6 +33,10 @@ export const SPACE_AI_ALLOWED_MIME_TYPES = new Set([
 
 export const SPACE_AI_MAX_BYTES = 15 * 1024 * 1024;
 
+export function hasAiKnowledgeContent(text: string | null | undefined): boolean {
+  return Boolean(text?.trim());
+}
+
 const CHUNK_SIZE = 1400;
 const CHUNK_OVERLAP = 120;
 

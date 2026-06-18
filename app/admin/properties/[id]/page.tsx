@@ -80,6 +80,8 @@ function AdminPropertyDetailContent({
     missingPhotos: 0,
     missingPricing: 0,
     missingLocation: 0,
+    withAiInformation: 0,
+    missingAiInformation: 0,
   });
   const [propertyImages, setPropertyImages] = useState<PropertyGalleryImage[]>([]);
   const [healthFilter, setHealthFilter] = useState<PropertySpaceHealthFilter>(null);
@@ -124,6 +126,8 @@ function AdminPropertyDetailContent({
           missingPhotos: 0,
           missingPricing: 0,
           missingLocation: 0,
+          withAiInformation: 0,
+          missingAiInformation: 0,
         }
       );
       setPropertyImages(
