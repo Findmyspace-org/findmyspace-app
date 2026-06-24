@@ -24,12 +24,13 @@ import {
   validateGroupSizeFormValues,
 } from "@/app/components/GroupSizeFields";
 import {
-  SpacePricingFields,
-  spacePricingFormFromRow,
+  SpacePricingPeriodSection,
+  validateSpacePricingPeriodFormFields,
+} from "@/app/components/SpacePricingPeriodSection";
+import {
   spacePricingPayloadFromForm,
   validateSpacePricingFormValues,
 } from "@/app/components/SpacePricingFields";
-import { SpaceMinBookingFields } from "@/app/components/SpaceMinBookingFields";
 import {
   minBookingPayloadFromForm,
   validateMinBookingFormValues,
@@ -265,6 +266,18 @@ export function AdminUnclaimedSpaceForm({
           return;
         }
 
+        const periodErr = validateSpacePricingPeriodFormFields({
+          bookingUnit: state.bookingUnit,
+          priceUnit: state.priceUnit,
+          minBookingUnit: state.minBookingUnit,
+          minBookingDuration: state.minBookingDuration,
+        });
+        if (periodErr) {
+          setSaveFailure(periodErr);
+          setSaving(false);
+          return;
+        }
+
         const body = payloadFromState(state, crmLink);
 
         if (mode === "create") {
@@ -457,7 +470,7 @@ export function AdminUnclaimedSpaceForm({
             />
           </label>
           <div className="grid gap-4 sm:grid-cols-2">
-            <label className="block">
+            <label className="block sm:col-span-2">
               <span className="mb-1 block text-sm font-medium text-gray-700">
                 Category
               </span>
@@ -473,20 +486,6 @@ export function AdminUnclaimedSpaceForm({
                 ))}
               </select>
             </label>
-            <label className="block">
-              <span className="mb-1 block text-sm font-medium text-gray-700">
-                Rental period (display)
-              </span>
-              <select
-                value={state.bookingUnit}
-                onChange={(e) => setState((s) => ({ ...s, bookingUnit: e.target.value }))}
-                className={FIELD_CLASS}
-              >
-                <option value="hour">Hourly</option>
-                <option value="day">Daily</option>
-                <option value="month">Monthly</option>
-              </select>
-            </label>
           </div>
           <GroupSizeFields
             spaceType={state.spaceType}
@@ -500,19 +499,29 @@ export function AdminUnclaimedSpaceForm({
       </section>
 
       <section id="pricing" className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-        <h2 className="text-lg font-semibold text-gray-900">Pricing</h2>
+        <h2 className="text-lg font-semibold text-gray-900">Pricing &amp; booking period</h2>
         <fieldset disabled={readOnly} className="mt-4 disabled:opacity-80">
-          <SpacePricingFields
+          <SpacePricingPeriodSection
+            bookingUnit={state.bookingUnit}
             priceAmount={state.priceAmount}
             priceUnit={state.priceUnit}
             depositRequired={state.depositRequired}
             depositAmount={state.depositAmount}
+            minBookingDuration={state.minBookingDuration}
+            minBookingUnit={state.minBookingUnit}
             disabled={readOnly}
+            onBookingUnitChange={(value) =>
+              setState((s) => ({ ...s, bookingUnit: value }))
+            }
             onPriceAmountChange={(value) =>
               setState((s) => ({ ...s, priceAmount: value }))
             }
             onPriceUnitChange={(value) =>
-              setState((s) => ({ ...s, priceUnit: value, priceAmount: value === "on_request" ? "" : s.priceAmount }))
+              setState((s) => ({
+                ...s,
+                priceUnit: value,
+                priceAmount: value === "on_request" ? "" : s.priceAmount,
+              }))
             }
             onDepositRequiredChange={(value) =>
               setState((s) => ({
@@ -524,21 +533,10 @@ export function AdminUnclaimedSpaceForm({
             onDepositAmountChange={(value) =>
               setState((s) => ({ ...s, depositAmount: value }))
             }
-          />
-        </fieldset>
-      </section>
-
-      <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-        <h2 className="text-lg font-semibold text-gray-900">Booking duration</h2>
-        <fieldset disabled={readOnly} className="mt-4 disabled:opacity-80">
-          <SpaceMinBookingFields
-            duration={state.minBookingDuration}
-            unit={state.minBookingUnit}
-            disabled={readOnly}
-            onDurationChange={(value) =>
+            onMinBookingDurationChange={(value) =>
               setState((s) => ({ ...s, minBookingDuration: value }))
             }
-            onUnitChange={(value) =>
+            onMinBookingUnitChange={(value) =>
               setState((s) => ({ ...s, minBookingUnit: value }))
             }
           />

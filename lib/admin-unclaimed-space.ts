@@ -14,6 +14,10 @@ import {
   validateGroupSizePair,
 } from "@/lib/group-size";
 import { parseMinBookingInput } from "@/lib/space-min-booking";
+import {
+  assertSpacePricingPeriodDbFields,
+  normalizeSpacePricingPeriodDbFields,
+} from "@/lib/space-pricing-period-sync";
 
 export const ADMIN_UNCLAIMED_STATUSES = ["draft", "unclaimed"] as const;
 export type AdminUnclaimedStatus = (typeof ADMIN_UNCLAIMED_STATUSES)[number];
@@ -243,18 +247,27 @@ export function parseUnclaimedSpaceInput(
     data.min_booking_hours = minBookingParsed.data.min_booking_hours;
     data.min_booking_days = minBookingParsed.data.min_booking_days;
     data.min_booking_months = minBookingParsed.data.min_booking_months;
-    if (
-      minBookingParsed.data.min_booking_hours ||
-      minBookingParsed.data.min_booking_days ||
-      minBookingParsed.data.min_booking_months
-    ) {
-      data.booking_unit =
-        minBookingParsed.data.min_booking_hours != null
-          ? "hour"
-          : minBookingParsed.data.min_booking_days != null
-            ? "day"
-            : "month";
+  }
+
+  if (pricingParsed.data || minBookingParsed.data) {
+    const periodFields = normalizeSpacePricingPeriodDbFields({
+      booking_unit: data.booking_unit ?? null,
+      price_unit: data.price_unit ?? null,
+      min_booking_hours: data.min_booking_hours ?? null,
+      min_booking_days: data.min_booking_days ?? null,
+      min_booking_months: data.min_booking_months ?? null,
+    });
+
+    const periodAssert = assertSpacePricingPeriodDbFields(periodFields);
+    if (!periodAssert.ok) {
+      return { ok: false, error: periodAssert.error };
     }
+
+    data.booking_unit = periodFields.booking_unit;
+    data.price_unit = periodFields.price_unit;
+    data.min_booking_hours = periodFields.min_booking_hours;
+    data.min_booking_days = periodFields.min_booking_days;
+    data.min_booking_months = periodFields.min_booking_months;
   }
 
   return { ok: true, data };

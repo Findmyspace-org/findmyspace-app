@@ -49,6 +49,11 @@ import {
   writeSpaceFormDraft,
 } from "@/lib/spaceFormDraftStorage";
 import { formatListingAddress, ZA_PROVINCES } from "@/lib/za-provinces";
+import {
+  SPACE_PRICING_PERIOD_HELPER_TEXT,
+  validateSpacePricingPeriodFormFields,
+} from "@/lib/space-pricing-period-sync";
+import type { MinBookingDurationUnit } from "@/lib/space-min-booking";
 
 const MapPicker = dynamic(() => import("@/app/components/MapPicker"), {
   ssr: false,
@@ -1118,6 +1123,25 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
         }
       }
 
+      const minBookingDuration =
+        bookingUnit === "hour"
+          ? minBookingHours
+          : bookingUnit === "month"
+            ? minBookingMonths
+            : minBookingDays;
+
+      const periodErr = validateSpacePricingPeriodFormFields({
+        bookingUnit,
+        priceUnit: bookingUnit,
+        minBookingUnit: bookingUnit as MinBookingDurationUnit,
+        minBookingDuration,
+      });
+      if (periodErr) {
+        setMessage(periodErr);
+        setLoading(false);
+        return;
+      }
+
       const manualNorm = normalizeAdvisorCode(manualAdvisorCode);
       let advId: string | null = null;
       let advCode: string | null = null;
@@ -1660,6 +1684,9 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
               <option value="day">By day</option>
               <option value="month">By month</option>
             </select>
+            <p className="mt-1 text-xs leading-snug text-[#64748b]">
+              {SPACE_PRICING_PERIOD_HELPER_TEXT}
+            </p>
           </div>
           {bookingUnit === "hour" ? (
             <>

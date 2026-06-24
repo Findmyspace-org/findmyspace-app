@@ -20,14 +20,14 @@ import {
 import MarkdownDescriptionEditor from "@/app/components/MarkdownDescriptionEditor";
 import { SpaceAiInformationPanel } from "@/app/components/SpaceAiInformationPanel";
 import {
-  SpacePricingFields,
-  validateSpacePricingFormValues,
-} from "@/app/components/SpacePricingFields";
+  SpacePricingPeriodSection,
+  validateSpacePricingPeriodFormFields,
+} from "@/app/components/SpacePricingPeriodSection";
 import {
   spacePricingFormFromRow,
   spacePricingPayloadFromForm,
+  validateSpacePricingFormValues,
 } from "@/lib/space-pricing";
-import { SpaceMinBookingFields } from "@/app/components/SpaceMinBookingFields";
 import {
   minBookingFormFromRow,
   minBookingPayloadFromForm,
@@ -771,6 +771,18 @@ export default function EditListingPage({ params }: PageProps) {
       return;
     }
 
+    const periodErr = validateSpacePricingPeriodFormFields({
+      bookingUnit,
+      priceUnit,
+      minBookingUnit,
+      minBookingDuration,
+    });
+    if (periodErr) {
+      setSaveFailure(periodErr);
+      setSaving(false);
+      return;
+    }
+
     if (effectiveBookingUnit === "month") {
       parsedMonthlyPaymentDay = Number(monthlyPaymentDay || "1");
 
@@ -1062,27 +1074,32 @@ export default function EditListingPage({ params }: PageProps) {
               </div>
 
               <div className="mt-6 rounded-lg border border-gray-200 bg-gray-50 p-4">
-                <h3 className="text-sm font-semibold text-gray-900">Pricing</h3>
+                <h3 className="text-sm font-semibold text-gray-900">
+                  Pricing &amp; booking period
+                </h3>
                 <div className="mt-3">
-                  <SpacePricingFields
+                  <SpacePricingPeriodSection
+                    bookingUnit={bookingUnit}
                     priceAmount={priceAmount}
                     priceUnit={priceUnit}
                     depositRequired={depositRequired}
                     depositAmount={depositAmount}
+                    minBookingDuration={minBookingDuration}
+                    minBookingUnit={minBookingUnit}
                     disabled={editingLocked}
+                    onBookingUnitChange={setBookingUnit}
                     onPriceAmountChange={setPriceAmount}
                     onPriceUnitChange={(value) => {
                       setPriceUnit(value);
                       if (value === "on_request") setPriceAmount("");
-                      if (value === "hour" || value === "day" || value === "month") {
-                        setBookingUnit(value);
-                      }
                     }}
                     onDepositRequiredChange={(value) => {
                       setDepositRequired(value);
                       if (!value) setDepositAmount("");
                     }}
                     onDepositAmountChange={setDepositAmount}
+                    onMinBookingDurationChange={setMinBookingDuration}
+                    onMinBookingUnitChange={setMinBookingUnit}
                     inputClassName="w-full rounded-sm border border-gray-400 px-4 py-3 outline-none"
                     labelClassName="mb-1 block text-xs font-medium text-gray-700"
                   />
@@ -1113,21 +1130,6 @@ export default function EditListingPage({ params }: PageProps) {
                     </p>
                   </div>
                 ) : null}
-              </div>
-
-              <div className="mt-6 rounded-lg border border-gray-200 bg-gray-50 p-4">
-                <h3 className="text-sm font-semibold text-gray-900">Booking duration</h3>
-                <div className="mt-3">
-                  <SpaceMinBookingFields
-                    duration={minBookingDuration}
-                    unit={minBookingUnit}
-                    disabled={editingLocked}
-                    onDurationChange={setMinBookingDuration}
-                    onUnitChange={setMinBookingUnit}
-                    inputClassName="w-full rounded-sm border border-gray-400 px-4 py-3 outline-none"
-                    labelClassName="mb-1 block text-xs font-medium text-gray-700"
-                  />
-                </div>
               </div>
 
               <div className="grid gap-4 md:grid-cols-3">
