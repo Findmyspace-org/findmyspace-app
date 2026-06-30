@@ -5,7 +5,6 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, ShieldCheck, UserCheck } from "lucide-react";
 import type { SpaceIntentKey } from "@/lib/space-intents";
-import HomeLaunchModal from "@/app/components/HomeLaunchModal";
 import HomeCategoryCard from "@/app/components/HomeCategoryCard";
 
 const VIEW_ALL_KEY = "__all__";
@@ -109,8 +108,6 @@ export default function HomePage() {
   }
 
   return (
-    <>
-      <HomeLaunchModal />
       <div className="pb-10 text-[#192a3a] sm:pb-12">
       <section className="relative flex w-full flex-col overflow-hidden max-md:h-[100dvh] max-md:max-h-[100dvh] max-md:min-h-0 md:block md:h-auto md:max-h-none md:min-h-0 md:overflow-visible lg:min-h-[640px] xl:min-h-[700px]">
         {/* Hero backgrounds — full-resolution public assets, no blur filters */}
@@ -292,6 +289,5 @@ export default function HomePage() {
         </div>
       </div>
     </div>
-    </>
   );
 }
