@@ -28,6 +28,7 @@ import {
   BadgeCheck,
   SlidersHorizontal,
   Dumbbell,
+  CircleHelp,
 } from "lucide-react";
 import MapView from "@/app/components/MapView";
 import {
@@ -120,6 +121,15 @@ type UserFavouriteRow = {
 
 const heroBackgroundImage = "/images/browse-hero.png";
 
+const NL_SEARCH_PLACEHOLDER = "Try: Host a party for 30 people in Paarl";
+
+const NL_SEARCH_EXAMPLES = [
+  "Host a party for 30 people in Paarl",
+  "Play tennis tomorrow at 4pm",
+  "Store a caravan from January to December",
+  "Meeting room for 12 people",
+] as const;
+
 function parseNumberParam(value: string | null, fallback: number) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
@@ -138,6 +148,7 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
   const pathname = usePathname();
   const router = useRouter();
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const nlExamplesRef = useRef<HTMLDivElement>(null);
   const [spaces, setSpaces] = useState<Space[]>([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
@@ -192,6 +203,8 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
 
   const [showMap, setShowMap] = useState(false);
   const [showMoreTypes, setShowMoreTypes] = useState(false);
+  const [showNlExamples, setShowNlExamples] = useState(false);
+  const [mobileRefineOpen, setMobileRefineOpen] = useState(false);
   const [showPriceModal, setShowPriceModal] = useState(false);
   const [draftBookingUnit, setDraftBookingUnit] = useState("all");
   const [draftMinPrice, setDraftMinPrice] = useState(0);
@@ -336,6 +349,17 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
       searchInputRef.current?.focus();
     });
   }, []);
+
+  useEffect(() => {
+    if (!showNlExamples) return;
+    function onDocClick(e: MouseEvent) {
+      if (!nlExamplesRef.current?.contains(e.target as Node)) {
+        setShowNlExamples(false);
+      }
+    }
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [showNlExamples]);
 
   useEffect(() => {
     async function loadSpaces() {
@@ -712,6 +736,37 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
 
   const locationLabel = cityFilter === "all" ? "across South Africa" : `near ${cityFilter}`;
 
+  const refineFilterActiveCount = useMemo(() => {
+    let count = 0;
+    if (typeFilter !== "all") count += 1;
+    if (sportTypeFilters.length > 0) count += 1;
+    if (search.trim()) count += 1;
+    if (cityFilter !== "all") count += 1;
+    if (appliedWhen) count += 1;
+    if (groupSizeFilter.trim()) count += 1;
+    const unit =
+      bookingUnitFilter === "hour" ||
+      bookingUnitFilter === "day" ||
+      bookingUnitFilter === "month"
+        ? bookingUnitFilter
+        : "all";
+    const defaultMax = getDefaultMax(unit);
+    if (bookingUnitFilter !== "all" || minPrice !== 0 || maxPrice !== defaultMax) {
+      count += 1;
+    }
+    return count;
+  }, [
+    typeFilter,
+    sportTypeFilters,
+    search,
+    cityFilter,
+    appliedWhen,
+    groupSizeFilter,
+    bookingUnitFilter,
+    minPrice,
+    maxPrice,
+  ]);
+
   const primaryTypeChips = useMemo(
     () => [
       { key: "all", label: "All spaces", value: "all", icon: Sparkles },
@@ -868,7 +923,7 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
 
   return (
     <main className="pb-10 text-[#192a3a]">
-      <section className="relative h-[320px] w-full overflow-hidden sm:h-[360px] lg:h-[410px]">
+      <section className="relative h-[72px] w-full overflow-hidden sm:h-[104px] md:h-[180px] lg:h-[200px]">
         <div className="pointer-events-none absolute inset-0 [transform:translateZ(0)]" aria-hidden>
           <Image
             src={heroBackgroundImage}
@@ -881,38 +936,73 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
             className="object-cover object-center"
           />
         </div>
-        {/* Left-side only — keeps the rest of the image crisp */}
         <div
-          className="pointer-events-none absolute inset-y-0 left-0 w-[min(100%,34rem)] bg-gradient-to-r from-white/95 via-white/75 to-transparent sm:w-[min(100%,38rem)] md:w-[min(58%,44rem)] md:from-white/90 md:via-white/50"
+          className="pointer-events-none absolute inset-y-0 left-0 w-full bg-gradient-to-r from-white/95 via-white/80 to-white/25 md:via-white/55 md:to-transparent"
           aria-hidden
         />
-        <div className="mx-auto h-full max-w-7xl px-4 sm:px-6">
-          <div className="relative z-10 pt-12 sm:pt-14 lg:pt-16">
-            <h1 className="max-w-3xl text-4xl font-semibold leading-tight text-[#0f172a] [text-shadow:0_2px_18px_rgba(255,255,255,0.95),0_1px_4px_rgba(255,255,255,0.75)] sm:text-5xl lg:text-6xl">
-              The right space
-              <br />
-              in the{" "}
-              <span className="text-[#c1121f] [text-shadow:0_2px_18px_rgba(255,255,255,0.95),0_1px_4px_rgba(255,255,255,0.75)]">
-                right place.
-              </span>
+        <div className="relative z-10 mx-auto flex h-full max-w-7xl items-center px-4 sm:px-6 md:items-center">
+          <div className="max-w-xl">
+            <h1 className="text-xl font-semibold leading-tight text-[#0f172a] sm:text-2xl md:text-3xl">
+              Browse spaces
             </h1>
-            <p className="mt-4 max-w-2xl">
-              <span className="inline-block rounded-xl border border-[#0f172a]/8 bg-white/95 px-3 py-1.5 text-base leading-relaxed text-[#1f2937] shadow-[0_2px_12px_rgba(15,23,42,0.06)] sm:text-lg">
-                Find trusted storage, parking, workspace and lifestyle spaces from local owners.
-              </span>
+            <p className="mt-0.5 hidden text-xs leading-snug text-[#475569] sm:block sm:text-sm">
+              Find storage, parking, workspace, sport and event spaces near you.
             </p>
           </div>
         </div>
       </section>
 
-      <section className="relative z-20 mx-auto -mt-16 max-w-6xl px-4 sm:-mt-20 sm:px-6">
-        <div id="browse-search" className="scroll-mt-24 overflow-visible rounded-3xl border border-[#e5e7eb] bg-white p-4 shadow-[0_28px_65px_rgba(15,23,42,0.12)] sm:p-6">
-          <div className="mb-6 rounded-2xl border border-[#e8edf2] bg-[#f8fafc] p-4 sm:p-5">
-            <label className="mb-2 block text-sm font-semibold text-[#0f172a]">
-              What do you need space for?
-            </label>
-            <div className="flex flex-col gap-3 sm:flex-row">
+      <section className="relative z-20 mx-auto -mt-5 max-w-6xl px-4 sm:-mt-8 sm:px-6 md:-mt-10">
+        <div
+          id="browse-search"
+          className="scroll-mt-20 overflow-visible rounded-2xl border border-[#e5e7eb] bg-white p-2.5 shadow-[0_16px_40px_rgba(15,23,42,0.1)] sm:rounded-3xl sm:p-4"
+        >
+          <div className="rounded-xl border border-[#e8edf2] bg-[#f8fafc] p-2.5 sm:mb-3 sm:p-3.5">
+            <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1">
+              <label
+                htmlFor="nl-search-input"
+                className="text-sm font-semibold text-[#0f172a]"
+              >
+                What do you need space for?
+              </label>
+              <div className="relative" ref={nlExamplesRef}>
+                <button
+                  type="button"
+                  onClick={() => setShowNlExamples((prev) => !prev)}
+                  className="inline-flex items-center gap-1 rounded-full border border-[#e2e8f0] bg-white px-2 py-0.5 text-[11px] font-medium text-[#64748b] transition hover:border-[#cbd5e1] hover:text-[#334155] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c1121f]/25"
+                  aria-expanded={showNlExamples}
+                  aria-haspopup="menu"
+                >
+                  <CircleHelp className="h-3 w-3" aria-hidden />
+                  Examples
+                </button>
+                {showNlExamples ? (
+                  <div
+                    role="menu"
+                    aria-label="Example searches"
+                    className="absolute left-0 top-[calc(100%+6px)] z-30 w-[min(100vw-2rem,20rem)] rounded-xl border border-[#e1e6ea] bg-white p-1.5 shadow-[0_12px_32px_rgba(15,23,42,0.14)] sm:w-72"
+                  >
+                    {NL_SEARCH_EXAMPLES.map((example) => (
+                      <button
+                        key={example}
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          setNlInput(example);
+                          setShowNlExamples(false);
+                        }}
+                        className="flex w-full rounded-lg px-2.5 py-2 text-left text-xs text-[#334155] transition hover:bg-[#f8fafc] sm:text-sm"
+                      >
+                        {example}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row">
               <input
+                id="nl-search-input"
                 value={nlInput}
                 onChange={(e) => setNlInput(e.target.value)}
                 onKeyDown={(e) => {
@@ -921,39 +1011,33 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
                     submitNaturalLanguageSearch();
                   }
                 }}
-                placeholder="What do you need space for?"
-                className="min-h-[48px] flex-1 rounded-xl border border-[#d4dbe2] bg-white px-4 py-2.5 text-sm shadow-sm outline-none transition focus:border-[#c1121f] focus:ring-2 focus:ring-[#c1121f]/20"
+                placeholder={NL_SEARCH_PLACEHOLDER}
+                className="min-h-[44px] flex-1 rounded-xl border border-[#d4dbe2] bg-white px-3 py-2 text-sm shadow-sm outline-none transition focus:border-[#c1121f] focus:ring-2 focus:ring-[#c1121f]/20"
                 aria-label="Describe what you need space for"
               />
               <button
                 type="button"
                 onClick={submitNaturalLanguageSearch}
-                className="inline-flex min-h-[48px] shrink-0 items-center justify-center rounded-xl bg-[#c1121f] px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#a50f1a]"
+                className="inline-flex min-h-[44px] shrink-0 items-center justify-center rounded-xl bg-[#c1121f] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#a50f1a] sm:px-5"
               >
                 Find spaces
               </button>
             </div>
-            <ul className="mt-3 space-y-1 text-xs text-[#64748b] sm:text-sm">
-              <li>Host a party for 30 people in Paarl</li>
-              <li>Play tennis tomorrow at 4pm</li>
-              <li>Store a caravan from January to December</li>
-              <li>Meeting room for 12 people</li>
-            </ul>
             {nlQuery ? (
-              <div className="mt-4 flex flex-wrap items-center gap-3 rounded-xl border border-[#dbeafe] bg-[#eff6ff] px-3 py-2.5 text-sm text-[#1e3a5f]">
+              <div className="mt-2.5 flex flex-wrap items-center gap-2 rounded-lg border border-[#dbeafe] bg-[#eff6ff] px-2.5 py-2 text-xs text-[#1e3a5f] sm:text-sm">
                 <span>
                   Showing spaces for:{" "}
                   <span className="font-medium">{intentSummary || nlQuery}</span>
                 </span>
                 {parsedNlIntent.confidence === "low" ? (
-                  <span className="text-xs text-[#475569]">
+                  <span className="text-[11px] text-[#475569] sm:text-xs">
                     Showing broad matches. You can refine using filters.
                   </span>
                 ) : null}
                 <button
                   type="button"
                   onClick={clearNaturalLanguageSearch}
-                  className="ml-auto text-xs font-semibold text-[#c1121f] underline"
+                  className="ml-auto text-[11px] font-semibold text-[#c1121f] underline sm:text-xs"
                 >
                   Clear search
                 </button>
@@ -961,11 +1045,36 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
             ) : null}
           </div>
 
-          <div className="mb-3">
-            <p className="text-sm font-medium text-[#1e293b]">What type of space do you need?</p>
-          </div>
+          <button
+            type="button"
+            onClick={() => setMobileRefineOpen((prev) => !prev)}
+            className={`mt-2 flex w-full items-center justify-center gap-1.5 rounded-xl border px-3 py-2.5 text-sm font-medium transition md:hidden ${
+              refineFilterActiveCount > 0 && !mobileRefineOpen
+                ? "border-[#c1121f]/30 bg-[#fff1f2] text-[#9f1239]"
+                : "border-[#e2e8f0] bg-white text-[#334155] hover:border-[#cbd5e1] hover:bg-[#f8fafc]"
+            }`}
+            aria-expanded={mobileRefineOpen}
+            aria-controls="browse-refine-filters"
+          >
+            {mobileRefineOpen ? "Hide filters" : "Refine search"}
+            {!mobileRefineOpen && refineFilterActiveCount > 0 ? (
+              <span className="text-xs font-normal text-[#64748b]">
+                · {refineFilterActiveCount} active
+              </span>
+            ) : null}
+            <ChevronDown
+              className={`h-4 w-4 shrink-0 transition-transform ${mobileRefineOpen ? "rotate-180" : ""}`}
+              aria-hidden
+            />
+          </button>
 
-          <div className="relative z-10 mb-5 flex gap-2 overflow-x-auto overflow-y-visible py-1">
+          <div
+            id="browse-refine-filters"
+            className={mobileRefineOpen ? "mt-3 block md:mt-0" : "hidden md:block"}
+          >
+          <p className="mb-1.5 text-xs font-medium text-[#64748b]">Space type</p>
+
+          <div className="relative z-10 mb-3 flex gap-1.5 overflow-x-auto overflow-y-visible py-0.5">
             {primaryTypeChips.map((chip) => {
               const Icon = chip.icon;
               const selected = typeFilter === chip.value || (chip.value === "all" && typeFilter === "all");
@@ -978,7 +1087,7 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
                     if (chip.value === "all") setIntentFilter(null);
                     setShowMoreTypes(false);
                   }}
-                  className={`inline-flex min-h-[40px] shrink-0 items-center gap-2 rounded-full border px-4 text-sm font-medium transition-all duration-200 ${
+                  className={`inline-flex min-h-[36px] shrink-0 items-center gap-1.5 rounded-full border px-3.5 text-sm font-medium transition-all duration-200 ${
                     selected
                       ? "border-[#c1121f] bg-[#c1121f] text-white shadow-[0_1px_2px_rgba(15,23,42,0.12)]"
                       : "border-[#d7dde3] bg-white text-[#334155] hover:-translate-y-0.5 hover:border-[#b8c2cc] hover:shadow-[0_1px_2px_rgba(15,23,42,0.08)]"
@@ -993,7 +1102,7 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
               <button
                 type="button"
                 onClick={() => setShowMoreTypes((prev) => !prev)}
-                className={`inline-flex min-h-[40px] items-center gap-2 rounded-full border px-4 text-sm font-medium transition-all duration-200 ${
+                className={`inline-flex min-h-[36px] items-center gap-1.5 rounded-full border px-3.5 text-sm font-medium transition-all duration-200 ${
                   !primaryTypeChips.some((chip) => chip.value === typeFilter) && typeFilter !== "all"
                     ? "border-[#c1121f] bg-[#c1121f] text-white shadow-[0_1px_2px_rgba(15,23,42,0.12)]"
                     : "border-[#d7dde3] bg-white text-[#334155] hover:-translate-y-0.5 hover:border-[#b8c2cc] hover:shadow-[0_1px_2px_rgba(15,23,42,0.08)]"
@@ -1031,7 +1140,7 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
           </div>
 
           {showSportTypeFilters ? (
-            <div className="mb-5">
+            <div className="mb-3">
               <p className="mb-2 text-xs font-medium uppercase tracking-wide text-[#64748b]">
                 Sport type
               </p>
@@ -1083,9 +1192,9 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
             ))}
           </select>
 
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-[1fr_1fr_1fr_1fr_112px]">
+          <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-[1fr_1fr_1fr_1fr_104px]">
             <div className="min-w-0">
-              <p className="mb-1.5 text-xs font-medium leading-5 text-[#475569]">Where do you need it?</p>
+              <p className="mb-1 text-xs font-medium leading-4 text-[#475569]">Where do you need it?</p>
               <div className="relative">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
                 <input
@@ -1093,21 +1202,21 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="Location, suburb, city, or keyword"
-                  className="min-h-[48px] w-full rounded-xl border border-[#d4dbe2] bg-white px-10 py-2.5 text-sm shadow-sm outline-none transition-all duration-200 focus:border-[#c1121f] focus:ring-2 focus:ring-[#c1121f]/20"
+                  className="min-h-[44px] w-full rounded-xl border border-[#d4dbe2] bg-white px-10 py-2 text-sm shadow-sm outline-none transition-all duration-200 focus:border-[#c1121f] focus:ring-2 focus:ring-[#c1121f]/20"
                   aria-label="Location"
                 />
               </div>
             </div>
 
             <div className="min-w-0">
-              <p className="mb-1.5 text-xs font-medium leading-5 text-[#475569]">Rental period</p>
-              <div className="min-h-[48px]">
+              <p className="mb-1 text-xs font-medium leading-4 text-[#475569]">Rental period</p>
+              <div className="min-h-[44px]">
                 <BrowseWhenFilter
                   applied={appliedWhen}
                   availabilitySignal={panelAvailabilitySignal}
                   suggestedUnit={suggestedWhenUnit}
                   placeholderText="Select duration"
-                  triggerClassName="min-h-[48px] h-[48px] w-full rounded-xl border border-[#d4dbe2] bg-white px-4 py-2.5 text-sm font-medium leading-5 text-[#334155] shadow-sm transition-all duration-200 hover:border-[#cbd5e1] focus:outline-none focus:ring-2 focus:ring-[#c1121f]/20"
+                  triggerClassName="min-h-[44px] h-[44px] w-full rounded-xl border border-[#d4dbe2] bg-white px-3 py-2 text-sm font-medium leading-5 text-[#334155] shadow-sm transition-all duration-200 hover:border-[#cbd5e1] focus:outline-none focus:ring-2 focus:ring-[#c1121f]/20"
                   onApply={(w) => {
                     setAppliedWhen(w);
                     setBookingUnitFilter(w.unit);
@@ -1123,11 +1232,11 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
             </div>
 
             <div className="min-w-0">
-              <p className="mb-1.5 text-xs font-medium leading-5 text-[#475569]">Group size</p>
+              <p className="mb-1 text-xs font-medium leading-4 text-[#475569]">Group size</p>
               <select
                 value={groupSizeFilter}
                 onChange={(e) => setGroupSizeFilter(e.target.value)}
-                className="min-h-[48px] w-full rounded-xl border border-[#d4dbe2] bg-white px-4 py-2.5 text-sm shadow-sm outline-none transition-all duration-200 focus:border-[#c1121f] focus:ring-2 focus:ring-[#c1121f]/20"
+                className="min-h-[44px] w-full rounded-xl border border-[#d4dbe2] bg-white px-3 py-2 text-sm shadow-sm outline-none transition-all duration-200 focus:border-[#c1121f] focus:ring-2 focus:ring-[#c1121f]/20"
                 aria-label="Group size"
               >
                 <option value="">Any group size</option>
@@ -1140,11 +1249,11 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
             </div>
 
             <div className="min-w-0">
-              <p className="mb-1.5 text-xs font-medium leading-5 text-[#475569]">Price range</p>
+              <p className="mb-1 text-xs font-medium leading-4 text-[#475569]">Price range</p>
               <button
                 type="button"
                 onClick={openPriceModal}
-                className="inline-flex min-h-[48px] w-full items-center justify-between rounded-xl border border-[#d4dbe2] bg-white px-4 text-sm text-[#334155] shadow-sm transition-all duration-200 hover:border-[#cbd5e1] hover:bg-[#fafafa]"
+                className="inline-flex min-h-[44px] w-full items-center justify-between rounded-xl border border-[#d4dbe2] bg-white px-3 text-sm text-[#334155] shadow-sm transition-all duration-200 hover:border-[#cbd5e1] hover:bg-[#fafafa]"
               >
                 <span className="truncate">
                   {bookingUnitFilter === "all" ? "All units" : bookingUnitFilter} · R{minPrice} - R{maxPrice}
@@ -1154,51 +1263,22 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
             </div>
 
             <div className="min-w-0">
-              <p className="mb-1.5 text-xs font-medium leading-5 text-transparent">Search</p>
+              <p className="mb-1 text-xs font-medium leading-4 text-transparent">Search</p>
               <button
                 type="button"
                 onClick={() => pushBrowseUrl(appliedWhen)}
-                className="min-h-[48px] w-full rounded-xl bg-[#c1121f] px-6 text-sm font-semibold text-white shadow-[0_10px_20px_rgba(193,18,31,0.28)] transition-all duration-200 hover:-translate-y-0.5 hover:bg-[#a70f19] hover:shadow-[0_14px_24px_rgba(193,18,31,0.34)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c1121f] focus-visible:ring-offset-2"
+                className="min-h-[44px] w-full rounded-xl bg-[#c1121f] px-4 text-sm font-semibold text-white shadow-[0_8px_16px_rgba(193,18,31,0.24)] transition-all duration-200 hover:-translate-y-0.5 hover:bg-[#a70f19] hover:shadow-[0_12px_20px_rgba(193,18,31,0.3)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c1121f] focus-visible:ring-offset-2"
               >
                 Search
               </button>
             </div>
           </div>
-
-          <div className="mt-5 grid gap-3 border-t border-[#edf1f5] pt-4 sm:grid-cols-3">
-            <article className="flex items-center gap-3 rounded-2xl bg-[#fafbfc] px-3 py-3">
-              <div className="inline-flex shrink-0 rounded-lg border border-[#f0d5d8] bg-[#fff6f7] p-2 text-[#c1121f]">
-                <BadgeCheck className="h-4 w-4" />
-              </div>
-              <div>
-                <h3 className="text-sm font-semibold text-[#0f172a]">Verified spaces</h3>
-                <p className="text-xs text-[#475569]">Owners are reviewed before listings go live.</p>
-              </div>
-            </article>
-            <article className="flex items-center gap-3 rounded-2xl bg-[#fafbfc] px-3 py-3">
-              <div className="inline-flex shrink-0 rounded-lg border border-[#f0d5d8] bg-[#fff6f7] p-2 text-[#c1121f]">
-                <ShieldCheck className="h-4 w-4" />
-              </div>
-              <div>
-                <h3 className="text-sm font-semibold text-[#0f172a]">Secure booking</h3>
-                <p className="text-xs text-[#475569]">Bookings and payments follow a secure process.</p>
-              </div>
-            </article>
-            <article className="flex items-center gap-3 rounded-2xl bg-[#fafbfc] px-3 py-3">
-              <div className="inline-flex shrink-0 rounded-lg border border-[#f0d5d8] bg-[#fff6f7] p-2 text-[#c1121f]">
-                <CheckCircle2 className="h-4 w-4" />
-              </div>
-              <div>
-                <h3 className="text-sm font-semibold text-[#0f172a]">Approved listings</h3>
-                <p className="text-xs text-[#475569]">Spaces are checked before being made available.</p>
-              </div>
-            </article>
           </div>
         </div>
       </section>
 
-      <section className="mx-auto mt-8 max-w-7xl px-4 sm:px-6">
-        <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+      <section className="mx-auto mt-3 max-w-7xl px-4 sm:mt-4 sm:px-6">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2 rounded-full border border-[#e2e8f0] bg-white px-4 py-2 text-sm text-[#475569] shadow-sm">
             <MapPin className="h-4 w-4 text-[#c1121f]" />
             <span>
@@ -1245,7 +1325,7 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
           ) : filteredSpaces.length === 0 ? (
             <p className="text-sm text-gray-600">No spaces found.</p>
           ) : (
-            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
               {filteredSpaces.map((space) => (
                 <SpaceCard
                   key={space.id}
@@ -1261,6 +1341,38 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
               ))}
             </div>
           )}
+        </div>
+
+        <div className="mt-8 border-t border-[#edf1f5] pt-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-center sm:gap-x-8 sm:gap-y-2">
+            <div className="flex items-center gap-2 text-xs text-[#475569] sm:text-sm">
+              <span className="inline-flex rounded-md border border-[#f0d5d8] bg-[#fff6f7] p-1.5 text-[#c1121f]">
+                <BadgeCheck className="h-3.5 w-3.5" aria-hidden />
+              </span>
+              <span>
+                <span className="font-semibold text-[#0f172a]">Verified spaces</span>
+                <span className="hidden sm:inline"> — Owners are reviewed before listings go live.</span>
+              </span>
+            </div>
+            <div className="flex items-center gap-2 text-xs text-[#475569] sm:text-sm">
+              <span className="inline-flex rounded-md border border-[#f0d5d8] bg-[#fff6f7] p-1.5 text-[#c1121f]">
+                <ShieldCheck className="h-3.5 w-3.5" aria-hidden />
+              </span>
+              <span>
+                <span className="font-semibold text-[#0f172a]">Secure booking</span>
+                <span className="hidden sm:inline"> — Bookings and payments follow a secure process.</span>
+              </span>
+            </div>
+            <div className="flex items-center gap-2 text-xs text-[#475569] sm:text-sm">
+              <span className="inline-flex rounded-md border border-[#f0d5d8] bg-[#fff6f7] p-1.5 text-[#c1121f]">
+                <CheckCircle2 className="h-3.5 w-3.5" aria-hidden />
+              </span>
+              <span>
+                <span className="font-semibold text-[#0f172a]">Approved listings</span>
+                <span className="hidden sm:inline"> — Spaces are checked before being made available.</span>
+              </span>
+            </div>
+          </div>
         </div>
       </section>
 
