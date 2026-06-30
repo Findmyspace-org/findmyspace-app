@@ -36,6 +36,7 @@ import {
 } from "@/app/components/admin/AdminVerificationWorkspace";
 import { deriveAdminVerificationQueueFlags } from "@/lib/workflow-state";
 import { markNotificationsReadByRelatedClient } from "@/lib/mark-notifications-read-client";
+import { broadcastAdminInboxRefresh } from "@/lib/inbox-refresh";
 
 type ProfileRow = {
   id: string;
@@ -94,17 +95,35 @@ type OwnerVerificationRecord = {
   listingTitles: string[];
 };
 
+function parseQueueFilter(value: string | null): QueueFilter | null {
+  if (
+    value === "needs_attention" ||
+    value === "identity_pending" ||
+    value === "bank_pending" ||
+    value === "waiting_host" ||
+    value === "completed" ||
+    value === "all"
+  ) {
+    return value;
+  }
+  return null;
+}
+
 function AdminVerificationPageContent({
   focusProfileId,
+  initialFilter,
 }: {
   focusProfileId: string | null;
+  initialFilter: string | null;
 }) {
   const [role, setRole] = useState<string | null>(null);
   const [records, setRecords] = useState<OwnerVerificationRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
-  const [queueFilter, setQueueFilter] = useState<QueueFilter>("identity_pending");
+  const [queueFilter, setQueueFilter] = useState<QueueFilter>(
+    () => parseQueueFilter(initialFilter) ?? "needs_attention"
+  );
   const [selectedOwnerId, setSelectedOwnerId] = useState<string | null>(null);
   const [previewDocument, setPreviewDocument] = useState<{
     title: string;
@@ -124,15 +143,32 @@ function AdminVerificationPageContent({
     loadVerificationRecords();
   }, []);
 
-  // When a profile is focused via `?profile=…`, broaden filter (so they're
-  // visible regardless of pending/verified/rejected) and auto-expand identity.
+  // When a profile is focused via `?profile=…`, pick the filter that surfaces
+  // that host and auto-select their row.
   useEffect(() => {
     if (!focusProfileId || loading) return;
     const found = records.find((r) => r.owner_id === focusProfileId);
     if (!found) return;
-    setQueueFilter("all");
     setSelectedOwnerId(focusProfileId);
-  }, [focusProfileId, loading, records]);
+
+    const flags = deriveAdminVerificationQueueFlags({
+      ownerVerificationStatus: found.owner_verification_status,
+      bankVerificationStatus: found.bank_verification_status,
+      hasIdFront: Boolean(found.idFrontPath || found.idFrontUrl),
+      hasIdBack: Boolean(found.idBackPath || found.idBackUrl),
+      hasBankProof: Boolean(found.bankProofPath || found.bankProofUrl),
+    });
+
+    if (flags.identityPending || flags.bankPending) {
+      setQueueFilter("needs_attention");
+    } else if (flags.identityRejected || flags.bankRejected) {
+      setQueueFilter("waiting_host");
+    } else if (flags.fullyVerified) {
+      setQueueFilter("completed");
+    } else if (!parseQueueFilter(initialFilter)) {
+      setQueueFilter("all");
+    }
+  }, [focusProfileId, initialFilter, loading, records]);
 
   async function loadVerificationRecords() {
     setLoading(true);
@@ -388,6 +424,7 @@ function AdminVerificationPageContent({
         console.error("Failed to notify host of identity decision:", notifyErr);
       }
     }
+    broadcastAdminInboxRefresh();
     await loadVerificationRecords();
   }
 
@@ -455,6 +492,7 @@ function AdminVerificationPageContent({
         console.error("Failed to notify host of bank decision:", notifyErr);
       }
     }
+    broadcastAdminInboxRefresh();
     await loadVerificationRecords();
   }
 
@@ -507,8 +545,10 @@ function AdminVerificationPageContent({
   }
 
   const summaryCounts = useMemo(() => {
+    let needsAttention = 0;
     let identityPending = 0;
     let bankPending = 0;
+    let waitingHost = 0;
     let completed = 0;
     for (const record of records) {
       const flags = deriveAdminVerificationQueueFlags({
@@ -518,11 +558,19 @@ function AdminVerificationPageContent({
         hasIdBack: Boolean(record.idBackPath || record.idBackUrl),
         hasBankProof: Boolean(record.bankProofPath || record.bankProofUrl),
       });
-      if (flags.identityPending || flags.identityRejected) identityPending += 1;
-      if (flags.bankPending || flags.bankRejected) bankPending += 1;
+      if (flags.identityPending || flags.bankPending) needsAttention += 1;
+      if (flags.identityPending) identityPending += 1;
+      if (flags.bankPending) bankPending += 1;
+      if (flags.identityRejected || flags.bankRejected) waitingHost += 1;
       if (flags.fullyVerified) completed += 1;
     }
-    return { identityPending, bankPending, completed };
+    return {
+      needsAttention,
+      identityPending,
+      bankPending,
+      waitingHost,
+      completed,
+    };
   }, [records]);
 
   useEffect(() => {
@@ -657,7 +705,13 @@ function AdminVerificationPageContent({
 function AdminVerificationSearchParamsClient() {
   const searchParams = useSearchParams();
   const focusProfileId = searchParams.get("profile");
-  return <AdminVerificationPageContent focusProfileId={focusProfileId} />;
+  const initialFilter = searchParams.get("filter");
+  return (
+    <AdminVerificationPageContent
+      focusProfileId={focusProfileId}
+      initialFilter={initialFilter}
+    />
+  );
 }
 
 export default function AdminVerificationPage() {

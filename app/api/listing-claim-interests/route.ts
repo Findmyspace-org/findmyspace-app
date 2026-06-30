@@ -4,6 +4,7 @@ import { sendEmail } from "@/lib/email";
 import { renderEmailLayout } from "@/lib/email-templates/EmailLayout";
 import { buildListingClaimInterestAdminCopy } from "@/lib/communication-copy";
 import { isUnclaimedListing } from "@/lib/listing-lifecycle";
+import { PLATFORM_ADMIN_ROLES } from "@/lib/admin-roles";
 import { getCanonicalPublicSiteUrl } from "@/lib/site-url";
 import {
   formatCrmLinkForAdminNotice,
@@ -144,7 +145,7 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    const { data: admins } = await admin.from("profiles").select("id").eq("role", "admin");
+    const { data: admins } = await admin.from("profiles").select("id").in("role", [...PLATFORM_ADMIN_ROLES]);
 
     for (const row of (admins as { id: string }[]) || []) {
       await admin.from("notifications").insert({

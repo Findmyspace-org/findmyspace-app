@@ -1,5 +1,5 @@
 import { supabase } from "@/lib/supabase";
-import { broadcastInboxRefresh } from "@/lib/inbox-refresh";
+import { broadcastAdminInboxRefresh } from "@/lib/inbox-refresh";
 
 type MarkReadByRelatedInput = {
   relatedEntityType: string;
@@ -28,7 +28,7 @@ export async function markNotificationReadClient(
     },
     body: JSON.stringify({ notificationId }),
   });
-  broadcastInboxRefresh();
+  broadcastAdminInboxRefresh();
 }
 
 /** Bulk mark by related entity (booking, profile, listing_enquiry, …). */
@@ -48,7 +48,7 @@ export async function markNotificationsReadByRelatedClient(
     },
     body: JSON.stringify(input),
   });
-  broadcastInboxRefresh();
+  broadcastAdminInboxRefresh();
 }
 
 /** Mark all unread notifications of given types for the current user. */
@@ -68,7 +68,7 @@ export async function markNotificationsReadByTypesClient(
     },
     body: JSON.stringify(input),
   });
-  broadcastInboxRefresh();
+  broadcastAdminInboxRefresh();
 }
 
 /** Archive a notification (hides from default Comms / list views). */
@@ -88,5 +88,5 @@ export async function archiveNotificationClient(
     },
     body: JSON.stringify({ notificationId }),
   });
-  broadcastInboxRefresh();
+  broadcastAdminInboxRefresh();
 }

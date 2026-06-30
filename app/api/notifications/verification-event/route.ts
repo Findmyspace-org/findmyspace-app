@@ -107,7 +107,7 @@ export async function POST(req: NextRequest) {
 
     const { data: admins } = await (supabaseAdmin.from("profiles") as any)
       .select("id, email")
-      .eq("role", "admin");
+      .in("role", ["admin", "super_admin"]);
 
     const appBaseUrl = getCanonicalPublicSiteUrl();
     const adminVerificationUrl = `${appBaseUrl}/admin/verification`;
@@ -164,7 +164,7 @@ export async function POST(req: NextRequest) {
           type: eventType,
           title,
           message: detail,
-          href: `/admin/verification?profile=${hostProfile.id}`,
+          href: `/admin/verification?filter=needs_attention&profile=${hostProfile.id}`,
           related_entity_type: "profile",
           related_entity_id: hostProfile.id,
         });

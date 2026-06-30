@@ -91,7 +91,11 @@ import {
   listingClaimInterestStatusPillClass,
   listingEnquiryStatusPillClass,
 } from "@/lib/listing-lifecycle";
-import { broadcastInboxRefresh } from "@/lib/inbox-refresh";
+import { broadcastAdminInboxRefresh } from "@/lib/inbox-refresh";
+import type { CommsWorkflowMaps } from "@/lib/admin-comms-action";
+import { cardHasPendingAdminAction } from "@/lib/admin-comms-action";
+import { deriveAdminVerificationQueueFlags } from "@/lib/workflow-state";
+import { useAdminInboxCounts } from "@/lib/use-admin-inbox-counts";
 
 // ---------------------------------------------------------------------------
 // Domain types
@@ -190,7 +194,11 @@ type CardIcon =
   | "approved"
   | "declined";
 
-type NotificationWorkflowKind = "listing_enquiry" | "listing_claim_interest";
+type NotificationWorkflowKind =
+  | "listing_enquiry"
+  | "listing_claim_interest"
+  | "listing_review"
+  | "verification";
 
 type NotificationCard = BaseCardChrome & {
   kind: "notification";
@@ -563,16 +571,15 @@ function notificationToCard(n: NotificationRow): NotificationCard | null {
   };
 }
 
-type WorkflowStatusMaps = {
-  enquiryById: Map<string, string>;
-  claimInterestById: Map<string, string>;
-};
+type WorkflowStatusMaps = CommsWorkflowMaps;
 
 async function fetchWorkflowStatusMaps(
   notifications: NotificationRow[]
 ): Promise<WorkflowStatusMaps> {
   const enquiryById = new Map<string, string>();
   const claimInterestById = new Map<string, string>();
+  const spaceStatusById = new Map<string, string>();
+  const verificationActionByProfileId = new Map<string, boolean>();
 
   const enquiryIds = Array.from(
     new Set(
@@ -601,6 +608,32 @@ async function fetchWorkflowStatusMaps(
     )
   );
 
+  const spaceIds = Array.from(
+    new Set(
+      notifications
+        .filter(
+          (n) =>
+            (n.type === "listing_submitted" || n.type === "listing_pending") &&
+            n.related_entity_type === "space" &&
+            n.related_entity_id
+        )
+        .map((n) => n.related_entity_id as string)
+    )
+  );
+
+  const profileIds = Array.from(
+    new Set(
+      notifications
+        .filter(
+          (n) =>
+            (n.type === "identity_submitted" || n.type === "bank_submitted") &&
+            n.related_entity_type === "profile" &&
+            n.related_entity_id
+        )
+        .map((n) => n.related_entity_id as string)
+    )
+  );
+
   if (enquiryIds.length > 0) {
     const { data } = await supabase
       .from("listing_enquiries" as never)
@@ -621,7 +654,87 @@ async function fetchWorkflowStatusMaps(
     }
   }
 
-  return { enquiryById, claimInterestById };
+  if (spaceIds.length > 0) {
+    const { data } = await supabase
+      .from("spaces" as never)
+      .select("id, status")
+      .in("id", spaceIds);
+    for (const row of (data as { id: string; status: string }[]) || []) {
+      spaceStatusById.set(row.id, row.status);
+    }
+  }
+
+  if (profileIds.length > 0) {
+    const [{ data: profiles }, { data: docs }, { data: banks }] =
+      await Promise.all([
+        supabase
+          .from("profiles" as never)
+          .select(
+            "id, owner_verification_status, bank_verification_status, is_host"
+          )
+          .in("id", profileIds),
+        supabase
+          .from("owner_verification_documents" as never)
+          .select("owner_id, document_type, file_url, file_path")
+          .in("owner_id", profileIds),
+        supabase
+          .from("owner_bank_details" as never)
+          .select("owner_id, proof_of_bank_url, proof_of_bank_path")
+          .in("owner_id", profileIds),
+      ]);
+
+    const docsByOwner = new Map<string, { document_type: string; file_url: string | null; file_path: string | null }[]>();
+    for (const row of (docs as { owner_id: string; document_type: string; file_url: string | null; file_path: string | null }[]) || []) {
+      const list = docsByOwner.get(row.owner_id) || [];
+      list.push(row);
+      docsByOwner.set(row.owner_id, list);
+    }
+
+    const bankByOwner = new Map<string, { proof_of_bank_url: string | null; proof_of_bank_path: string | null }>();
+    for (const row of (banks as { owner_id: string; proof_of_bank_url: string | null; proof_of_bank_path: string | null }[]) || []) {
+      bankByOwner.set(row.owner_id, row);
+    }
+
+    for (const profile of (profiles as {
+      id: string;
+      owner_verification_status: string | null;
+      bank_verification_status: string | null;
+    }[]) || []) {
+      const ownerDocs = docsByOwner.get(profile.id) || [];
+      const hasIdFront = ownerDocs.some(
+        (doc) =>
+          doc.document_type === "id_front" &&
+          Boolean(doc.file_url || doc.file_path)
+      );
+      const hasIdBack = ownerDocs.some(
+        (doc) =>
+          doc.document_type === "id_back" &&
+          Boolean(doc.file_url || doc.file_path)
+      );
+      const bank = bankByOwner.get(profile.id);
+      const hasBankProof = Boolean(
+        bank?.proof_of_bank_url || bank?.proof_of_bank_path
+      );
+      const flags = deriveAdminVerificationQueueFlags({
+        ownerVerificationStatus: profile.owner_verification_status,
+        bankVerificationStatus: profile.bank_verification_status,
+        hasIdFront,
+        hasIdBack,
+        hasBankProof,
+      });
+      verificationActionByProfileId.set(
+        profile.id,
+        flags.identityPending || flags.bankPending
+      );
+    }
+  }
+
+  return {
+    enquiryById,
+    claimInterestById,
+    spaceStatusById,
+    verificationActionByProfileId,
+  };
 }
 
 function attachWorkflowStatus(
@@ -662,6 +775,38 @@ function attachWorkflowStatus(
       workflowKind: "listing_claim_interest",
       workflowStatus,
       searchBlob: `${card.searchBlob} ${workflowLabel}`.toLowerCase(),
+    };
+  }
+
+  if (
+    (card.notificationType === "listing_submitted" ||
+      card.notificationType === "listing_pending") &&
+    card.relatedEntityType === "space" &&
+    card.relatedEntityId
+  ) {
+    const workflowStatus = maps.spaceStatusById.get(card.relatedEntityId) ?? null;
+    return {
+      ...card,
+      workflowKind: "listing_review",
+      workflowStatus,
+      searchBlob: `${card.searchBlob} ${workflowStatus || ""}`.toLowerCase(),
+    };
+  }
+
+  if (
+    (card.notificationType === "identity_submitted" ||
+      card.notificationType === "bank_submitted") &&
+    card.relatedEntityType === "profile" &&
+    card.relatedEntityId
+  ) {
+    const needsAction =
+      maps.verificationActionByProfileId.get(card.relatedEntityId) === true;
+    const workflowStatus = needsAction ? "pending_review" : "no_admin_action";
+    return {
+      ...card,
+      workflowKind: "verification",
+      workflowStatus,
+      searchBlob: `${card.searchBlob} ${workflowStatus}`.toLowerCase(),
     };
   }
 
@@ -871,6 +1016,14 @@ export function CommsCenterContent({
   const [platformCards, setPlatformCards] = useState<NotificationCard[]>([]);
   const [enquiryCards, setEnquiryCards] = useState<OwnerQuestionCard[]>([]);
   const [bookingCards, setBookingCards] = useState<CommsCard[]>([]);
+  const [workflowMaps, setWorkflowMaps] = useState<WorkflowStatusMaps>({
+    enquiryById: new Map(),
+    claimInterestById: new Map(),
+    spaceStatusById: new Map(),
+    verificationActionByProfileId: new Map(),
+  });
+
+  const adminInbox = useAdminInboxCounts();
 
   const accessTokenRef = useRef<string | null>(null);
 
@@ -953,6 +1106,7 @@ export function CommsCenterContent({
         threadsRes && threadsRes.ok ? (await threadsRes.json()).threads || [] : [];
 
       const workflowMaps = await fetchWorkflowStatusMaps(notifications);
+      setWorkflowMaps(workflowMaps);
       const enrichNotif = (card: NotificationCard | null) =>
         card ? attachWorkflowStatus(card, workflowMaps) : null;
 
@@ -1012,7 +1166,8 @@ export function CommsCenterContent({
   // Notification-card click — mark read + navigate.
   // -------------------------------------------------------------------------
 
-  async function handleNotificationClick(card: NotificationCard) {
+  async function handleMarkNotificationRead(card: NotificationCard) {
+    if (!card.unread) return;
     setBusyCardId(card.id);
     try {
       await markNotificationReadClient(card.notificationId);
@@ -1024,7 +1179,29 @@ export function CommsCenterContent({
         );
       setPlatformCards((prev) => updater(prev) as NotificationCard[]);
       setBookingCards(updater);
-      broadcastInboxRefresh();
+      broadcastAdminInboxRefresh();
+    } catch {
+      /* best-effort */
+    } finally {
+      setBusyCardId(null);
+    }
+  }
+
+  async function handleNotificationClick(card: NotificationCard) {
+    setBusyCardId(card.id);
+    try {
+      if (card.unread) {
+        await markNotificationReadClient(card.notificationId);
+        const updater = (cards: CommsCard[]): CommsCard[] =>
+          cards.map((c) =>
+            c.id === card.id && c.kind === "notification"
+              ? { ...c, unread: false, archived: c.archived }
+              : c
+          );
+        setPlatformCards((prev) => updater(prev) as NotificationCard[]);
+        setBookingCards(updater);
+        broadcastAdminInboxRefresh();
+      }
     } catch {
       /* best-effort */
     } finally {
@@ -1039,7 +1216,7 @@ export function CommsCenterContent({
       await archiveNotificationClient(card.notificationId);
       setPlatformCards((prev) => prev.filter((c) => c.id !== card.id));
       setBookingCards((prev) => prev.filter((c) => c.id !== card.id));
-      broadcastInboxRefresh();
+      broadcastAdminInboxRefresh();
     } catch {
       /* best-effort */
     } finally {
@@ -1201,6 +1378,10 @@ export function CommsCenterContent({
         status: c.status,
         notificationType:
           c.kind === "notification" ? c.notificationType : undefined,
+        relatedEntityType:
+          c.kind === "notification" ? c.relatedEntityType : undefined,
+        relatedEntityId:
+          c.kind === "notification" ? c.relatedEntityId : undefined,
         workflowStatus:
           c.kind === "notification" ? c.workflowStatus : undefined,
         questionStatus:
@@ -1209,21 +1390,24 @@ export function CommsCenterContent({
             : undefined,
         unreadCount: c.kind === "booking_thread" ? c.unreadCount : undefined,
       };
-      return cardMatchesCommsStatusFilter(filterable, statusFilter);
+      return cardMatchesCommsStatusFilter(filterable, statusFilter, {
+        adminContext,
+        workflowMaps,
+      });
     });
   }
 
   const filteredPlatform = useMemo(
     () => applyStatusFilter(applySearch(platformCards)),
-    [platformCards, search, statusFilter]
+    [platformCards, search, statusFilter, adminContext, workflowMaps]
   );
   const filteredEnquiries = useMemo(
     () => applyStatusFilter(applySearch(enquiryCards)),
-    [enquiryCards, search, statusFilter]
+    [enquiryCards, search, statusFilter, adminContext, workflowMaps]
   );
   const filteredBookings = useMemo(
     () => applyStatusFilter(applySearch(bookingCards)),
-    [bookingCards, search, statusFilter]
+    [bookingCards, search, statusFilter, adminContext, workflowMaps]
   );
 
   const platformUnread = platformCards.filter((c) => c.unread).length;
@@ -1251,6 +1435,21 @@ export function CommsCenterContent({
         <>
           {/* Refresh action lives inline so it stays near the content while
               the shell owns the page title. */}
+          {adminContext ? (
+            <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-[#e2e8f0] bg-white px-4 py-3 text-sm shadow-sm">
+              <span className="font-medium text-[#0f172a]">Admin inbox</span>
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-[#fecaca] bg-[#fff5f5] px-2.5 py-0.5 text-xs font-medium text-[#9f1239]">
+                {adminInbox.counts.unread} unread
+              </span>
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-900">
+                {adminInbox.counts.actionRequired} need action
+              </span>
+              <span className="text-xs text-[#64748b]">
+                Unread clears when you open a message. Module badges stay until the underlying task is resolved.
+              </span>
+            </div>
+          ) : null}
+
           <div className="-mt-1 flex justify-end">
             <button
               type="button"
@@ -1384,7 +1583,10 @@ export function CommsCenterContent({
                   card={card}
                   busy={busyCardId === card.id}
                   highlight={highlightedId === card.id}
+                  adminContext={adminContext}
+                  workflowMaps={workflowMaps}
                   onNotificationClick={handleNotificationClick}
+                  onMarkNotificationRead={handleMarkNotificationRead}
                   onArchiveNotification={handleArchiveNotification}
                   onOwnerAnswer={handleOwnerAnswer}
                   onRenterFollowUp={handleRenterFollowUp}
@@ -1435,7 +1637,7 @@ export function CommsCenterContent({
           <div className="mb-6">
             <h1 className="text-2xl font-semibold text-[#192a3a]">Comms Center</h1>
             <p className="mt-1 text-sm text-gray-600">
-              Admin notifications with live enquiry and claim workflow status.
+              Admin action inbox — unread notifications and items that still need your review.
             </p>
           </div>
           {commsBody}
@@ -1509,7 +1711,10 @@ function CommsCardRow({
   card,
   busy,
   highlight,
+  adminContext = false,
+  workflowMaps,
   onNotificationClick,
+  onMarkNotificationRead,
   onArchiveNotification,
   onOwnerAnswer,
   onRenterFollowUp,
@@ -1517,7 +1722,10 @@ function CommsCardRow({
   card: CommsCard;
   busy: boolean;
   highlight: boolean;
+  adminContext?: boolean;
+  workflowMaps: CommsWorkflowMaps;
   onNotificationClick: (card: NotificationCard) => void;
+  onMarkNotificationRead: (card: NotificationCard) => void;
   onArchiveNotification: (card: NotificationCard) => void;
   onOwnerAnswer: (
     card: OwnerQuestionCard,
@@ -1539,7 +1747,7 @@ function CommsCardRow({
 
   return (
     <li id={liId} className={`${baseClasses} ${stateClasses} ${highlightClasses}`}>
-      <CardChrome card={card} />
+      <CardChrome card={card} adminContext={adminContext} workflowMaps={workflowMaps} />
       {card.kind === "owner_question" ? (
         <OwnerQuestionActions
           card={card}
@@ -1562,6 +1770,7 @@ function CommsCardRow({
           card={card}
           busy={busy}
           onClick={onNotificationClick}
+          onMarkRead={onMarkNotificationRead}
           onArchive={onArchiveNotification}
         />
       ) : null}
@@ -1573,7 +1782,33 @@ function CommsCardRow({
 // Card chrome (thumbnail + meta + title + summary + status pill)
 // ---------------------------------------------------------------------------
 
-function CardChrome({ card }: { card: CommsCard }) {
+function CardChrome({
+  card,
+  adminContext = false,
+  workflowMaps,
+}: {
+  card: CommsCard;
+  adminContext?: boolean;
+  workflowMaps?: CommsWorkflowMaps;
+}) {
+  const pendingAdminAction =
+    adminContext &&
+    workflowMaps &&
+    card.kind === "notification" &&
+    cardHasPendingAdminAction(
+      {
+        unread: card.unread,
+        archived: card.archived,
+        kind: card.kind,
+        status: card.status,
+        notificationType: card.notificationType,
+        workflowStatus: card.workflowStatus,
+        relatedEntityType: card.relatedEntityType,
+        relatedEntityId: card.relatedEntityId,
+      },
+      workflowMaps
+    );
+
   return (
     <div className="flex items-start gap-3">
       {/* Thumbnail / icon */}
@@ -1663,6 +1898,29 @@ function CardChrome({ card }: { card: CommsCard }) {
                   className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium ${listingClaimInterestStatusPillClass(card.workflowStatus)}`}
                 >
                   {getListingClaimInterestStatusLabel(card.workflowStatus)}
+                </span>
+              ) : null}
+              {card.workflowKind === "listing_review" && card.workflowStatus ? (
+                <span className="inline-flex items-center gap-1 rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[11px] font-medium text-violet-800">
+                  Listing: {(card.workflowStatus || "").replace(/_/g, " ")}
+                </span>
+              ) : null}
+              {card.workflowKind === "verification" ? (
+                <span
+                  className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium ${
+                    card.workflowStatus === "pending_review"
+                      ? "border-amber-200 bg-amber-50 text-amber-900"
+                      : "border-gray-200 bg-gray-50 text-gray-600"
+                  }`}
+                >
+                  {card.workflowStatus === "pending_review"
+                    ? "Admin review required"
+                    : "No admin action"}
+                </span>
+              ) : null}
+              {pendingAdminAction ? (
+                <span className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-900">
+                  Action required
                 </span>
               ) : null}
               {!card.workflowKind ? (
@@ -1965,15 +2223,27 @@ function NotificationCardCta({
   card,
   busy,
   onClick,
+  onMarkRead,
   onArchive,
 }: {
   card: NotificationCard;
   busy: boolean;
   onClick: (card: NotificationCard) => void;
+  onMarkRead: (card: NotificationCard) => void;
   onArchive: (card: NotificationCard) => void;
 }) {
   return (
     <div className="mt-3 flex flex-wrap items-center justify-end gap-3 border-t border-[#f1f5f9] pt-3">
+      {card.unread ? (
+        <button
+          type="button"
+          onClick={() => onMarkRead(card)}
+          disabled={busy}
+          className="text-xs font-medium text-[#64748b] underline-offset-2 hover:text-[#0f172a] hover:underline disabled:opacity-60"
+        >
+          Mark as read
+        </button>
+      ) : null}
       {!card.unread && !card.archived ? (
         <button
           type="button"

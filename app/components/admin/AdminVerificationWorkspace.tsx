@@ -34,8 +34,10 @@ export type AdminVerificationRecord = {
 
 export type QueueFilter =
   | "all"
+  | "needs_attention"
   | "identity_pending"
   | "bank_pending"
+  | "waiting_host"
   | "completed";
 
 function displayName(record: AdminVerificationRecord) {
@@ -159,8 +161,10 @@ export function AdminVerificationWorkspace({
   ) => void;
   onPreviewDocument: (title: string, url: string) => void;
   summaryCounts: {
+    needsAttention: number;
     identityPending: number;
     bankPending: number;
+    waitingHost: number;
     completed: number;
   };
 }) {
@@ -170,10 +174,12 @@ export function AdminVerificationWorkspace({
     const flags = recordFlags(record);
     const matchesQueue =
       queueFilter === "all" ||
-      (queueFilter === "identity_pending" &&
-        (flags.identityPending || flags.identityRejected)) ||
-      (queueFilter === "bank_pending" &&
-        (flags.bankPending || flags.bankRejected)) ||
+      (queueFilter === "needs_attention" &&
+        (flags.identityPending || flags.bankPending)) ||
+      (queueFilter === "identity_pending" && flags.identityPending) ||
+      (queueFilter === "bank_pending" && flags.bankPending) ||
+      (queueFilter === "waiting_host" &&
+        (flags.identityRejected || flags.bankRejected)) ||
       (queueFilter === "completed" && flags.fullyVerified);
 
     if (!matchesQueue) return false;
@@ -198,8 +204,10 @@ export function AdminVerificationWorkspace({
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {(
           [
+            ["needs_attention", "Needs attention", summaryCounts.needsAttention],
             ["identity_pending", "Pending identity", summaryCounts.identityPending],
             ["bank_pending", "Pending bank", summaryCounts.bankPending],
+            ["waiting_host", "Waiting for host", summaryCounts.waitingHost],
             ["completed", "Fully verified", summaryCounts.completed],
             ["all", "All hosts", records.length],
           ] as const

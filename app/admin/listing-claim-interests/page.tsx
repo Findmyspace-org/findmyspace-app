@@ -475,12 +475,14 @@ function AdminClaimInterestsPageContent() {
   const openFromUrl = searchParams.get("open");
   const listingFilter = searchParams.get("listing");
   const statusFromUrl = searchParams.get("status");
+  const filterFromUrl = searchParams.get("filter");
 
   const [role, setRole] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<ClaimInterestRow[]>([]);
   const [message, setMessage] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>(() => {
+    if (filterFromUrl === "needs_attention") return "new";
     if (
       statusFromUrl &&
       LISTING_CLAIM_INTEREST_STATUSES.includes(

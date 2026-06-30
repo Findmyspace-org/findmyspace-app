@@ -51,13 +51,15 @@ function AdminListingEnquiriesPageContent() {
   const searchParams = useSearchParams();
   const openFromUrl = searchParams.get("open");
   const statusFromUrl = searchParams.get("status");
+  const filterFromUrl = searchParams.get("filter");
 
   const [role, setRole] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<EnquiryRow[]>([]);
-  const [statusFilter, setStatusFilter] = useState<string>(() =>
-    isValidEnquiryStatus(statusFromUrl) ? statusFromUrl : "all"
-  );
+  const [statusFilter, setStatusFilter] = useState<string>(() => {
+    if (filterFromUrl === "needs_attention") return "new";
+    return isValidEnquiryStatus(statusFromUrl) ? statusFromUrl : "all";
+  });
   const [message, setMessage] = useState("");
   const [savingId, setSavingId] = useState<string | null>(null);
   const [draftNotes, setDraftNotes] = useState<Record<string, string>>({});

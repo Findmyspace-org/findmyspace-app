@@ -12,6 +12,8 @@ import {
   isListingEnquiryRequesterWorkflowOpen,
   isListingEnquiryWorkflowOpen,
 } from "@/lib/listing-lifecycle";
+import type { CommsWorkflowMaps } from "@/lib/admin-comms-action";
+import { cardMatchesAdminActionRequiredFilter } from "@/lib/admin-comms-action";
 
 export type CommsStatusFilter =
   | "all"
@@ -28,13 +30,16 @@ export type CommsFilterableCard = {
   status: string;
   notificationType?: string;
   workflowStatus?: string | null;
+  relatedEntityType?: string | null;
+  relatedEntityId?: string | null;
   questionStatus?: "pending" | "answered" | "dismissed";
   unreadCount?: number;
 };
 
 export function cardMatchesCommsStatusFilter(
   card: CommsFilterableCard,
-  filter: CommsStatusFilter
+  filter: CommsStatusFilter,
+  options?: { adminContext?: boolean; workflowMaps?: CommsWorkflowMaps }
 ): boolean {
   const isArchived = card.archived === true;
 
@@ -73,6 +78,10 @@ export function cardMatchesCommsStatusFilter(
   }
 
   if (filter === "action_required") {
+    if (options?.adminContext && options.workflowMaps) {
+      return cardMatchesAdminActionRequiredFilter(card, options.workflowMaps);
+    }
+
     if (card.kind === "owner_question" && card.questionStatus === "pending") {
       return true;
     }
@@ -86,13 +95,10 @@ export function cardMatchesCommsStatusFilter(
           type === "listing_enquiry"
             ? isListingEnquiryWorkflowOpen(card.workflowStatus)
             : isListingClaimInterestWorkflowOpen(card.workflowStatus);
-        return card.unread && openWorkflow;
+        return openWorkflow;
       }
       if (type === "listing_enquiry_received") {
-        return (
-          card.unread &&
-          isListingEnquiryRequesterWorkflowOpen(card.workflowStatus)
-        );
+        return isListingEnquiryRequesterWorkflowOpen(card.workflowStatus);
       }
       if (ACTION_REQUIRED_NOTIFICATION_TYPES.has(type) && card.unread) {
         const workflow = deriveCommsWorkflowState({

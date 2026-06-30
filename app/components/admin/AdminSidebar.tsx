@@ -5,9 +5,6 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { ChevronLeft, ChevronRight, ExternalLink } from "lucide-react";
-import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabase";
-import { fetchAdminCommsUnreadCount } from "@/lib/admin-comms-badge";
 import {
   ADMIN_COMMS_ITEM,
   ADMIN_NAV_SECTIONS,
@@ -118,32 +115,6 @@ export function AdminSidebar({
 }) {
   const pathname = usePathname() || "";
   const { isSuperAdmin } = useAdminRole();
-  const [commsUnread, setCommsUnread] = useState(0);
-
-  useEffect(() => {
-    let mounted = true;
-
-    async function loadCommsCount() {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user || !mounted) {
-        if (mounted) setCommsUnread(0);
-        return;
-      }
-      const count = await fetchAdminCommsUnreadCount(user.id);
-      if (mounted) setCommsUnread(count);
-    }
-
-    void loadCommsCount();
-
-    const onRefresh = () => void loadCommsCount();
-    window.addEventListener("fms-inbox-refresh", onRefresh);
-    return () => {
-      mounted = false;
-      window.removeEventListener("fms-inbox-refresh", onRefresh);
-    };
-  }, []);
 
   const commsActive = pathname.startsWith("/admin/comms");
 
@@ -197,7 +168,7 @@ export function AdminSidebar({
             collapsed={collapsed}
             badge={
               <CountBadge
-                count={badges.comms ?? commsUnread}
+                count={badges.comms ?? 0}
                 active={commsActive}
               />
             }

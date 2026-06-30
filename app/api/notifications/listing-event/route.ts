@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { PLATFORM_ADMIN_ROLES } from "@/lib/admin-roles";
 import { sendEmail } from "@/lib/email";
 import {
   emailStrong,
@@ -215,7 +216,7 @@ export async function POST(req: NextRequest) {
 
       const { data: admins } = await (supabaseAdmin.from("profiles") as any)
         .select("id")
-        .eq("role", "admin");
+        .in("role", [...PLATFORM_ADMIN_ROLES]);
 
       const adminTitle = "New listing submitted for review";
       const adminMessage = `${getDisplayName(ownerProfile || undefined)} submitted ${spaceTitle} for review.`;

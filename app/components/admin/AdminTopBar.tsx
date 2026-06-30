@@ -14,18 +14,15 @@ import {
   User,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import { fetchAdminCommsUnreadCount } from "@/lib/admin-comms-badge";
-
-type BadgeMap = Partial<
-  Record<"comms" | "listing-enquiries" | "listing-claim-interests", number>
->;
 
 export function AdminTopBar({
   onOpenSidebar,
-  badges = {},
+  unreadCount = 0,
+  actionRequiredCount = 0,
 }: {
   onOpenSidebar: () => void;
-  badges?: BadgeMap;
+  unreadCount?: number;
+  actionRequiredCount?: number;
 }) {
   const router = useRouter();
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -35,7 +32,6 @@ export function AdminTopBar({
     email: string | null;
     name: string | null;
   } | null>(null);
-  const [commsUnread, setCommsUnread] = useState(0);
 
   useEffect(() => {
     let mounted = true;
@@ -70,9 +66,6 @@ export function AdminTopBar({
           name,
         });
       }
-
-      const count = await fetchAdminCommsUnreadCount(user.id);
-      if (mounted) setCommsUnread(count);
     }
 
     void loadProfile();
@@ -102,8 +95,6 @@ export function AdminTopBar({
     if (!q) return;
     router.push(`/admin/users?search=${encodeURIComponent(q)}`);
   }
-
-  const commsCount = badges.comms ?? commsUnread;
 
   return (
     <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-3 border-b border-gray-200 bg-white px-3 md:px-4">
@@ -140,13 +131,24 @@ export function AdminTopBar({
       <div className="ml-auto flex items-center gap-2">
         <Link
           href="/admin/comms"
-          className="relative inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50"
-          aria-label="Comms inbox"
+          className="relative inline-flex h-9 items-center gap-2 rounded-lg border border-gray-200 px-2.5 text-gray-700 hover:bg-gray-50"
+          aria-label={`Comms inbox${unreadCount ? `, ${unreadCount} unread` : ""}${actionRequiredCount ? `, ${actionRequiredCount} need action` : ""}`}
         >
           <Bell className="h-4 w-4" />
-          {commsCount > 0 ? (
-            <span className="absolute -right-1 -top-1 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-[#c1121f] px-1 text-[10px] font-semibold text-white">
-              {commsCount > 99 ? "99+" : commsCount}
+          <span className="hidden text-xs font-medium text-gray-600 sm:inline">
+            {unreadCount > 0 ? `${unreadCount} unread` : "Comms"}
+          </span>
+          {unreadCount > 0 ? (
+            <span className="inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-[#c1121f] px-1 text-[10px] font-semibold text-white">
+              {unreadCount > 99 ? "99+" : unreadCount}
+            </span>
+          ) : null}
+          {actionRequiredCount > 0 ? (
+            <span
+              className="hidden rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-900 sm:inline-flex"
+              title={`${actionRequiredCount} items need admin action`}
+            >
+              {actionRequiredCount} action
             </span>
           ) : null}
         </Link>

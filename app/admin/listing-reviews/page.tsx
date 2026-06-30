@@ -3,7 +3,8 @@
 import { hasAdminUiAccess } from "@/lib/client-admin-access";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { format } from "date-fns";
 import {
   Building2,
@@ -14,6 +15,11 @@ import {
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { AdminNav } from "@/app/components/AdminNav";
+import { LISTING_REVIEW_ACTION_STATUSES } from "@/lib/admin-inbox-counts";
+import {
+  FOCUS_HIGHLIGHT_CLASS,
+  useFocusHighlight,
+} from "@/lib/use-focus-highlight";
 
 type ReviewRow = {
   id: string;
@@ -34,6 +40,7 @@ type ReviewRow = {
 const QUEUE_STATUSES = [
   "owner_claimed",
   "pending_verification",
+  "pending",
   "needs_changes",
   "rejected",
 ] as const;
@@ -61,11 +68,19 @@ function ownerLabel(row: ReviewRow) {
   return name || p.email || "—";
 }
 
-export default function AdminListingReviewsPage() {
+const ACTION_STATUSES = [...LISTING_REVIEW_ACTION_STATUSES] as const;
+
+function AdminListingReviewsPageContent() {
+  const searchParams = useSearchParams();
+  const openFromUrl = searchParams.get("open") || searchParams.get("highlight");
+  const filterFromUrl = searchParams.get("filter");
+
   const [role, setRole] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<ReviewRow[]>([]);
-  const [statusFilter, setStatusFilter] = useState<string>("pending_verification");
+  const [statusFilter, setStatusFilter] = useState<string>(() =>
+    filterFromUrl === "needs_attention" ? "needs_attention" : "pending_verification"
+  );
   const [message, setMessage] = useState("");
 
   const load = useCallback(async () => {
@@ -116,8 +131,19 @@ export default function AdminListingReviewsPage() {
     void init();
   }, [load]);
 
+  const { highlightedId } = useFocusHighlight({
+    focusId: openFromUrl,
+    ready: !loading && rows.length > 0,
+    prefix: "listing-review",
+  });
+
   const filtered = useMemo(() => {
     if (statusFilter === "all") return rows;
+    if (statusFilter === "needs_attention") {
+      return rows.filter((r) =>
+        (ACTION_STATUSES as readonly string[]).includes(r.status || "")
+      );
+    }
     return rows.filter((r) => r.status === statusFilter);
   }, [rows, statusFilter]);
 
@@ -144,7 +170,7 @@ export default function AdminListingReviewsPage() {
         </p>
 
         <div className="mt-4 flex flex-wrap gap-2">
-          {(["all", ...QUEUE_STATUSES] as const).map((s) => (
+          {(["needs_attention", "all", ...QUEUE_STATUSES] as const).map((s) => (
             <button
               key={s}
               type="button"
@@ -155,7 +181,11 @@ export default function AdminListingReviewsPage() {
                   : "bg-white text-gray-700 ring-1 ring-gray-300"
               }`}
             >
-              {s === "all" ? "All" : s.replace(/_/g, " ")}
+              {s === "all"
+                ? "All"
+                : s === "needs_attention"
+                  ? "Needs attention"
+                  : s.replace(/_/g, " ")}
             </button>
           ))}
         </div>
@@ -182,7 +212,13 @@ export default function AdminListingReviewsPage() {
                 </tr>
               ) : (
                 filtered.map((row) => (
-                  <tr key={row.id} className="border-b last:border-0">
+                  <tr
+                    key={row.id}
+                    id={`listing-review-${row.id}`}
+                    className={`border-b last:border-0 ${
+                      highlightedId === row.id ? FOCUS_HIGHLIGHT_CLASS : ""
+                    }`}
+                  >
                     <td className="px-4 py-3">
                       <div className="font-medium text-gray-900">
                         {row.title || "Untitled"}
@@ -220,5 +256,13 @@ export default function AdminListingReviewsPage() {
         </div>
       </div>
     </main>
+  );
+}
+
+export default function AdminListingReviewsPage() {
+  return (
+    <Suspense fallback={<main className="p-8 text-gray-600">Loading…</main>}>
+      <AdminListingReviewsPageContent />
+    </Suspense>
   );
 }

@@ -10,6 +10,7 @@ import {
   acceptsListingEnquiries,
   LISTING_ENQUIRY_DURATION_TYPES,
 } from "@/lib/listing-lifecycle";
+import { PLATFORM_ADMIN_ROLES } from "@/lib/admin-roles";
 import { getCanonicalPublicSiteUrl } from "@/lib/site-url";
 import {
   formatCrmLinkForAdminNotice,
@@ -139,7 +140,7 @@ async function notifyListingEnquiry(
   const { data: admins } = await admin
     .from("profiles")
     .select("id")
-    .eq("role", "admin");
+    .in("role", [...PLATFORM_ADMIN_ROLES]);
 
   for (const row of (admins as { id: string }[]) || []) {
     await admin.from("notifications").insert({

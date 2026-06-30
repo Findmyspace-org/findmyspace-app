@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApi } from "@/lib/require-admin-api";
 import { createServiceAdminClient } from "@/lib/admin-unclaimed-space";
+import {
+  computeAdminModuleActionCounts,
+  computeAdminVerificationActionCount,
+} from "@/lib/admin-inbox-counts";
 import { daysSince } from "@/lib/days-waiting";
 
 export async function GET(req: NextRequest) {
@@ -12,13 +16,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Server configuration error." }, { status: 500 });
   }
 
+  const modules = await computeAdminModuleActionCounts(admin);
+
   const [
-    { count: newEnquiries },
-    { count: newClaimInterests },
-    { count: pendingListingReviews },
-    { count: pendingIdentity },
-    { count: pendingBank },
-    { count: pendingBookingPayments },
     { data: oldestReviewRows },
     { data: oldestEnquiry },
     { data: oldestClaim },
@@ -26,36 +26,9 @@ export async function GET(req: NextRequest) {
     { data: pendingBankProfiles },
   ] = await Promise.all([
     admin
-      .from("listing_enquiries")
-      .select("id", { count: "exact", head: true })
-      .eq("status", "new"),
-    admin
-      .from("listing_claim_interests")
-      .select("id", { count: "exact", head: true })
-      .eq("status", "new"),
-    admin
-      .from("spaces")
-      .select("id", { count: "exact", head: true })
-      .in("status", ["owner_claimed", "pending_verification", "needs_changes", "rejected"])
-      .not("owner_id", "is", null),
-    admin
-      .from("profiles")
-      .select("id", { count: "exact", head: true })
-      .eq("is_host", true)
-      .eq("owner_verification_status", "pending"),
-    admin
-      .from("profiles")
-      .select("id", { count: "exact", head: true })
-      .eq("is_host", true)
-      .eq("bank_verification_status", "pending"),
-    admin
-      .from("bookings")
-      .select("id", { count: "exact", head: true })
-      .eq("status", "pending_owner"),
-    admin
       .from("spaces")
       .select("submitted_for_review_at, claimed_at, created_at")
-      .in("status", ["owner_claimed", "pending_verification", "needs_changes", "rejected"])
+      .in("status", ["owner_claimed", "pending_verification", "pending"])
       .not("owner_id", "is", null)
       .limit(200),
     admin
@@ -142,13 +115,15 @@ export async function GET(req: NextRequest) {
         ? identityDays
         : Math.max(identityDays, bankDays);
 
+  const pendingIdentityVerification = await computeAdminVerificationActionCount(admin);
+
   return NextResponse.json({
-    newListingEnquiries: newEnquiries ?? 0,
-    newClaimInterests: newClaimInterests ?? 0,
-    pendingListingReviews: pendingListingReviews ?? 0,
-    pendingIdentityVerification: pendingIdentity ?? 0,
-    pendingBankVerification: pendingBank ?? 0,
-    pendingBookingPayments: pendingBookingPayments ?? 0,
+    newListingEnquiries: modules.listingEnquiries,
+    newClaimInterests: modules.listingClaimInterests,
+    pendingListingReviews: modules.listingReviews,
+    pendingIdentityVerification,
+    pendingBankVerification: 0,
+    pendingBookingPayments: modules.pendingBookingPayments,
     oldestListingReviewDays: daysSince(reviewDate),
     oldestListingEnquiryDays: daysSince(
       (oldestEnquiry as { created_at?: string } | null)?.created_at
