@@ -18,6 +18,7 @@ import { SpaceBookingRequirementsSection } from "@/app/components/SpaceBookingRe
 import { SectionInlineAlert } from "@/app/components/SectionInlineAlert";
 import type { SpaceCrmLinkSummary } from "@/lib/space-crm-link";
 import { sortSpaceImages } from "@/lib/sort-space-images";
+import { MIN_PUBLIC_PHOTOS_ERROR } from "@/lib/space-image-persistence";
 import { useSectionFeedback } from "@/lib/use-section-feedback";
 import {
   GroupSizeFields,
@@ -124,6 +125,16 @@ function serializeAdminFormSnapshot(state: FormState, crmLink: CrmLinkState) {
   }
 }
 
+async function fetchPersistedAdminSpaceImages(
+  spaceId: string,
+  propertyId?: string
+): Promise<AdminSpaceImage[]> {
+  const result = propertyId
+    ? await adminApiFetch(`/api/admin/properties/${propertyId}/spaces/${spaceId}`)
+    : await adminApiFetch(`/api/admin/spaces/${spaceId}/unclaimed`);
+  return sortSpaceImages((result.images as AdminSpaceImage[]) || []);
+}
+
 function formStateFromInitial(initial?: Partial<FormState>): FormState {
   return {
     title: initial?.title ?? "",
@@ -219,9 +230,23 @@ export function AdminUnclaimedSpaceForm({
   });
   /** After first save in create mode — enables photo upload before parent redirect. */
   const [createdSpaceId, setCreatedSpaceId] = useState<string | null>(null);
+  const localImagesTouchedRef = useRef(false);
+  const lastImagesSpaceKeyRef = useRef<string | null>(null);
 
   const activeSpaceId = spaceId ?? createdSpaceId;
   const activeMode = mode === "create" && createdSpaceId ? "edit" : mode;
+  const imagesSpaceKey = activeSpaceId ?? "none";
+
+  useEffect(() => {
+    if (lastImagesSpaceKeyRef.current === imagesSpaceKey) return;
+    lastImagesSpaceKeyRef.current = imagesSpaceKey;
+    localImagesTouchedRef.current = false;
+  }, [imagesSpaceKey]);
+
+  const handleImagesChange = useCallback((next: AdminSpaceImage[]) => {
+    localImagesTouchedRef.current = true;
+    setImages(next);
+  }, []);
 
   const serverSyncKey = mode === "edit" && spaceId ? `edit:${spaceId}` : "create";
   const lastServerSyncKeyRef = useRef<string | null>(null);
@@ -246,7 +271,7 @@ export function AdminUnclaimedSpaceForm({
     setState(nextState);
     savedPayloadRef.current = serializeAdminFormSnapshot(nextState, baselineCrm);
 
-    if (mode === "edit" && spaceId) {
+    if (mode === "edit" && spaceId && !localImagesTouchedRef.current) {
       setImages(sortSpaceImages(initialImages));
       setStatus(initialStatus || "draft");
     }
@@ -429,6 +454,16 @@ export function AdminUnclaimedSpaceForm({
     setPublishing(true);
     clearSaveFeedback();
     try {
+      const persistedImages = await fetchPersistedAdminSpaceImages(
+        activeSpaceId,
+        propertyId
+      );
+      setImages(persistedImages);
+      if (persistedImages.length < 1) {
+        setSaveFailure(MIN_PUBLIC_PHOTOS_ERROR);
+        return;
+      }
+
       await adminApiFetch(`/api/admin/spaces/${activeSpaceId}/unclaimed`, {
         method: "PATCH",
         body: JSON.stringify(payloadFromState(state, crmLink)),
@@ -444,7 +479,16 @@ export function AdminUnclaimedSpaceForm({
     } finally {
       setPublishing(false);
     }
-  }, [activeSpaceId, clearSaveFeedback, crmLink, readOnly, setSaveFailure, setSaveSuccess, state]);
+  }, [
+    activeSpaceId,
+    clearSaveFeedback,
+    crmLink,
+    propertyId,
+    readOnly,
+    setSaveFailure,
+    setSaveSuccess,
+    state,
+  ]);
 
   const statusBadge =
     status === "unclaimed"
@@ -666,7 +710,7 @@ export function AdminUnclaimedSpaceForm({
         <AdminSpacePhotosPanel
           spaceId={activeSpaceId ?? undefined}
           images={images}
-          onImagesChange={setImages}
+          onImagesChange={handleImagesChange}
           readOnly={readOnly}
         />
       </section>

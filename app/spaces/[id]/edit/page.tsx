@@ -1,18 +1,15 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { prepareFilesForUpload } from "@/lib/image-compression-client";
 import SpaceCategoryFields from "@/app/components/SpaceCategoryFields";
 import { LISTING_SPACE_TYPE_OPTIONS } from "@/app/data/spaceFeatureConfig";
 import RequireAuth from "@/app/components/RequireAuth";
 import DashboardShell from "@/app/components/DashboardShell";
 import { HOST_NAV } from "@/lib/dashboard-nav";
 import OwnerVerificationAlerts from "@/app/components/OwnerVerificationAlerts";
-import { PhotoDropZone } from "@/app/components/PhotoDropZone";
 import {
   GroupSizeFields,
   groupSizePayloadFromForm,
@@ -51,11 +48,17 @@ import {
 } from "@/app/components/listing-booking-quality-ui";
 import { SpaceBookingRequirementsSection } from "@/app/components/SpaceBookingRequirementsSection";
 import {
+  SpaceLocationSection,
+  type SpaceLocationValue,
+} from "@/app/components/SpaceLocationSection";
+import { SpacePhotosPanel } from "@/app/components/SpacePhotosPanel";
+import { sortSpaceImages } from "@/lib/sort-space-images";
+import type { SpacePhotoImage } from "@/lib/space-photos-client";
+import {
   UnsavedChangesProvider,
   UnsavedSectionIndicator,
   useRegisterUnsavedSection,
 } from "@/app/components/UnsavedChangesProvider";
-import { ZA_PROVINCES } from "@/lib/za-provinces";
 import {
   canOwnerEditListing,
   getOwnerListingClaimHref,
@@ -75,13 +78,6 @@ type DepositType = "none" | "one_month" | "two_months";
 type SpaceAttributeRow = {
   attribute_key: string;
   attribute_value: string | null;
-};
-
-type SpaceImageRow = {
-  id: string;
-  image_url: string;
-  file_path: string | null;
-  sort_order: number | null;
 };
 
 type OwnershipDocumentRow = {
@@ -122,13 +118,8 @@ type SpaceEditRow = {
   deposit_type: DepositType | null;
   deposit_months: number | null;
   monthly_payment_day: number | null;
-};
-
-type SpaceImageInsertRow = {
-  space_id: string;
-  image_url: string;
-  file_path: string;
-  sort_order: number;
+  latitude: number | null;
+  longitude: number | null;
 };
 
 type SpaceUpdatePayload = {
@@ -158,6 +149,8 @@ type SpaceUpdatePayload = {
   deposit_amount: number | null;
   min_group_size?: number | null;
   max_group_size?: number | null;
+  latitude: number | null;
+  longitude: number | null;
 };
 
 type SpaceAttributeInsertRow = {
@@ -175,6 +168,8 @@ function buildOwnerListingSnapshot(values: {
   province: string;
   postalCode: string;
   country: string;
+  latitude: number | null;
+  longitude: number | null;
   spaceType: string;
   bookingUnit: string;
   priceAmount: string;
@@ -208,14 +203,6 @@ export default function EditListingPage({ params }: PageProps) {
     setFailure: setSaveFailure,
     clearForAction: clearSaveFeedback,
   } = useSectionFeedback();
-  const {
-    status: photoStatus,
-    error: photoError,
-    setSuccess: setPhotoSuccess,
-    setFailure: setPhotoFailure,
-    clearForAction: clearPhotoFeedback,
-  } = useSectionFeedback();
-
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [city, setCity] = useState("");
@@ -224,6 +211,8 @@ export default function EditListingPage({ params }: PageProps) {
   const [province, setProvince] = useState("");
   const [postalCode, setPostalCode] = useState("");
   const [country, setCountry] = useState("South Africa");
+  const [latitude, setLatitude] = useState<number | null>(null);
+  const [longitude, setLongitude] = useState<number | null>(null);
   const [spaceType, setSpaceType] = useState("storage");
   const [bookingUnit, setBookingUnit] = useState("day");
   const [priceAmount, setPriceAmount] = useState("");
@@ -239,11 +228,7 @@ export default function EditListingPage({ params }: PageProps) {
   const [ownershipProofStatus, setOwnershipProofStatus] = useState("pending");
 
   const [attributes, setAttributes] = useState<Record<string, string[]>>({});
-  const [images, setImages] = useState<SpaceImageRow[]>([]);
-  const [deletingImageId, setDeletingImageId] = useState<string | null>(null);
-  const [newImageFiles, setNewImageFiles] = useState<File[]>([]);
-  const [uploadingImages, setUploadingImages] = useState(false);
-  const [reorderingImages, setReorderingImages] = useState(false);
+  const [images, setImages] = useState<SpacePhotoImage[]>([]);
 
   const [ownershipProof, setOwnershipProof] =
     useState<OwnershipDocumentRow | null>(null);
@@ -302,6 +287,17 @@ export default function EditListingPage({ params }: PageProps) {
     });
   }, [loading, listingId]);
 
+  function patchLocation(patch: Partial<SpaceLocationValue>) {
+    if (patch.streetAddress !== undefined) setStreetAddress(patch.streetAddress);
+    if (patch.suburb !== undefined) setSuburb(patch.suburb);
+    if (patch.city !== undefined) setCity(patch.city);
+    if (patch.province !== undefined) setProvince(patch.province);
+    if (patch.postalCode !== undefined) setPostalCode(patch.postalCode);
+    if (patch.country !== undefined) setCountry(patch.country);
+    if (patch.latitude !== undefined) setLatitude(patch.latitude);
+    if (patch.longitude !== undefined) setLongitude(patch.longitude);
+  }
+
   async function loadListing(id: string) {
     setLoading(true);
     setMessage("");
@@ -318,7 +314,7 @@ export default function EditListingPage({ params }: PageProps) {
 
     const { data: rawData, error } = await (supabase.from("spaces") as any)
       .select(
-        "id, owner_id, title, description, city, suburb, street_address, province, postal_code, country, address_line_1, space_type, booking_unit, price_amount, price_unit, deposit_required, deposit_amount, price_per_hour, price_per_day, price_per_month, min_booking_hours, min_booking_days, min_booking_months, min_group_size, max_group_size, status, ownership_proof_status, deposit_type, deposit_months, monthly_payment_day"
+        "id, owner_id, title, description, city, suburb, street_address, province, postal_code, country, address_line_1, latitude, longitude, space_type, booking_unit, price_amount, price_unit, deposit_required, deposit_amount, price_per_hour, price_per_day, price_per_month, min_booking_hours, min_booking_days, min_booking_months, min_group_size, max_group_size, status, ownership_proof_status, deposit_type, deposit_months, monthly_payment_day"
       )
       .eq("id", id)
       .eq("owner_id", user.id)
@@ -341,6 +337,16 @@ export default function EditListingPage({ params }: PageProps) {
     setProvince(data.province ?? "");
     setPostalCode(data.postal_code ?? "");
     setCountry(data.country ?? "South Africa");
+    setLatitude(
+      typeof data.latitude === "number" && Number.isFinite(data.latitude)
+        ? data.latitude
+        : null
+    );
+    setLongitude(
+      typeof data.longitude === "number" && Number.isFinite(data.longitude)
+        ? data.longitude
+        : null
+    );
     setSpaceType(data.space_type ?? "storage");
     setBookingUnit(data.booking_unit ?? "day");
     const pricingForm = spacePricingFormFromRow(data);
@@ -403,7 +409,7 @@ export default function EditListingPage({ params }: PageProps) {
       return;
     }
 
-    setImages((imageData || []) as SpaceImageRow[]);
+    setImages(sortSpaceImages((imageData || []) as SpacePhotoImage[]));
 
     const { data: ownershipData, error: ownershipError } = await supabase
       .from("listing_ownership_documents")
@@ -468,6 +474,14 @@ export default function EditListingPage({ params }: PageProps) {
       province: data.province ?? "",
       postalCode: data.postal_code ?? "",
       country: data.country ?? "South Africa",
+      latitude:
+        typeof data.latitude === "number" && Number.isFinite(data.latitude)
+          ? data.latitude
+          : null,
+      longitude:
+        typeof data.longitude === "number" && Number.isFinite(data.longitude)
+          ? data.longitude
+          : null,
       spaceType: data.space_type ?? "storage",
       bookingUnit: data.booking_unit ?? "day",
       priceAmount: pricingForm.priceAmount,
@@ -528,143 +542,6 @@ export default function EditListingPage({ params }: PageProps) {
       filePath,
       fileUrl: data.publicUrl,
     };
-  }
-
-  async function handleDeleteImage(image: SpaceImageRow) {
-    clearPhotoFeedback();
-    setDeletingImageId(image.id);
-
-    if (image.file_path) {
-      const { error: storageError } = await supabase.storage
-        .from("space-images")
-        .remove([image.file_path]);
-
-      if (storageError) {
-        console.error("Image delete storage failed:", storageError);
-        setPhotoFailure("Could not delete image. Please try again.");
-        setDeletingImageId(null);
-        return;
-      }
-    }
-
-    const { error: dbError } = await supabase
-      .from("space_images")
-      .delete()
-      .eq("id", image.id);
-
-    if (dbError) {
-      console.error("Image delete failed:", dbError);
-      setPhotoFailure("Could not delete image. Please try again.");
-      setDeletingImageId(null);
-      return;
-    }
-
-    const remaining = images.filter((img) => img.id !== image.id);
-    const resequenced = remaining.map((img, index) => ({
-      ...img,
-      sort_order: index,
-    }));
-
-    setImages(resequenced);
-    setDeletingImageId(null);
-    setPhotoSuccess("Photo removed.");
-
-    await persistImageOrder(resequenced);
-  }
-
-  async function uploadImageFiles(files: File[]) {
-    clearPhotoFeedback();
-
-    if (!listingId) {
-      setPhotoFailure("Listing not loaded yet.");
-      return;
-    }
-
-    if (files.length === 0) {
-      setPhotoFailure("Please select images first.");
-      return;
-    }
-
-    setUploadingImages(true);
-
-    let prepared: File[];
-    try {
-      prepared = await prepareFilesForUpload(files, "listing");
-    } catch (err) {
-      setPhotoFailure(
-        err instanceof Error ? err.message : "Could not prepare images for upload."
-      );
-      setUploadingImages(false);
-      return;
-    }
-
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      setPhotoFailure("Please log in first.");
-      setUploadingImages(false);
-      return;
-    }
-
-    const startingSortOrder =
-      images.length > 0
-        ? Math.max(...images.map((img) => img.sort_order || 0)) + 1
-        : 0;
-
-    const imageRows: SpaceImageInsertRow[] = [];
-
-    for (let i = 0; i < prepared.length; i++) {
-      const file = prepared[i];
-      const fileExt = file.name.split(".").pop() || "bin";
-      const fileName = `${user.id}/${listingId}-${Date.now()}-${i}.${fileExt}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from("space-images")
-        .upload(fileName, file, {
-          cacheControl: "3600",
-          upsert: false,
-        });
-
-      if (uploadError) {
-        console.error("Image upload failed:", uploadError);
-        setPhotoFailure("Could not upload photos. Please try again.");
-        setUploadingImages(false);
-        return;
-      }
-
-      const { data: publicUrlData } = supabase.storage
-        .from("space-images")
-        .getPublicUrl(fileName);
-
-      imageRows.push({
-        space_id: listingId,
-        image_url: publicUrlData.publicUrl,
-        file_path: fileName,
-        sort_order: startingSortOrder + i,
-      });
-    }
-
-    const { data: insertedImages, error: imageInsertError } = await (supabase
-      .from("space_images") as any)
-      .insert(imageRows)
-      .select("id, image_url, file_path, sort_order");
-
-    if (imageInsertError) {
-      console.error("Saving images failed:", imageInsertError);
-      setPhotoFailure("Could not save photos. Please try again.");
-      setUploadingImages(false);
-      return;
-    }
-
-    setImages((current) => [
-      ...current,
-      ...((insertedImages || []) as SpaceImageRow[]),
-    ]);
-    setNewImageFiles([]);
-    setUploadingImages(false);
-    setPhotoSuccess("Photos uploaded.");
   }
 
   async function handleUploadOwnershipProof() {
@@ -754,46 +631,6 @@ export default function EditListingPage({ params }: PageProps) {
     } finally {
       setUploadingOwnershipProof(false);
     }
-  }
-
-  async function persistImageOrder(updatedImages: SpaceImageRow[]) {
-    setReorderingImages(true);
-    setMessage("");
-
-    for (const image of updatedImages) {
-      const { error } = await (supabase.from("space_images") as any)
-        .update({ sort_order: image.sort_order })
-        .eq("id", image.id);
-
-      if (error) {
-        setMessage(error.message);
-        setReorderingImages(false);
-        return;
-      }
-    }
-
-    setReorderingImages(false);
-  }
-
-  async function moveImage(index: number, direction: "up" | "down") {
-    if (reorderingImages) return;
-
-    const newIndex = direction === "up" ? index - 1 : index + 1;
-
-    if (newIndex < 0 || newIndex >= images.length) return;
-
-    const updated = [...images];
-    const temp = updated[index];
-    updated[index] = updated[newIndex];
-    updated[newIndex] = temp;
-
-    const resequenced = updated.map((img, i) => ({
-      ...img,
-      sort_order: i,
-    }));
-
-    setImages(resequenced);
-    await persistImageOrder(resequenced);
   }
 
   const persistOwnerListing = useCallback(async (): Promise<boolean> => {
@@ -905,6 +742,8 @@ export default function EditListingPage({ params }: PageProps) {
       postal_code: postalCode,
       country,
       address_line_1: streetAddress,
+      latitude,
+      longitude,
       space_type: spaceType,
       booking_unit:
         minBookingPayload.data.min_booking_hours != null
@@ -997,6 +836,8 @@ export default function EditListingPage({ params }: PageProps) {
       province,
       postalCode,
       country,
+      latitude,
+      longitude,
       spaceType,
       bookingUnit,
       priceAmount,
@@ -1026,7 +867,9 @@ export default function EditListingPage({ params }: PageProps) {
     depositAmount,
     depositRequired,
     description,
+    latitude,
     listingId,
+    longitude,
     maxGroupSize,
     minBookingDuration,
     minBookingUnit,
@@ -1082,6 +925,8 @@ export default function EditListingPage({ params }: PageProps) {
       province,
       postalCode,
       country,
+      latitude,
+      longitude,
       spaceType,
       bookingUnit,
       priceAmount,
@@ -1110,8 +955,10 @@ export default function EditListingPage({ params }: PageProps) {
     depositRequired,
     description,
     editingLocked,
+    latitude,
     listingId,
     loading,
+    longitude,
     maxGroupSize,
     minBookingDuration,
     minBookingUnit,
@@ -1358,89 +1205,21 @@ export default function EditListingPage({ params }: PageProps) {
                 ) : null}
               </div>
 
-              <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-                <h2 className="text-lg font-semibold text-gray-900">Location</h2>
-                <div className="mt-4 grid gap-4 md:grid-cols-3">
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-gray-700">
-                    Street address
-                  </label>
-                  <input
-                    type="text"
-                    value={streetAddress}
-                    onChange={(e) => setStreetAddress(e.target.value)}
-                    placeholder="Street address"
-                    className="w-full rounded-sm border border-gray-400 px-4 py-3 outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-gray-700">
-                    Suburb
-                  </label>
-                  <input
-                    type="text"
-                    value={suburb}
-                    onChange={(e) => setSuburb(e.target.value)}
-                    placeholder="Suburb"
-                    className="w-full rounded-sm border border-gray-400 px-4 py-3 outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-gray-700">
-                    City
-                  </label>
-                  <input
-                    type="text"
-                    value={city}
-                    onChange={(e) => setCity(e.target.value)}
-                    placeholder="City"
-                    className="w-full rounded-sm border border-gray-400 px-4 py-3 outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-gray-700">
-                    Province
-                  </label>
-                  <select
-                    value={province}
-                    onChange={(e) => setProvince(e.target.value)}
-                    className="w-full rounded-sm border border-gray-400 px-4 py-3 outline-none"
-                  >
-                    <option value="">Select province</option>
-                    {ZA_PROVINCES.map((p) => (
-                      <option key={p} value={p}>
-                        {p}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-gray-700">
-                    Postal code
-                  </label>
-                  <input
-                    type="text"
-                    value={postalCode}
-                    onChange={(e) => setPostalCode(e.target.value)}
-                    placeholder="Postal code"
-                    className="w-full rounded-sm border border-gray-400 px-4 py-3 outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-gray-700">
-                    Country
-                  </label>
-                  <input
-                    type="text"
-                    value={country}
-                    onChange={(e) => setCountry(e.target.value)}
-                    className="w-full rounded-sm border border-gray-400 px-4 py-3 outline-none"
-                  />
-                </div>
-                </div>
-              </section>
+              <SpaceLocationSection
+                apiMode="owner"
+                readOnly={editingLocked}
+                value={{
+                  streetAddress,
+                  suburb,
+                  city,
+                  province,
+                  postalCode,
+                  country,
+                  latitude,
+                  longitude,
+                }}
+                onChange={patchLocation}
+              />
 
               <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
                 <h2 className="text-lg font-semibold text-gray-900">Features &amp; size</h2>
@@ -1464,6 +1243,20 @@ export default function EditListingPage({ params }: PageProps) {
                 apiMode="owner"
                 readOnly={editingLocked}
               />
+
+              <section
+                id="photos"
+                className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm"
+              >
+                <h2 className="text-lg font-semibold text-gray-900">Photos</h2>
+                <SpacePhotosPanel
+                  apiMode="owner"
+                  spaceId={listingId || undefined}
+                  images={images}
+                  onImagesChange={setImages}
+                  readOnly={editingLocked || !canEditContent}
+                />
+              </section>
 
               <section
                 id="booking-quality"
@@ -1572,91 +1365,6 @@ export default function EditListingPage({ params }: PageProps) {
                   </button>
                 </div>
               </div>
-
-              <div>
-                <p className="mb-2 text-sm font-medium text-gray-700">
-                  Current images
-                </p>
-
-                {images.length === 0 ? (
-                  <div className="rounded-sm bg-gray-50 p-4 text-sm text-gray-600">
-                    No images uploaded yet.
-                  </div>
-                ) : (
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    {images.map((image, index) => (
-                      <div
-                        key={image.id}
-                        className="rounded-sm border border-gray-200 p-3"
-                      >
-                        <div className="relative mb-3 h-40 overflow-hidden rounded-sm bg-gray-100">
-                          <Image
-                            src={image.image_url}
-                            alt="Listing image"
-                            fill
-                            className="object-cover"
-                            unoptimized
-                          />
-                        </div>
-
-                        <div className="mb-3 flex gap-2">
-                          <button
-                            type="button"
-                            onClick={() => moveImage(index, "up")}
-                            disabled={index === 0 || reorderingImages}
-                            className="flex-1 rounded-sm border px-3 py-2 text-sm disabled:opacity-50"
-                          >
-                            Up
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => moveImage(index, "down")}
-                            disabled={index === images.length - 1 || reorderingImages}
-                            className="flex-1 rounded-sm border px-3 py-2 text-sm disabled:opacity-50"
-                          >
-                            Down
-                          </button>
-                        </div>
-
-                        {index === 0 && (
-                          <div className="mb-3 rounded-sm bg-black px-3 py-2 text-center text-xs text-white">
-                            Cover image
-                          </div>
-                        )}
-
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteImage(image)}
-                          disabled={deletingImageId === image.id}
-                          className="w-full rounded-sm border border-red-300 px-4 py-2 text-sm text-red-700 disabled:opacity-60"
-                        >
-                          {deletingImageId === image.id ? "Deleting..." : "Delete image"}
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <PhotoDropZone
-                accept="image/*"
-                uploading={uploadingImages}
-                disabled={uploadingImages}
-                onFiles={(fileList) => {
-                  const picked = Array.from(fileList);
-                  setNewImageFiles(picked);
-                  void uploadImageFiles(picked);
-                }}
-                message={
-                  newImageFiles.length > 0 && !uploadingImages
-                    ? `${newImageFiles.length} image${newImageFiles.length === 1 ? "" : "s"} selected`
-                    : null
-                }
-                uploadButtonLabel="Upload selected images"
-              />
-
-              <SectionInlineAlert status={photoStatus} error={photoError} />
 
               <button
                 type="submit"

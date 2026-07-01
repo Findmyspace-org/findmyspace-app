@@ -104,23 +104,28 @@ export async function POST(
       })
     );
 
-    const { count: existingCount, error: countErr } = await admin
+    const { data: maxSortRows, error: maxSortErr } = await admin
       .from("space_images")
-      .select("id", { count: "exact", head: true })
-      .eq("space_id", id);
+      .select("sort_order")
+      .eq("space_id", id)
+      .order("sort_order", { ascending: false })
+      .limit(1);
 
-    if (countErr) {
-      console.error(logPrefix, "space_images count failed:", countErr.message, {
+    if (maxSortErr) {
+      console.error(logPrefix, "space_images sort_order read failed:", maxSortErr.message, {
         spaceId: id,
       });
       return jsonError(
-        classifySpaceImagesInsertError(countErr.message),
+        classifySpaceImagesInsertError(maxSortErr.message),
         500,
         "space_images_read_denied"
       );
     }
 
-    const startOrder = existingCount ?? 0;
+    const startOrder =
+      maxSortRows && maxSortRows.length > 0
+        ? ((maxSortRows[0] as { sort_order: number | null }).sort_order ?? 0) + 1
+        : 0;
     const inserted: { id: string; image_url: string; sort_order: number }[] = [];
     const failed: { name: string; error: string }[] = [];
 

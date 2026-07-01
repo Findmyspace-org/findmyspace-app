@@ -3,6 +3,7 @@ import {
   validateAdminPublicListingModeChange,
   validateMinimumPublicContent,
 } from "@/lib/admin-public-listing-mode";
+import { countPersistedSpacePhotos } from "@/lib/space-image-persistence";
 import { isLiveListingStatus } from "@/lib/admin-listing-routing";
 import {
   PUBLIC_LISTING_MODE_OFF,
@@ -142,13 +143,13 @@ export async function loadSpaceReadinessSnapshot(
     row = data as SpacePricingLocationRow;
   }
 
-  const { count } = await admin
-    .from("space_images")
-    .select("id", { count: "exact", head: true })
-    .eq("space_id", spaceId);
+  const { count, error } = await countPersistedSpacePhotos(admin, spaceId);
+  if (error) {
+    return { has_photos: false, has_pricing: false, has_location: false };
+  }
 
   return {
-    has_photos: spaceHasPhotos(count || 0),
+    has_photos: spaceHasPhotos(count),
     has_pricing: spaceHasPricing(row),
     has_location: spaceHasLocation(row),
   };

@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { spaceHasPersistedPhotos } from "@/lib/space-image-persistence";
 import { spaceHasLegacyBookablePrice } from "@/lib/space-pricing";
 import { computeListingCompletion } from "@/lib/listing-completion";
 import {
@@ -63,16 +64,9 @@ export async function validateMinimumPublicContent(
     };
   }
 
-  const { count, error: imgErr } = await admin
-    .from("space_images")
-    .select("id", { count: "exact", head: true })
-    .eq("space_id", spaceId);
-
-  if (imgErr) {
-    return { ok: false, error: imgErr.message };
-  }
-  if (!count || count < 1) {
-    return { ok: false, error: "Add at least one photo before going public." };
+  const photos = await spaceHasPersistedPhotos(admin, spaceId);
+  if (!photos.ok) {
+    return { ok: false, error: photos.error };
   }
 
   return { ok: true };
