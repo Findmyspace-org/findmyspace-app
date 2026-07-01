@@ -144,6 +144,8 @@ export type ListingBookingQualityFormFieldsProps = {
   embedded?: boolean;
   /** When event_space, Suitable for lives in Features & amenities only. */
   spaceType?: string | null;
+  /** Hide legacy checklist toggles — use Booking requirements section instead. */
+  hideRenterRequirementChecklist?: boolean;
 };
 
 export function ListingBookingQualityFormFields({
@@ -156,6 +158,7 @@ export function ListingBookingQualityFormFields({
   renterRequirementsSubtitle = "Better details help you approve the right requests faster.",
   embedded = false,
   spaceType = null,
+  hideRenterRequirementChecklist = false,
 }: ListingBookingQualityFormFieldsProps) {
   const hideUseSuitability =
     spaceType === "event_space" && intelCategory === "office_event";
@@ -179,20 +182,23 @@ export function ListingBookingQualityFormFields({
 
   const fieldsInner = (
     <div className="space-y-3">
-      <div className="space-y-3">
-        <BqSection title="What should renters provide on request?">
-          <p className="mb-3 text-xs text-gray-600">{renterRequirementsSubtitle}</p>
-          <div className="grid grid-cols-1 gap-x-3 gap-y-1 sm:grid-cols-2 lg:grid-cols-3">
-            {renterKeys.map((key) => (
-              <BqCheckboxRow
-                key={key}
-                label={RENTER_REQUIREMENT_LABELS[key]}
-                checked={Boolean(requirements[key])}
-                onChange={(v) => setRequirements({ ...requirements, [key]: v })}
-              />
-            ))}
-          </div>
-        </BqSection>
+      {!hideRenterRequirementChecklist ? (
+        <div className="space-y-3">
+          <BqSection title="What should renters provide on request?">
+            <p className="mb-3 text-xs text-gray-600">{renterRequirementsSubtitle}</p>
+            <div className="grid grid-cols-1 gap-x-3 gap-y-1 sm:grid-cols-2 lg:grid-cols-3">
+              {renterKeys.map((key) => (
+                <BqCheckboxRow
+                  key={key}
+                  label={RENTER_REQUIREMENT_LABELS[key]}
+                  checked={Boolean(requirements[key])}
+                  onChange={(v) => setRequirements({ ...requirements, [key]: v })}
+                />
+              ))}
+            </div>
+          </BqSection>
+        </div>
+      ) : null}
 
         {intelCategory === "storage" && (
           <>
@@ -568,7 +574,6 @@ export function ListingBookingQualityFormFields({
             </BqSection>
           </>
         )}
-      </div>
     </div>
   );
 

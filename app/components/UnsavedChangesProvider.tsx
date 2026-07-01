@@ -92,8 +92,12 @@ export function UnsavedChangesProvider({ children, enabled = true }: ProviderPro
   const [modalOpen, setModalOpen] = useState(false);
   const [pendingNav, setPendingNav] = useState<PendingNavigation | null>(null);
   const [savingAll, setSavingAll] = useState(false);
+  const [discardUnsaved, setDiscardUnsaved] = useState(false);
   const guardPushedRef = useRef(false);
   const allowNavigationRef = useRef(false);
+  const modalOpenRef = useRef(false);
+
+  modalOpenRef.current = modalOpen;
 
   const bump = useCallback(() => setRevision((value) => value + 1), []);
 
@@ -118,43 +122,60 @@ export function UnsavedChangesProvider({ children, enabled = true }: ProviderPro
     return Array.from(sectionsRef.current.entries()).filter(([, section]) => section.isDirty);
   }, [revision]);
 
-  const hasUnsavedChanges = enabled && dirtySections.length > 0;
+  const hasUnsavedChanges =
+    enabled && !discardUnsaved && dirtySections.length > 0;
 
   const canSaveAndLeave = dirtySections.every(([, section]) => typeof section.save === "function");
 
+  const releaseNavigationGuards = useCallback(() => {
+    window.setTimeout(() => {
+      allowNavigationRef.current = false;
+      setDiscardUnsaved(false);
+      guardPushedRef.current = false;
+    }, 1500);
+  }, []);
+
   const completeNavigation = useCallback(
-    (pending: PendingNavigation) => {
-      allowNavigationRef.current = true;
-      if (pending.type === "href") {
-        if (pending.href.startsWith("http")) {
-          window.location.assign(pending.href);
-        } else {
-          router.push(pending.href);
-        }
-      } else if (pending.type === "back") {
-        router.back();
-      } else {
-        pending.action();
+    (pending: PendingNavigation, options?: { discard?: boolean }) => {
+      if (options?.discard) {
+        setDiscardUnsaved(true);
       }
+
+      allowNavigationRef.current = true;
       setModalOpen(false);
       setPendingNav(null);
-      window.setTimeout(() => {
-        allowNavigationRef.current = false;
-      }, 0);
+
+      window.requestAnimationFrame(() => {
+        if (pending.type === "href") {
+          if (pending.href.startsWith("http")) {
+            window.location.assign(pending.href);
+          } else {
+            router.push(pending.href);
+          }
+        } else if (pending.type === "back") {
+          const steps = guardPushedRef.current ? -2 : -1;
+          guardPushedRef.current = false;
+          window.history.go(steps);
+        } else {
+          pending.action();
+        }
+
+        releaseNavigationGuards();
+      });
     },
-    [router]
+    [releaseNavigationGuards, router]
   );
 
   const requestNavigation = useCallback(
     (pending: PendingNavigation) => {
-      if (!enabled || allowNavigationRef.current || dirtySections.length === 0) {
+      if (!enabled || allowNavigationRef.current || discardUnsaved || dirtySections.length === 0) {
         completeNavigation(pending);
         return;
       }
       setPendingNav(pending);
       setModalOpen(true);
     },
-    [completeNavigation, dirtySections.length, enabled]
+    [completeNavigation, dirtySections.length, discardUnsaved, enabled]
   );
 
   useEffect(() => {
@@ -164,14 +185,14 @@ export function UnsavedChangesProvider({ children, enabled = true }: ProviderPro
     }
 
     const onBeforeUnload = (event: BeforeUnloadEvent) => {
-      if (allowNavigationRef.current) return;
+      if (allowNavigationRef.current || discardUnsaved) return;
       event.preventDefault();
       event.returnValue = "";
     };
 
     window.addEventListener("beforeunload", onBeforeUnload);
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
-  }, [hasUnsavedChanges]);
+  }, [discardUnsaved, hasUnsavedChanges]);
 
   useEffect(() => {
     if (!hasUnsavedChanges) return;
@@ -182,7 +203,13 @@ export function UnsavedChangesProvider({ children, enabled = true }: ProviderPro
     }
 
     const onPopState = () => {
-      if (allowNavigationRef.current) return;
+      if (allowNavigationRef.current || discardUnsaved) return;
+
+      if (modalOpenRef.current) {
+        window.history.pushState({ unsavedChangesGuard: true }, "");
+        return;
+      }
+
       setPendingNav({ type: "back" });
       setModalOpen(true);
       window.history.pushState({ unsavedChangesGuard: true }, "");
@@ -190,13 +217,13 @@ export function UnsavedChangesProvider({ children, enabled = true }: ProviderPro
 
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
-  }, [hasUnsavedChanges]);
+  }, [discardUnsaved, hasUnsavedChanges]);
 
   useEffect(() => {
     if (!hasUnsavedChanges) return;
 
     const onDocumentClick = (event: MouseEvent) => {
-      if (allowNavigationRef.current) return;
+      if (allowNavigationRef.current || discardUnsaved) return;
       const target = event.target;
       if (!(target instanceof Element)) return;
 
@@ -233,7 +260,7 @@ export function UnsavedChangesProvider({ children, enabled = true }: ProviderPro
 
     document.addEventListener("click", onDocumentClick, true);
     return () => document.removeEventListener("click", onDocumentClick, true);
-  }, [hasUnsavedChanges]);
+  }, [discardUnsaved, hasUnsavedChanges]);
 
   async function handleSaveAndLeave() {
     if (!pendingNav) return;
@@ -244,7 +271,7 @@ export function UnsavedChangesProvider({ children, enabled = true }: ProviderPro
         const ok = await section.save();
         if (!ok) return;
       }
-      completeNavigation(pendingNav);
+      completeNavigation(pendingNav, { discard: true });
     } finally {
       setSavingAll(false);
     }
@@ -252,7 +279,7 @@ export function UnsavedChangesProvider({ children, enabled = true }: ProviderPro
 
   function handleLeaveWithoutSaving() {
     if (!pendingNav) return;
-    completeNavigation(pendingNav);
+    completeNavigation(pendingNav, { discard: true });
   }
 
   const contextValue = useMemo<UnsavedChangesContextValue>(

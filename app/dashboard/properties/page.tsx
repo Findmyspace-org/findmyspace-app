@@ -42,13 +42,18 @@ function PropertiesPageContent() {
     <DashboardShell
       workspaceLabel="Hosting"
       pageTitle="My properties"
-      pageSubtitle="Venues you manage and their spaces."
+      pageSubtitle="Venues shared with you by FindMySpace — each can contain one or more bookable spaces."
       navItems={HOST_NAV}
       activeHref="/dashboard/properties"
     >
       <div className="mx-auto max-w-4xl">
         <p className="text-sm text-gray-600">
-          Venues you manage on FindMySpace. Each space remains a separate listing.
+          These are venue locations FindMySpace has linked to your account (for example a
+          municipality or property portfolio). Each bookable space still appears under{" "}
+          <Link href="/dashboard/listings" className="font-medium text-[#192a3a] underline">
+            My listings
+          </Link>
+          .
         </p>
 
         {message ? <p className="mt-4 text-sm text-red-600">{message}</p> : null}

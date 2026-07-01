@@ -34,6 +34,8 @@ export type SpaceBookingRequirementFieldDraft = Omit<
 > & {
   space_id?: string;
   _localKey?: string;
+  /** Set when created from a common template — used for duplicate detection before save. */
+  _templateId?: string;
 };
 
 export type BookingRequirementResponseRow = {

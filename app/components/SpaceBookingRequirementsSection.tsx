@@ -18,6 +18,12 @@ import {
   type SpaceBookingRequirementFieldDraft,
 } from "@/lib/space-booking-requirement-fields";
 import {
+  BOOKING_REQUIREMENT_TEMPLATE_GROUPS,
+  createFieldDraftFromTemplate,
+  isTemplateAlreadyAdded,
+  type BookingRequirementTemplate,
+} from "@/lib/booking-requirement-templates";
+import {
   getRequirementDefinitionFieldErrors,
   hasRequirementDefinitionFieldErrors,
   OWNER_DEFINITION_BLOCK_MESSAGE,
@@ -69,6 +75,7 @@ export function SpaceBookingRequirementsSection({ spaceId, disabled = false }: P
   const [fields, setFields] = useState<SpaceBookingRequirementFieldDraft[]>([]);
   const [savedSnapshot, setSavedSnapshot] = useState("");
   const [showContactErrors, setShowContactErrors] = useState(false);
+  const [templateMessage, setTemplateMessage] = useState<string | null>(null);
 
   const activeFields = useMemo(
     () => sortBookingFields(fields.filter((field) => field.active)),
@@ -120,9 +127,26 @@ export function SpaceBookingRequirementsSection({ spaceId, disabled = false }: P
 
   function addField(fieldType: SpaceBookingFieldType = "short_text") {
     setOpen(true);
+    setTemplateMessage(null);
     setFields((current) => [
       ...current,
       createEmptyFieldDraft(current.length, fieldType),
+    ]);
+  }
+
+  function addTemplate(template: BookingRequirementTemplate) {
+    if (disabled) return;
+    setOpen(true);
+    setTemplateMessage(null);
+
+    if (isTemplateAlreadyAdded(fields, template)) {
+      setTemplateMessage("This requirement is already added.");
+      return;
+    }
+
+    setFields((current) => [
+      ...current,
+      createFieldDraftFromTemplate(template, current.length),
     ]);
   }
 
@@ -284,6 +308,10 @@ export function SpaceBookingRequirementsSection({ spaceId, disabled = false }: P
             Ask renters for extra information before they request this space. Contact details
             (email, phone, address, ID) cannot be requested here — FindMySpace shares those at
             the approved booking stage.
+          </p>
+          <p className="mt-2 text-xs text-gray-500">
+            Choose common requirements or add custom questions and document requests. All
+            requirements save to one list used on the booking form.
           </p>
         </div>
         <ChevronDown
@@ -477,6 +505,47 @@ export function SpaceBookingRequirementsSection({ spaceId, disabled = false }: P
             </div>
           )}
 
+          {!loading ? (
+            <div className="rounded-xl border border-[#e2e8f0] bg-[#f8fafb] p-4">
+              <h3 className="text-sm font-semibold text-[#192a3a]">Choose common requirements</h3>
+              <p className="mt-1 text-xs text-gray-600">
+                Quickly add standard questions or document requests renters must complete before
+                requesting this space.
+              </p>
+              <div className="mt-4 space-y-4">
+                {BOOKING_REQUIREMENT_TEMPLATE_GROUPS.map((group) => (
+                  <div key={group.title}>
+                    <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+                      {group.title}
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {group.templates.map((template) => {
+                        const alreadyAdded = isTemplateAlreadyAdded(fields, template);
+                        return (
+                          <button
+                            key={template.id}
+                            type="button"
+                            disabled={disabled || saving || alreadyAdded}
+                            onClick={() => addTemplate(template)}
+                            className="rounded-full border border-[#e2e8f0] bg-white px-3 py-1.5 text-xs font-medium text-[#192a3a] hover:bg-white disabled:cursor-default disabled:opacity-50"
+                            title={
+                              alreadyAdded ? "Already added" : `Add "${template.label}"`
+                            }
+                          >
+                            {template.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {templateMessage ? (
+                <p className="mt-3 text-xs text-amber-800">{templateMessage}</p>
+              ) : null}
+            </div>
+          ) : null}
+
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
@@ -485,7 +554,7 @@ export function SpaceBookingRequirementsSection({ spaceId, disabled = false }: P
               className="inline-flex items-center gap-1.5 rounded-full border border-[#e2e8f0] bg-white px-3 py-1.5 text-xs font-medium text-[#192a3a] hover:bg-[#f8fafb]"
             >
               <Plus className="h-3.5 w-3.5" aria-hidden />
-              Add extra question
+              Add custom question
             </button>
             <button
               type="button"
@@ -527,10 +596,7 @@ export function SpaceBookingRequirementsSection({ spaceId, disabled = false }: P
           <button
             type="button"
             disabled={disabled}
-            onClick={() => {
-              setOpen(true);
-              if (activeFields.length === 0) addField("short_text");
-            }}
+            onClick={() => setOpen(true)}
             className="text-sm font-medium text-[#192a3a] hover:underline"
           >
             Add booking requirements

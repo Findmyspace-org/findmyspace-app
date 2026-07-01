@@ -495,7 +495,7 @@ function MyListingsPageContent({
       <DashboardShell
         workspaceLabel="Hosting"
         pageTitle="My listings"
-        pageSubtitle="Manage and monitor your spaces."
+        pageSubtitle="Manage individual spaces people can book."
         navItems={HOST_NAV}
         activeHref="/dashboard/listings"
       >

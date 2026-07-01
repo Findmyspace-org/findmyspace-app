@@ -204,6 +204,7 @@ export default function EditListingPage({ params }: PageProps) {
   const {
     status: saveStatus,
     error: saveError,
+    setSuccess: setSaveSuccess,
     setFailure: setSaveFailure,
     clearForAction: clearSaveFeedback,
   } = useSectionFeedback();
@@ -1012,6 +1013,7 @@ export default function EditListingPage({ params }: PageProps) {
       bookingRequirements,
     });
 
+    setSaveSuccess("Listing saved.");
     setSaving(false);
     return true;
   }, [
@@ -1036,6 +1038,7 @@ export default function EditListingPage({ params }: PageProps) {
     province,
     clearSaveFeedback,
     setSaveFailure,
+    setSaveSuccess,
     spaceType,
     status,
     streetAddress,
@@ -1045,10 +1048,11 @@ export default function EditListingPage({ params }: PageProps) {
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
-    const ok = await persistOwnerListing();
-    if (ok) {
-      router.push("/dashboard/listings");
+    if (!isMainFormDirty) {
+      setSaveSuccess("No changes to save.");
+      return;
     }
+    await persistOwnerListing();
   }
 
   function getOwnershipBadgeClass(statusValue: string | null | undefined) {
@@ -1190,12 +1194,13 @@ export default function EditListingPage({ params }: PageProps) {
 
             {listingId ? (
               <p className="mb-6 text-sm text-gray-600">
-                Booking quality is included in this form. For a larger layout, open the{" "}
+                Use <strong>Booking requirements</strong> below for questions renters answer when
+                requesting this space. Category-specific assistant details are in{" "}
                 <Link
                   href={`/spaces/${listingId}/booking-quality`}
                   className="font-medium text-[#192a3a] underline underline-offset-2"
                 >
-                  full-page questionnaire
+                  booking quality
                 </Link>
                 .
               </p>
@@ -1234,6 +1239,18 @@ export default function EditListingPage({ params }: PageProps) {
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   className="w-full rounded-sm border border-gray-400 px-4 py-3 outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-700">
+                  Description
+                </label>
+                <MarkdownDescriptionEditor
+                  value={description}
+                  onChange={setDescription}
+                  rows={5}
+                  textareaClassName="w-full px-4 py-3 text-sm outline-none"
                 />
               </div>
 
@@ -1339,18 +1356,8 @@ export default function EditListingPage({ params }: PageProps) {
               </div>
 
               <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-                <h2 className="text-lg font-semibold text-gray-900">Features &amp; size</h2>
-                <div className="mt-4">
-                  <SpaceCategoryFields
-                    embedded
-                    spaceType={spaceType}
-                    attributes={attributes}
-                    setAttributes={setAttributes}
-                  />
-                </div>
-              </section>
-
-              <div className="grid gap-4 md:grid-cols-3">
+                <h2 className="text-lg font-semibold text-gray-900">Location</h2>
+                <div className="mt-4 grid gap-4 md:grid-cols-3">
                 <div>
                   <label className="mb-1 block text-xs font-medium text-gray-700">
                     Street address
@@ -1429,19 +1436,20 @@ export default function EditListingPage({ params }: PageProps) {
                     className="w-full rounded-sm border border-gray-400 px-4 py-3 outline-none"
                   />
                 </div>
-              </div>
+                </div>
+              </section>
 
-              <div>
-                <label className="mb-1 block text-xs font-medium text-gray-700">
-                  Description
-                </label>
-                <MarkdownDescriptionEditor
-                  value={description}
-                  onChange={setDescription}
-                  rows={5}
-                  textareaClassName="w-full px-4 py-3 text-sm outline-none"
-                />
-              </div>
+              <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+                <h2 className="text-lg font-semibold text-gray-900">Features &amp; size</h2>
+                <div className="mt-4">
+                  <SpaceCategoryFields
+                    embedded
+                    spaceType={spaceType}
+                    attributes={attributes}
+                    setAttributes={setAttributes}
+                  />
+                </div>
+              </section>
 
               <SpaceBookingRequirementsSection
                 spaceId={listingId || ""}
@@ -1458,15 +1466,15 @@ export default function EditListingPage({ params }: PageProps) {
                 id="booking-quality"
                 className="scroll-mt-24 rounded-xl border border-[#e2e8f0] bg-gradient-to-b from-[#fbfcfd] to-white p-5 shadow-sm"
               >
-                <details open className="group">
+                <details className="group">
                   <summary className="flex cursor-pointer list-none items-center justify-between gap-3 [&::-webkit-details-marker]:hidden">
                     <div>
-                      <h2 className="text-lg font-semibold text-[#192a3a]">Booking quality details</h2>
+                      <h2 className="text-lg font-semibold text-[#192a3a]">
+                        Booking quality details
+                        <span className="ml-2 text-xs font-normal text-gray-500">(optional)</span>
+                      </h2>
                       <p className="mt-1 text-sm text-gray-600">
-                        Better information = better bookings. You can update this later.
-                      </p>
-                      <p className="mt-1 text-xs leading-relaxed text-[#64748b]">
-                        These details help the Space Assistant answer renter questions and reduce back-and-forth.
+                        Extra details for the Space Assistant — not shown on your public listing.
                       </p>
                     </div>
                     <span className="text-gray-500 transition group-open:rotate-180" aria-hidden>
@@ -1490,6 +1498,7 @@ export default function EditListingPage({ params }: PageProps) {
                       requirements={bookingRequirements}
                       onRequirementsChange={setBookingRequirements}
                       spaceType={spaceType}
+                      hideRenterRequirementChecklist
                     />
                   </div>
                 </details>
@@ -1648,10 +1657,10 @@ export default function EditListingPage({ params }: PageProps) {
 
               <button
                 type="submit"
-                disabled={saving || editingLocked || !canEditContent}
+                disabled={saving || editingLocked || !canEditContent || !isMainFormDirty}
                 className="w-full rounded-sm bg-black px-4 py-3 text-white disabled:opacity-60"
               >
-                {saving ? "Saving..." : "Save changes"}
+                {saving ? "Saving…" : "Save changes"}
               </button>
               <SectionInlineAlert status={saveStatus} error={saveError} />
               </fieldset>
