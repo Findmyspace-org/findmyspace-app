@@ -8,6 +8,7 @@ import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { AdminUnclaimedSpaceForm } from "@/app/components/AdminUnclaimedSpaceForm";
 import { AdminPropertySpaceBreadcrumb } from "@/app/components/AdminPropertySpaceBreadcrumb";
+import { UnsavedChangesProvider } from "@/app/components/UnsavedChangesProvider";
 import { adminApiFetch } from "@/lib/admin-api-client";
 
 export default function NewPropertySpacePage() {
@@ -100,6 +101,7 @@ export default function NewPropertySpacePage() {
   }
 
   return (
+    <UnsavedChangesProvider>
     <div className="mx-auto max-w-3xl">
       <AdminPropertySpaceBreadcrumb
         propertyId={propertyId}
@@ -115,6 +117,7 @@ export default function NewPropertySpacePage() {
       <div className="mt-6">
         <AdminUnclaimedSpaceForm
           mode="create"
+          wrapWithUnsavedGuard={false}
           propertyId={propertyId}
           initial={initialLocation}
           backHref={`/admin/properties/${propertyId}`}
@@ -130,5 +133,6 @@ export default function NewPropertySpacePage() {
         />
       </div>
     </div>
+    </UnsavedChangesProvider>
   );
 }

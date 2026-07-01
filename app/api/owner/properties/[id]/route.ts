@@ -29,7 +29,7 @@ export async function GET(
 
   const { data: property, error } = await auth.admin
     .from("properties")
-    .select("id, name, description, address_line1, suburb, city, province, postal_code, country, owner_accepted_at")
+    .select("id, name, description, address_line1, suburb, city, province, postal_code, country, owner_accepted_at, terms_title, terms_text, terms_document_url, require_terms_acceptance, terms_acceptance_label, terms_updated_at")
     .eq("id", id)
     .maybeSingle();
 

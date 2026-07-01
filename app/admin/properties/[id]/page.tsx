@@ -12,6 +12,8 @@ import { adminApiFetch } from "@/lib/admin-api-client";
 import { AdminPropertyInvitePanel } from "@/app/components/AdminPropertyInvitePanel";
 import { AdminPropertySpaceBreadcrumb } from "@/app/components/AdminPropertySpaceBreadcrumb";
 import { AdminPropertyForm } from "@/app/components/AdminPropertyForm";
+import { PropertyTermsSection } from "@/app/components/PropertyTermsSection";
+import { normalizePropertyTermsRow } from "@/lib/property-booking-terms";
 import { AdminPropertyLogo } from "@/app/components/AdminPropertyLogo";
 import { AdminPropertySummaryCards } from "@/app/components/AdminPropertySummaryCards";
 import {
@@ -50,6 +52,12 @@ type PropertyDetail = {
   owner_accepted_at: string | null;
   crm_organisation_id: string | null;
   crm_organisation: { id: string; name: string } | null;
+  terms_title?: string | null;
+  terms_text?: string | null;
+  terms_document_url?: string | null;
+  require_terms_acceptance?: boolean | null;
+  terms_acceptance_label?: string | null;
+  terms_updated_at?: string | null;
 };
 
 function AdminPropertyDetailContent({
@@ -459,6 +467,15 @@ function AdminPropertyDetailContent({
             </div>
           </>
         )}
+
+        <div className="mt-6">
+          <PropertyTermsSection
+            propertyId={propertyId}
+            mode="admin"
+            initial={normalizePropertyTermsRow(property as Record<string, unknown>)}
+            onMessage={(msg) => setMessage(msg ?? "")}
+          />
+        </div>
       </div>
     </main>
   );

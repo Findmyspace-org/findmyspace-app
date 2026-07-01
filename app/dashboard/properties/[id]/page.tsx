@@ -22,6 +22,8 @@ import type {
   PropertySpaceHealthFilter,
 } from "@/lib/property-space-ops";
 import { matchesPropertySpaceHealthFilter } from "@/lib/property-space-ops";
+import { PropertyTermsSection } from "@/app/components/PropertyTermsSection";
+import { normalizePropertyTermsRow } from "@/lib/property-booking-terms";
 import type { OwnerSpaceStep } from "@/lib/owner-property-space-steps";
 
 type PropertyDetail = {
@@ -29,6 +31,12 @@ type PropertyDetail = {
   name: string;
   description: string | null;
   formatted_address: string;
+  terms_title?: string | null;
+  terms_text?: string | null;
+  terms_document_url?: string | null;
+  require_terms_acceptance?: boolean | null;
+  terms_acceptance_label?: string | null;
+  terms_updated_at?: string | null;
 };
 
 type SpaceRow = {
@@ -167,6 +175,15 @@ function PropertyDetailContent() {
                 />
               </div>
             ) : null}
+
+            <div className="mt-6">
+              <PropertyTermsSection
+                propertyId={propertyId}
+                mode="owner"
+                initial={normalizePropertyTermsRow(property as Record<string, unknown>)}
+                onMessage={(msg) => setMessage(msg ?? "")}
+              />
+            </div>
 
             <section className="mt-6">
               <div className="flex flex-wrap items-center justify-between gap-2">

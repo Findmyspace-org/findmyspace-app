@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { AdminNav } from "@/app/components/AdminNav";
+import { BookingRequirementResponsesLoader } from "@/app/components/BookingRequirementResponsesLoader";
 
 type AdminBookingRow = {
   id: string;
@@ -66,6 +67,8 @@ function AdminBookingsPageContent({
     | null
     | { booking: AdminBookingRow; mode: "note" | "pay" | "cancel" }
   >(null);
+  const [requirementsModalBooking, setRequirementsModalBooking] =
+    useState<AdminBookingRow | null>(null);
   const [supportNote, setSupportNote] = useState("");
   const [supportReason, setSupportReason] = useState("");
   const [supportBusy, setSupportBusy] = useState(false);
@@ -465,6 +468,14 @@ function AdminBookingsPageContent({
                       <div className="flex flex-col gap-1">
                         <button
                           type="button"
+                          onClick={() => setRequirementsModalBooking(b)}
+                          className="inline-flex items-center gap-1 rounded border border-gray-200 px-2 py-1 text-[11px] hover:bg-gray-50"
+                        >
+                          <ClipboardList className="h-3 w-3" />
+                          Requirements
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => openSupport(b, "note")}
                           className="inline-flex items-center gap-1 rounded border border-gray-200 px-2 py-1 text-[11px] hover:bg-gray-50"
                         >
@@ -510,6 +521,47 @@ function AdminBookingsPageContent({
                 No bookings match filters.
               </p>
             )}
+          </div>
+        )}
+
+        {requirementsModalBooking && (
+          <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center">
+            <div
+              className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-lg border border-gray-200 bg-white p-5 shadow-xl"
+              role="dialog"
+              aria-labelledby="admin-booking-requirements-title"
+            >
+              <div className="mb-4 flex items-start justify-between gap-2">
+                <div>
+                  <h2
+                    id="admin-booking-requirements-title"
+                    className="text-lg font-semibold text-[#192a3a]"
+                  >
+                    Booking requirements
+                  </h2>
+                  <p className="mt-1 text-sm text-gray-600">
+                    {requirementsModalBooking.listingTitle}
+                  </p>
+                  <p className="font-mono text-xs text-gray-500">
+                    {requirementsModalBooking.id}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setRequirementsModalBooking(null)}
+                  className="rounded p-1 hover:bg-gray-100"
+                  aria-label="Close"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <BookingRequirementResponsesLoader
+                bookingId={requirementsModalBooking.id}
+                infoUrl={`/api/admin/bookings/${requirementsModalBooking.id}/requirement-info`}
+                title="Renter-submitted information"
+              />
+            </div>
           </div>
         )}
 

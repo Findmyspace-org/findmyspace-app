@@ -38,6 +38,7 @@ import { resolveRenterMyBookingsUi } from "@/lib/renter-my-bookings-status";
 import { shouldShowBookingRequestNotes } from "@/lib/booking-notes-visibility";
 import { broadcastInboxRefresh } from "@/lib/inbox-refresh";
 import BookingRequestDetailsPanel from "@/app/components/BookingRequestDetailsPanel";
+import { BookingRequirementResponsesLoader } from "@/app/components/BookingRequirementResponsesLoader";
 import {
   aggregateRenterPageMetrics,
   computeRenterBookingFinance,
@@ -71,6 +72,11 @@ type Booking = {
   deposit_amount?: number | null;
   initial_payment_amount?: number | null;
   next_payment_date?: string | null;
+  terms_accepted?: boolean | null;
+  terms_accepted_at?: string | null;
+  accepted_terms_updated_at?: string | null;
+  accepted_terms_title?: string | null;
+  accepted_terms_label?: string | null;
 };
 
 type Space = {
@@ -413,7 +419,7 @@ function MyBookingsPageContent({
       const { data, error } = await supabase
         .from("bookings")
         .select(
-          "id, space_id, renter_id, owner_id, booking_unit, start_at, end_at, notes, owner_response_message, status, payment_status, total_price, created_at, monthly_rent, months_total, months_paid, deposit_amount, initial_payment_amount, next_payment_date"
+          "id, space_id, renter_id, owner_id, booking_unit, start_at, end_at, notes, owner_response_message, status, payment_status, total_price, created_at, monthly_rent, months_total, months_paid, deposit_amount, initial_payment_amount, next_payment_date, terms_accepted, terms_accepted_at, accepted_terms_updated_at, accepted_terms_title, accepted_terms_label"
         )
         .eq("renter_id", user.id)
         .order("created_at", { ascending: false });
@@ -1316,6 +1322,11 @@ function MyBookingsPageContent({
                             <BookingRequestDetailsPanel
                               data={booking.requestDetails ?? null}
                               title="Your booking request details"
+                            />
+
+                            <BookingRequirementResponsesLoader
+                              bookingId={booking.id}
+                              title="Information you submitted"
                             />
 
                             <section>

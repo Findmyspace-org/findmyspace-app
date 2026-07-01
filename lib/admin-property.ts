@@ -1,8 +1,10 @@
+import { parsePropertyTermsInput, type PropertyTermsInput } from "@/lib/property-booking-terms";
+
 const MAX_NAME = 200;
 const MAX_DESC = 50_000;
 const MAX_ADDR = 300;
 
-export type PropertyInput = {
+export type PropertyInput = PropertyTermsInput & {
   name?: string | null;
   description?: string | null;
   address_line1?: string | null;
@@ -109,6 +111,12 @@ export function parsePropertyInput(
     }
     data.crm_organisation_id = v;
   }
+
+  const termsParsed = parsePropertyTermsInput(body);
+  if (!termsParsed.ok) {
+    return termsParsed;
+  }
+  Object.assign(data, termsParsed.data);
 
   return { ok: true, data };
 }

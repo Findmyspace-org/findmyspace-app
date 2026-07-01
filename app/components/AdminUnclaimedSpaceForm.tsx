@@ -14,6 +14,7 @@ import {
   type AdminSpaceImage,
 } from "@/app/components/AdminSpacePhotosPanel";
 import { SpaceAiInformationPanel } from "@/app/components/SpaceAiInformationPanel";
+import { SpaceBookingRequirementsSection } from "@/app/components/SpaceBookingRequirementsSection";
 import { SectionInlineAlert } from "@/app/components/SectionInlineAlert";
 import type { SpaceCrmLinkSummary } from "@/lib/space-crm-link";
 import { sortSpaceImages } from "@/lib/sort-space-images";
@@ -37,6 +38,11 @@ import {
   type MinBookingDurationUnit,
 } from "@/lib/space-min-booking";
 import MarkdownDescriptionEditor from "@/app/components/MarkdownDescriptionEditor";
+import {
+  UnsavedChangesProvider,
+  UnsavedSectionIndicator,
+  useRegisterUnsavedSection,
+} from "@/app/components/UnsavedChangesProvider";
 
 type FormState = {
   title: string;
@@ -110,6 +116,14 @@ function payloadFromState(state: FormState, crmLink: CrmLinkState) {
   };
 }
 
+function serializeAdminFormSnapshot(state: FormState, crmLink: CrmLinkState) {
+  try {
+    return JSON.stringify(payloadFromState(state, crmLink));
+  } catch {
+    return "";
+  }
+}
+
 function formStateFromInitial(initial?: Partial<FormState>): FormState {
   return {
     title: initial?.title ?? "",
@@ -157,6 +171,8 @@ type AdminUnclaimedSpaceFormProps = {
   listLabel?: string;
   onCreated?: (id: string) => void;
   onSavedAndExit?: () => void;
+  /** When false, parent must wrap the page with UnsavedChangesProvider. */
+  wrapWithUnsavedGuard?: boolean;
 };
 
 export function AdminUnclaimedSpaceForm({
@@ -179,6 +195,7 @@ export function AdminUnclaimedSpaceForm({
   listLabel = "All unclaimed listings",
   onCreated,
   onSavedAndExit,
+  wrapWithUnsavedGuard = true,
 }: AdminUnclaimedSpaceFormProps) {
   const router = useRouter();
   const [state, setState] = useState<FormState>(() => formStateFromInitial(initial));
@@ -208,6 +225,7 @@ export function AdminUnclaimedSpaceForm({
 
   const serverSyncKey = mode === "edit" && spaceId ? `edit:${spaceId}` : "create";
   const lastServerSyncKeyRef = useRef<string | null>(null);
+  const savedPayloadRef = useRef("");
 
   const initialImagesKey = useMemo(
     () => initialImages.map((img) => img.id).join(","),
@@ -218,18 +236,41 @@ export function AdminUnclaimedSpaceForm({
     if (lastServerSyncKeyRef.current === serverSyncKey) return;
     lastServerSyncKeyRef.current = serverSyncKey;
 
-    if (initial) {
-      setState(formStateFromInitial(initial));
-    }
+    const baselineCrm = {
+      crm_organisation_id:
+        initialCrmLink?.crm_organisation_id ?? defaultOrganisationId ?? null,
+      crm_contact_id: initialCrmLink?.crm_contact_id ?? defaultContactId ?? null,
+    };
+
+    const nextState = formStateFromInitial(initial);
+    setState(nextState);
+    savedPayloadRef.current = serializeAdminFormSnapshot(nextState, baselineCrm);
+
     if (mode === "edit" && spaceId) {
       setImages(sortSpaceImages(initialImages));
       setStatus(initialStatus || "draft");
     }
-  }, [serverSyncKey, mode, spaceId, initial, initialImages, initialStatus, initialImagesKey]);
+  }, [
+    serverSyncKey,
+    mode,
+    spaceId,
+    initial,
+    initialImages,
+    initialStatus,
+    initialImagesKey,
+    initialCrmLink,
+    defaultOrganisationId,
+    defaultContactId,
+  ]);
+
+  const isMainFormDirty = useMemo(() => {
+    if (readOnly) return false;
+    return serializeAdminFormSnapshot(state, crmLink) !== savedPayloadRef.current;
+  }, [readOnly, state, crmLink]);
 
   const saveDraft = useCallback(
-    async (stayOnPage: boolean) => {
-      if (readOnly) return;
+    async (stayOnPage: boolean): Promise<boolean> => {
+      if (readOnly) return true;
       setSaving(true);
       clearSaveFeedback();
       try {
@@ -241,7 +282,7 @@ export function AdminUnclaimedSpaceForm({
         if (groupSizeErr) {
           setSaveFailure(groupSizeErr);
           setSaving(false);
-          return;
+          return false;
         }
 
         const pricingErr = validateSpacePricingFormValues(
@@ -253,7 +294,7 @@ export function AdminUnclaimedSpaceForm({
         if (pricingErr) {
           setSaveFailure(pricingErr);
           setSaving(false);
-          return;
+          return false;
         }
 
         const minBookingErr = validateMinBookingFormValues(
@@ -263,7 +304,7 @@ export function AdminUnclaimedSpaceForm({
         if (minBookingErr) {
           setSaveFailure(minBookingErr);
           setSaving(false);
-          return;
+          return false;
         }
 
         const periodErr = validateSpacePricingPeriodFormFields({
@@ -275,7 +316,7 @@ export function AdminUnclaimedSpaceForm({
         if (periodErr) {
           setSaveFailure(periodErr);
           setSaving(false);
-          return;
+          return false;
         }
 
         const body = payloadFromState(state, crmLink);
@@ -340,9 +381,13 @@ export function AdminUnclaimedSpaceForm({
             onSavedAndExit?.();
           }
         }
+
+        savedPayloadRef.current = serializeAdminFormSnapshot(state, crmLink);
+        return true;
       } catch (err) {
         console.error("Space save failed:", err);
         setSaveFailure(err instanceof Error ? err.message : "Save failed.");
+        return false;
       } finally {
         setSaving(false);
       }
@@ -418,7 +463,13 @@ export function AdminUnclaimedSpaceForm({
   const resolvedBackLabel =
     backLabel ?? (propertyId ? "Back to property" : "Back to unclaimed listings");
 
-  return (
+  const formContent = (
+    <>
+      <AdminSpaceDetailsDirtyRegistration
+        isDirty={isMainFormDirty}
+        readOnly={readOnly}
+        saveDraft={saveDraft}
+      />
     <div className="space-y-6 pb-4">
       <div className="flex flex-wrap items-center gap-2">
         <span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusBadge}`}>
@@ -446,7 +497,10 @@ export function AdminUnclaimedSpaceForm({
       ) : null}
 
       <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-        <h2 className="text-lg font-semibold text-gray-900">Basics</h2>
+        <h2 className="text-lg font-semibold text-gray-900">
+          Basics
+          <UnsavedSectionIndicator show={isMainFormDirty} />
+        </h2>
         <fieldset disabled={readOnly} className="mt-4 space-y-4 disabled:opacity-80">
           <label className="block">
             <span className="mb-1 block text-sm font-medium text-gray-700">Title</span>
@@ -595,6 +649,10 @@ export function AdminUnclaimedSpaceForm({
         </div>
       </section>
 
+      {activeSpaceId ? (
+        <SpaceBookingRequirementsSection spaceId={activeSpaceId} disabled={readOnly} />
+      ) : null}
+
       <div id="ai-information">
         <SpaceAiInformationPanel
           spaceId={activeSpaceId ?? undefined}
@@ -704,5 +762,31 @@ export function AdminUnclaimedSpaceForm({
         </div>
       ) : null}
     </div>
+    </>
   );
+
+  if (wrapWithUnsavedGuard) {
+    return (
+      <UnsavedChangesProvider enabled={!readOnly}>{formContent}</UnsavedChangesProvider>
+    );
+  }
+
+  return formContent;
+}
+
+function AdminSpaceDetailsDirtyRegistration({
+  isDirty,
+  readOnly,
+  saveDraft,
+}: {
+  isDirty: boolean;
+  readOnly: boolean;
+  saveDraft: (stayOnPage: boolean) => Promise<boolean>;
+}) {
+  useRegisterUnsavedSection("admin-space-details", {
+    label: "Space details",
+    isDirty,
+    save: readOnly ? undefined : () => saveDraft(true),
+  });
+  return null;
 }

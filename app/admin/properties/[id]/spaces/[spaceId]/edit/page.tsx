@@ -10,6 +10,7 @@ import { supabase } from "@/lib/supabase";
 import { adminApiFetch } from "@/lib/admin-api-client";
 import { AdminUnclaimedSpaceForm } from "@/app/components/AdminUnclaimedSpaceForm";
 import { AdminPropertySpaceBreadcrumb } from "@/app/components/AdminPropertySpaceBreadcrumb";
+import { UnsavedChangesProvider } from "@/app/components/UnsavedChangesProvider";
 import { UnclaimedListingEnquirySocialProof } from "@/app/components/UnclaimedListingEnquirySocialProof";
 import { sortSpaceImages } from "@/lib/sort-space-images";
 import { spacePricingFormFromRow } from "@/lib/space-pricing";
@@ -165,6 +166,7 @@ function EditPropertySpacePageContent() {
   }
 
   return (
+    <UnsavedChangesProvider enabled={!readOnly}>
     <div className="mx-auto max-w-3xl">
       <AdminPropertySpaceBreadcrumb
         propertyId={propertyId}
@@ -210,6 +212,7 @@ function EditPropertySpacePageContent() {
       <div className="mt-6">
         <AdminUnclaimedSpaceForm
           mode="edit"
+          wrapWithUnsavedGuard={false}
           spaceId={space.id}
           propertyId={propertyId}
           initialStatus={space.status}
@@ -260,5 +263,6 @@ function EditPropertySpacePageContent() {
         />
       </div>
     </div>
+    </UnsavedChangesProvider>
   );
 }

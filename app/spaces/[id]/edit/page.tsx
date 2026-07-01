@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { prepareFilesForUpload } from "@/lib/image-compression-client";
@@ -49,6 +49,12 @@ import {
   ListingBookingQualityFormFields,
   ListingQualityScoreSummary,
 } from "@/app/components/listing-booking-quality-ui";
+import { SpaceBookingRequirementsSection } from "@/app/components/SpaceBookingRequirementsSection";
+import {
+  UnsavedChangesProvider,
+  UnsavedSectionIndicator,
+  useRegisterUnsavedSection,
+} from "@/app/components/UnsavedChangesProvider";
 import { ZA_PROVINCES } from "@/lib/za-provinces";
 import {
   canOwnerEditListing,
@@ -160,6 +166,33 @@ type SpaceAttributeInsertRow = {
   attribute_value: string;
 };
 
+function buildOwnerListingSnapshot(values: {
+  title: string;
+  description: string;
+  city: string;
+  suburb: string;
+  streetAddress: string;
+  province: string;
+  postalCode: string;
+  country: string;
+  spaceType: string;
+  bookingUnit: string;
+  priceAmount: string;
+  priceUnit: string;
+  depositRequired: boolean;
+  depositAmount: string;
+  minBookingDuration: string;
+  minBookingUnit: MinBookingDurationUnit | "";
+  minGroupSize: string;
+  maxGroupSize: string;
+  monthlyPaymentDay: string;
+  attributes: Record<string, string[]>;
+  bookingIntelData: Record<string, unknown>;
+  bookingRequirements: ListingBookingRequirements;
+}) {
+  return JSON.stringify(values);
+}
+
 export default function EditListingPage({ params }: PageProps) {
   const router = useRouter();
 
@@ -224,6 +257,7 @@ export default function EditListingPage({ params }: PageProps) {
     ...DEFAULT_LISTING_BOOKING_REQUIREMENTS,
   });
   const [renterRequirementsCommitted, setRenterRequirementsCommitted] = useState(false);
+  const savedListingBaselineRef = useRef("");
 
   const intelCategory = useMemo(() => mapSpaceTypeToIntelCategory(spaceType), [spaceType]);
   const listingQualityOptionsEdit = useMemo(
@@ -398,23 +432,58 @@ export default function EditListingPage({ params }: PageProps) {
         .maybeSingle(),
     ]);
 
-    setBookingIntelData(mergeQuestionnaireData(intelCat, (qRow?.data as Record<string, unknown>) || {}));
+    const loadedIntelData = mergeQuestionnaireData(
+      intelCat,
+      (qRow?.data as Record<string, unknown>) || {}
+    );
+    setBookingIntelData(loadedIntelData);
+
+    const loadedRequirements = reqRow
+      ? {
+          require_item_type: Boolean(reqRow.require_item_type),
+          require_dimensions: Boolean(reqRow.require_dimensions),
+          require_photos: Boolean(reqRow.require_photos),
+          require_vehicle_details: Boolean(reqRow.require_vehicle_details),
+          require_access_frequency: Boolean(reqRow.require_access_frequency),
+          require_estimated_value: Boolean(reqRow.require_estimated_value),
+          require_notes: Boolean(reqRow.require_notes),
+        }
+      : { ...DEFAULT_LISTING_BOOKING_REQUIREMENTS };
 
     if (reqRow) {
       setRenterRequirementsCommitted(true);
-      setBookingRequirements({
-        require_item_type: Boolean(reqRow.require_item_type),
-        require_dimensions: Boolean(reqRow.require_dimensions),
-        require_photos: Boolean(reqRow.require_photos),
-        require_vehicle_details: Boolean(reqRow.require_vehicle_details),
-        require_access_frequency: Boolean(reqRow.require_access_frequency),
-        require_estimated_value: Boolean(reqRow.require_estimated_value),
-        require_notes: Boolean(reqRow.require_notes),
-      });
+      setBookingRequirements(loadedRequirements);
     } else {
       setRenterRequirementsCommitted(false);
-      setBookingRequirements({ ...DEFAULT_LISTING_BOOKING_REQUIREMENTS });
+      setBookingRequirements(loadedRequirements);
     }
+
+    savedListingBaselineRef.current = buildOwnerListingSnapshot({
+      title: data.title ?? "",
+      description: data.description ?? "",
+      city: data.city ?? "",
+      suburb: data.suburb ?? "",
+      streetAddress: data.street_address ?? data.address_line_1 ?? "",
+      province: data.province ?? "",
+      postalCode: data.postal_code ?? "",
+      country: data.country ?? "South Africa",
+      spaceType: data.space_type ?? "storage",
+      bookingUnit: data.booking_unit ?? "day",
+      priceAmount: pricingForm.priceAmount,
+      priceUnit: pricingForm.priceUnit,
+      depositRequired: pricingForm.depositRequired,
+      depositAmount: pricingForm.depositAmount,
+      minBookingDuration: minBookingForm.duration,
+      minBookingUnit: minBookingForm.unit,
+      minGroupSize:
+        typeof data.min_group_size === "number" ? String(data.min_group_size) : "",
+      maxGroupSize:
+        typeof data.max_group_size === "number" ? String(data.max_group_size) : "",
+      monthlyPaymentDay: String(data.monthly_payment_day ?? 1),
+      attributes: grouped,
+      bookingIntelData: loadedIntelData,
+      bookingRequirements: loadedRequirements,
+    });
 
     setLoading(false);
   }
@@ -726,8 +795,7 @@ export default function EditListingPage({ params }: PageProps) {
     await persistImageOrder(resequenced);
   }
 
-  async function handleSave(e: React.FormEvent) {
-    e.preventDefault();
+  const persistOwnerListing = useCallback(async (): Promise<boolean> => {
     setSaving(true);
     clearSaveFeedback();
 
@@ -748,7 +816,7 @@ export default function EditListingPage({ params }: PageProps) {
     if (pricingErr) {
       setSaveFailure(pricingErr);
       setSaving(false);
-      return;
+      return false;
     }
 
     const pricingPayload = spacePricingPayloadFromForm(
@@ -760,7 +828,7 @@ export default function EditListingPage({ params }: PageProps) {
     if (!pricingPayload.ok) {
       setSaveFailure(pricingPayload.error);
       setSaving(false);
-      return;
+      return false;
     }
 
     const minBookingErr = validateMinBookingFormValues(
@@ -770,7 +838,7 @@ export default function EditListingPage({ params }: PageProps) {
     if (minBookingErr) {
       setSaveFailure(minBookingErr);
       setSaving(false);
-      return;
+      return false;
     }
 
     const minBookingPayload = minBookingPayloadFromForm(
@@ -780,7 +848,7 @@ export default function EditListingPage({ params }: PageProps) {
     if (!minBookingPayload.ok) {
       setSaveFailure(minBookingPayload.error);
       setSaving(false);
-      return;
+      return false;
     }
 
     const periodErr = validateSpacePricingPeriodFormFields({
@@ -792,7 +860,7 @@ export default function EditListingPage({ params }: PageProps) {
     if (periodErr) {
       setSaveFailure(periodErr);
       setSaving(false);
-      return;
+      return false;
     }
 
     if (effectiveBookingUnit === "month") {
@@ -801,7 +869,7 @@ export default function EditListingPage({ params }: PageProps) {
       if (parsedMonthlyPaymentDay < 1 || parsedMonthlyPaymentDay > 28) {
         setSaveFailure("Monthly payment day must be between 1 and 28.");
         setSaving(false);
-        return;
+        return false;
       }
     }
 
@@ -810,20 +878,20 @@ export default function EditListingPage({ params }: PageProps) {
         "This listing cannot be edited while it is under review. Open the completion checklist for next steps."
       );
       setSaving(false);
-      return;
+      return false;
     }
 
     if (!canOwnerEditListing(status)) {
       setSaveFailure("You cannot edit this listing in its current status.");
       setSaving(false);
-      return;
+      return false;
     }
 
     const groupSizeErr = validateGroupSizeFormValues(spaceType, minGroupSize, maxGroupSize);
     if (groupSizeErr) {
       setSaveFailure(groupSizeErr);
       setSaving(false);
-      return;
+      return false;
     }
 
     const payload: SpaceUpdatePayload = {
@@ -867,7 +935,7 @@ export default function EditListingPage({ params }: PageProps) {
       console.error("Listing save failed:", error);
       setSaveFailure("Could not save changes. Please try again.");
       setSaving(false);
-      return;
+      return false;
     }
 
     const { error: deleteAttributesError } = await supabase
@@ -879,7 +947,7 @@ export default function EditListingPage({ params }: PageProps) {
       console.error("Listing save failed:", deleteAttributesError);
       setSaveFailure("Could not save changes. Please try again.");
       setSaving(false);
-      return;
+      return false;
     }
 
     const attributeRows: SpaceAttributeInsertRow[] = Object.entries(
@@ -901,7 +969,7 @@ export default function EditListingPage({ params }: PageProps) {
         console.error("Listing save failed:", insertAttributesError);
         setSaveFailure("Could not save changes. Please try again.");
         setSaving(false);
-        return;
+        return false;
       }
     }
 
@@ -915,12 +983,72 @@ export default function EditListingPage({ params }: PageProps) {
       console.error("Booking quality save failed:", intelSave);
       setSaveFailure("Could not save booking quality details. Please try again.");
       setSaving(false);
-      return;
+      return false;
     }
     setRenterRequirementsCommitted(true);
 
+    savedListingBaselineRef.current = buildOwnerListingSnapshot({
+      title,
+      description,
+      city,
+      suburb,
+      streetAddress,
+      province,
+      postalCode,
+      country,
+      spaceType,
+      bookingUnit,
+      priceAmount,
+      priceUnit,
+      depositRequired,
+      depositAmount,
+      minBookingDuration,
+      minBookingUnit,
+      minGroupSize,
+      maxGroupSize,
+      monthlyPaymentDay,
+      attributes,
+      bookingIntelData,
+      bookingRequirements,
+    });
+
     setSaving(false);
-    router.push("/dashboard/listings");
+    return true;
+  }, [
+    attributes,
+    bookingIntelData,
+    bookingRequirements,
+    bookingUnit,
+    city,
+    country,
+    depositAmount,
+    depositRequired,
+    description,
+    listingId,
+    maxGroupSize,
+    minBookingDuration,
+    minBookingUnit,
+    minGroupSize,
+    monthlyPaymentDay,
+    postalCode,
+    priceAmount,
+    priceUnit,
+    province,
+    clearSaveFeedback,
+    setSaveFailure,
+    spaceType,
+    status,
+    streetAddress,
+    suburb,
+    title,
+  ]);
+
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault();
+    const ok = await persistOwnerListing();
+    if (ok) {
+      router.push("/dashboard/listings");
+    }
   }
 
   function getOwnershipBadgeClass(statusValue: string | null | undefined) {
@@ -939,8 +1067,65 @@ export default function EditListingPage({ params }: PageProps) {
     ? getOwnerListingCompletionHref(listingId)
     : "/dashboard/listings";
 
+  const isMainFormDirty = useMemo(() => {
+    if (!canEditContent || editingLocked || loading || !listingId) return false;
+    const current = buildOwnerListingSnapshot({
+      title,
+      description,
+      city,
+      suburb,
+      streetAddress,
+      province,
+      postalCode,
+      country,
+      spaceType,
+      bookingUnit,
+      priceAmount,
+      priceUnit,
+      depositRequired,
+      depositAmount,
+      minBookingDuration,
+      minBookingUnit,
+      minGroupSize,
+      maxGroupSize,
+      monthlyPaymentDay,
+      attributes,
+      bookingIntelData,
+      bookingRequirements,
+    });
+    return current !== savedListingBaselineRef.current;
+  }, [
+    attributes,
+    bookingIntelData,
+    bookingRequirements,
+    bookingUnit,
+    canEditContent,
+    city,
+    country,
+    depositAmount,
+    depositRequired,
+    description,
+    editingLocked,
+    listingId,
+    loading,
+    maxGroupSize,
+    minBookingDuration,
+    minBookingUnit,
+    minGroupSize,
+    monthlyPaymentDay,
+    postalCode,
+    priceAmount,
+    priceUnit,
+    province,
+    spaceType,
+    streetAddress,
+    suburb,
+    title,
+  ]);
+
   return (
     <RequireAuth>
+      <UnsavedChangesProvider enabled={canEditContent && !editingLocked}>
       <DashboardShell
         workspaceLabel="Hosting"
         pageTitle="Edit listing"
@@ -948,6 +1133,11 @@ export default function EditListingPage({ params }: PageProps) {
         navItems={HOST_NAV}
         activeHref="/dashboard/listings"
       >
+        <OwnerListingDirtyRegistration
+          isDirty={isMainFormDirty}
+          canSave={canEditContent && !editingLocked}
+          persistOwnerListing={persistOwnerListing}
+        />
         <div className="mx-auto max-w-4xl text-black">
           <div className="mb-8">
             <div className="mb-4 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
@@ -1027,6 +1217,10 @@ export default function EditListingPage({ params }: PageProps) {
               onSubmit={handleSave}
               className="space-y-5 rounded-md border border-gray-300 bg-white p-6 shadow-sm"
             >
+              <p className="text-sm font-medium text-gray-900">
+                Listing details
+                <UnsavedSectionIndicator show={isMainFormDirty} />
+              </p>
               <fieldset
                 disabled={saving || editingLocked || !canEditContent}
                 className="space-y-5 disabled:opacity-60"
@@ -1144,6 +1338,18 @@ export default function EditListingPage({ params }: PageProps) {
                 ) : null}
               </div>
 
+              <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+                <h2 className="text-lg font-semibold text-gray-900">Features &amp; size</h2>
+                <div className="mt-4">
+                  <SpaceCategoryFields
+                    embedded
+                    spaceType={spaceType}
+                    attributes={attributes}
+                    setAttributes={setAttributes}
+                  />
+                </div>
+              </section>
+
               <div className="grid gap-4 md:grid-cols-3">
                 <div>
                   <label className="mb-1 block text-xs font-medium text-gray-700">
@@ -1236,6 +1442,11 @@ export default function EditListingPage({ params }: PageProps) {
                   textareaClassName="w-full px-4 py-3 text-sm outline-none"
                 />
               </div>
+
+              <SpaceBookingRequirementsSection
+                spaceId={listingId || ""}
+                disabled={editingLocked}
+              />
 
               <SpaceAiInformationPanel
                 spaceId={listingId || undefined}
@@ -1435,12 +1646,6 @@ export default function EditListingPage({ params }: PageProps) {
 
               <SectionInlineAlert status={photoStatus} error={photoError} />
 
-              <SpaceCategoryFields
-                spaceType={spaceType}
-                attributes={attributes}
-                setAttributes={setAttributes}
-              />
-
               <button
                 type="submit"
                 disabled={saving || editingLocked || !canEditContent}
@@ -1454,6 +1659,24 @@ export default function EditListingPage({ params }: PageProps) {
           )}
         </div>
       </DashboardShell>
+      </UnsavedChangesProvider>
     </RequireAuth>
   );
+}
+
+function OwnerListingDirtyRegistration({
+  isDirty,
+  canSave,
+  persistOwnerListing,
+}: {
+  isDirty: boolean;
+  canSave: boolean;
+  persistOwnerListing: () => Promise<boolean>;
+}) {
+  useRegisterUnsavedSection("owner-listing-details", {
+    label: "Listing details",
+    isDirty,
+    save: canSave ? persistOwnerListing : undefined,
+  });
+  return null;
 }

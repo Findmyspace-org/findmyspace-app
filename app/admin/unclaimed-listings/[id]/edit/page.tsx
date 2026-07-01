@@ -10,6 +10,7 @@ import { supabase } from "@/lib/supabase";
 import { adminApiFetch } from "@/lib/admin-api-client";
 import { AdminUnclaimedSpaceForm } from "@/app/components/AdminUnclaimedSpaceForm";
 import { AdminListingClaimPanel } from "@/app/components/AdminListingClaimPanel";
+import { UnsavedChangesProvider } from "@/app/components/UnsavedChangesProvider";
 import { UnclaimedListingEnquirySocialProof } from "@/app/components/UnclaimedListingEnquirySocialProof";
 import { sortSpaceImages } from "@/lib/sort-space-images";
 import { spacePricingFormFromRow } from "@/lib/space-pricing";
@@ -138,6 +139,7 @@ export default function EditUnclaimedListingPage() {
   }
 
   return (
+    <UnsavedChangesProvider enabled={!readOnly}>
     <div className="mx-auto max-w-3xl">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <Link
@@ -201,6 +203,7 @@ export default function EditUnclaimedListingPage() {
 
           <AdminUnclaimedSpaceForm
             mode="edit"
+            wrapWithUnsavedGuard={false}
             spaceId={space.id}
             initialStatus={space.status}
             enquiryCount={enquiryCount}
@@ -250,5 +253,6 @@ export default function EditUnclaimedListingPage() {
           />
         </div>
     </div>
+    </UnsavedChangesProvider>
   );
 }

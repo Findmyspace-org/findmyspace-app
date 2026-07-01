@@ -1,22 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-export type AuthenticatedAuthOk = { userId: string };
-export type AuthenticatedAuthFail = { response: NextResponse };
+export type AuthenticatedApiOk = { userId: string; admin: SupabaseClient };
+export type AuthenticatedApiFail = { response: NextResponse };
 
-/** Verify Bearer JWT for any signed-in user. Use in Route Handlers only. */
 export async function requireAuthenticatedApi(
   req: NextRequest
-): Promise<AuthenticatedAuthOk | AuthenticatedAuthFail> {
+): Promise<AuthenticatedApiOk | AuthenticatedApiFail> {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-  if (!supabaseUrl || !anonKey) {
+  if (!supabaseUrl || !anonKey || !serviceKey) {
     return {
-      response: NextResponse.json(
-        { error: "Server configuration error." },
-        { status: 500 }
-      ),
+      response: NextResponse.json({ error: "Server configuration error." }, { status: 500 }),
     };
   }
 
@@ -28,11 +25,8 @@ export async function requireAuthenticatedApi(
   }
 
   const accessToken = authHeader.replace("Bearer ", "");
-
   const userClient = createClient(supabaseUrl, anonKey, {
-    global: {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    },
+    global: { headers: { Authorization: `Bearer ${accessToken}` } },
     auth: { persistSession: false },
   });
 
@@ -47,5 +41,13 @@ export async function requireAuthenticatedApi(
     };
   }
 
-  return { userId: user.id };
+  const admin = createClient(supabaseUrl, serviceKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+    },
+  });
+
+  return { userId: user.id, admin };
 }

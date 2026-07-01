@@ -5,6 +5,10 @@ import { format } from "date-fns";
 import { FileUp, Loader2 } from "lucide-react";
 import MarkdownDescriptionEditor from "@/app/components/MarkdownDescriptionEditor";
 import { SectionInlineAlert } from "@/app/components/SectionInlineAlert";
+import {
+  UnsavedSectionIndicator,
+  useRegisterUnsavedSection,
+} from "@/app/components/UnsavedChangesProvider";
 import { adminApiFetch } from "@/lib/admin-api-client";
 import { ownerApiFetch } from "@/lib/owner-api-client";
 import {
@@ -81,6 +85,7 @@ export function SpaceAiInformationPanel({
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [setupHealth, setSetupHealth] = useState<AiKnowledgeSetupHealth | null>(null);
+  const [savedTextBaseline, setSavedTextBaseline] = useState("");
   const { status, error, setSuccess, setFailure, clearForAction } = useSectionFeedback();
 
   const fetchJson = apiMode === "admin" ? adminApiFetch : ownerApiFetch;
@@ -91,9 +96,12 @@ export function SpaceAiInformationPanel({
   const applyDocument = useCallback((document: SpaceAiDocumentRow | null) => {
     if (document && hasAiKnowledgeContent(document.extracted_text)) {
       setText(document.extracted_text);
+      setSavedTextBaseline(document.extracted_text.trim());
       setFileName(document.file_name);
       setUpdatedAt(document.updated_at);
     } else {
+      setText("");
+      setSavedTextBaseline("");
       setFileName(null);
       setUpdatedAt(null);
     }
@@ -121,17 +129,17 @@ export function SpaceAiInformationPanel({
     }
   }, [apiMode, applyDocument, fetchJson, setFailure, spaceId]);
 
-  const saveText = useCallback(async () => {
-    if (readOnly) return;
+  const saveText = useCallback(async (): Promise<boolean> => {
+    if (readOnly) return true;
     const trimmed = text.trim();
     if (!trimmed) {
       setFailure("Enter AI Information before saving.");
-      return;
+      return false;
     }
     if (!spaceId) {
       pendingFlushRef.current = true;
       setFailure("Save the space first, then click Save AI Information.");
-      return;
+      return false;
     }
 
     setSaving(true);
@@ -143,8 +151,10 @@ export function SpaceAiInformationPanel({
       });
       setFileName("Manual entry");
       setUpdatedAt(new Date().toISOString());
+      setSavedTextBaseline(trimmed);
       pendingFlushRef.current = false;
       setSuccess("AI Information saved.");
+      return true;
     } catch (err) {
       logAiKnowledgeError("save", err);
       setFailure(
@@ -153,6 +163,7 @@ export function SpaceAiInformationPanel({
           "AI Information could not be saved. Please try again."
         )
       );
+      return false;
     } finally {
       setSaving(false);
     }
@@ -185,6 +196,7 @@ export function SpaceAiInformationPanel({
           });
           setFileName("Manual entry");
           setUpdatedAt(new Date().toISOString());
+          setSavedTextBaseline(trimmed);
           setSuccess("AI Information saved.");
         } catch (err) {
           logAiKnowledgeError("auto-save", err);
@@ -274,6 +286,18 @@ export function SpaceAiInformationPanel({
     }
   }
 
+  const isDirty =
+    !readOnly &&
+    !loading &&
+    Boolean(spaceId) &&
+    text.trim() !== savedTextBaseline;
+
+  useRegisterUnsavedSection("ai-information", {
+    label: "AI information",
+    isDirty,
+    save: readOnly || !spaceId ? undefined : saveText,
+  });
+
   const wrapperClass = embedded
     ? ""
     : "rounded-xl border border-gray-200 bg-white p-5 shadow-sm";
@@ -282,7 +306,10 @@ export function SpaceAiInformationPanel({
     <section className={wrapperClass}>
       {!embedded ? (
         <>
-          <h2 className="text-lg font-semibold text-gray-900">AI Information</h2>
+          <h2 className="text-lg font-semibold text-gray-900">
+            AI Information
+            <UnsavedSectionIndicator show={isDirty} />
+          </h2>
           <p className="mt-2 text-sm text-gray-600">
             Upload a PDF or Word document, or paste information directly. This
             information helps the space assistant answer guest questions.

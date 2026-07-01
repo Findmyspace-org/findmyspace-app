@@ -8,6 +8,7 @@ import { Suspense, useEffect, useState } from "react";
 import { ArrowLeft } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { AdminUnclaimedSpaceForm } from "@/app/components/AdminUnclaimedSpaceForm";
+import { UnsavedChangesProvider } from "@/app/components/UnsavedChangesProvider";
 
 function NewUnclaimedListingContent() {
   const searchParams = useSearchParams();
@@ -53,6 +54,7 @@ function NewUnclaimedListingContent() {
   }
 
   return (
+    <UnsavedChangesProvider>
     <div className="mx-auto max-w-3xl">
       <Link
           href="/admin/unclaimed-listings"
@@ -68,6 +70,7 @@ function NewUnclaimedListingContent() {
         <div className="mt-6">
           <AdminUnclaimedSpaceForm
             mode="create"
+            wrapWithUnsavedGuard={false}
             defaultOrganisationId={crmOrgId}
             defaultOrganisationName={crmOrgName}
             defaultContactId={crmContactId}
@@ -83,6 +86,7 @@ function NewUnclaimedListingContent() {
           />
         </div>
     </div>
+    </UnsavedChangesProvider>
   );
 }
 

@@ -6,7 +6,6 @@ import {
   compressImageFile,
   isCompressibleImageFile,
 } from "@/lib/image-compression-client";
-import { buildInitialBookingCharges } from "@/lib/invoice";
 import DayAvailabilityCalendar from "@/app/components/DayAvailabilityCalendar";
 import AuthModal from "@/app/components/AuthModal";
 import MonthAvailabilityCalendar from "@/app/components/MonthAvailabilityCalendar";
@@ -28,6 +27,17 @@ import {
   ListingBookingRequirements,
   RENTER_ITEM_TYPE_OPTIONS,
 } from "@/lib/booking-intelligence";
+import { BookingRequirementFormFields } from "@/app/components/BookingRequirementFormFields";
+import {
+  propertyRequiresTermsAcceptance,
+  type PropertyBookingTerms,
+} from "@/lib/property-booking-terms";
+import {
+  type CustomFieldAnswerValue,
+  type SpaceBookingRequirementField,
+  validateCustomFieldAnswers,
+} from "@/lib/space-booking-requirement-fields";
+import { ExternalLink, FileText } from "lucide-react";
 
 const STRUCTURED_BOOKING_VALIDATION_MESSAGE =
   "Please complete the required booking details before sending your request.";
@@ -117,6 +127,17 @@ export default function BookingRequestForm({
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [authMode, setAuthMode] = useState<"signup" | "login">("signup");
   const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [acceptedPropertyTerms, setAcceptedPropertyTerms] = useState(false);
+  const [propertyTerms, setPropertyTerms] = useState<PropertyBookingTerms | null>(null);
+  const [customRequirementFields, setCustomRequirementFields] = useState<
+    SpaceBookingRequirementField[]
+  >([]);
+  const [prerequisitesLoading, setPrerequisitesLoading] = useState(true);
+  const [customFieldAnswers, setCustomFieldAnswers] = useState<
+    Record<string, CustomFieldAnswerValue>
+  >({});
+  const [customFieldFiles, setCustomFieldFiles] = useState<Record<string, File | null>>({});
+  const [propertyTermsOpen, setPropertyTermsOpen] = useState(false);
 
   const [hourDate, setHourDate] = useState("");
   const [hourStart, setHourStart] = useState("");
@@ -189,6 +210,44 @@ export default function BookingRequestForm({
   useEffect(() => {
     loadAvailabilityData();
     loadSpacePaymentSettings();
+  }, [spaceId]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadPrerequisites() {
+      setPrerequisitesLoading(true);
+      try {
+        const res = await fetch(`/api/spaces/${spaceId}/booking-prerequisites`);
+        if (!res.ok) {
+          if (!cancelled) {
+            setPropertyTerms(null);
+            setCustomRequirementFields([]);
+          }
+          return;
+        }
+        const data = (await res.json()) as {
+          property_terms: PropertyBookingTerms | null;
+          fields: SpaceBookingRequirementField[];
+        };
+        if (cancelled) return;
+        setPropertyTerms(data.property_terms);
+        setCustomRequirementFields(data.fields || []);
+      } catch (error) {
+        console.warn("[FindMySpace] booking prerequisites load failed:", error);
+        if (!cancelled) {
+          setPropertyTerms(null);
+          setCustomRequirementFields([]);
+        }
+      } finally {
+        if (!cancelled) setPrerequisitesLoading(false);
+      }
+    }
+
+    void loadPrerequisites();
+    return () => {
+      cancelled = true;
+    };
   }, [spaceId]);
 
   useEffect(() => {
@@ -671,11 +730,23 @@ export default function BookingRequestForm({
     monthEnd,
   ]);
 
+  const requiresPropertyTerms = useMemo(
+    () => propertyRequiresTermsAcceptance(propertyTerms),
+    [propertyTerms]
+  );
+
+  const hasCustomRequirements = customRequirementFields.length > 0;
+
   const requestButtonTitle = useMemo(() => {
-    if (loading || availabilityLoading) return undefined;
+    if (loading || availabilityLoading || hostRequirementsLoading || prerequisitesLoading) {
+      return undefined;
+    }
     if (liveConflictMessage || liveMinimumMessage) return undefined;
     if (!acceptedTerms) {
-      return "Accept the terms and cancellation policy to continue";
+      return "Accept the platform terms and cancellation policy to continue";
+    }
+    if (requiresPropertyTerms && !acceptedPropertyTerms) {
+      return "Accept the property terms and conditions to continue";
     }
     if (!bookingSelectionComplete) {
       if (bookingUnit === "hour") {
@@ -692,9 +763,13 @@ export default function BookingRequestForm({
   }, [
     loading,
     availabilityLoading,
+    hostRequirementsLoading,
+    prerequisitesLoading,
     liveConflictMessage,
     liveMinimumMessage,
     acceptedTerms,
+    acceptedPropertyTerms,
+    requiresPropertyTerms,
     bookingSelectionComplete,
     bookingUnit,
   ]);
@@ -890,8 +965,25 @@ export default function BookingRequestForm({
     try {
       if (!acceptedTerms) {
         setStatusMessage(
-          "Please accept the Terms & Conditions and cancellation policy before booking."
+          "Please accept the platform Terms & Conditions and cancellation policy before booking."
         );
+        setLoading(false);
+        return;
+      }
+
+      if (requiresPropertyTerms && !acceptedPropertyTerms) {
+        setStatusMessage("Please accept the property terms and conditions before booking.");
+        setLoading(false);
+        return;
+      }
+
+      const customFieldError = validateCustomFieldAnswers(
+        customRequirementFields,
+        customFieldAnswers,
+        customFieldFiles
+      );
+      if (customFieldError) {
+        setStatusMessage(customFieldError);
         setLoading(false);
         return;
       }
@@ -1012,132 +1104,70 @@ export default function BookingRequestForm({
         return;
       }
 
-      // 🔥 LOAD SETTINGS (single source of truth)
-      const { data: settingsData } = await (supabase.from("spaces") as any)
-        .select("platform_fee_percent, deposit_type, deposit_months, monthly_payment_day")
-        .eq("id", spaceId)
-        .single();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
 
-      const paymentSettings = settingsData as SpacePaymentSettings;
-
-      const platformFeePercent = Number(paymentSettings?.platform_fee_percent ?? 15);
-      const depositMonths = Number(paymentSettings?.deposit_months ?? 0);
-      const monthlyPaymentDay = Number(paymentSettings?.monthly_payment_day ?? 1);
-
-      let totalPrice = Number((quantity * unitPrice).toFixed(2));
-      let depositAmount = 0;
-      let monthlyRent = 0;
-      let initialPaymentAmount = totalPrice;
-      let nextPaymentDate: string | null = null;
-      let monthsTotal = 0;
-      let monthsPaid = 0;
-
-      if (bookingUnit === "month") {
-        monthlyRent = unitPrice;
-        monthsTotal = quantity;
-
-        depositAmount = Number((monthlyRent * depositMonths).toFixed(2));
-        initialPaymentAmount = Number((monthlyRent + depositAmount).toFixed(2));
-
-        totalPrice = initialPaymentAmount;
-        monthsPaid = 1;
-
-        const startDate = new Date(startAt);
-        const nextPayment = new Date(startDate);
-        nextPayment.setMonth(nextPayment.getMonth() + 1);
-        nextPayment.setDate(monthlyPaymentDay);
-
-        nextPaymentDate = nextPayment.toISOString();
-      }
-
-      const platformFee = Number(
-        (totalPrice * (platformFeePercent / 100)).toFixed(2)
-      );
-
-      const ownerAmount = Number((totalPrice - platformFee).toFixed(2));
-
-      // ✅ CLEAN STATUS MODEL
-      const insertRow = {
-        space_id: spaceId,
-        renter_id: user.id,
-        owner_id: ownerId,
-        booking_unit: bookingUnit || "day",
-        start_at: startAt,
-        end_at: endAt,
-
-        total_price: totalPrice,
-        platform_fee: platformFee,
-        owner_earnings: ownerAmount,
-
-        status: "pending_owner",              // 🔥 FIXED
-        payment_status: "unpaid",
-        payout_status: "unpaid_to_owner",
-
-        notes: structuredNotes.trim() ? structuredNotes.trim() : null,
-
-        // monthly fields
-        monthly_rent: bookingUnit === "month" ? monthlyRent : null,
-        deposit_amount: bookingUnit === "month" ? depositAmount : null,
-        initial_payment_amount:
-          bookingUnit === "month" ? initialPaymentAmount : null,
-        next_payment_date: bookingUnit === "month" ? nextPaymentDate : null,
-        months_total: bookingUnit === "month" ? monthsTotal : null,
-        months_paid: bookingUnit === "month" ? monthsPaid : null,
-      };
-
-      const { data: insertedBooking, error: insertError } = await (supabase
-        .from("bookings") as any)
-        .insert(insertRow)
-        .select("id")
-        .single();
-
-      if (insertError) {
-        setStatusMessage(insertError.message);
+      if (!session?.access_token) {
+        setStatusMessage("Please sign in again to continue.");
         setLoading(false);
         return;
       }
 
-      if (insertedBooking?.id) {
-        const chargeRows = buildInitialBookingCharges({
-          bookingId: insertedBooking.id,
+      const requestFormData = new FormData();
+      requestFormData.append(
+        "payload",
+        JSON.stringify({
+          spaceId,
+          ownerId,
           bookingUnit: bookingUnit || "day",
-          totalPrice,
-          monthlyRent: bookingUnit === "month" ? monthlyRent : undefined,
-          depositAmount: bookingUnit === "month" ? depositAmount : undefined,
           startAt,
           endAt,
-        });
+          notes: structuredNotes.trim() ? structuredNotes.trim() : null,
+          acceptedPropertyTerms: requiresPropertyTerms ? acceptedPropertyTerms : false,
+          requirementAnswers: customFieldAnswers,
+        } satisfies {
+          spaceId: string;
+          ownerId: string;
+          bookingUnit: string;
+          startAt: string;
+          endAt: string;
+          notes: string | null;
+          acceptedPropertyTerms: boolean;
+          requirementAnswers: Record<string, CustomFieldAnswerValue>;
+        })
+      );
 
-        if (chargeRows.length > 0) {
-          const { error: chargesError } = await (supabase
-            .from("booking_charges") as any)
-            .insert(chargeRows);
-
-          if (chargesError) {
-            console.error("booking_charges insert failed:", chargesError);
-            const { error: deleteError } = await supabase
-              .from("bookings")
-              .delete()
-              .eq("id", insertedBooking.id);
-
-            if (deleteError) {
-              console.error(
-                "Could not roll back booking after charge insert failure:",
-                deleteError
-              );
-              setStatusMessage(
-                `Payment lines could not be created (${chargesError.message}). Your booking may need to be cancelled by support — reference: ${insertedBooking.id}.`
-              );
-            } else {
-              setStatusMessage(
-                `Your booking could not be completed: ${chargesError.message}. Please try again.`
-              );
-            }
-            setLoading(false);
-            return;
-          }
+      for (const field of customRequirementFields) {
+        if (field.field_type !== "file_upload") continue;
+        const file = customFieldFiles[field.id];
+        if (file) {
+          requestFormData.append(`file_${field.id}`, file);
         }
+      }
 
+      const requestRes = await fetch("/api/bookings/request", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: requestFormData,
+      });
+
+      const requestJson = (await requestRes.json().catch(() => null)) as {
+        bookingId?: string;
+        error?: string;
+      } | null;
+
+      if (!requestRes.ok || !requestJson?.bookingId) {
+        setStatusMessage(requestJson?.error || "Could not send booking request.");
+        setLoading(false);
+        return;
+      }
+
+      const insertedBooking = { id: requestJson.bookingId };
+
+      if (insertedBooking?.id) {
         let photoUrls: string[] = [];
         if (detailPhotoFiles.length > 0) {
           try {
@@ -1191,6 +1221,9 @@ export default function BookingRequestForm({
       setMonthStart("");
       setMonthEnd("");
       setAcceptedTerms(false);
+      setAcceptedPropertyTerms(false);
+      setCustomFieldAnswers({});
+      setCustomFieldFiles({});
       setItemType(null);
       setDimLength("");
       setDimWidth("");
@@ -1456,24 +1489,66 @@ export default function BookingRequestForm({
             </div>
           )}
 
-          <div className="rounded-md border border-gray-200 bg-[#f8fafb] p-3 text-xs text-gray-600">
-            <label className="flex items-start gap-2">
-              <input
-                type="checkbox"
-                checked={acceptedTerms}
-                onChange={(e) => setAcceptedTerms(e.target.checked)}
-                disabled={loading}
-                className="mt-0.5"
-              />
-              <span>
-                I agree to the{" "}
-                <a href="/terms" className="underline text-[#192a3a]">
-                  Terms & Conditions
-                </a>{" "}
-                and the cancellation policy.
-              </span>
-            </label>
-          </div>
+          {prerequisitesLoading && (
+            <div className="flex items-center gap-2 text-xs text-gray-600" role="status">
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-[#192a3a]" aria-hidden />
+              Loading booking requirements…
+            </div>
+          )}
+
+          {!prerequisitesLoading && hasCustomRequirements ? (
+            <BookingRequirementFormFields
+              fields={customRequirementFields}
+              answers={customFieldAnswers}
+              files={customFieldFiles}
+              disabled={loading}
+              onAnswerChange={(fieldId, value) =>
+                setCustomFieldAnswers((prev) => ({ ...prev, [fieldId]: value }))
+              }
+              onFileChange={(fieldId, file) =>
+                setCustomFieldFiles((prev) => ({ ...prev, [fieldId]: file }))
+              }
+            />
+          ) : null}
+
+          {!prerequisitesLoading && requiresPropertyTerms && propertyTerms ? (
+            <div className="rounded-md border border-gray-200 bg-[#f8fafb] p-3 text-xs text-gray-600">
+              <div className="mb-2 flex flex-wrap items-center gap-2">
+                <p className="font-medium text-[#192a3a]">
+                  {propertyTerms.terms_title || "Property terms and conditions"}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setPropertyTermsOpen(true)}
+                  className="inline-flex items-center gap-1 text-[#192a3a] underline"
+                >
+                  <FileText className="h-3.5 w-3.5" aria-hidden />
+                  View terms
+                </button>
+                {propertyTerms.terms_document_url ? (
+                  <a
+                    href={propertyTerms.terms_document_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 text-[#192a3a] underline"
+                  >
+                    Open document
+                    <ExternalLink className="h-3 w-3" aria-hidden />
+                  </a>
+                ) : null}
+              </div>
+              <label className="flex items-start gap-2">
+                <input
+                  type="checkbox"
+                  checked={acceptedPropertyTerms}
+                  onChange={(e) => setAcceptedPropertyTerms(e.target.checked)}
+                  disabled={loading}
+                  className="mt-0.5"
+                />
+                <span>{propertyTerms.terms_acceptance_label}</span>
+              </label>
+            </div>
+          ) : null}
 
           {hostRequirementsLoading && (
             <div className="flex items-center gap-2 text-xs text-gray-600" role="status">
@@ -1666,6 +1741,25 @@ export default function BookingRequestForm({
             </div>
           )}
 
+          <div className="rounded-md border border-gray-200 bg-[#f8fafb] p-3 text-xs text-gray-600">
+            <label className="flex items-start gap-2">
+              <input
+                type="checkbox"
+                checked={acceptedTerms}
+                onChange={(e) => setAcceptedTerms(e.target.checked)}
+                disabled={loading}
+                className="mt-0.5"
+              />
+              <span>
+                I agree to the{" "}
+                <a href="/terms" className="underline text-[#192a3a]">
+                  FindMySpace Terms &amp; Conditions
+                </a>{" "}
+                and the cancellation policy.
+              </span>
+            </label>
+          </div>
+
           {statusMessage && (
             <div
               className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800"
@@ -1682,9 +1776,11 @@ export default function BookingRequestForm({
               loading ||
               availabilityLoading ||
               hostRequirementsLoading ||
+              prerequisitesLoading ||
               Boolean(liveConflictMessage) ||
               Boolean(liveMinimumMessage) ||
               !acceptedTerms ||
+              (requiresPropertyTerms && !acceptedPropertyTerms) ||
               !bookingSelectionComplete
             }
             className="inline-flex w-full min-h-[48px] items-center justify-center gap-2 rounded-md bg-[#192a3a] px-4 py-3.5 text-sm font-semibold text-white transition hover:opacity-[0.97] disabled:cursor-not-allowed disabled:opacity-50"
@@ -1703,6 +1799,54 @@ export default function BookingRequestForm({
           </p>
         </form>
       </div>
+
+      {propertyTermsOpen && propertyTerms ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
+          role="presentation"
+          onClick={() => setPropertyTermsOpen(false)}
+        >
+          <div
+            className="relative max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-6 shadow-xl"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Property terms and conditions"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => setPropertyTermsOpen(false)}
+              className="absolute right-3 top-3 rounded-md p-2 text-gray-500 hover:bg-gray-100"
+              aria-label="Close"
+            >
+              <X className="h-5 w-5" aria-hidden />
+            </button>
+            <h3 className="pr-10 text-lg font-semibold text-[#192a3a]">
+              {propertyTerms.terms_title || "Property terms and conditions"}
+            </h3>
+            {propertyTerms.terms_text ? (
+              <div className="mt-4 whitespace-pre-wrap text-sm leading-relaxed text-gray-700">
+                {propertyTerms.terms_text}
+              </div>
+            ) : (
+              <p className="mt-4 text-sm text-gray-600">
+                No text terms were provided. Please review the linked document if available.
+              </p>
+            )}
+            {propertyTerms.terms_document_url ? (
+              <a
+                href={propertyTerms.terms_document_url}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-4 inline-flex items-center gap-1.5 text-sm font-medium text-[#192a3a] underline"
+              >
+                Open terms document
+                <ExternalLink className="h-3.5 w-3.5" aria-hidden />
+              </a>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
 
       {requestSentModalOpen && (
         <div
