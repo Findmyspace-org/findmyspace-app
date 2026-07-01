@@ -557,7 +557,8 @@ export async function upsertListingBookingIntelTables(
     spaceId: string;
     spaceType: string | null | undefined;
     questionnaireData: Record<string, unknown>;
-    requirements: ListingBookingRequirements;
+    /** Pass `null` to skip legacy `listing_booking_requirements` writes. */
+    requirements?: ListingBookingRequirements | null;
   }
 ): Promise<{ questionnaireError: string | null; requirementsError: string | null }> {
   const intelCategory = mapSpaceTypeToIntelCategory(params.spaceType);
@@ -574,6 +575,9 @@ export async function upsertListingBookingIntelTables(
       questionnaireError: qErr.message || "Could not save booking questionnaire.",
       requirementsError: null,
     };
+  }
+  if (params.requirements == null) {
+    return { questionnaireError: null, requirementsError: null };
   }
   const { error: rErr } = await (supabase.from("listing_booking_requirements" as never) as any).upsert(
     {

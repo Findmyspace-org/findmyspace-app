@@ -10,7 +10,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { Loader2, X } from "lucide-react";
 
 export type UnsavedSectionConfig = {
@@ -19,10 +19,11 @@ export type UnsavedSectionConfig = {
   save?: () => Promise<boolean>;
 };
 
-type PendingNavigation =
-  | { type: "href"; href: string }
-  | { type: "back" }
-  | { type: "custom"; action: () => void };
+type PendingNavigation = {
+  type: "href" | "back";
+  href?: string;
+  source?: string;
+};
 
 type UnsavedChangesContextValue = {
   hasUnsavedChanges: boolean;
@@ -33,6 +34,17 @@ type UnsavedChangesContextValue = {
 };
 
 const UnsavedChangesContext = createContext<UnsavedChangesContextValue | null>(null);
+
+const DEV = process.env.NODE_ENV === "development";
+
+function debugUnsaved(message: string, data?: Record<string, unknown>) {
+  if (!DEV) return;
+  if (data) {
+    console.debug(`[UnsavedChanges] ${message}`, data);
+  } else {
+    console.debug(`[UnsavedChanges] ${message}`);
+  }
+}
 
 export function useUnsavedChanges(): UnsavedChangesContextValue {
   const ctx = useContext(UnsavedChangesContext);
@@ -83,20 +95,30 @@ export function UnsavedSectionIndicator({ show }: { show: boolean }) {
 type ProviderProps = {
   children: ReactNode;
   enabled?: boolean;
+  /** Used when browser-back leave cannot resolve history reliably. */
+  backFallbackHref?: string;
 };
 
-export function UnsavedChangesProvider({ children, enabled = true }: ProviderProps) {
-  const router = useRouter();
+export function UnsavedChangesProvider({
+  children,
+  enabled = true,
+  backFallbackHref,
+}: ProviderProps) {
+  const pathname = usePathname();
   const sectionsRef = useRef<Map<string, UnsavedSectionConfig>>(new Map());
   const [revision, setRevision] = useState(0);
   const [modalOpen, setModalOpen] = useState(false);
-  const [pendingNav, setPendingNav] = useState<PendingNavigation | null>(null);
   const [savingAll, setSavingAll] = useState(false);
-  const [discardUnsaved, setDiscardUnsaved] = useState(false);
-  const guardPushedRef = useRef(false);
-  const allowNavigationRef = useRef(false);
-  const modalOpenRef = useRef(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
+  const pendingNavRef = useRef<PendingNavigation | null>(null);
+  const isBypassingGuardRef = useRef(false);
+  const guardDepthRef = useRef(0);
+  const modalOpenRef = useRef(false);
+  const pathnameWhenDirtyRef = useRef<string | null>(null);
+  const backFallbackHrefRef = useRef(backFallbackHref);
+
+  backFallbackHrefRef.current = backFallbackHref;
   modalOpenRef.current = modalOpen;
 
   const bump = useCallback(() => setRevision((value) => value + 1), []);
@@ -122,108 +144,144 @@ export function UnsavedChangesProvider({ children, enabled = true }: ProviderPro
     return Array.from(sectionsRef.current.entries()).filter(([, section]) => section.isDirty);
   }, [revision]);
 
-  const hasUnsavedChanges =
-    enabled && !discardUnsaved && dirtySections.length > 0;
+  const hasUnsavedChanges = enabled && !isBypassingGuardRef.current && dirtySections.length > 0;
 
   const canSaveAndLeave = dirtySections.every(([, section]) => typeof section.save === "function");
 
-  const releaseNavigationGuards = useCallback(() => {
-    window.setTimeout(() => {
-      allowNavigationRef.current = false;
-      setDiscardUnsaved(false);
-      guardPushedRef.current = false;
-    }, 1500);
+  const openModalForNavigation = useCallback((pending: PendingNavigation) => {
+    pendingNavRef.current = pending;
+    debugUnsaved("intercepted navigation", pending);
+    setSaveError(null);
+    setModalOpen(true);
   }, []);
 
-  const completeNavigation = useCallback(
-    (pending: PendingNavigation, options?: { discard?: boolean }) => {
-      if (options?.discard) {
-        setDiscardUnsaved(true);
-      }
+  const closeModal = useCallback(() => {
+    pendingNavRef.current = null;
+    setModalOpen(false);
+    setSaveError(null);
+  }, []);
 
-      allowNavigationRef.current = true;
-      setModalOpen(false);
-      setPendingNav(null);
+  const navigateToPending = useCallback((pending: PendingNavigation) => {
+    debugUnsaved("executing navigation", pending);
 
-      window.requestAnimationFrame(() => {
-        if (pending.type === "href") {
-          if (pending.href.startsWith("http")) {
-            window.location.assign(pending.href);
-          } else {
-            router.push(pending.href);
-          }
-        } else if (pending.type === "back") {
-          const steps = guardPushedRef.current ? -2 : -1;
-          guardPushedRef.current = false;
-          window.history.go(steps);
-        } else {
-          pending.action();
-        }
+    isBypassingGuardRef.current = true;
+    pendingNavRef.current = null;
+    setModalOpen(false);
+    setSaveError(null);
+    guardDepthRef.current = 0;
+    pathnameWhenDirtyRef.current = null;
 
-        releaseNavigationGuards();
-      });
-    },
-    [releaseNavigationGuards, router]
-  );
-
-  const requestNavigation = useCallback(
-    (pending: PendingNavigation) => {
-      if (!enabled || allowNavigationRef.current || discardUnsaved || dirtySections.length === 0) {
-        completeNavigation(pending);
-        return;
-      }
-      setPendingNav(pending);
-      setModalOpen(true);
-    },
-    [completeNavigation, dirtySections.length, discardUnsaved, enabled]
-  );
-
-  useEffect(() => {
-    if (!hasUnsavedChanges) {
-      guardPushedRef.current = false;
+    if (pending.type === "href" && pending.href) {
+      window.location.assign(pending.href);
       return;
     }
 
+    if (pending.type === "back") {
+      const fallback = backFallbackHrefRef.current;
+      const steps = -(1 + guardDepthRef.current);
+      debugUnsaved("browser back leave", { steps, fallback });
+
+      if (fallback) {
+        window.location.assign(fallback);
+        return;
+      }
+
+      window.history.go(steps);
+
+      window.setTimeout(() => {
+        if (isBypassingGuardRef.current && window.location.pathname === pathname) {
+          const referrer = document.referrer;
+          if (referrer) {
+            try {
+              const refUrl = new URL(referrer);
+              if (refUrl.origin === window.location.origin && refUrl.pathname !== pathname) {
+                debugUnsaved("back fallback via referrer", { href: refUrl.pathname });
+                window.location.assign(refUrl.pathname + refUrl.search + refUrl.hash);
+                return;
+              }
+            } catch {
+              /* ignore */
+            }
+          }
+          debugUnsaved("back fallback via history.go failed — still on page");
+        }
+      }, 150);
+    }
+  }, [pathname]);
+
+  const requestNavigation = useCallback(
+    (pending: PendingNavigation) => {
+      if (!enabled || isBypassingGuardRef.current || dirtySections.length === 0) {
+        navigateToPending(pending);
+        return;
+      }
+      openModalForNavigation(pending);
+    },
+    [dirtySections.length, enabled, navigateToPending, openModalForNavigation]
+  );
+
+  useEffect(() => {
+    isBypassingGuardRef.current = false;
+    guardDepthRef.current = 0;
+    pathnameWhenDirtyRef.current = null;
+    debugUnsaved("pathname changed — guard reset", { pathname });
+  }, [pathname]);
+
+  useEffect(() => {
+    if (!enabled || dirtySections.length === 0 || isBypassingGuardRef.current) {
+      guardDepthRef.current = 0;
+      pathnameWhenDirtyRef.current = null;
+      return;
+    }
+
+    pathnameWhenDirtyRef.current = pathname;
+
+    if (guardDepthRef.current === 0) {
+      window.history.pushState({ unsavedChangesGuard: true }, "");
+      guardDepthRef.current = 1;
+      debugUnsaved("pushed history guard", { pathname });
+    }
+
     const onBeforeUnload = (event: BeforeUnloadEvent) => {
-      if (allowNavigationRef.current || discardUnsaved) return;
+      if (isBypassingGuardRef.current) return;
       event.preventDefault();
       event.returnValue = "";
     };
 
-    window.addEventListener("beforeunload", onBeforeUnload);
-    return () => window.removeEventListener("beforeunload", onBeforeUnload);
-  }, [discardUnsaved, hasUnsavedChanges]);
-
-  useEffect(() => {
-    if (!hasUnsavedChanges) return;
-
-    if (!guardPushedRef.current) {
-      window.history.pushState({ unsavedChangesGuard: true }, "");
-      guardPushedRef.current = true;
-    }
-
     const onPopState = () => {
-      if (allowNavigationRef.current || discardUnsaved) return;
+      if (isBypassingGuardRef.current) return;
 
       if (modalOpenRef.current) {
         window.history.pushState({ unsavedChangesGuard: true }, "");
+        guardDepthRef.current += 1;
+        debugUnsaved("back pressed while modal open — re-pushed guard", {
+          guardDepth: guardDepthRef.current,
+        });
         return;
       }
 
-      setPendingNav({ type: "back" });
-      setModalOpen(true);
+      openModalForNavigation({ type: "back", source: "popstate" });
       window.history.pushState({ unsavedChangesGuard: true }, "");
+      guardDepthRef.current += 1;
+      debugUnsaved("back intercepted — modal opened", { guardDepth: guardDepthRef.current });
     };
 
+    window.addEventListener("beforeunload", onBeforeUnload);
     window.addEventListener("popstate", onPopState);
-    return () => window.removeEventListener("popstate", onPopState);
-  }, [discardUnsaved, hasUnsavedChanges]);
+
+    return () => {
+      window.removeEventListener("beforeunload", onBeforeUnload);
+      window.removeEventListener("popstate", onPopState);
+    };
+  }, [dirtySections.length, enabled, openModalForNavigation, pathname]);
 
   useEffect(() => {
-    if (!hasUnsavedChanges) return;
+    if (!enabled || dirtySections.length === 0 || isBypassingGuardRef.current) {
+      return;
+    }
 
     const onDocumentClick = (event: MouseEvent) => {
-      if (allowNavigationRef.current || discardUnsaved) return;
+      if (isBypassingGuardRef.current) return;
       const target = event.target;
       if (!(target instanceof Element)) return;
 
@@ -254,32 +312,51 @@ export function UnsavedChangesProvider({ children, enabled = true }: ProviderPro
 
       event.preventDefault();
       event.stopPropagation();
-      setPendingNav({ type: "href", href: url.pathname + url.search + url.hash });
-      setModalOpen(true);
+
+      const destination = url.pathname + url.search + url.hash;
+      openModalForNavigation({ type: "href", href: destination, source: "link-click" });
     };
 
     document.addEventListener("click", onDocumentClick, true);
     return () => document.removeEventListener("click", onDocumentClick, true);
-  }, [discardUnsaved, hasUnsavedChanges]);
+  }, [dirtySections.length, enabled, openModalForNavigation]);
+
+  function handleLeaveWithoutSaving() {
+    const pending = pendingNavRef.current;
+    if (!pending) {
+      debugUnsaved("leave without saving — no pending navigation");
+      return;
+    }
+    debugUnsaved("leave without saving clicked", pending);
+    navigateToPending(pending);
+  }
 
   async function handleSaveAndLeave() {
-    if (!pendingNav) return;
+    const pending = pendingNavRef.current;
+    if (!pending) {
+      debugUnsaved("save and leave — no pending navigation");
+      return;
+    }
+
+    debugUnsaved("save and leave clicked", pending);
     setSavingAll(true);
+    setSaveError(null);
+
     try {
       for (const [, section] of dirtySections) {
         if (!section.save) continue;
         const ok = await section.save();
-        if (!ok) return;
+        if (!ok) {
+          setSaveError("Could not save all changes. Fix any errors and try again, or leave without saving.");
+          debugUnsaved("save and leave — section save failed", { label: section.label });
+          return;
+        }
       }
-      completeNavigation(pendingNav, { discard: true });
+      debugUnsaved("save and leave — all sections saved, navigating");
+      navigateToPending(pending);
     } finally {
       setSavingAll(false);
     }
-  }
-
-  function handleLeaveWithoutSaving() {
-    if (!pendingNav) return;
-    completeNavigation(pendingNav, { discard: true });
   }
 
   const contextValue = useMemo<UnsavedChangesContextValue>(
@@ -290,13 +367,7 @@ export function UnsavedChangesProvider({ children, enabled = true }: ProviderPro
       unregisterSection,
       requestNavigation,
     }),
-    [
-      dirtySections,
-      hasUnsavedChanges,
-      registerSection,
-      requestNavigation,
-      unregisterSection,
-    ]
+    [dirtySections, hasUnsavedChanges, registerSection, requestNavigation, unregisterSection]
   );
 
   return (
@@ -310,6 +381,7 @@ export function UnsavedChangesProvider({ children, enabled = true }: ProviderPro
             role="dialog"
             aria-labelledby="unsaved-changes-title"
             aria-modal="true"
+            onClick={(event) => event.stopPropagation()}
           >
             <div className="mb-3 flex items-start justify-between gap-3">
               <div>
@@ -320,13 +392,13 @@ export function UnsavedChangesProvider({ children, enabled = true }: ProviderPro
                   You have unsaved changes on this space. Save your changes before leaving, or
                   leave without saving?
                 </p>
+                {saveError ? (
+                  <p className="mt-2 text-sm text-red-700">{saveError}</p>
+                ) : null}
               </div>
               <button
                 type="button"
-                onClick={() => {
-                  setModalOpen(false);
-                  setPendingNav(null);
-                }}
+                onClick={closeModal}
                 className="rounded p-1 text-gray-500 hover:bg-gray-100"
                 aria-label="Close"
               >
@@ -337,10 +409,7 @@ export function UnsavedChangesProvider({ children, enabled = true }: ProviderPro
             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
               <button
                 type="button"
-                onClick={() => {
-                  setModalOpen(false);
-                  setPendingNav(null);
-                }}
+                onClick={closeModal}
                 className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-[#192a3a] hover:bg-gray-50"
               >
                 Stay on page

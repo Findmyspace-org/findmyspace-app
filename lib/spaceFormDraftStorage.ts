@@ -3,11 +3,20 @@
  * Files (images, ownership) cannot be restored — user re-adds those.
  */
 
-const KEY = "findmyspace_space_form_draft_v2";
+const KEY = "findmyspace_space_form_draft_v3";
 const MAX_AGE_MS = 1000 * 60 * 60 * 72; // 72 hours
 
+export type SpaceFormBookingRequirementDraft = {
+  label: string;
+  help_text?: string | null;
+  field_type: string;
+  required: boolean;
+  options?: string[] | null;
+  _templateId?: string;
+};
+
 export type SpaceFormDraftV1 = {
-  v: 2;
+  v: 3;
   savedAt: number;
   title: string;
   description: string;
@@ -36,14 +45,16 @@ export type SpaceFormDraftV1 = {
   currentStep?: number;
   maxUnlockedStep?: number;
   bookingIntelData?: Record<string, unknown> | null;
+  /** @deprecated Legacy checklist — ignored on restore. */
   bookingRequirements?: Record<string, boolean> | null;
+  bookingRequirementDrafts?: SpaceFormBookingRequirementDraft[] | null;
 };
 
 function isDraft(value: unknown): value is SpaceFormDraftV1 {
   if (!value || typeof value !== "object") return false;
   const o = value as Record<string, unknown>;
   return (
-    o.v === 2 &&
+    (o.v === 2 || o.v === 3) &&
     typeof o.savedAt === "number" &&
     typeof o.title === "string" &&
     typeof o.streetAddress === "string"
@@ -79,7 +90,7 @@ export function writeSpaceFormDraft(draft: Omit<SpaceFormDraftV1, "v" | "savedAt
   if (typeof window === "undefined") return;
   try {
     const payload: SpaceFormDraftV1 = {
-      v: 2,
+      v: 3,
       savedAt: Date.now(),
       ...draft,
     };

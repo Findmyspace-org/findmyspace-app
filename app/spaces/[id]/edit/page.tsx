@@ -1129,7 +1129,10 @@ export default function EditListingPage({ params }: PageProps) {
 
   return (
     <RequireAuth>
-      <UnsavedChangesProvider enabled={canEditContent && !editingLocked}>
+      <UnsavedChangesProvider
+        enabled={canEditContent && !editingLocked}
+        backFallbackHref="/dashboard/listings"
+      >
       <DashboardShell
         workspaceLabel="Hosting"
         pageTitle="Edit listing"

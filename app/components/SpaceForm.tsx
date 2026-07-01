@@ -26,17 +26,17 @@ import { prepareFilesForUpload } from "@/lib/image-compression-client";
 import {
   DEFAULT_LISTING_BOOKING_REQUIREMENTS,
   emptyQuestionnaireDataForCategory,
-  ListingBookingRequirements,
   mapSpaceTypeToIntelCategory,
   mergeQuestionnaireData,
-  renterRequirementKeysForCategory,
-  RENTER_REQUIREMENT_LABELS,
   upsertListingBookingIntelTables,
 } from "@/lib/booking-intelligence";
 import {
   ListingBookingQualityFormFields,
   ListingQualityScoreSummary,
 } from "@/app/components/listing-booking-quality-ui";
+import { SpaceBookingRequirementsWizardSection } from "@/app/components/SpaceBookingRequirementsWizardSection";
+import { saveSpaceBookingRequirementFields } from "@/lib/save-booking-requirement-fields-client";
+import type { SpaceBookingRequirementFieldDraft } from "@/lib/space-booking-requirement-fields";
 import {
   getPendingAdvisorCode,
   normalizeAdvisorCode,
@@ -48,6 +48,7 @@ import {
   clearSpaceFormDraft,
   readSpaceFormDraft,
   writeSpaceFormDraft,
+  type SpaceFormBookingRequirementDraft,
 } from "@/lib/spaceFormDraftStorage";
 import { formatListingAddress, ZA_PROVINCES } from "@/lib/za-provinces";
 import {
@@ -65,7 +66,7 @@ const DRAFT_BANNER_DISMISSED_KEY = "findmyspace_listing_draft_banner_dismissed";
 const LISTING_CREATE_STEPS: ListingFormStepMeta[] = [
   { id: "basics", label: "Basics & pricing", shortLabel: "Basics" },
   { id: "location", label: "Location & photos", shortLabel: "Place" },
-  { id: "features", label: "Features & booking", shortLabel: "Details" },
+  { id: "features", label: "Features & requirements", shortLabel: "Details" },
   { id: "review", label: "Review & submit", shortLabel: "Review" },
 ];
 
@@ -150,6 +151,37 @@ type ListingOwnershipInsertRow = {
   status: string;
 };
 
+function serializeBookingRequirementDrafts(
+  drafts: SpaceBookingRequirementFieldDraft[]
+): SpaceFormBookingRequirementDraft[] {
+  return drafts.map((field) => ({
+    label: field.label,
+    help_text: field.help_text,
+    field_type: field.field_type,
+    required: field.required,
+    options: field.options,
+    _templateId: field._templateId,
+  }));
+}
+
+function restoreBookingRequirementDraft(
+  field: SpaceFormBookingRequirementDraft,
+  index: number
+): SpaceBookingRequirementFieldDraft {
+  return {
+    id: "",
+    _localKey: `draft-${index}-${field._templateId || field.label}`,
+    _templateId: field._templateId,
+    label: field.label,
+    help_text: field.help_text ?? null,
+    field_type: field.field_type as SpaceBookingRequirementFieldDraft["field_type"],
+    required: field.required,
+    options: field.options ?? null,
+    sort_order: index,
+    active: true,
+  };
+}
+
 export default function SpaceForm({ onCreated }: SpaceFormProps) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -183,9 +215,9 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
   const [bookingIntelData, setBookingIntelData] = useState<Record<string, unknown>>(() =>
     emptyQuestionnaireDataForCategory(mapSpaceTypeToIntelCategory("storage"))
   );
-  const [bookingRequirements, setBookingRequirements] = useState<ListingBookingRequirements>({
-    ...DEFAULT_LISTING_BOOKING_REQUIREMENTS,
-  });
+  const [bookingRequirementDrafts, setBookingRequirementDrafts] = useState<
+    SpaceBookingRequirementFieldDraft[]
+  >([]);
 
   const [currentStep, setCurrentStep] = useState(0);
   const [maxUnlockedStep, setMaxUnlockedStep] = useState(0);
@@ -234,11 +266,11 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
 
   const listingQualityOptionsCreate = useMemo(
     () => ({
-      renterRequirementsCommitted: true,
+      renterRequirementsCommitted: bookingRequirementDrafts.length > 0,
       spaceType,
       featureAttributes: attributes,
     }),
-    [spaceType, attributes]
+    [bookingRequirementDrafts.length, spaceType, attributes]
   );
 
   function patchBookingIntelSection(section: string, patch: Record<string, unknown>) {
@@ -332,11 +364,12 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
       const cat = mapSpaceTypeToIntelCategory(d.spaceType);
       setBookingIntelData(mergeQuestionnaireData(cat, d.bookingIntelData));
     }
-    if (d.bookingRequirements && typeof d.bookingRequirements === "object") {
-      setBookingRequirements({
-        ...DEFAULT_LISTING_BOOKING_REQUIREMENTS,
-        ...d.bookingRequirements,
-      } as ListingBookingRequirements);
+    if (Array.isArray(d.bookingRequirementDrafts) && d.bookingRequirementDrafts.length > 0) {
+      setBookingRequirementDrafts(
+        d.bookingRequirementDrafts.map((field, index) =>
+          restoreBookingRequirementDraft(field, index)
+        )
+      );
     }
     setDraftRestored(true);
     setTimeout(() => {
@@ -383,7 +416,7 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
         currentStep,
         maxUnlockedStep,
         bookingIntelData,
-        bookingRequirements: { ...bookingRequirements },
+        bookingRequirementDrafts: serializeBookingRequirementDrafts(bookingRequirementDrafts),
       });
       setDraftSavedAt(Date.now());
     }, 500);
@@ -416,7 +449,7 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
     currentStep,
     maxUnlockedStep,
     bookingIntelData,
-    bookingRequirements,
+    bookingRequirementDrafts,
   ]);
 
   const priceMissing = useMemo(() => {
@@ -504,12 +537,10 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
     return "—";
   }, [bookingUnit, pricePerHour, pricePerDay, pricePerMonth]);
 
-  const renterRequirementsSummary = useMemo(() => {
-    const keys = renterRequirementKeysForCategory(intelCategory);
-    return keys
-      .filter((k) => bookingRequirements[k])
-      .map((k) => RENTER_REQUIREMENT_LABELS[k]);
-  }, [intelCategory, bookingRequirements]);
+  const bookingRequirementsSummary = useMemo(
+    () => bookingRequirementDrafts.map((field) => field.label),
+    [bookingRequirementDrafts]
+  );
 
   const featureSelectionCount = useMemo(() => {
     return Object.values(attributes).reduce((n, arr) => n + (arr?.length || 0), 0);
@@ -1361,11 +1392,11 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
         spaceId: insertedSpace.id,
         spaceType,
         questionnaireData: bookingIntelData,
-        requirements: bookingRequirements,
+        requirements: null,
       });
       if (intelSave.questionnaireError || intelSave.requirementsError) {
         setMessage(
-          `Listing created, but booking quality could not be saved: ${
+          `Listing created, but listing quality details could not be saved: ${
             intelSave.questionnaireError || intelSave.requirementsError
           }. Open Edit listing to try again.`
         );
@@ -1376,6 +1407,29 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
       const {
         data: { session },
       } = await supabase.auth.getSession();
+
+      if (bookingRequirementDrafts.length > 0) {
+        if (!session?.access_token) {
+          setMessage(
+            "Listing created, but booking requirements could not be saved. Sign in again and add them from Edit listing."
+          );
+          setLoading(false);
+          return;
+        }
+
+        const requirementSave = await saveSpaceBookingRequirementFields(
+          insertedSpace.id,
+          session.access_token,
+          bookingRequirementDrafts
+        );
+        if (!requirementSave.ok) {
+          setMessage(
+            `Listing created, but booking requirements could not be saved: ${requirementSave.error}. Open Edit listing to try again.`
+          );
+          setLoading(false);
+          return;
+        }
+      }
 
       await fetch("/api/notifications/listing-event", {
         method: "POST",
@@ -2202,18 +2256,19 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
         <div className="overflow-hidden rounded-2xl border border-[#e5e7eb] bg-white shadow-[0_1px_3px_rgba(15,23,42,0.06)]">
           <div className="border-b border-[#e5e7eb] bg-gradient-to-b from-[#fafbfc] to-white px-4 py-4 sm:px-6 sm:py-5">
             <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#64748b] sm:text-xs">
-              Smart listing enhancement
+              Optional details
             </p>
             <h2 className="mt-0.5 text-lg font-semibold text-[#0f172a] sm:text-xl">
-              Features &amp; booking fit
+              Features &amp; requirements
             </h2>
             <p className="mt-1.5 max-w-2xl text-xs leading-relaxed text-[#64748b] sm:text-sm">
-              Help renters choose with confidence. These details feed the same quality score you&apos;ll see across
-              FindMySpace — refine anytime from your dashboard.
+              Add features renters care about, optional booking requirements, and listing quality
+              information for the Space Assistant.
             </p>
           </div>
           <div className="space-y-5 bg-[#fafbfc] px-4 py-4 sm:px-6 sm:py-5">
             <div className="rounded-2xl border border-[#e5e7eb] bg-white p-4 shadow-sm sm:p-5">
+              <h3 className="mb-3 text-base font-semibold text-[#0f172a]">Features &amp; size</h3>
               <SpaceCategoryFields
                 embedded
                 spaceType={spaceType}
@@ -2221,23 +2276,39 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
                 setAttributes={setAttributes}
               />
             </div>
+
+            <SpaceBookingRequirementsWizardSection
+              fields={bookingRequirementDrafts}
+              onChange={setBookingRequirementDrafts}
+            />
+
             <div id="booking-quality" className="scroll-mt-24 space-y-4">
-              <ListingQualityScoreSummary
-                intelCategory={intelCategory}
-                data={bookingIntelData}
-                listingQualityOptions={listingQualityOptionsCreate}
-                spaceTypeLabel={spaceType ? `Category: ${spaceType}` : undefined}
-                compact
-                footerHint="Saves automatically when you submit this listing."
-              />
+              <div className="rounded-2xl border border-[#e5e7eb] bg-white p-4 shadow-sm sm:p-5">
+                <h3 className="text-base font-semibold text-[#0f172a]">Listing quality information</h3>
+                <p className="mt-1 text-xs leading-relaxed text-gray-600 sm:text-sm">
+                  Helps the Space Assistant answer guest questions. This is not shown as renter
+                  booking requirements.
+                </p>
+                <div className="mt-4">
+                  <ListingQualityScoreSummary
+                    intelCategory={intelCategory}
+                    data={bookingIntelData}
+                    listingQualityOptions={listingQualityOptionsCreate}
+                    spaceTypeLabel={spaceType ? `Category: ${spaceType}` : undefined}
+                    compact
+                    footerHint="Saves automatically when you submit this listing."
+                  />
+                </div>
+              </div>
               <ListingBookingQualityFormFields
                 embedded
                 intelCategory={intelCategory}
                 questionnaireData={bookingIntelData}
                 onPatchSection={patchBookingIntelSection}
                 onPatchRoot={patchBookingIntelRoot}
-                requirements={bookingRequirements}
-                onRequirementsChange={setBookingRequirements}
+                requirements={{ ...DEFAULT_LISTING_BOOKING_REQUIREMENTS }}
+                onRequirementsChange={() => {}}
+                hideRenterRequirementChecklist
                 spaceType={spaceType}
               />
             </div>
@@ -2323,7 +2394,7 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
                     onClick={() => goToListingStep(2)}
                     className="rounded-full border border-[#d7dde3] bg-white px-3 py-1.5 text-xs font-medium text-[#334155] shadow-sm transition hover:border-[#b8c2cc] hover:shadow-[0_2px_8px_rgba(15,23,42,0.06)]"
                   >
-                    Edit features &amp; quality
+                    Edit features &amp; requirements
                   </button>
                 </div>
               </div>
@@ -2340,11 +2411,11 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
               </p>
             </div>
             <div className="rounded-2xl border border-[#e5e7eb] bg-[#fafbfc] p-4 shadow-sm">
-              <p className="text-sm font-semibold text-[#0f172a]">Renter requirements</p>
+              <p className="text-sm font-semibold text-[#0f172a]">Booking requirements</p>
               <p className="mt-2 text-sm leading-relaxed text-[#64748b]">
-                {renterRequirementsSummary.length > 0
-                  ? renterRequirementsSummary.join(" · ")
-                  : "No specific renter requirements selected."}
+                {bookingRequirementsSummary.length > 0
+                  ? bookingRequirementsSummary.join(" · ")
+                  : "None selected — optional. Add common requirements in the previous step or later from Edit listing."}
               </p>
             </div>
           </div>

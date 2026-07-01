@@ -166,7 +166,10 @@ function EditPropertySpacePageContent() {
   }
 
   return (
-    <UnsavedChangesProvider enabled={!readOnly}>
+    <UnsavedChangesProvider
+      enabled={!readOnly}
+      backFallbackHref={`/admin/properties/${propertyId}`}
+    >
     <div className="mx-auto max-w-3xl">
       <AdminPropertySpaceBreadcrumb
         propertyId={propertyId}
