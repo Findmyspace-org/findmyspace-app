@@ -1,9 +1,9 @@
 /** Client-side resize/compress for listing and property image uploads. */
 
 export const LISTING_IMAGE_COMPRESSION = {
-  maxWidth: 1600,
-  maxHeight: 1200,
-  quality: 0.82,
+  maxWidth: 1280,
+  maxHeight: 960,
+  quality: 0.76,
 } as const;
 
 export const LOGO_IMAGE_COMPRESSION = {
