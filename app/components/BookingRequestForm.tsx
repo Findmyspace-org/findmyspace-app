@@ -2,6 +2,10 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import {
+  compressImageFile,
+  isCompressibleImageFile,
+} from "@/lib/image-compression-client";
 import { buildInitialBookingCharges } from "@/lib/invoice";
 import DayAvailabilityCalendar from "@/app/components/DayAvailabilityCalendar";
 import AuthModal from "@/app/components/AuthModal";
@@ -861,7 +865,10 @@ export default function BookingRequestForm({
   ) {
     const urls: string[] = [];
     for (let i = 0; i < files.length; i++) {
-      const file = files[i];
+      const raw = files[i];
+      const file = isCompressibleImageFile(raw)
+        ? await compressImageFile(raw, "listing")
+        : raw;
       const ext = file.name.split(".").pop() || "bin";
       const path = `${userId}/booking-request-${bookingId}-${Date.now()}-${i}.${ext}`;
       const { error } = await supabase.storage.from("space-images").upload(path, file, {

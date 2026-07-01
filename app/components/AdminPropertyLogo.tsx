@@ -4,6 +4,10 @@ import Image from "next/image";
 import { useRef, useState } from "react";
 import { Building2, Loader2, Pencil, Trash2 } from "lucide-react";
 import { adminApiFetch } from "@/lib/admin-api-client";
+import {
+  compressImageFile,
+  isCompressibleImageFile,
+} from "@/lib/image-compression-client";
 
 type AdminPropertyLogoProps = {
   propertyId: string;
@@ -35,8 +39,22 @@ export function AdminPropertyLogo({
     onMessage?.(null);
     setMenuOpen(false);
 
+    let uploadFile = file;
+    if (isCompressibleImageFile(file)) {
+      try {
+        uploadFile = await compressImageFile(file, "logo");
+      } catch (err) {
+        onMessage?.(
+          err instanceof Error ? err.message : "Could not prepare logo for upload."
+        );
+        setUploading(false);
+        if (fileInputRef.current) fileInputRef.current.value = "";
+        return;
+      }
+    }
+
     const form = new FormData();
-    form.append("file", file);
+    form.append("file", uploadFile);
 
     try {
       const result = await adminApiFetch(`/api/admin/properties/${propertyId}/logo`, {

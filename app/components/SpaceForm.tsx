@@ -22,6 +22,7 @@ import {
 import { isGoogleMapsUrl } from "@/lib/google-maps-url";
 import { ownerApiFetch } from "@/lib/owner-api-client";
 import { supabase } from "@/lib/supabase";
+import { prepareFilesForUpload } from "@/lib/image-compression-client";
 import {
   DEFAULT_LISTING_BOOKING_REQUIREMENTS,
   emptyQuestionnaireDataForCategory,
@@ -528,9 +529,16 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
     return 0.15;
   }
 
-  function addImageFiles(files: FileList | null) {
-    if (!files) return;
-    setImageFiles((current) => [...current, ...Array.from(files)]);
+  async function addImageFiles(files: FileList | null) {
+    if (!files?.length) return;
+    try {
+      const prepared = await prepareFilesForUpload(Array.from(files), "listing");
+      setImageFiles((current) => [...current, ...prepared]);
+    } catch (err) {
+      setMessage(
+        err instanceof Error ? err.message : "Could not prepare images for upload."
+      );
+    }
   }
 
   function removeImageAt(index: number) {
@@ -2102,7 +2110,7 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
           <PhotoDropZone
             accept="image/*"
             uploadButtonLabel="Choose photos"
-            onFiles={(files) => addImageFiles(files)}
+            onFiles={(files) => void addImageFiles(files)}
             message={
               imageFiles.length > 0
                 ? `${imageFiles.length} image${imageFiles.length === 1 ? "" : "s"} selected`
@@ -2120,7 +2128,7 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
                     type="file"
                     accept="image/*"
                     multiple
-                    onChange={(e) => addImageFiles(e.target.files)}
+                    onChange={(e) => void addImageFiles(e.target.files)}
                     className="hidden"
                   />
                 </label>

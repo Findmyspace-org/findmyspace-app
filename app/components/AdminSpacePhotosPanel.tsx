@@ -5,6 +5,7 @@ import { useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronUp, Star, Trash2 } from "lucide-react";
 import { adminApiFetch } from "@/lib/admin-api-client";
 import { ADMIN_SPACE_IMAGE_MAX_BYTES } from "@/lib/admin-space-image-upload";
+import { prepareFilesForUpload } from "@/lib/image-compression-client";
 import { normalizeSpaceImages, sortSpaceImages } from "@/lib/sort-space-images";
 import { PhotoDropZone } from "@/app/components/PhotoDropZone";
 import { SectionInlineAlert } from "@/app/components/SectionInlineAlert";
@@ -104,6 +105,21 @@ export function AdminSpacePhotosPanel({
         setFailure(msg);
         return;
       }
+    }
+
+    let prepared: File[];
+    try {
+      prepared = await prepareFilesForUpload(files, "listing");
+    } catch (err) {
+      const msg =
+        err instanceof Error ? err.message : "Could not prepare images for upload.";
+      setDropMessage(msg);
+      setDropMessageTone("error");
+      setFailure(msg);
+      return;
+    }
+
+    for (const file of prepared) {
       if (file.size > ADMIN_SPACE_IMAGE_MAX_BYTES) {
         const msg = `"${file.name}" is too large. Maximum size is ${maxMb} MB per image.`;
         setDropMessage(msg);
@@ -120,9 +136,9 @@ export function AdminSpacePhotosPanel({
     const added: AdminSpaceImage[] = [];
     const failed: string[] = [];
 
-    for (let i = 0; i < files.length; i++) {
-      setUploadProgress({ current: i + 1, total: files.length });
-      const file = files[i];
+    for (let i = 0; i < prepared.length; i++) {
+      setUploadProgress({ current: i + 1, total: prepared.length });
+      const file = prepared[i];
       try {
         const form = new FormData();
         form.append("files", file);

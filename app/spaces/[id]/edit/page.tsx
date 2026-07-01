@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { prepareFilesForUpload } from "@/lib/image-compression-client";
 import SpaceCategoryFields from "@/app/components/SpaceCategoryFields";
 import { LISTING_SPACE_TYPE_OPTIONS } from "@/app/data/spaceFeatureConfig";
 import RequireAuth from "@/app/components/RequireAuth";
@@ -516,6 +517,17 @@ export default function EditListingPage({ params }: PageProps) {
 
     setUploadingImages(true);
 
+    let prepared: File[];
+    try {
+      prepared = await prepareFilesForUpload(files, "listing");
+    } catch (err) {
+      setPhotoFailure(
+        err instanceof Error ? err.message : "Could not prepare images for upload."
+      );
+      setUploadingImages(false);
+      return;
+    }
+
     const {
       data: { user },
     } = await supabase.auth.getUser();
@@ -533,8 +545,8 @@ export default function EditListingPage({ params }: PageProps) {
 
     const imageRows: SpaceImageInsertRow[] = [];
 
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
+    for (let i = 0; i < prepared.length; i++) {
+      const file = prepared[i];
       const fileExt = file.name.split(".").pop() || "bin";
       const fileName = `${user.id}/${listingId}-${Date.now()}-${i}.${fileExt}`;
 
