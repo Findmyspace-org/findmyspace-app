@@ -83,6 +83,21 @@ export function resolveSpacePriceAmount(space: SpacePricingInput): number | null
   return null;
 }
 
+/** Space has a resolvable public price (including price on request). */
+export function hasValidPublicPrice(space: SpacePricingInput): boolean {
+  const unit = resolveSpacePriceUnit(space);
+  if (unit === "on_request") return true;
+  if (!unit) return false;
+  const amount = resolveSpacePriceAmount(space);
+  return amount != null && amount >= 0;
+}
+
+/** @alias resolveSpacePriceAmount */
+export const getListingPriceAmount = resolveSpacePriceAmount;
+
+/** @alias resolveSpacePriceUnit */
+export const getEffectivePriceUnit = resolveSpacePriceUnit;
+
 export function formatSpacePriceDisplay(space: SpacePricingInput): string {
   const unit = resolveSpacePriceUnit(space);
   if (unit === "on_request") return "Price on request";

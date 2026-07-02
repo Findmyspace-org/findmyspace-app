@@ -69,6 +69,21 @@ function getPublicBrowseEligibility(space) {
   return { eligible: reasons.length === 0, reasons };
 }
 
+function isExplicitBrowsePriceFilter(input) {
+  if (input.searchParams) {
+    if (input.searchParams.get("min") !== null) return true;
+    if (input.searchParams.get("max") !== null) return true;
+    const bu = input.searchParams.get("bookingUnit");
+    if (bu === "hour" || bu === "day" || bu === "month") return true;
+    const wu = input.searchParams.get("whenUnit");
+    if (wu === "hour" || wu === "day" || wu === "month") return true;
+  }
+  if (input.bookingUnitFilter !== "all") return true;
+  if (input.minPrice > 0) return true;
+  if (input.maxPrice < input.defaultMaxPrice) return true;
+  return false;
+}
+
 // Live hourly listing with drifted booking_unit (regression: price save bug)
 const driftedHourly = {
   public_listing_mode: "live",
@@ -118,5 +133,33 @@ const hidden = {
   price_per_day: 100,
 };
 assert.equal(getPublicBrowseEligibility(hidden).eligible, false);
+
+// Dal Josephat - Athletics: live daily price above default slider max must still browse
+const athleticsLive = {
+  public_listing_mode: "live",
+  status: "active",
+  price_amount: 38000,
+  price_unit: "day",
+  booking_unit: "day",
+  price_per_hour: null,
+  price_per_day: 38000,
+  price_per_month: null,
+};
+assert.equal(getPublicBrowseEligibility(athleticsLive).eligible, true);
+assert.equal(
+  spaceMatchesBrowsePriceRange(athleticsLive, 0, 20000, "all"),
+  false,
+  "explicit default max should exclude high-priced listing"
+);
+assert.equal(
+  isExplicitBrowsePriceFilter({
+    minPrice: 0,
+    maxPrice: 20000,
+    bookingUnitFilter: "all",
+    defaultMaxPrice: 20000,
+  }),
+  false,
+  "default browse view must not treat slider max as an active filter"
+);
 
 console.log("test-public-browse-eligibility: ok");

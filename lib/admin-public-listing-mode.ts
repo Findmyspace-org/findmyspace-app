@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { spaceHasPersistedPhotos } from "@/lib/space-image-persistence";
-import { spaceHasLegacyBookablePrice } from "@/lib/space-pricing";
+import { spaceHasCompletePricing, type SpacePricingInput } from "@/lib/space-pricing";
 import { computeListingCompletion } from "@/lib/listing-completion";
 import {
   canAdminSetEnquiryMode,
@@ -72,13 +72,8 @@ export async function validateMinimumPublicContent(
   return { ok: true };
 }
 
-function hasBookablePricing(space: {
-  booking_unit: string | null;
-  price_per_hour: number | null;
-  price_per_day: number | null;
-  price_per_month: number | null;
-}): boolean {
-  return spaceHasLegacyBookablePrice(space);
+function hasBookablePricing(space: SpacePricingInput): boolean {
+  return spaceHasCompletePricing(space);
 }
 
 export type AdminListingModeValidation =
@@ -97,7 +92,7 @@ export async function validateAdminPublicListingModeChange(
   const { data: space, error } = await admin
     .from("spaces")
     .select(
-      "id, status, owner_id, created_by_admin, booking_unit, price_per_hour, price_per_day, price_per_month"
+      "id, status, owner_id, created_by_admin, booking_unit, price_unit, price_amount, deposit_required, deposit_amount, price_per_hour, price_per_day, price_per_month"
     )
     .eq("id", spaceId)
     .maybeSingle();

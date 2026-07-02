@@ -9,7 +9,12 @@ import {
   PUBLIC_LISTING_MODE_ENQUIRY,
   PUBLIC_LISTING_MODE_LIVE,
 } from "@/lib/public-listing-mode";
-import { spaceMatchesBrowsePriceRange } from "@/lib/public-browse-eligibility";
+import {
+  isExplicitBrowsePriceFilter,
+  passesPublicBrowseListingGate,
+  spaceMatchesBrowsePriceRange,
+} from "@/lib/public-browse-eligibility";
+import { resolveSpacePriceAmount } from "@/lib/space-pricing";
 import PriceRangeFilter from "@/app/components/PriceRangeFilter";
 import {
   Search,
@@ -511,6 +516,26 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
     [parsedNlIntent]
   );
 
+  const defaultBrowseMaxPrice = getDefaultMax("all");
+
+  const explicitPriceFilter = useMemo(
+    () =>
+      isExplicitBrowsePriceFilter({
+        minPrice,
+        maxPrice,
+        bookingUnitFilter,
+        defaultMaxPrice: defaultBrowseMaxPrice,
+        searchParams: new URLSearchParams(searchParamsString),
+      }),
+    [
+      bookingUnitFilter,
+      defaultBrowseMaxPrice,
+      maxPrice,
+      minPrice,
+      searchParamsString,
+    ]
+  );
+
   const filteredSpaces = useMemo(() => {
     let result = [...spaces];
 
@@ -644,6 +669,14 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
         return false;
       }
 
+      if (!passesPublicBrowseListingGate(space)) {
+        return false;
+      }
+
+      if (!explicitPriceFilter) {
+        return true;
+      }
+
       return spaceMatchesBrowsePriceRange(
         space,
         minPrice,
@@ -671,15 +704,8 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
       });
       if (boostA !== boostB) return boostB - boostA;
 
-      const getComparablePrice = (space: Space) => {
-        if (bookingUnitFilter === "hour") return space.price_per_hour ?? 0;
-        if (bookingUnitFilter === "month") return space.price_per_month ?? 0;
-        if (bookingUnitFilter === "day") return space.price_per_day ?? 0;
-
-        if (space.booking_unit === "hour") return space.price_per_hour ?? 0;
-        if (space.booking_unit === "month") return space.price_per_month ?? 0;
-        return space.price_per_day ?? 0;
-      };
+      const getComparablePrice = (space: Space) =>
+        resolveSpacePriceAmount(space) ?? 0;
 
       const priceA = getComparablePrice(a);
       const priceB = getComparablePrice(b);
@@ -701,6 +727,7 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
     groupSizeFilter,
     bookingUnitFilter,
     appliedWhen,
+    explicitPriceFilter,
     minPrice,
     maxPrice,
     sortBy,

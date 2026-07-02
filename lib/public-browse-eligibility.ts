@@ -4,6 +4,7 @@ import {
   isSpacePubliclyVisible,
 } from "@/lib/listing-lifecycle";
 import {
+  hasValidPublicPrice,
   isSpacePriceUnit,
   resolveSpacePriceAmount,
   resolveSpacePriceUnit,
@@ -50,8 +51,7 @@ export function getPublicBrowseEligibility(
     return { eligible: reasons.length === 0, reasons };
   }
 
-  const amount = resolveSpacePriceAmount(space);
-  if (amount == null || amount < 0) {
+  if (!hasValidPublicPrice(space)) {
     reasons.push(
       "Live listing has no resolvable public price (check price amount, unit, and legacy price fields)."
     );
@@ -109,4 +109,33 @@ export function spaceMatchesBrowsePriceRange(
   if (price === "on_request") return true;
   if (price == null) return false;
   return price >= minPrice && price <= maxPrice;
+}
+
+/** True when the user has applied a price/unit refinement (not the default browse view). */
+export function isExplicitBrowsePriceFilter(input: {
+  minPrice: number;
+  maxPrice: number;
+  bookingUnitFilter: string;
+  defaultMaxPrice: number;
+  searchParams?: { get(name: string): string | null };
+}): boolean {
+  if (input.searchParams) {
+    if (input.searchParams.get("min") !== null) return true;
+    if (input.searchParams.get("max") !== null) return true;
+    const bu = input.searchParams.get("bookingUnit");
+    if (bu === "hour" || bu === "day" || bu === "month") return true;
+    const wu = input.searchParams.get("whenUnit");
+    if (wu === "hour" || wu === "day" || wu === "month") return true;
+  }
+  if (input.bookingUnitFilter !== "all") return true;
+  if (input.minPrice > 0) return true;
+  if (input.maxPrice < input.defaultMaxPrice) return true;
+  return false;
+}
+
+/** Browse listing gate: public visibility + valid price for live listings. */
+export function passesPublicBrowseListingGate(
+  space: PublicBrowseEligibilityInput | null | undefined
+): boolean {
+  return isPublicBrowseEligible(space);
 }
