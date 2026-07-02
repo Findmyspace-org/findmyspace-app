@@ -14,7 +14,7 @@ type AdminPropertyLogoProps = {
   logoUrl: string | null;
   onLogoChange: (logoUrl: string | null) => void;
   variant?: "header" | "form";
-  onMessage?: (message: string | null) => void;
+  onMessage?: (message: string | null, tone?: "success" | "error") => void;
 };
 
 export function AdminPropertyLogo({
@@ -45,7 +45,8 @@ export function AdminPropertyLogo({
         uploadFile = await compressImageFile(file, "logo");
       } catch (err) {
         onMessage?.(
-          err instanceof Error ? err.message : "Could not prepare logo for upload."
+          err instanceof Error ? err.message : "Could not prepare logo for upload.",
+          "error"
         );
         setUploading(false);
         if (fileInputRef.current) fileInputRef.current.value = "";
@@ -62,9 +63,9 @@ export function AdminPropertyLogo({
         body: form,
       });
       onLogoChange((result.logo_url as string) || null);
-      onMessage?.("Logo updated.");
+      onMessage?.("Logo updated.", "success");
     } catch (err) {
-      onMessage?.(err instanceof Error ? err.message : "Could not upload logo.");
+      onMessage?.(err instanceof Error ? err.message : "Could not upload logo.", "error");
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -84,9 +85,9 @@ export function AdminPropertyLogo({
         method: "DELETE",
       });
       onLogoChange(null);
-      onMessage?.("Logo removed.");
+      onMessage?.("Logo removed.", "success");
     } catch (err) {
-      onMessage?.(err instanceof Error ? err.message : "Could not remove logo.");
+      onMessage?.(err instanceof Error ? err.message : "Could not remove logo.", "error");
     } finally {
       setRemoving(false);
     }
@@ -160,7 +161,7 @@ export function AdminPropertyLogo({
         <input
           ref={fileInputRef}
           type="file"
-          accept=".png,.jpg,.jpeg,.svg,image/png,image/jpeg,image/svg+xml"
+          accept=".png,.jpg,.jpeg,.svg,.webp,image/png,image/jpeg,image/svg+xml,image/webp"
           className="hidden"
           onChange={(event) => {
             const file = event.target.files?.[0];
@@ -190,7 +191,7 @@ export function AdminPropertyLogo({
               Remove
             </button>
           ) : null}
-          <p className="text-xs text-gray-500">PNG, JPG, or SVG up to 4 MB.</p>
+          <p className="text-xs text-gray-500">PNG, JPG, SVG, or WebP up to 4 MB.</p>
         </div>
       ) : null}
     </div>
@@ -206,7 +207,7 @@ export function AdminPropertyBrandingSection({
   propertyId: string;
   logoUrl: string | null;
   onLogoChange: (logoUrl: string | null) => void;
-  onMessage?: (message: string | null) => void;
+  onMessage?: (message: string | null, tone?: "success" | "error") => void;
 }) {
   return (
     <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">

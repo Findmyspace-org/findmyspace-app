@@ -97,6 +97,7 @@ function AdminPropertyDetailContent({
   const [healthFilter, setHealthFilter] = useState<PropertySpaceHealthFilter>(null);
   const [showArchivedMatrix, setShowArchivedMatrix] = useState(false);
   const [message, setMessage] = useState("");
+  const [messageTone, setMessageTone] = useState<"success" | "error">("success");
   const [successMessage, setSuccessMessage] = useState("");
   const [galleryMessage, setGalleryMessage] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
@@ -153,6 +154,7 @@ function AdminPropertyDetailContent({
       }
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Failed to load property.");
+      setMessageTone("error");
       setProperty(null);
       setSpaces([]);
       setArchivedSpaces([]);
@@ -292,7 +294,10 @@ function AdminPropertyDetailContent({
               propertyId={propertyId}
               logoUrl={logoUrl}
               onLogoChange={setLogoUrl}
-              onMessage={(msg) => setMessage(msg ?? "")}
+              onMessage={(msg, tone) => {
+                setMessage(msg ?? "");
+                setMessageTone(tone ?? "success");
+              }}
               variant="header"
             />
             <div className="min-w-0">
@@ -356,12 +361,10 @@ function AdminPropertyDetailContent({
 
         {message ? (
           <p
-            className={`mt-4 text-sm ${
-              message.toLowerCase().includes("fail") ||
-              message.toLowerCase().includes("could not") ||
-              message.toLowerCase().includes("error")
-                ? "text-red-600"
-                : "text-green-700"
+            className={`mt-4 rounded-lg border px-4 py-3 text-sm font-medium ${
+              messageTone === "error"
+                ? "border-red-200 bg-red-50 text-red-800"
+                : "border-emerald-200 bg-emerald-50 text-emerald-900"
             }`}
           >
             {message}
@@ -394,7 +397,6 @@ function AdminPropertyDetailContent({
                 },
               }}
               onSuccess={async () => {
-                setEditing(false);
                 setSuccessMessage("Property updated successfully.");
                 await load();
               }}

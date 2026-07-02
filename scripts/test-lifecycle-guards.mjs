@@ -270,4 +270,39 @@ test("unclaimed delete blocks claimed or non-admin listings", () => {
   );
 });
 
+function isOptionalAdminTableUnavailable(message) {
+  const lower = message.toLowerCase();
+  return (
+    lower.includes("does not exist") ||
+    lower.includes("could not find the table") ||
+    lower.includes("schema cache") ||
+    (lower.includes("relation") && lower.includes("does not exist"))
+  );
+}
+
+function isStorageObjectMissingError(message) {
+  const lower = message.toLowerCase();
+  return (
+    lower.includes("object not found") ||
+    lower.includes("not found") ||
+    lower.includes("no such file") ||
+    lower.includes("does not exist")
+  );
+}
+
+test("optional admin table errors are treated as unavailable", () => {
+  assert.equal(
+    isOptionalAdminTableUnavailable(
+      "Could not find the table 'public.listing_ownership_documents' in the schema cache"
+    ),
+    true
+  );
+  assert.equal(isOptionalAdminTableUnavailable("permission denied for table bookings"), false);
+});
+
+test("missing storage objects are non-fatal during delete cleanup", () => {
+  assert.equal(isStorageObjectMissingError("Object not found"), true);
+  assert.equal(isStorageObjectMissingError("permission denied for bucket space-images"), false);
+});
+
 console.log("\nAll lifecycle guard tests passed.");

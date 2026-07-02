@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { adminAudit } from "@/lib/admin-audit";
-import { validatePropertyLogoFile } from "@/lib/admin-property-logo";
+import { validatePropertyLogoFile, PROPERTY_LOGO_TYPE_HINT } from "@/lib/admin-property-logo";
 import {
   classifyStorageUploadError,
   missingServiceRoleMessage,
@@ -67,7 +67,7 @@ export async function POST(
   const fileEntry = form.get("file") ?? form.get("files");
   const file = normalizeFormUpload(fileEntry as FormDataEntryValue, 0);
   if (!file) {
-    return jsonError("No file provided. Upload a PNG, JPG, or SVG logo.", 400, "no_file");
+    return jsonError(`No file provided. Upload a ${PROPERTY_LOGO_TYPE_HINT} logo.`, 400, "no_file");
   }
 
   const validation = validatePropertyLogoFile(file);

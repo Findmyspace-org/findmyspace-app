@@ -240,20 +240,31 @@ function AdminUnclaimedListingsPageContent({
               : "No listings match your filters."}
           </p>
         ) : (
-          <div className="mt-4 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-            <table className="min-w-full text-left text-sm">
+          <div className="mt-4 overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm lg:overflow-x-visible">
+            <table className="w-full min-w-[42rem] table-fixed text-left text-sm lg:min-w-0">
               <thead className="border-b border-gray-200 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
                 <tr>
-                  <th className="px-4 py-3">Image</th>
-                  <th className="px-4 py-3">Title</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="hidden px-4 py-3 md:table-cell">Category</th>
-                  <th className="hidden px-4 py-3 lg:table-cell">Group Size</th>
-                  <th className="hidden px-4 py-3 lg:table-cell">Location</th>
-                  <th className="hidden px-4 py-3 lg:table-cell">CRM</th>
-                  <th className="px-4 py-3">Enquiries</th>
-                  <th className="hidden px-4 py-3 sm:table-cell">Created</th>
-                  <th className="px-4 py-3" />
+                  <th className="w-16 px-2 py-3 font-medium">Image</th>
+                  <th className="min-w-0 px-2 py-3 font-medium">Title</th>
+                  <th className="w-[5.5rem] px-2 py-3 font-medium">Status</th>
+                  <th className="hidden w-28 px-2 py-3 font-medium md:table-cell">
+                    Category
+                  </th>
+                  <th className="hidden w-24 px-2 py-3 font-medium xl:table-cell">
+                    Group
+                  </th>
+                  <th className="hidden w-28 px-2 py-3 font-medium 2xl:table-cell">
+                    CRM
+                  </th>
+                  <th className="hidden w-14 px-2 py-3 font-medium lg:table-cell">
+                    Enq.
+                  </th>
+                  <th className="hidden w-[6.5rem] px-2 py-3 font-medium lg:table-cell">
+                    Created
+                  </th>
+                  <th className="w-[9.75rem] px-2 py-3 text-right font-medium">
+                    Actions
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -272,83 +283,86 @@ function AdminUnclaimedListingsPageContent({
                       key={row.id}
                       className="border-b border-gray-100 last:border-0 hover:bg-gray-50/80"
                     >
-                      <td className="px-4 py-3">
+                      <td className="px-2 py-3 align-middle">
                         <Link
                           href={editHref}
-                          className="block h-16 w-16 overflow-hidden rounded-lg border border-gray-200 bg-gray-100"
+                          className="block h-12 w-12 overflow-hidden rounded-lg border border-gray-200 bg-gray-100"
                           title="Edit listing"
                         >
                           {row.cover_image_url ? (
                             <Image
                               src={row.cover_image_url}
                               alt=""
-                              width={64}
-                              height={64}
+                              width={48}
+                              height={48}
                               className="h-full w-full object-cover"
                               unoptimized
                             />
                           ) : (
                             <span className="flex h-full w-full items-center justify-center text-gray-400">
-                              <ImageIcon className="h-6 w-6" />
+                              <ImageIcon className="h-5 w-5" />
                             </span>
                           )}
                         </Link>
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="min-w-0 px-2 py-3 align-middle">
                         <Link
                           href={editHref}
-                          className="font-semibold text-gray-900 hover:text-[#0f2740] hover:underline"
+                          className="block truncate font-semibold text-gray-900 hover:text-[#0f2740] hover:underline"
+                          title={row.title || "Untitled"}
                         >
                           {row.title || "Untitled"}
                         </Link>
-                        <p className="mt-0.5 text-xs text-gray-500">
+                        <p className="mt-0.5 truncate text-xs text-gray-500" title={location}>
                           {location}
                         </p>
                         <p className="mt-0.5 text-xs text-gray-500 md:hidden">
                           {formatSpaceTypeLabel(row.space_type)}
+                          {row.enquiry_count > 0 ? (
+                            <span className="ml-1.5">· {row.enquiry_count} enq.</span>
+                          ) : null}
                           {row.crm_linked ? (
-                            <span className="block text-[#0f2740]">
+                            <span className="block truncate text-[#0f2740]">
                               CRM: {row.crm_organisation_name || "Linked"}
                             </span>
                           ) : null}
                         </p>
                       </td>
-                      <td className="px-4 py-3">
-                        <span className={adminListingStatusBadgeClass(row.status)}>
+                      <td className="px-2 py-3 align-middle">
+                        <span
+                          className={`inline-block whitespace-nowrap ${adminListingStatusBadgeClass(row.status)}`}
+                        >
                           {adminListingStatusLabel(row.status)}
                         </span>
                       </td>
-                      <td className="hidden px-4 py-3 text-gray-600 md:table-cell">
+                      <td className="hidden truncate px-2 py-3 text-gray-600 md:table-cell">
                         {formatSpaceTypeLabel(row.space_type)}
                       </td>
-                      <td className="hidden px-4 py-3 text-gray-600 lg:table-cell">
+                      <td className="hidden truncate px-2 py-3 text-xs text-gray-600 xl:table-cell">
                         {formatGroupSizeAdmin(row.min_group_size, row.max_group_size) || "—"}
                       </td>
-                      <td className="hidden px-4 py-3 text-gray-600 lg:table-cell">
-                        {location}
-                      </td>
-                      <td className="hidden px-4 py-3 text-gray-600 lg:table-cell">
+                      <td className="hidden px-2 py-3 text-gray-600 2xl:table-cell">
                         {row.crm_linked ? (
-                          <span className="inline-flex items-start gap-1.5 text-xs">
+                          <span
+                            className="inline-flex min-w-0 items-start gap-1 text-xs"
+                            title={row.crm_organisation_name || "Linked org"}
+                          >
                             <Link2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#0f2740]" />
-                            <span>
-                              {row.crm_organisation_name || "Linked org"}
-                              {row.crm_contact_name ? (
-                                <span className="block text-gray-500">
-                                  {row.crm_contact_name}
-                                </span>
-                              ) : null}
+                            <span className="min-w-0 truncate">
+                              {row.crm_organisation_name || "Linked"}
                             </span>
                           </span>
                         ) : (
-                          <span className="text-xs text-gray-400">No CRM link</span>
+                          <span className="text-xs text-gray-400">—</span>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-gray-700">{row.enquiry_count}</td>
-                      <td className="hidden px-4 py-3 text-gray-600 sm:table-cell">
+                      <td className="hidden px-2 py-3 text-center text-gray-700 lg:table-cell">
+                        {row.enquiry_count}
+                      </td>
+                      <td className="hidden whitespace-nowrap px-2 py-3 text-xs text-gray-600 lg:table-cell">
                         {format(new Date(row.created_at), "dd MMM yyyy")}
                       </td>
-                      <td className="px-4 py-3 text-right whitespace-nowrap">
+                      <td className="px-2 py-3 text-right align-middle text-xs whitespace-nowrap sm:text-sm">
                         <Link
                           href={editHref}
                           className="font-medium text-[#0f2740] hover:underline"
@@ -357,7 +371,7 @@ function AdminUnclaimedListingsPageContent({
                         </Link>
                         {row.status === "unclaimed" ? (
                           <>
-                            {" · "}
+                            <span className="text-gray-400"> · </span>
                             <Link
                               href={`/spaces/${row.id}`}
                               className="text-gray-600 hover:underline"
@@ -369,7 +383,7 @@ function AdminUnclaimedListingsPageContent({
                         ) : null}
                         {showDelete ? (
                           <>
-                            {" · "}
+                            <span className="text-gray-400"> · </span>
                             <button
                               type="button"
                               onClick={() => {

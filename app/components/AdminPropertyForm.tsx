@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { adminApiFetch } from "@/lib/admin-api-client";
 import {
@@ -13,6 +13,12 @@ import {
 } from "@/app/components/AdminLocationSection";
 import { AdminPropertyBrandingSection } from "@/app/components/AdminPropertyLogo";
 import { applyCrmOrgToPropertyFields } from "@/lib/property-crm-prefill";
+import { FormSaveStateIndicator } from "@/app/components/FormSaveStateIndicator";
+import {
+  UnsavedChangesProvider,
+  useRegisterUnsavedSection,
+} from "@/app/components/UnsavedChangesProvider";
+import { useFormSaveState } from "@/lib/use-form-save-state";
 
 const FIELD_CLASS =
   "w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-[#0f2740] focus:ring-1 focus:ring-[#0f2740]";
@@ -37,9 +43,52 @@ type Props = {
   submitLabel?: string;
   onSuccess: (propertyId: string) => void;
   onCancel?: () => void;
+  /** When false, parent wraps the page with UnsavedChangesProvider. */
+  wrapWithUnsavedGuard?: boolean;
 };
 
-export function AdminPropertyForm({
+function serializePropertyFormValues(values: AdminPropertyFormValues): string {
+  return JSON.stringify({
+    name: values.name,
+    description: values.description,
+    ownerEmail: values.ownerEmail,
+    crmOrganisationId: values.crmOrganisationId,
+    crmOrganisationName: values.crmOrganisationName,
+    location: values.location,
+  });
+}
+
+function propertyValuesFromState(input: {
+  name: string;
+  description: string;
+  ownerEmail: string;
+  crmOrganisationId: string | null;
+  crmOrganisationName: string | null;
+  location: AdminLocationValue;
+}): AdminPropertyFormValues {
+  return {
+    name: input.name,
+    description: input.description,
+    ownerEmail: input.ownerEmail,
+    crmOrganisationId: input.crmOrganisationId,
+    crmOrganisationName: input.crmOrganisationName,
+    location: input.location,
+  };
+}
+
+export function AdminPropertyForm(props: Props) {
+  if (props.wrapWithUnsavedGuard === false) {
+    return <AdminPropertyFormInner {...props} />;
+  }
+
+  return (
+    <UnsavedChangesProvider enabled={props.mode === "edit"}>
+      <AdminPropertyFormInner {...props} />
+    </UnsavedChangesProvider>
+  );
+}
+
+function AdminPropertyFormInner({
   mode,
   propertyId,
   initial,
@@ -61,8 +110,60 @@ export function AdminPropertyForm({
     initial.crmOrganisationName
   );
   const [location, setLocation] = useState<AdminLocationValue>(initial.location);
-  const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [createSaving, setCreateSaving] = useState(false);
+
+  const serverSyncKey = useMemo(
+    () =>
+      mode === "edit" && propertyId
+        ? `edit:${propertyId}:${serializePropertyFormValues(initial)}`
+        : `create:${defaultOrganisationId ?? ""}`,
+    [mode, propertyId, initial, defaultOrganisationId]
+  );
+
+  const currentValues = useMemo(
+    () =>
+      propertyValuesFromState({
+        name,
+        description,
+        ownerEmail,
+        crmOrganisationId,
+        crmOrganisationName,
+        location,
+      }),
+    [name, description, ownerEmail, crmOrganisationId, crmOrganisationName, location]
+  );
+
+  const {
+    isDirty,
+    isSaving,
+    saveError,
+    lastSavedAt,
+    beginSave,
+    finishSave,
+    clearSaveError,
+    markSaved,
+  } = useFormSaveState({
+    serialize: serializePropertyFormValues,
+    current: currentValues,
+    enabled: mode === "edit",
+  });
+
+  const initialRef = useRef(initial);
+  initialRef.current = initial;
+
+  useEffect(() => {
+    const nextValues = { ...initialRef.current };
+    setName(nextValues.name);
+    setDescription(nextValues.description);
+    setOwnerEmail(nextValues.ownerEmail);
+    setCrmOrganisationId(nextValues.crmOrganisationId);
+    setCrmOrganisationName(nextValues.crmOrganisationName);
+    setLocation(nextValues.location);
+    markSaved(nextValues);
+    setMessage(null);
+    clearSaveError();
+  }, [serverSyncKey, markSaved, clearSaveError]);
 
   const applyOrgPrefill = useCallback((org: CrmOrganisationOption) => {
     setName((currentName) => {
@@ -145,9 +246,13 @@ export function AdminPropertyForm({
     mode,
   ]);
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setSaving(true);
+  const saveProperty = useCallback(async (): Promise<boolean> => {
+    if (mode === "edit") {
+      beginSave();
+      clearSaveError();
+    } else {
+      setCreateSaving(true);
+    }
     setMessage(null);
 
     const body = {
@@ -171,23 +276,63 @@ export function AdminPropertyForm({
           method: "POST",
           body: JSON.stringify(body),
         });
-        setSaving(false);
         onSuccess((result.property as { id: string }).id);
-        return;
+        return true;
       }
       if (propertyId) {
         await adminApiFetch(`/api/admin/properties/${propertyId}`, {
           method: "PATCH",
           body: JSON.stringify(body),
         });
-        setSaving(false);
+        finishSave({ ok: true, value: currentValues });
         onSuccess(propertyId);
+        return true;
       }
+      return false;
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : "Could not save property.");
-      setSaving(false);
+      const errorMessage = err instanceof Error ? err.message : "Could not save property.";
+      setMessage(errorMessage);
+      if (mode === "edit") {
+        finishSave({ ok: false, error: errorMessage });
+      } else {
+        finishSave({ ok: false, error: errorMessage });
+      }
+      return false;
+    } finally {
+      if (mode === "create") {
+        setCreateSaving(false);
+      }
     }
+  }, [
+    beginSave,
+    clearSaveError,
+    crmOrganisationId,
+    currentValues,
+    description,
+    finishSave,
+    location,
+    mode,
+    name,
+    onSuccess,
+    ownerEmail,
+    propertyId,
+  ]);
+
+  useRegisterUnsavedSection("admin-property-details", {
+    label: "Property details",
+    isDirty: mode === "edit" && isDirty,
+    save: mode === "edit" ? saveProperty : undefined,
+  });
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    await saveProperty();
   }
+
+  const saveDisabled =
+    !name.trim() || (mode === "edit" ? isSaving : createSaving) || (mode === "edit" && !isDirty);
+
+  const showSaving = mode === "edit" ? isSaving : createSaving;
 
   return (
     <form onSubmit={(e) => void handleSubmit(e)} className="space-y-6">
@@ -256,28 +401,51 @@ export function AdminPropertyForm({
         </div>
       </div>
 
-      {message ? <p className="text-sm text-red-600">{message}</p> : null}
+      {message && mode === "create" ? (
+        <p className="text-sm text-red-600">{message}</p>
+      ) : null}
 
-      <div className="flex flex-wrap items-center gap-3">
-        <button
-          type="submit"
-          disabled={saving || !name.trim()}
-          className="inline-flex items-center gap-2 rounded-lg bg-[#0f2740] px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
-        >
-          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-          {submitLabel || (mode === "create" ? "Create property" : "Save changes")}
-        </button>
-        {onCancel ? (
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        {mode === "edit" ? (
+          <FormSaveStateIndicator
+            isDirty={isDirty}
+            isSaving={isSaving}
+            saveError={saveError || message}
+            lastSavedAt={lastSavedAt}
+          />
+        ) : (
+          <span />
+        )}
+
+        <div className="flex flex-wrap items-center gap-3">
           <button
-            type="button"
-            onClick={onCancel}
-            disabled={saving}
-            className="rounded-lg border border-gray-300 px-4 py-2.5 text-sm font-medium text-gray-800 hover:bg-gray-50 disabled:opacity-60"
+            type="submit"
+            disabled={saveDisabled}
+            className="inline-flex items-center gap-2 rounded-lg bg-[#0f2740] px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
           >
-            Cancel
+            {showSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+            {showSaving
+              ? "Saving…"
+              : submitLabel || (mode === "create" ? "Create property" : "Save changes")}
           </button>
-        ) : null}
+          {onCancel ? (
+            <button
+              type="button"
+              onClick={onCancel}
+              disabled={showSaving}
+              className="rounded-lg border border-gray-300 px-4 py-2.5 text-sm font-medium text-gray-800 hover:bg-gray-50 disabled:opacity-60"
+            >
+              Cancel
+            </button>
+          ) : null}
+        </div>
       </div>
+
+      {mode === "edit" && saveError ? (
+        <p role="alert" className="text-sm text-red-700">
+          {saveError}
+        </p>
+      ) : null}
     </form>
   );
 }

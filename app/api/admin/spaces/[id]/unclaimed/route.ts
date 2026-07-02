@@ -13,7 +13,7 @@ import {
   fetchSpaceCrmLinkSummary,
   validateSpaceCrmLink,
 } from "@/lib/space-crm-link";
-import { deleteAdminUnclaimedSpace } from "@/lib/admin-unclaimed-space-delete";
+import { deleteAdminUnclaimedSpace, mapUnclaimedDeleteErrorStatus, publicUnclaimedDeleteErrorMessage } from "@/lib/admin-unclaimed-space-delete";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -240,31 +240,49 @@ export async function DELETE(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = await requireAdminApi(_req);
-  if ("response" in auth) return auth.response;
+  const logPrefix = "[admin/unclaimed/delete]";
 
-  const { id } = await params;
-  if (!UUID_RE.test(id)) {
-    return NextResponse.json({ error: "Invalid listing id." }, { status: 400 });
+  try {
+    const auth = await requireAdminApi(_req);
+    if ("response" in auth) return auth.response;
+
+    const { id } = await params;
+    if (!UUID_RE.test(id)) {
+      return NextResponse.json({ error: "Invalid listing id." }, { status: 400 });
+    }
+
+    const admin = createServiceAdminClient();
+    if (!admin) {
+      return NextResponse.json({ error: "Server configuration error." }, { status: 500 });
+    }
+
+    const result = await deleteAdminUnclaimedSpace(admin, id);
+    if (!result.ok) {
+      const status = mapUnclaimedDeleteErrorStatus(result.error);
+      const error = publicUnclaimedDeleteErrorMessage(result.error);
+      console.error(logPrefix, "delete blocked or failed:", { spaceId: id, status, error });
+      return NextResponse.json({ error }, { status });
+    }
+
+    await adminAudit({
+      action: "unclaimed_listing_deleted",
+      actorUserId: auth.userId,
+      targetType: "space",
+      targetId: id,
+    });
+
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(logPrefix, "unhandled error:", message, err);
+    return NextResponse.json(
+      {
+        error:
+          process.env.NODE_ENV === "development"
+            ? `Delete failed: ${message}`
+            : "Delete failed. Please check server logs.",
+      },
+      { status: 500 }
+    );
   }
-
-  const admin = createServiceAdminClient();
-  if (!admin) {
-    return NextResponse.json({ error: "Server configuration error." }, { status: 500 });
-  }
-
-  const result = await deleteAdminUnclaimedSpace(admin, id);
-  if (!result.ok) {
-    const status = result.error.includes("not found") ? 404 : 400;
-    return NextResponse.json({ error: result.error }, { status });
-  }
-
-  await adminAudit({
-    action: "unclaimed_listing_deleted",
-    actorUserId: auth.userId,
-    targetType: "space",
-    targetId: id,
-  });
-
-  return NextResponse.json({ ok: true });
 }

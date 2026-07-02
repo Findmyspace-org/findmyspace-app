@@ -32,6 +32,7 @@ type SpaceRow = {
   latitude: number | null;
   longitude: number | null;
   status: string | null;
+  property_id?: string | null;
   min_group_size?: number | null;
   max_group_size?: number | null;
   price_amount?: number | null;
@@ -205,14 +206,25 @@ export default function EditUnclaimedListingPage() {
             mode="edit"
             wrapWithUnsavedGuard={false}
             spaceId={space.id}
+            propertyId={space.property_id ?? undefined}
             initialStatus={space.status}
             enquiryCount={enquiryCount}
             readOnly={readOnly}
             initialCrmLink={crmLink}
-            backHref="/admin/unclaimed-listings"
-            backLabel="Back to unclaimed listings"
+            backHref={
+              space.property_id
+                ? `/admin/properties/${space.property_id}`
+                : "/admin/unclaimed-listings"
+            }
+            backLabel={
+              space.property_id ? "Back to property" : "Back to unclaimed listings"
+            }
             onSavedAndExit={() =>
-              router.push("/admin/unclaimed-listings?saved=1")
+              router.push(
+                space.property_id
+                  ? `/admin/properties/${space.property_id}?saved=1`
+                  : "/admin/unclaimed-listings?saved=1"
+              )
             }
             initialImages={images}
             initial={{
