@@ -182,50 +182,53 @@ function AdminListingEnquiriesPageContent() {
   ) {
     setSavingId(id);
     setMessage("");
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-    const token = session?.access_token;
-    if (!token) {
-      setMessage("Not signed in.");
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) {
+        setMessage("Not signed in.");
+        return;
+      }
+
+      const res = await fetch(`/api/admin/listing-enquiries/${id}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(patch),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setMessage(json.error || "Update failed.");
+        return;
+      }
+
+      setRows((prev) =>
+        prev.map((row) =>
+          row.id === id
+            ? {
+                ...row,
+                status: patch.status ?? row.status,
+                admin_notes:
+                  patch.adminNotes !== undefined ? patch.adminNotes : row.admin_notes,
+              }
+            : row
+        )
+      );
+
+      if (patch.status && patch.status !== "new") {
+        void markEnquiryNotificationsRead(id);
+      }
+
+      setMessage("Saved.");
+    } catch {
+      setMessage("Update failed. Please try again.");
+    } finally {
       setSavingId(null);
-      return;
     }
-
-    const res = await fetch(`/api/admin/listing-enquiries/${id}`, {
-      method: "PATCH",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify(patch),
-    });
-    const json = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      setMessage(json.error || "Update failed.");
-      setSavingId(null);
-      return;
-    }
-
-    setRows((prev) =>
-      prev.map((row) =>
-        row.id === id
-          ? {
-              ...row,
-              status: patch.status ?? row.status,
-              admin_notes:
-                patch.adminNotes !== undefined ? patch.adminNotes : row.admin_notes,
-            }
-          : row
-      )
-    );
-
-    if (patch.status && patch.status !== "new") {
-      void markEnquiryNotificationsRead(id);
-    }
-
-    setSavingId(null);
-    setMessage("Saved.");
   }
 
   if (loading) {

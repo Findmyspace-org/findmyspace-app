@@ -11,7 +11,8 @@
     "test:lifecycle-guards": "node scripts/test-lifecycle-guards.mjs",
     "test:property-logo": "node scripts/test-property-logo-validation.mjs",
     "test:public-browse": "node scripts/test-public-browse-eligibility.mjs",
-    "test:form-save-state": "node scripts/test-form-save-state.mjs"
+    "test:form-save-state": "node scripts/test-form-save-state.mjs",
+    "test:unsaved-guard": "node scripts/test-unsaved-guard.mjs"
   },
   "dependencies": {
     "@sparticuz/chromium": "^131.0.0",

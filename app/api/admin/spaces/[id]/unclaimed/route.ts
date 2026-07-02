@@ -129,12 +129,13 @@ export async function PATCH(
     return NextResponse.json({ error: crmValidated.error }, { status: 400 });
   }
 
-  const patch: Record<string, unknown> = {
-    owner_id: null,
-    created_by_admin: true,
-  };
-
+  const patch: Record<string, unknown> = {};
   applyUnclaimedSpaceUpdatePatch(patch, parsed.data);
+
+  if (!existing.space.owner_id) {
+    patch.owner_id = null;
+    patch.created_by_admin = true;
+  }
 
   if (body.status === "draft") {
     patch.status = "draft";

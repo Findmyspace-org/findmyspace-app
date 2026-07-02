@@ -306,6 +306,9 @@ export function applyUnclaimedSpaceUpdatePatch(
     patch.min_booking_months = d.min_booking_months;
   }
 
+  if (d.booking_unit !== undefined) patch.booking_unit = d.booking_unit;
+  if (d.price_unit !== undefined) patch.price_unit = d.price_unit;
+
   const street = d.street_address ?? d.address_line_1;
   if (street !== undefined || d.address_line_1 !== undefined) {
     patch.street_address = street ?? null;
@@ -336,11 +339,7 @@ export function applyUnclaimedSpaceUpdatePatch(
       patch.price_per_hour = pricingParsed.data.price_per_hour;
       patch.price_per_day = pricingParsed.data.price_per_day;
       patch.price_per_month = pricingParsed.data.price_per_month;
-    } else if (d.booking_unit !== undefined) {
-      patch.booking_unit = d.booking_unit ?? "day";
     }
-  } else if (d.booking_unit !== undefined) {
-    patch.booking_unit = d.booking_unit ?? "day";
   }
 
   finalizeSpacePricingLegacyFields(patch);

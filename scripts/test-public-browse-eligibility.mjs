@@ -70,17 +70,11 @@ function getPublicBrowseEligibility(space) {
 }
 
 function isExplicitBrowsePriceFilter(input) {
+  if (input.priceFilterApplied) return true;
   if (input.searchParams) {
     if (input.searchParams.get("min") !== null) return true;
     if (input.searchParams.get("max") !== null) return true;
-    const bu = input.searchParams.get("bookingUnit");
-    if (bu === "hour" || bu === "day" || bu === "month") return true;
-    const wu = input.searchParams.get("whenUnit");
-    if (wu === "hour" || wu === "day" || wu === "month") return true;
   }
-  if (input.bookingUnitFilter !== "all") return true;
-  if (input.minPrice > 0) return true;
-  if (input.maxPrice < input.defaultMaxPrice) return true;
   return false;
 }
 
@@ -160,6 +154,30 @@ assert.equal(
   }),
   false,
   "default browse view must not treat slider max as an active filter"
+);
+
+assert.equal(
+  isExplicitBrowsePriceFilter({
+    minPrice: 0,
+    maxPrice: 10000,
+    bookingUnitFilter: "day",
+    defaultMaxPrice: 20000,
+    searchParams: new URLSearchParams("whenUnit=day&bookingUnit=day"),
+  }),
+  false,
+  "rental period filter must not implicitly enable price filtering"
+);
+
+assert.equal(
+  isExplicitBrowsePriceFilter({
+    minPrice: 0,
+    maxPrice: 20000,
+    bookingUnitFilter: "all",
+    defaultMaxPrice: 20000,
+    searchParams: new URLSearchParams("max=20000"),
+  }),
+  true,
+  "explicit max URL param must enable price filtering"
 );
 
 console.log("test-public-browse-eligibility: ok");

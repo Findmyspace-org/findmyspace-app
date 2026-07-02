@@ -111,25 +111,21 @@ export function spaceMatchesBrowsePriceRange(
   return price >= minPrice && price <= maxPrice;
 }
 
-/** True when the user has applied a price/unit refinement (not the default browse view). */
+/** True when the user has applied a price refinement (not the default browse view). */
 export function isExplicitBrowsePriceFilter(input: {
   minPrice: number;
   maxPrice: number;
   bookingUnitFilter: string;
   defaultMaxPrice: number;
+  /** Set when the user applies the price modal or URL contains min/max. */
+  priceFilterApplied?: boolean;
   searchParams?: { get(name: string): string | null };
 }): boolean {
+  if (input.priceFilterApplied) return true;
   if (input.searchParams) {
     if (input.searchParams.get("min") !== null) return true;
     if (input.searchParams.get("max") !== null) return true;
-    const bu = input.searchParams.get("bookingUnit");
-    if (bu === "hour" || bu === "day" || bu === "month") return true;
-    const wu = input.searchParams.get("whenUnit");
-    if (wu === "hour" || wu === "day" || wu === "month") return true;
   }
-  if (input.bookingUnitFilter !== "all") return true;
-  if (input.minPrice > 0) return true;
-  if (input.maxPrice < input.defaultMaxPrice) return true;
   return false;
 }
 

@@ -34,6 +34,10 @@ type UnsavedChangesContextValue = {
   unregisterSection: (id: string) => void;
   requestNavigation: (pending: PendingNavigation) => void;
   saveAllDirtySections: (options?: { skipIds?: string[] }) => Promise<boolean>;
+  /** Synchronously clear dirty flags after a successful save (before React re-render). */
+  markSectionsClean: (sectionIds?: string[]) => void;
+  /** Disable beforeunload / link interception before programmatic full-page navigation. */
+  releaseGuardForUnload: () => void;
 };
 
 const UnsavedChangesContext = createContext<UnsavedChangesContextValue | null>(null);
@@ -120,9 +124,14 @@ export function UnsavedChangesProvider({
   const modalOpenRef = useRef(false);
   const pathnameWhenDirtyRef = useRef<string | null>(null);
   const backFallbackHrefRef = useRef(backFallbackHref);
+  const saveAndLeaveGenerationRef = useRef(0);
 
   backFallbackHrefRef.current = backFallbackHref;
   modalOpenRef.current = modalOpen;
+
+  const hasDirtySections = useCallback(() => {
+    return Array.from(sectionsRef.current.values()).some((section) => section.isDirty);
+  }, []);
 
   const bump = useCallback(() => setRevision((value) => value + 1), []);
 
@@ -165,7 +174,49 @@ export function UnsavedChangesProvider({
     [dirtySections]
   );
 
-  const hasUnsavedChanges = enabled && !isBypassingGuardRef.current && dirtySections.length > 0;
+  const hasUnsavedChanges = enabled && !isBypassingGuardRef.current && hasDirtySections();
+
+  const markSectionsClean = useCallback(
+    (sectionIds?: string[]) => {
+      let changed = false;
+      if (sectionIds && sectionIds.length > 0) {
+        for (const id of sectionIds) {
+          const section = sectionsRef.current.get(id);
+          if (section?.isDirty) {
+            sectionsRef.current.set(id, { ...section, isDirty: false });
+            changed = true;
+          }
+        }
+      } else {
+        for (const [id, section] of sectionsRef.current) {
+          if (section.isDirty) {
+            sectionsRef.current.set(id, { ...section, isDirty: false });
+            changed = true;
+          }
+        }
+      }
+      if (changed) {
+        bump();
+      }
+    },
+    [bump]
+  );
+
+  const releaseGuardForUnload = useCallback(() => {
+    isBypassingGuardRef.current = true;
+    guardDepthRef.current = 0;
+    pendingNavRef.current = null;
+    pathnameWhenDirtyRef.current = null;
+    saveAndLeaveGenerationRef.current += 1;
+    setModalOpen(false);
+    setSaveError(null);
+    setSavingAll(false);
+    debugUnsaved("guard released for unload navigation");
+  }, []);
+
+  const isNavigationBlocked = useCallback(() => {
+    return enabled && !isBypassingGuardRef.current && hasDirtySections();
+  }, [enabled, hasDirtySections]);
 
   const canSaveAndLeave = dirtySections.every(([, section]) => typeof section.save === "function");
 
@@ -177,9 +228,11 @@ export function UnsavedChangesProvider({
   }, []);
 
   const closeModal = useCallback(() => {
+    saveAndLeaveGenerationRef.current += 1;
     pendingNavRef.current = null;
     setModalOpen(false);
     setSaveError(null);
+    setSavingAll(false);
   }, []);
 
   const navigateToPending = useCallback((pending: PendingNavigation) => {
@@ -189,6 +242,7 @@ export function UnsavedChangesProvider({
     pendingNavRef.current = null;
     setModalOpen(false);
     setSaveError(null);
+    const guardDepth = guardDepthRef.current;
     guardDepthRef.current = 0;
     pathnameWhenDirtyRef.current = null;
 
@@ -199,8 +253,8 @@ export function UnsavedChangesProvider({
 
     if (pending.type === "back") {
       const fallback = backFallbackHrefRef.current;
-      const steps = -(1 + guardDepthRef.current);
-      debugUnsaved("browser back leave", { steps, fallback });
+      const steps = -(1 + guardDepth);
+      debugUnsaved("browser back leave", { steps, fallback, guardDepth });
 
       if (fallback) {
         window.location.assign(fallback);
@@ -232,13 +286,13 @@ export function UnsavedChangesProvider({
 
   const requestNavigation = useCallback(
     (pending: PendingNavigation) => {
-      if (!enabled || isBypassingGuardRef.current || dirtySections.length === 0) {
+      if (!isNavigationBlocked()) {
         navigateToPending(pending);
         return;
       }
       openModalForNavigation(pending);
     },
-    [dirtySections.length, enabled, navigateToPending, openModalForNavigation]
+    [isNavigationBlocked, navigateToPending, openModalForNavigation]
   );
 
   useEffect(() => {
@@ -249,7 +303,7 @@ export function UnsavedChangesProvider({
   }, [pathname]);
 
   useEffect(() => {
-    if (!enabled || dirtySections.length > 0) {
+    if (!enabled || hasDirtySections()) {
       return;
     }
 
@@ -261,19 +315,20 @@ export function UnsavedChangesProvider({
     }
 
     const depth = guardDepthRef.current;
-    if (depth > 0) {
+    if (depth > 0 && !isBypassingGuardRef.current) {
       guardDepthRef.current = 0;
       pathnameWhenDirtyRef.current = null;
       isBypassingGuardRef.current = true;
       window.history.go(-depth);
-      window.setTimeout(() => {
+      const timer = window.setTimeout(() => {
         isBypassingGuardRef.current = false;
-      }, 0);
+      }, 100);
+      return () => window.clearTimeout(timer);
     }
-  }, [dirtySections.length, enabled]);
+  }, [dirtySections.length, enabled, hasDirtySections]);
 
   useEffect(() => {
-    if (!enabled || dirtySections.length === 0 || isBypassingGuardRef.current) {
+    if (!enabled || !hasDirtySections() || isBypassingGuardRef.current) {
       return;
     }
 
@@ -286,7 +341,7 @@ export function UnsavedChangesProvider({
     }
 
     const onBeforeUnload = (event: BeforeUnloadEvent) => {
-      if (isBypassingGuardRef.current) return;
+      if (!isNavigationBlocked()) return;
       event.preventDefault();
       event.returnValue = "";
     };
@@ -303,6 +358,10 @@ export function UnsavedChangesProvider({
         return;
       }
 
+      if (!hasDirtySections()) {
+        return;
+      }
+
       openModalForNavigation({ type: "back", source: "popstate" });
       window.history.pushState({ unsavedChangesGuard: true }, "");
       guardDepthRef.current += 1;
@@ -316,15 +375,15 @@ export function UnsavedChangesProvider({
       window.removeEventListener("beforeunload", onBeforeUnload);
       window.removeEventListener("popstate", onPopState);
     };
-  }, [dirtySections.length, enabled, openModalForNavigation, pathname]);
+  }, [dirtySections.length, enabled, hasDirtySections, isNavigationBlocked, openModalForNavigation, pathname]);
 
   useEffect(() => {
-    if (!enabled || dirtySections.length === 0 || isBypassingGuardRef.current) {
+    if (!enabled) {
       return;
     }
 
     const onDocumentClick = (event: MouseEvent) => {
-      if (isBypassingGuardRef.current) return;
+      if (!isNavigationBlocked()) return;
       const target = event.target;
       if (!(target instanceof Element)) return;
 
@@ -362,7 +421,7 @@ export function UnsavedChangesProvider({
 
     document.addEventListener("click", onDocumentClick, true);
     return () => document.removeEventListener("click", onDocumentClick, true);
-  }, [dirtySections.length, enabled, openModalForNavigation]);
+  }, [enabled, isNavigationBlocked, openModalForNavigation]);
 
   function handleLeaveWithoutSaving() {
     const pending = pendingNavRef.current;
@@ -381,12 +440,17 @@ export function UnsavedChangesProvider({
       return;
     }
 
+    const generation = saveAndLeaveGenerationRef.current;
     debugUnsaved("save and leave clicked", pending);
     setSavingAll(true);
     setSaveError(null);
 
     try {
       for (const [, section] of dirtySections) {
+        if (generation !== saveAndLeaveGenerationRef.current) {
+          debugUnsaved("save and leave — cancelled (modal closed)");
+          return;
+        }
         if (!section.save) continue;
         const ok = await section.save();
         if (!ok) {
@@ -395,10 +459,16 @@ export function UnsavedChangesProvider({
           return;
         }
       }
+      if (generation !== saveAndLeaveGenerationRef.current) {
+        debugUnsaved("save and leave — cancelled before navigate");
+        return;
+      }
       debugUnsaved("save and leave — all sections saved, navigating");
       navigateToPending(pending);
     } finally {
-      setSavingAll(false);
+      if (generation === saveAndLeaveGenerationRef.current) {
+        setSavingAll(false);
+      }
     }
   }
 
@@ -410,6 +480,8 @@ export function UnsavedChangesProvider({
       unregisterSection,
       requestNavigation,
       saveAllDirtySections,
+      markSectionsClean,
+      releaseGuardForUnload,
     }),
     [
       dirtySections,
@@ -417,6 +489,8 @@ export function UnsavedChangesProvider({
       registerSection,
       requestNavigation,
       saveAllDirtySections,
+      markSectionsClean,
+      releaseGuardForUnload,
       unregisterSection,
     ]
   );

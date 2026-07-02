@@ -274,6 +274,9 @@ export function AdminUnclaimedSpaceForm({
     (returnToProperty: boolean) => {
       if (!returnToProperty) return;
 
+      unsavedCtx?.markSectionsClean();
+      unsavedCtx?.releaseGuardForUnload();
+
       if (propertyId) {
         window.location.assign(appendSavedQuery(resolvedBackHref));
         return;
@@ -286,7 +289,14 @@ export function AdminUnclaimedSpaceForm({
 
       window.location.assign(appendSavedQuery(listHref));
     },
-    [appendSavedQuery, listHref, onSavedAndExit, propertyId, resolvedBackHref]
+    [
+      appendSavedQuery,
+      listHref,
+      onSavedAndExit,
+      propertyId,
+      resolvedBackHref,
+      unsavedCtx,
+    ]
   );
 
   useEffect(() => {
@@ -566,6 +576,7 @@ export function AdminUnclaimedSpaceForm({
           }
 
           finishSave({ ok: true, value: formSnapshotRef.current });
+          unsavedCtx?.markSectionsClean();
           if (returnToProperty) {
             navigateAfterSave(true);
           } else {
@@ -629,6 +640,23 @@ export function AdminUnclaimedSpaceForm({
     setPublishing(true);
     clearSaveFeedback();
     try {
+      if (isMainFormDirty) {
+        const mainOk = await persistMainForm();
+        if (!mainOk) {
+          setSaveFailure("Could not save space details before publishing.");
+          return;
+        }
+      }
+      if (unsavedCtx) {
+        const sectionsOk = await unsavedCtx.saveAllDirtySections({
+          skipIds: ["admin-space-details"],
+        });
+        if (!sectionsOk) {
+          setSaveFailure("Some sections could not be saved. Fix errors and try again.");
+          return;
+        }
+      }
+
       const persistedImages = await fetchPersistedAdminSpaceImages(
         activeSpaceId,
         propertyId
@@ -663,6 +691,9 @@ export function AdminUnclaimedSpaceForm({
     setSaveFailure,
     setSaveSuccess,
     state,
+    unsavedCtx,
+    isMainFormDirty,
+    persistMainForm,
   ]);
 
   const statusBadge =
@@ -899,7 +930,9 @@ export function AdminUnclaimedSpaceForm({
                 <button
                   type="button"
                   disabled={saving || publishing || !hasUnsavedChanges}
-                  onClick={() => void handleSave({ returnToProperty: true })}
+                  onClick={() =>
+                    void handleSave({ returnToProperty: Boolean(propertyId) })
+                  }
                   className="rounded-lg bg-[#0f2740] px-5 py-2.5 text-sm font-semibold text-white hover:opacity-95 disabled:opacity-60"
                 >
                   {savingReturn

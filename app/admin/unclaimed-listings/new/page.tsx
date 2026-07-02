@@ -2,13 +2,12 @@
 
 import { hasAdminUiAccess } from "@/lib/client-admin-access";
 
-import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import { ArrowLeft } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { AdminUnclaimedSpaceForm } from "@/app/components/AdminUnclaimedSpaceForm";
-import { UnsavedChangesProvider } from "@/app/components/UnsavedChangesProvider";
+import { GuardedLink, UnsavedChangesProvider } from "@/app/components/UnsavedChangesProvider";
 
 function NewUnclaimedListingContent() {
   const searchParams = useSearchParams();
@@ -54,15 +53,15 @@ function NewUnclaimedListingContent() {
   }
 
   return (
-    <UnsavedChangesProvider>
+    <UnsavedChangesProvider backFallbackHref="/admin/unclaimed-listings">
     <div className="mx-auto max-w-3xl">
-      <Link
+      <GuardedLink
           href="/admin/unclaimed-listings"
           className="mb-4 inline-flex items-center gap-2 text-sm font-medium text-gray-700 hover:text-gray-900"
         >
           <ArrowLeft className="h-4 w-4" />
           Back to unclaimed listings
-        </Link>
+        </GuardedLink>
         <h1 className="text-2xl font-semibold text-gray-900">New unclaimed listing</h1>
         <p className="mt-1 text-sm text-gray-600">
           Save a draft, add photos, then publish when ready. No owner account is required.

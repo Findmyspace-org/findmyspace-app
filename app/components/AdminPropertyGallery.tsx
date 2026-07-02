@@ -33,6 +33,7 @@ export function AdminPropertyGallery({
   onMessage,
 }: AdminPropertyGalleryProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const uploadInFlightRef = useRef(false);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<{
     current: number;
@@ -63,6 +64,7 @@ export function AdminPropertyGallery({
   }
 
   async function moveImage(imageId: string, direction: -1 | 1) {
+    if (reordering || uploading) return;
     const index = sortedImages.findIndex((img) => img.id === imageId);
     if (index < 0) return;
     const target = index + direction;
@@ -84,108 +86,113 @@ export function AdminPropertyGallery({
   }
 
   async function uploadImages(fileList: FileList | null) {
-    if (!fileList?.length) return;
+    if (!fileList?.length || uploadInFlightRef.current) return;
+
+    uploadInFlightRef.current = true;
+    setUploading(true);
+    setDropMessage(null);
+    setDropMessageTone("default");
+    onMessage?.(null);
 
     const allowed = new Set(["image/jpeg", "image/png", "image/webp"]);
     const allowedExt = new Set(["jpg", "jpeg", "png", "webp"]);
     const maxMb = (ADMIN_SPACE_IMAGE_MAX_BYTES / (1024 * 1024)).toFixed(0);
     const files = Array.from(fileList);
 
-    for (const file of files) {
-      const ext = (file.name.split(".").pop() || "").toLowerCase();
-      if (!allowed.has(file.type) && !allowedExt.has(ext)) {
-        const msg = `Invalid file type "${file.name}". Use JPG, PNG, or WebP only.`;
-        onMessage?.(msg);
-        setDropMessage(msg);
-        setDropMessageTone("error");
-        return;
-      }
-    }
-
-    let prepared: File[];
     try {
-      prepared = await prepareFilesForUpload(files, "listing");
-    } catch (err) {
-      const msg =
-        err instanceof Error ? err.message : "Could not prepare images for upload.";
-      onMessage?.(msg);
-      setDropMessage(msg);
-      setDropMessageTone("error");
-      return;
-    }
+      for (const file of files) {
+        const ext = (file.name.split(".").pop() || "").toLowerCase();
+        if (!allowed.has(file.type) && !allowedExt.has(ext)) {
+          const msg = `Invalid file type "${file.name}". Use JPG, PNG, or WebP only.`;
+          onMessage?.(msg);
+          setDropMessage(msg);
+          setDropMessageTone("error");
+          return;
+        }
+      }
 
-    for (const file of prepared) {
-      if (file.size > ADMIN_SPACE_IMAGE_MAX_BYTES) {
-        const msg = `"${file.name}" is too large. Maximum size is ${maxMb} MB per image.`;
+      let prepared: File[];
+      try {
+        prepared = await prepareFilesForUpload(files, "listing");
+      } catch (err) {
+        const msg =
+          err instanceof Error ? err.message : "Could not prepare images for upload.";
         onMessage?.(msg);
         setDropMessage(msg);
         setDropMessageTone("error");
         return;
       }
-    }
 
-    setUploading(true);
-    setDropMessage(null);
-    setDropMessageTone("default");
-    onMessage?.(null);
-    const added: PropertyGalleryImage[] = [];
-    const failed: string[] = [];
-
-    for (let i = 0; i < prepared.length; i++) {
-      setUploadProgress({ current: i + 1, total: prepared.length });
-      const file = prepared[i];
-      try {
-        const form = new FormData();
-        form.append("files", file);
-        const result = await adminApiFetch(
-          `/api/admin/properties/${propertyId}/images`,
-          {
-            method: "POST",
-            body: form,
-          }
-        );
-        const uploaded = ((result.images as PropertyGalleryImage[]) || []).map(
-          (img, index) => ({
-            ...img,
-            caption: null,
-            sort_order: img.sort_order ?? index,
-          })
-        );
-        added.push(...uploaded);
-        const batchFailed = (result.failed as { name: string; error: string }[]) || [];
-        for (const item of batchFailed) {
-          failed.push(`${item.name}: ${item.error}`);
+      for (const file of prepared) {
+        if (file.size > ADMIN_SPACE_IMAGE_MAX_BYTES) {
+          const msg = `"${file.name}" is too large. Maximum size is ${maxMb} MB per image.`;
+          onMessage?.(msg);
+          setDropMessage(msg);
+          setDropMessageTone("error");
+          return;
         }
-      } catch (err) {
-        failed.push(
-          `${file.name}: ${err instanceof Error ? err.message : "Upload failed."}`
-        );
       }
-    }
 
-    if (added.length > 0) {
-      onImagesChange(sortImages([...images, ...added]));
-    }
+      const added: PropertyGalleryImage[] = [];
+      const failed: string[] = [];
 
-    if (failed.length === 0) {
-      const successMsg = `${added.length} photo(s) uploaded.`;
-      onMessage?.(successMsg);
-      setDropMessage(successMsg);
-      setDropMessageTone("success");
-    } else if (added.length > 0) {
-      const partialMsg = `${added.length} uploaded, ${failed.length} failed: ${failed.join("; ")}`;
-      onMessage?.(partialMsg);
-      setDropMessage(partialMsg);
-      setDropMessageTone("error");
-    } else {
-      const failMsg = `Upload failed: ${failed.join("; ")}`;
-      onMessage?.(failMsg);
-      setDropMessage(failMsg);
-      setDropMessageTone("error");
-    }
+      for (let i = 0; i < prepared.length; i++) {
+        setUploadProgress({ current: i + 1, total: prepared.length });
+        const file = prepared[i];
+        try {
+          const form = new FormData();
+          form.append("files", file);
+          const result = await adminApiFetch(
+            `/api/admin/properties/${propertyId}/images`,
+            {
+              method: "POST",
+              body: form,
+            }
+          );
+          const uploaded = ((result.images as PropertyGalleryImage[]) || []).map(
+            (img, index) => ({
+              ...img,
+              caption: null,
+              sort_order: img.sort_order ?? index,
+            })
+          );
+          added.push(...uploaded);
+          const batchFailed = (result.failed as { name: string; error: string }[]) || [];
+          for (const item of batchFailed) {
+            failed.push(`${item.name}: ${item.error}`);
+          }
+        } catch (err) {
+          failed.push(
+            `${file.name}: ${err instanceof Error ? err.message : "Upload failed."}`
+          );
+        }
+      }
 
-    setUploading(false);
-    setUploadProgress(null);
+      if (added.length > 0) {
+        onImagesChange(sortImages([...images, ...added]));
+      }
+
+      if (failed.length === 0) {
+        const successMsg = `${added.length} photo(s) uploaded.`;
+        onMessage?.(successMsg);
+        setDropMessage(successMsg);
+        setDropMessageTone("success");
+      } else if (added.length > 0) {
+        const partialMsg = `${added.length} uploaded, ${failed.length} failed: ${failed.join("; ")}`;
+        onMessage?.(partialMsg);
+        setDropMessage(partialMsg);
+        setDropMessageTone("error");
+      } else {
+        const failMsg = `Upload failed: ${failed.join("; ")}`;
+        onMessage?.(failMsg);
+        setDropMessage(failMsg);
+        setDropMessageTone("error");
+      }
+    } finally {
+      uploadInFlightRef.current = false;
+      setUploading(false);
+      setUploadProgress(null);
+    }
   }
 
   async function removeImage(imageId: string) {
@@ -198,7 +205,22 @@ export function AdminPropertyGallery({
       });
       const remaining = sortImages(images.filter((img) => img.id !== imageId));
       if (remaining.length > 0) {
-        await persistImageOrder(remaining);
+        try {
+          await persistImageOrder(remaining);
+        } catch (reorderErr) {
+          console.error("Gallery reorder after delete failed:", reorderErr);
+          onImagesChange(
+            remaining.map((img, index) => ({
+              ...img,
+              sort_order: index,
+            }))
+          );
+          setConfirmDeleteId(null);
+          onMessage?.(
+            "Photo removed, but order could not be updated. Refresh or reorder if needed."
+          );
+          return;
+        }
       } else {
         onImagesChange([]);
       }

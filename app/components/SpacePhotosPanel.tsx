@@ -37,6 +37,7 @@ export function SpacePhotosPanel({
   apiMode = "admin",
 }: SpacePhotosPanelProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const uploadInFlightRef = useRef(false);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<{
     current: number;
@@ -89,55 +90,56 @@ export function SpacePhotosPanel({
   }
 
   async function uploadImages(fileList: FileList | null) {
-    if (readOnly || !spaceId || !fileList?.length) return;
+    if (readOnly || !spaceId || !fileList?.length || uploadInFlightRef.current) return;
+
+    uploadInFlightRef.current = true;
+    setUploading(true);
+    setDropMessage(null);
+    setDropMessageTone("default");
+    clearForAction();
 
     const allowed = new Set(["image/jpeg", "image/png", "image/webp"]);
     const allowedExt = new Set(["jpg", "jpeg", "png", "webp"]);
     const maxMb = (ADMIN_SPACE_IMAGE_MAX_BYTES / (1024 * 1024)).toFixed(0);
     const files = Array.from(fileList);
 
-    for (const file of files) {
-      const ext = (file.name.split(".").pop() || "").toLowerCase();
-      if (!allowed.has(file.type) && !allowedExt.has(ext)) {
-        const msg = `Invalid file type "${file.name}". Use JPG, PNG, or WebP only.`;
+    try {
+      for (const file of files) {
+        const ext = (file.name.split(".").pop() || "").toLowerCase();
+        if (!allowed.has(file.type) && !allowedExt.has(ext)) {
+          const msg = `Invalid file type "${file.name}". Use JPG, PNG, or WebP only.`;
+          setDropMessage(msg);
+          setDropMessageTone("error");
+          setFailure(msg);
+          return;
+        }
+      }
+
+      let prepared: File[];
+      try {
+        prepared = await prepareFilesForUpload(files, "listing");
+      } catch (err) {
+        const msg =
+          err instanceof Error ? err.message : "Could not prepare images for upload.";
         setDropMessage(msg);
         setDropMessageTone("error");
         setFailure(msg);
         return;
       }
-    }
 
-    let prepared: File[];
-    try {
-      prepared = await prepareFilesForUpload(files, "listing");
-    } catch (err) {
-      const msg =
-        err instanceof Error ? err.message : "Could not prepare images for upload.";
-      setDropMessage(msg);
-      setDropMessageTone("error");
-      setFailure(msg);
-      return;
-    }
-
-    for (const file of prepared) {
-      if (file.size > ADMIN_SPACE_IMAGE_MAX_BYTES) {
-        const msg = `"${file.name}" is too large. Maximum size is ${maxMb} MB per image.`;
-        setDropMessage(msg);
-        setDropMessageTone("error");
-        setFailure(msg);
-        return;
+      for (const file of prepared) {
+        if (file.size > ADMIN_SPACE_IMAGE_MAX_BYTES) {
+          const msg = `"${file.name}" is too large. Maximum size is ${maxMb} MB per image.`;
+          setDropMessage(msg);
+          setDropMessageTone("error");
+          setFailure(msg);
+          return;
+        }
       }
-    }
 
-    setUploading(true);
-    setDropMessage(null);
-    setDropMessageTone("default");
-    clearForAction();
+      const failed: string[] = [];
+      let added: SpacePhotoImage[] = [];
 
-    const failed: string[] = [];
-    let added: SpacePhotoImage[] = [];
-
-    try {
       if (apiMode === "admin") {
         for (let i = 0; i < prepared.length; i++) {
           setUploadProgress({ current: i + 1, total: prepared.length });
@@ -179,6 +181,7 @@ export function SpacePhotosPanel({
       setDropMessageTone("error");
       setFailure(failMsg);
     } finally {
+      uploadInFlightRef.current = false;
       setUploading(false);
       setUploadProgress(null);
     }
@@ -195,7 +198,22 @@ export function SpacePhotosPanel({
       await deleteSpacePhoto(apiMode, spaceId, image);
       const remaining = sortSpaceImages(images.filter((img) => img.id !== imageId));
       if (remaining.length > 0) {
-        await persistImageOrder(remaining);
+        try {
+          await persistImageOrder(remaining);
+        } catch (reorderErr) {
+          console.error("Photo reorder after delete failed:", reorderErr);
+          onImagesChange(
+            remaining.map((img, index) => ({
+              ...img,
+              sort_order: index,
+            }))
+          );
+          setConfirmDeleteId(null);
+          setFailure(
+            "Photo removed, but cover order could not be updated. Refresh or reorder if needed."
+          );
+          return;
+        }
       } else {
         onImagesChange([]);
       }
@@ -274,10 +292,10 @@ export function SpacePhotosPanel({
                   </button>
                   {confirmDeleteId === img.id ? (
                     <div className="ml-1 flex items-center gap-1">
-                      <button
-                        type="button"
-                        disabled={deletingId === img.id}
-                        onClick={() => void removeImage(img.id)}
+                    <button
+                      type="button"
+                      disabled={deletingId === img.id || uploading || reordering}
+                      onClick={() => void removeImage(img.id)}
                         className="rounded bg-red-600 px-2 py-1 text-xs font-medium text-white disabled:opacity-60"
                       >
                         {deletingId === img.id ? "…" : "Delete"}
@@ -294,7 +312,8 @@ export function SpacePhotosPanel({
                     <button
                       type="button"
                       onClick={() => setConfirmDeleteId(img.id)}
-                      className="rounded border border-gray-300 bg-white p-1.5 text-red-600"
+                      disabled={uploading || reordering || deletingId !== null}
+                      className="rounded border border-gray-300 bg-white p-1.5 text-red-600 disabled:opacity-40"
                       aria-label="Remove photo"
                     >
                       <Trash2 className="h-4 w-4" />

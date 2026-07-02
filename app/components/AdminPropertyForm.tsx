@@ -82,7 +82,14 @@ export function AdminPropertyForm(props: Props) {
   }
 
   return (
-    <UnsavedChangesProvider enabled={props.mode === "edit"}>
+    <UnsavedChangesProvider
+      enabled={props.mode === "edit"}
+      backFallbackHref={
+        props.mode === "edit" && props.propertyId
+          ? `/admin/properties/${props.propertyId}`
+          : "/admin/properties"
+      }
+    >
       <AdminPropertyFormInner {...props} />
     </UnsavedChangesProvider>
   );
@@ -288,6 +295,7 @@ function AdminPropertyFormInner({
         onSuccess(propertyId);
         return true;
       }
+      finishSave({ ok: false, error: "Missing property id." });
       return false;
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Could not save property.";

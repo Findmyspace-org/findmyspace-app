@@ -208,6 +208,10 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
     )
   );
 
+  const [priceFilterApplied, setPriceFilterApplied] = useState(
+    () => params.get("min") !== null || params.get("max") !== null
+  );
+
   const [showMap, setShowMap] = useState(false);
   const [showMoreTypes, setShowMoreTypes] = useState(false);
   const [showNlExamples, setShowNlExamples] = useState(false);
@@ -240,6 +244,19 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
     setBookingUnitFilter(
       bu === "hour" || bu === "day" || bu === "month" ? bu : "all"
     );
+    setPriceFilterApplied(p.get("min") !== null || p.get("max") !== null);
+    if (p.get("min") !== null) {
+      setMinPrice(parseNumberParam(p.get("min"), 0));
+    }
+    if (p.get("max") !== null) {
+      const unit =
+        wu === "hour" || wu === "day" || wu === "month"
+          ? wu
+          : bu === "hour" || bu === "day" || bu === "month"
+            ? bu
+            : "all";
+      setMaxPrice(parseNumberParam(p.get("max"), getDefaultMax(unit)));
+    }
   }, [searchParamsString]);
 
   const suggestedWhenUnit = useMemo((): WhenDurationUnit | null => {
@@ -317,13 +334,15 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
             : bookingUnitFilter;
 
       if (buResolved !== "all") p.set("bookingUnit", buResolved);
-      if (minPrice !== 0) p.set("min", String(minPrice));
-      const defMax = getDefaultMax(
-        buResolved === "hour" || buResolved === "day" || buResolved === "month"
-          ? buResolved
-          : "all"
-      );
-      if (maxPrice !== defMax) p.set("max", String(maxPrice));
+      if (priceFilterApplied) {
+        if (minPrice !== 0) p.set("min", String(minPrice));
+        const defMax = getDefaultMax(
+          buResolved === "hour" || buResolved === "day" || buResolved === "month"
+            ? buResolved
+            : "all"
+        );
+        if (maxPrice !== defMax) p.set("max", String(maxPrice));
+      }
       writeAppliedWhenToParams(p, nextAppliedWhen);
       const qs = p.toString();
       router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
@@ -340,6 +359,7 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
       bookingUnitFilter,
       minPrice,
       maxPrice,
+      priceFilterApplied,
       pathname,
       router,
     ]
@@ -498,18 +518,6 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
     };
   }, []);
 
-  useEffect(() => {
-    setMinPrice(0);
-
-    if (bookingUnitFilter === "hour") {
-      setMaxPrice(5000);
-    } else if (bookingUnitFilter === "day") {
-      setMaxPrice(10000);
-    } else {
-      setMaxPrice(getDefaultMax("all")); // all + month
-    }
-  }, [bookingUnitFilter]);
-
   const parsedNlIntent = useMemo(() => parseSpaceIntent(nlQuery), [nlQuery]);
   const intentSummary = useMemo(
     () => formatIntentSummary(parsedNlIntent),
@@ -525,6 +533,7 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
         maxPrice,
         bookingUnitFilter,
         defaultMaxPrice: defaultBrowseMaxPrice,
+        priceFilterApplied,
         searchParams: new URLSearchParams(searchParamsString),
       }),
     [
@@ -532,6 +541,7 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
       defaultBrowseMaxPrice,
       maxPrice,
       minPrice,
+      priceFilterApplied,
       searchParamsString,
     ]
   );
@@ -753,16 +763,7 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
     if (cityFilter !== "all") count += 1;
     if (appliedWhen) count += 1;
     if (groupSizeFilter.trim()) count += 1;
-    const unit =
-      bookingUnitFilter === "hour" ||
-      bookingUnitFilter === "day" ||
-      bookingUnitFilter === "month"
-        ? bookingUnitFilter
-        : "all";
-    const defaultMax = getDefaultMax(unit);
-    if (bookingUnitFilter !== "all" || minPrice !== 0 || maxPrice !== defaultMax) {
-      count += 1;
-    }
+    if (priceFilterApplied) count += 1;
     return count;
   }, [
     typeFilter,
@@ -771,9 +772,7 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
     cityFilter,
     appliedWhen,
     groupSizeFilter,
-    bookingUnitFilter,
-    minPrice,
-    maxPrice,
+    priceFilterApplied,
   ]);
 
   const primaryTypeChips = useMemo(
@@ -916,6 +915,7 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
     setBookingUnitFilter(resolvedUnit);
     setMinPrice(draftMinPrice);
     setMaxPrice(draftMaxPrice);
+    setPriceFilterApplied(true);
     setShowPriceModal(false);
   }
 
@@ -927,6 +927,7 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
     setBookingUnitFilter("all");
     setMinPrice(0);
     setMaxPrice(defaultMax);
+    setPriceFilterApplied(false);
     setShowPriceModal(false);
   }
 
@@ -1261,7 +1262,9 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
                 className="inline-flex min-h-[44px] w-full items-center justify-between rounded-xl border border-[#d4dbe2] bg-white px-3 text-sm text-[#334155] shadow-sm transition-all duration-200 hover:border-[#cbd5e1] hover:bg-[#fafafa]"
               >
                 <span className="truncate">
-                  {bookingUnitFilter === "all" ? "All units" : bookingUnitFilter} · R{minPrice} - R{maxPrice}
+                  {priceFilterApplied
+                    ? `${bookingUnitFilter === "all" ? "All units" : bookingUnitFilter} · R${minPrice} - R${maxPrice}`
+                    : "Any price"}
                 </span>
                 <SlidersHorizontal className="h-4 w-4 text-[#64748b]" />
               </button>

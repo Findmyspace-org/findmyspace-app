@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { AdminCrmLinkSection } from "@/app/components/AdminCrmLinkSection";
 import { AdminLocationSection } from "@/app/components/AdminLocationSection";
@@ -23,6 +23,7 @@ import {
   validateGroupSizeFormValues,
 } from "@/app/components/GroupSizeFields";
 import MarkdownDescriptionEditor from "@/app/components/MarkdownDescriptionEditor";
+import { sortSpaceImages } from "@/lib/sort-space-images";
 
 const FIELD_CLASS =
   "w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-[#0f2740] focus:ring-1 focus:ring-[#0f2740]";
@@ -127,6 +128,7 @@ export function VenueScoutCaptureForm({
     tags: initial?.tags ?? scoutDefaults.tags,
   });
   const [baseAttributes] = useState(initialAttributes);
+  const localImagesTouchedRef = useRef(false);
   const [images, setImages] = useState<AdminSpaceImage[]>(initialImagesProp);
   const [status, setStatus] = useState(initialStatus || "draft");
   const [message, setMessage] = useState<string | null>(
@@ -153,9 +155,21 @@ export function VenueScoutCaptureForm({
         tags: initial.tags ?? scout.tags,
       }));
     }
-    setImages(initialImagesProp);
+    if (!localImagesTouchedRef.current) {
+      setImages(initialImagesProp);
+    }
     setStatus(initialStatus || "draft");
   }, [initial, initialAttributes, initialImagesProp, initialStatus]);
+
+  const handleImagesChange = useCallback((next: AdminSpaceImage[]) => {
+    localImagesTouchedRef.current = true;
+    setImages(next);
+  }, []);
+
+  async function fetchPersistedScoutImages(listingId: string): Promise<AdminSpaceImage[]> {
+    const result = await adminApiFetch(`/api/admin/spaces/${listingId}/unclaimed`);
+    return sortSpaceImages((result.images as AdminSpaceImage[]) || []);
+  }
 
   const persistListing = useCallback(async () => {
     const body = payloadFromState(state, baseAttributes, crmLink);
@@ -259,6 +273,14 @@ export function VenueScoutCaptureForm({
     setMessage(null);
     try {
       await persistListing();
+      const persistedImages = spaceId
+        ? await fetchPersistedScoutImages(spaceId)
+        : images;
+      handleImagesChange(persistedImages);
+      if (persistedImages.length < 1) {
+        setMessage("Add at least one photo before publishing.");
+        return;
+      }
       await adminApiFetch(`/api/admin/spaces/${spaceId}/publish-unclaimed`, {
         method: "POST",
       });
@@ -381,7 +403,7 @@ export function VenueScoutCaptureForm({
         <AdminSpacePhotosPanel
           spaceId={spaceId}
           images={images}
-          onImagesChange={setImages}
+          onImagesChange={handleImagesChange}
           readOnly={readOnly}
           compact
         />
