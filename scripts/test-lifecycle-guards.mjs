@@ -202,4 +202,72 @@ test("archived space detection", () => {
   assert.equal(isArchivedSpace("draft"), false);
 });
 
+const DELETABLE_UNCLAIMED = new Set(["draft", "unclaimed"]);
+
+function canDeleteUnclaimedListingByRecord(row) {
+  if (!row.created_by_admin) {
+    return { ok: false, error: "Only admin-created listings can be deleted here." };
+  }
+  const status = row.status || "";
+  if (!DELETABLE_UNCLAIMED.has(status)) {
+    return {
+      ok: false,
+      error: "Only draft or unclaimed listings can be deleted from this screen.",
+    };
+  }
+  if (row.owner_id) {
+    return {
+      ok: false,
+      error: "This listing has related activity and cannot be deleted from this screen.",
+    };
+  }
+  return { ok: true };
+}
+
+test("unclaimed delete allows draft and unclaimed admin listings", () => {
+  assert.equal(
+    canDeleteUnclaimedListingByRecord({
+      created_by_admin: true,
+      status: "draft",
+      owner_id: null,
+    }).ok,
+    true
+  );
+  assert.equal(
+    canDeleteUnclaimedListingByRecord({
+      created_by_admin: true,
+      status: "unclaimed",
+      owner_id: null,
+    }).ok,
+    true
+  );
+});
+
+test("unclaimed delete blocks claimed or non-admin listings", () => {
+  assert.equal(
+    canDeleteUnclaimedListingByRecord({
+      created_by_admin: false,
+      status: "draft",
+      owner_id: null,
+    }).ok,
+    false
+  );
+  assert.equal(
+    canDeleteUnclaimedListingByRecord({
+      created_by_admin: true,
+      status: "active",
+      owner_id: null,
+    }).ok,
+    false
+  );
+  assert.equal(
+    canDeleteUnclaimedListingByRecord({
+      created_by_admin: true,
+      status: "draft",
+      owner_id: "user-1",
+    }).ok,
+    false
+  );
+});
+
 console.log("\nAll lifecycle guard tests passed.");

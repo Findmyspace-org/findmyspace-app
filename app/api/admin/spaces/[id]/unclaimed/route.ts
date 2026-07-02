@@ -13,6 +13,7 @@ import {
   fetchSpaceCrmLinkSummary,
   validateSpaceCrmLink,
 } from "@/lib/space-crm-link";
+import { deleteAdminUnclaimedSpace } from "@/lib/admin-unclaimed-space-delete";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -230,6 +231,39 @@ export async function PATCH(
     targetType: "space",
     targetId: id,
     meta: { fields: Object.keys(patch) },
+  });
+
+  return NextResponse.json({ ok: true });
+}
+
+export async function DELETE(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const auth = await requireAdminApi(_req);
+  if ("response" in auth) return auth.response;
+
+  const { id } = await params;
+  if (!UUID_RE.test(id)) {
+    return NextResponse.json({ error: "Invalid listing id." }, { status: 400 });
+  }
+
+  const admin = createServiceAdminClient();
+  if (!admin) {
+    return NextResponse.json({ error: "Server configuration error." }, { status: 500 });
+  }
+
+  const result = await deleteAdminUnclaimedSpace(admin, id);
+  if (!result.ok) {
+    const status = result.error.includes("not found") ? 404 : 400;
+    return NextResponse.json({ error: result.error }, { status });
+  }
+
+  await adminAudit({
+    action: "unclaimed_listing_deleted",
+    actorUserId: auth.userId,
+    targetType: "space",
+    targetId: id,
   });
 
   return NextResponse.json({ ok: true });

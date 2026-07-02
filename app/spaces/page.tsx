@@ -924,7 +924,7 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
   return (
     <main className="pb-10 text-[#192a3a]">
       <section className="relative h-[72px] w-full overflow-hidden sm:h-[104px] md:h-[180px] lg:h-[200px]">
-        <div className="pointer-events-none absolute inset-0 [transform:translateZ(0)]" aria-hidden>
+        <div className="pointer-events-none absolute inset-0" aria-hidden>
           <Image
             src={heroBackgroundImage}
             alt=""
@@ -933,15 +933,11 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
             quality={100}
             unoptimized
             sizes="(max-width: 768px) 100vw, 1920px"
-            className="object-cover object-center"
+            className="object-cover object-[center_40%] md:object-center"
           />
         </div>
-        <div
-          className="pointer-events-none absolute inset-y-0 left-0 w-full bg-gradient-to-r from-white/95 via-white/80 to-white/25 md:via-white/55 md:to-transparent"
-          aria-hidden
-        />
-        <div className="relative z-10 mx-auto flex h-full max-w-7xl items-center px-4 sm:px-6 md:items-center">
-          <div className="max-w-xl">
+        <div className="relative z-10 mx-auto flex h-full max-w-7xl items-center px-4 sm:px-6">
+          <div className="max-w-xl rounded-xl border border-[#e5e7eb] bg-white/90 px-3.5 py-2 shadow-[0_8px_24px_rgba(15,23,42,0.08)] sm:rounded-2xl sm:px-4 sm:py-2.5 md:px-5 md:py-3">
             <h1 className="text-xl font-semibold leading-tight text-[#0f172a] sm:text-2xl md:text-3xl">
               Browse spaces
             </h1>

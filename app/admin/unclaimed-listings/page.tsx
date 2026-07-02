@@ -20,6 +20,9 @@ import {
   matchesAdminListingFilter,
   type AdminListingFilterKey,
 } from "@/lib/admin-listing-status-display";
+import {
+  canDeleteUnclaimedListingByRecord,
+} from "@/lib/admin-unclaimed-space-delete-guards";
 import { formatGroupSizeAdmin } from "@/lib/group-size";
 
 type ListingRow = {
@@ -52,6 +55,9 @@ function AdminUnclaimedListingsPageContent({
   const [successMessage, setSuccessMessage] = useState("");
   const [statusFilter, setStatusFilter] = useState<AdminListingFilterKey>("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<ListingRow | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -90,7 +96,7 @@ function AdminUnclaimedListingsPageContent({
         .maybeSingle();
       const r = (profile as { role?: string } | null)?.role ?? null;
       setRole(r);
-      if (r === "admin") {
+      if (hasAdminUiAccess(r)) {
         await load();
       } else {
         setLoading(false);
@@ -111,6 +117,35 @@ function AdminUnclaimedListingsPageContent({
       return haystack.includes(q);
     });
   }, [listings, searchQuery, statusFilter]);
+
+  function canDeleteListing(row: ListingRow): boolean {
+    return canDeleteUnclaimedListingByRecord({
+      created_by_admin: true,
+      status: row.status,
+      owner_id: null,
+    }).ok;
+  }
+
+  async function confirmDelete() {
+    if (!deleteTarget) return;
+    setDeletingId(deleteTarget.id);
+    setDeleteError(null);
+    try {
+      await adminApiFetch(`/api/admin/spaces/${deleteTarget.id}/unclaimed`, {
+        method: "DELETE",
+      });
+      setListings((current) => current.filter((row) => row.id !== deleteTarget.id));
+      setSuccessMessage(
+        `Deleted “${deleteTarget.title?.trim() || "Untitled listing"}”.`
+      );
+      setDeleteTarget(null);
+      setMessage("");
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "Could not delete listing.");
+    } finally {
+      setDeletingId(null);
+    }
+  }
 
   if (loading) {
     return <main className="p-8 text-gray-600">Loading…</main>;
@@ -230,6 +265,7 @@ function AdminUnclaimedListingsPageContent({
                     status: row.status,
                     property_id: row.property_id,
                   });
+                  const showDelete = canDeleteListing(row);
 
                   return (
                     <tr
@@ -331,6 +367,21 @@ function AdminUnclaimedListingsPageContent({
                             </Link>
                           </>
                         ) : null}
+                        {showDelete ? (
+                          <>
+                            {" · "}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setDeleteTarget(row);
+                                setDeleteError(null);
+                              }}
+                              className="text-red-700 hover:underline"
+                            >
+                              Delete
+                            </button>
+                          </>
+                        ) : null}
                       </td>
                     </tr>
                   );
@@ -340,6 +391,60 @@ function AdminUnclaimedListingsPageContent({
           </div>
         )}
       </div>
+
+      {deleteTarget ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div
+            className="w-full max-w-md rounded-xl border border-gray-200 bg-white p-5 shadow-xl"
+            role="dialog"
+            aria-labelledby="delete-unclaimed-listing-title"
+          >
+            <h2
+              id="delete-unclaimed-listing-title"
+              className="text-lg font-semibold text-[#192a3a]"
+            >
+              Delete listing?
+            </h2>
+            <p className="mt-2 text-sm text-gray-600">
+              Delete{" "}
+              <span className="font-medium text-[#192a3a]">
+                “{deleteTarget.title?.trim() || "Untitled listing"}”
+              </span>
+              ? This cannot be undone.
+            </p>
+            <p className="mt-2 text-sm text-gray-600">
+              Photos and draft details will be permanently removed. Listings with
+              enquiries, claims, or bookings cannot be deleted here.
+            </p>
+            {deleteError ? (
+              <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+                {deleteError}
+              </div>
+            ) : null}
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={deletingId === deleteTarget.id}
+                onClick={() => {
+                  setDeleteTarget(null);
+                  setDeleteError(null);
+                }}
+                className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={deletingId === deleteTarget.id}
+                onClick={() => void confirmDelete()}
+                className="rounded-lg bg-red-800 px-4 py-2 text-sm font-semibold text-white hover:bg-red-900 disabled:opacity-50"
+              >
+                {deletingId === deleteTarget.id ? "Deleting…" : "Delete listing"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }
