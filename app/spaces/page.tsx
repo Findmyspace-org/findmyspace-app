@@ -6,12 +6,10 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import SpaceCard from "@/app/components/SpaceCard";
 import {
-  isEnquiryOnlyListing,
-} from "@/lib/listing-lifecycle";
-import {
   PUBLIC_LISTING_MODE_ENQUIRY,
   PUBLIC_LISTING_MODE_LIVE,
 } from "@/lib/public-listing-mode";
+import { spaceMatchesBrowsePriceRange } from "@/lib/public-browse-eligibility";
 import PriceRangeFilter from "@/app/components/PriceRangeFilter";
 import {
   Search,
@@ -89,6 +87,10 @@ type Space = {
   address_line_1: string | null;
   space_type: string | null;
   booking_unit: string | null;
+  price_amount?: number | null;
+  price_unit?: string | null;
+  deposit_required?: boolean | null;
+  deposit_amount?: number | null;
   price_per_hour: number | null;
   price_per_day: number | null;
   price_per_month: number | null;
@@ -638,36 +640,16 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
     }
 
     result = result.filter((space) => {
-      if (
-        bookingUnitFilter !== "all" &&
-        space.booking_unit !== bookingUnitFilter
-      ) {
-        return false;
-      }
-
       if (appliedWhen && !spaceMatchesWhenMinBooking(space, appliedWhen)) {
         return false;
       }
 
-      if (isEnquiryOnlyListing(space)) {
-        return true;
-      }
-
-      const price =
-        bookingUnitFilter === "hour"
-          ? space.price_per_hour
-          : bookingUnitFilter === "month"
-            ? space.price_per_month
-            : bookingUnitFilter === "day"
-              ? space.price_per_day
-              : space.booking_unit === "hour"
-                ? space.price_per_hour
-                : space.booking_unit === "month"
-                  ? space.price_per_month
-                  : space.price_per_day;
-
-      if (price == null) return false;
-      return price >= minPrice && price <= maxPrice;
+      return spaceMatchesBrowsePriceRange(
+        space,
+        minPrice,
+        maxPrice,
+        bookingUnitFilter
+      );
     });
 
     const searchQuery = search.trim() || parsedNlIntent.rawQuery;

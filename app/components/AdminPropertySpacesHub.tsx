@@ -445,6 +445,12 @@ export function AdminPropertySpacesHub({
                       <p className="text-xs font-medium text-gray-800">
                         {space.visibility_label}
                       </p>
+                      {!space.public_browse_eligible &&
+                      space.public_browse_exclusion_reason ? (
+                        <p className="mt-1 max-w-[14rem] text-[11px] leading-snug text-amber-800">
+                          Browse: {space.public_browse_exclusion_reason}
+                        </p>
+                      ) : null}
                     </td>
                     <td className="px-2 py-3">
                       <p className="text-xs text-gray-600">

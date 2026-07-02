@@ -9,7 +9,8 @@
     "lint": "eslint",
     "test:admin-patch": "node scripts/test-admin-user-patch.mjs",
     "test:lifecycle-guards": "node scripts/test-lifecycle-guards.mjs",
-    "test:property-logo": "node scripts/test-property-logo-validation.mjs"
+    "test:property-logo": "node scripts/test-property-logo-validation.mjs",
+    "test:public-browse": "node scripts/test-public-browse-eligibility.mjs"
   },
   "dependencies": {
     "@sparticuz/chromium": "^131.0.0",

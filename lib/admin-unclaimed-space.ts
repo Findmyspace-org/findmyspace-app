@@ -6,6 +6,7 @@ import { validateMinimumPublicContent } from "@/lib/admin-public-listing-mode";
 import {
   parseSpacePricingInput,
   syncLegacyPriceFields,
+  isSpacePriceUnit,
   type SpacePriceUnit,
 } from "@/lib/space-pricing";
 import {
@@ -271,6 +272,98 @@ export function parseUnclaimedSpaceInput(
   }
 
   return { ok: true, data };
+}
+
+/** Apply parsed admin space fields to a DB patch without clobbering unrelated columns. */
+export function applyUnclaimedSpaceUpdatePatch(
+  patch: Record<string, unknown>,
+  d: UnclaimedSpaceInput,
+  options?: { propertyId?: string }
+): void {
+  if (options?.propertyId) {
+    patch.property_id = options.propertyId;
+  }
+
+  if (d.title !== undefined) patch.title = d.title?.trim() || "Untitled listing";
+  if (d.description !== undefined) patch.description = d.description;
+  if (d.space_type !== undefined) patch.space_type = d.space_type;
+  if (d.city !== undefined) patch.city = d.city;
+  if (d.suburb !== undefined) patch.suburb = d.suburb;
+  if (d.province !== undefined) patch.province = d.province;
+  if (d.postal_code !== undefined) patch.postal_code = d.postal_code;
+  if (d.country !== undefined) patch.country = d.country ?? "South Africa";
+  if (d.latitude !== undefined) patch.latitude = d.latitude;
+  if (d.longitude !== undefined) patch.longitude = d.longitude;
+  if (d.min_group_size !== undefined) patch.min_group_size = d.min_group_size;
+  if (d.max_group_size !== undefined) patch.max_group_size = d.max_group_size;
+  if (d.crm_organisation_id !== undefined) {
+    patch.crm_organisation_id = d.crm_organisation_id;
+  }
+  if (d.crm_contact_id !== undefined) patch.crm_contact_id = d.crm_contact_id;
+  if (d.min_booking_hours !== undefined) patch.min_booking_hours = d.min_booking_hours;
+  if (d.min_booking_days !== undefined) patch.min_booking_days = d.min_booking_days;
+  if (d.min_booking_months !== undefined) {
+    patch.min_booking_months = d.min_booking_months;
+  }
+
+  const street = d.street_address ?? d.address_line_1;
+  if (street !== undefined || d.address_line_1 !== undefined) {
+    patch.street_address = street ?? null;
+    patch.address_line_1 = street ?? null;
+  }
+
+  const hasPricingField =
+    d.price_amount !== undefined ||
+    d.price_unit !== undefined ||
+    d.deposit_required !== undefined ||
+    d.deposit_amount !== undefined ||
+    d.booking_unit !== undefined;
+
+  if (hasPricingField) {
+    if (d.price_amount !== undefined) patch.price_amount = d.price_amount;
+    if (d.price_unit !== undefined) patch.price_unit = d.price_unit;
+    if (d.deposit_required !== undefined) patch.deposit_required = d.deposit_required;
+    if (d.deposit_amount !== undefined) patch.deposit_amount = d.deposit_amount;
+
+    const pricingParsed = parseSpacePricingInput({
+      price_amount: d.price_amount,
+      price_unit: d.price_unit,
+      deposit_required: d.deposit_required ?? false,
+      deposit_amount: d.deposit_amount ?? null,
+    });
+    if (pricingParsed.ok && pricingParsed.data) {
+      patch.booking_unit = pricingParsed.data.booking_unit;
+      patch.price_per_hour = pricingParsed.data.price_per_hour;
+      patch.price_per_day = pricingParsed.data.price_per_day;
+      patch.price_per_month = pricingParsed.data.price_per_month;
+    } else if (d.booking_unit !== undefined) {
+      patch.booking_unit = d.booking_unit ?? "day";
+    }
+  } else if (d.booking_unit !== undefined) {
+    patch.booking_unit = d.booking_unit ?? "day";
+  }
+
+  finalizeSpacePricingLegacyFields(patch);
+}
+
+/** Keep rental-period booking_unit and legacy price columns aligned with price_unit. */
+export function finalizeSpacePricingLegacyFields(patch: Record<string, unknown>): void {
+  const unitRaw = patch.price_unit;
+  if (typeof unitRaw !== "string" || !isSpacePriceUnit(unitRaw.trim())) return;
+
+  const unit = unitRaw.trim() as SpacePriceUnit;
+  const amount =
+    patch.price_amount === null || patch.price_amount === undefined
+      ? null
+      : typeof patch.price_amount === "number" && Number.isFinite(patch.price_amount)
+        ? patch.price_amount
+        : null;
+
+  const legacy = syncLegacyPriceFields(amount, unit);
+  patch.booking_unit = legacy.booking_unit;
+  patch.price_per_hour = legacy.price_per_hour;
+  patch.price_per_day = legacy.price_per_day;
+  patch.price_per_month = legacy.price_per_month;
 }
 
 export function buildUnclaimedSpaceRow(

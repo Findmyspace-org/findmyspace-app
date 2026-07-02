@@ -228,9 +228,17 @@ export function UnsavedChangesProvider({
   }, [pathname]);
 
   useEffect(() => {
+    if (!enabled || dirtySections.length > 0) {
+      return;
+    }
+
+    guardDepthRef.current = 0;
+    pathnameWhenDirtyRef.current = null;
+    isBypassingGuardRef.current = false;
+  }, [dirtySections.length, enabled]);
+
+  useEffect(() => {
     if (!enabled || dirtySections.length === 0 || isBypassingGuardRef.current) {
-      guardDepthRef.current = 0;
-      pathnameWhenDirtyRef.current = null;
       return;
     }
 

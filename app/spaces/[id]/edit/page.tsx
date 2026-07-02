@@ -745,14 +745,7 @@ export default function EditListingPage({ params }: PageProps) {
       latitude,
       longitude,
       space_type: spaceType,
-      booking_unit:
-        minBookingPayload.data.min_booking_hours != null
-          ? "hour"
-          : minBookingPayload.data.min_booking_days != null
-            ? "day"
-            : minBookingPayload.data.min_booking_months != null
-              ? "month"
-              : pricingPayload.data.booking_unit,
+      booking_unit: pricingPayload.data.booking_unit,
       price_amount: pricingPayload.data.price_amount,
       price_unit: pricingPayload.data.price_unit,
       price_per_hour: pricingPayload.data.price_per_hour,

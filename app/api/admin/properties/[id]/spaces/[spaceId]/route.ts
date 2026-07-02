@@ -2,12 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApi } from "@/lib/require-admin-api";
 import { adminAudit } from "@/lib/admin-audit";
 import {
+  applyUnclaimedSpaceUpdatePatch,
   createServiceAdminClient,
   fetchAdminPropertySpace,
   parseUnclaimedSpaceInput,
   syncSpaceAttributes,
 } from "@/lib/admin-unclaimed-space";
-import { parseSpacePricingInput } from "@/lib/space-pricing";
 import {
   fetchSpaceCrmLinkSummary,
   validateSpaceCrmLink,
@@ -131,67 +131,8 @@ export async function PATCH(
     return NextResponse.json({ error: crmValidated.error }, { status: 400 });
   }
 
-  const patch: Record<string, unknown> = {
-    property_id: propertyId,
-  };
-
-  const d = parsed.data;
-  if (d.title !== undefined) patch.title = d.title?.trim() || "Untitled listing";
-  if (d.description !== undefined) patch.description = d.description;
-  if (d.space_type !== undefined) patch.space_type = d.space_type;
-  if (d.booking_unit !== undefined) patch.booking_unit = d.booking_unit ?? "day";
-  if (d.price_amount !== undefined) patch.price_amount = d.price_amount;
-  if (d.price_unit !== undefined) patch.price_unit = d.price_unit;
-  if (d.deposit_required !== undefined) patch.deposit_required = d.deposit_required;
-  if (d.deposit_amount !== undefined) patch.deposit_amount = d.deposit_amount;
-  if (d.price_unit !== undefined || d.price_amount !== undefined) {
-    const pricingParsed = parseSpacePricingInput({
-      price_amount: d.price_amount,
-      price_unit: d.price_unit,
-      deposit_required: d.deposit_required ?? false,
-      deposit_amount: d.deposit_amount ?? null,
-    });
-    if (pricingParsed.ok && pricingParsed.data) {
-      patch.booking_unit = pricingParsed.data.booking_unit;
-      patch.price_per_hour = pricingParsed.data.price_per_hour;
-      patch.price_per_day = pricingParsed.data.price_per_day;
-      patch.price_per_month = pricingParsed.data.price_per_month;
-    }
-  }
-  if (d.city !== undefined) patch.city = d.city;
-  if (d.suburb !== undefined) patch.suburb = d.suburb;
-  if (d.province !== undefined) patch.province = d.province;
-  if (d.postal_code !== undefined) patch.postal_code = d.postal_code;
-  if (d.country !== undefined) patch.country = d.country ?? "South Africa";
-  if (d.latitude !== undefined) patch.latitude = d.latitude;
-  if (d.longitude !== undefined) patch.longitude = d.longitude;
-  if (d.min_group_size !== undefined) patch.min_group_size = d.min_group_size;
-  if (d.max_group_size !== undefined) patch.max_group_size = d.max_group_size;
-  if (d.crm_organisation_id !== undefined) {
-    patch.crm_organisation_id = d.crm_organisation_id;
-  }
-  if (d.crm_contact_id !== undefined) patch.crm_contact_id = d.crm_contact_id;
-  if (d.min_booking_hours !== undefined) patch.min_booking_hours = d.min_booking_hours;
-  if (d.min_booking_days !== undefined) patch.min_booking_days = d.min_booking_days;
-  if (d.min_booking_months !== undefined) patch.min_booking_months = d.min_booking_months;
-  if (
-    d.min_booking_hours != null ||
-    d.min_booking_days != null ||
-    d.min_booking_months != null
-  ) {
-    patch.booking_unit =
-      d.min_booking_hours != null
-        ? "hour"
-        : d.min_booking_days != null
-          ? "day"
-          : "month";
-  }
-
-  const street = d.street_address ?? d.address_line_1;
-  if (street !== undefined || d.address_line_1 !== undefined) {
-    patch.street_address = street ?? null;
-    patch.address_line_1 = street ?? null;
-  }
+  const patch: Record<string, unknown> = {};
+  applyUnclaimedSpaceUpdatePatch(patch, parsed.data, { propertyId });
 
   if (body.status === "draft") {
     patch.status = "draft";
@@ -202,7 +143,7 @@ export async function PATCH(
     return NextResponse.json({ error: updateErr.message }, { status: 500 });
   }
 
-  const attrErr = await syncSpaceAttributes(admin, spaceId, d.attributes);
+  const attrErr = await syncSpaceAttributes(admin, spaceId, parsed.data.attributes);
   if (attrErr) {
     return NextResponse.json({ error: attrErr }, { status: 500 });
   }

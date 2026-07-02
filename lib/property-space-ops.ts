@@ -13,6 +13,10 @@ import {
   type SpacePricingInput,
 } from "@/lib/space-pricing";
 import { isArchivedSpace } from "@/lib/space-archive";
+import {
+  formatPublicBrowseExclusionReason,
+  getPublicBrowseEligibility,
+} from "@/lib/public-browse-eligibility";
 
 export type PropertySpaceHealthInput = {
   id: string;
@@ -77,6 +81,8 @@ export type PropertySpaceRow = {
   visibility_label: string;
   bookability_label: string;
   is_archived: boolean;
+  public_browse_eligible: boolean;
+  public_browse_exclusion_reason: string | null;
 };
 
 export function spaceHasPricing(space: SpacePricingInput): boolean {
@@ -218,6 +224,18 @@ export function buildPropertySpaceRow(
     public_listing_mode: publicListingMode,
   });
   const archived = isArchivedSpace(status);
+  const browseEligibility = getPublicBrowseEligibility({
+    status,
+    public_listing_mode: publicListingMode,
+    price_amount: space.price_amount,
+    price_unit: space.price_unit,
+    deposit_required: space.deposit_required,
+    deposit_amount: space.deposit_amount,
+    price_per_hour: space.price_per_hour,
+    price_per_day: space.price_per_day,
+    price_per_month: space.price_per_month,
+    booking_unit: space.booking_unit,
+  });
 
   return {
     id: space.id,
@@ -249,5 +267,9 @@ export function buildPropertySpaceRow(
     visibility_label: visibility.visibilityLabel,
     bookability_label: visibility.bookabilityLabel,
     is_archived: archived,
+    public_browse_eligible: browseEligibility.eligible,
+    public_browse_exclusion_reason: formatPublicBrowseExclusionReason(
+      browseEligibility
+    ),
   };
 }
