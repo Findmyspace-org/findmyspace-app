@@ -8,6 +8,7 @@ import { SectionInlineAlert } from "@/app/components/SectionInlineAlert";
 import {
   UnsavedSectionIndicator,
   useRegisterUnsavedSection,
+  useUnsavedChangesOptional,
 } from "@/app/components/UnsavedChangesProvider";
 import { adminApiFetch } from "@/lib/admin-api-client";
 import { ownerApiFetch } from "@/lib/owner-api-client";
@@ -87,6 +88,7 @@ export function SpaceAiInformationPanel({
   const [setupHealth, setSetupHealth] = useState<AiKnowledgeSetupHealth | null>(null);
   const [savedTextBaseline, setSavedTextBaseline] = useState("");
   const { status, error, setSuccess, setFailure, clearForAction } = useSectionFeedback();
+  const unsavedCtx = useUnsavedChangesOptional();
 
   const fetchJson = apiMode === "admin" ? adminApiFetch : ownerApiFetch;
   const maxMb = Math.floor(SPACE_AI_MAX_BYTES / (1024 * 1024));
@@ -105,7 +107,8 @@ export function SpaceAiInformationPanel({
       setFileName(null);
       setUpdatedAt(null);
     }
-  }, []);
+    unsavedCtx?.markSectionsClean(["ai-information"]);
+  }, [unsavedCtx]);
 
   const loadDocument = useCallback(async () => {
     if (!spaceId) return;

@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabase";
 import {
   UnsavedSectionIndicator,
   useRegisterUnsavedSection,
+  useUnsavedChangesOptional,
 } from "@/app/components/UnsavedChangesProvider";
 import {
   createEmptyFieldDraft,
@@ -68,6 +69,7 @@ function serializeFieldsForDirtyCheck(fields: SpaceBookingRequirementFieldDraft[
 }
 
 export function SpaceBookingRequirementsSection({ spaceId, disabled = false }: Props) {
+  const unsavedCtx = useUnsavedChangesOptional();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -99,10 +101,11 @@ export function SpaceBookingRequirementsSection({ spaceId, disabled = false }: P
       const rows = ((data || []) as Record<string, unknown>[]).map(normalizeSpaceBookingFieldRow);
       setFields(rows);
       setSavedSnapshot(serializeFieldsForDirtyCheck(rows));
+      unsavedCtx?.markSectionsClean(["booking-requirements"]);
       if (rows.some((row) => row.active)) setOpen(true);
     }
     setLoading(false);
-  }, [spaceId]);
+  }, [spaceId, unsavedCtx]);
 
   useEffect(() => {
     void load();

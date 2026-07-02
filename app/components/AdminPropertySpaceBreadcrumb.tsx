@@ -1,5 +1,5 @@
-import Link from "next/link";
 import { ChevronRight } from "lucide-react";
+import { GuardedLink } from "@/app/components/UnsavedChangesProvider";
 
 type Props = {
   propertyId: string;
@@ -16,20 +16,20 @@ export function AdminPropertySpaceBreadcrumb({
     <nav aria-label="Breadcrumb" className="mb-4 space-y-2">
       <ol className="flex flex-wrap items-center gap-1 text-sm text-gray-600">
         <li>
-          <Link href="/admin/properties" className="font-medium hover:text-gray-900">
+          <GuardedLink href="/admin/properties" className="font-medium hover:text-gray-900">
             Properties
-          </Link>
+          </GuardedLink>
         </li>
         <li aria-hidden className="text-gray-400">
           <ChevronRight className="h-3.5 w-3.5" />
         </li>
         <li>
-          <Link
+          <GuardedLink
             href={`/admin/properties/${propertyId}`}
             className="font-medium hover:text-gray-900"
           >
             {propertyName}
-          </Link>
+          </GuardedLink>
         </li>
         {spaceTitle ? (
           <>
@@ -41,15 +41,15 @@ export function AdminPropertySpaceBreadcrumb({
         ) : null}
       </ol>
       <div className="flex flex-wrap gap-3 text-sm">
-        <Link
+        <GuardedLink
           href={`/admin/properties/${propertyId}`}
           className="font-medium text-[#0f2740] hover:underline"
         >
           ← Back to property
-        </Link>
-        <Link href="/admin/properties" className="text-gray-600 hover:underline">
+        </GuardedLink>
+        <GuardedLink href="/admin/properties" className="text-gray-600 hover:underline">
           All properties
-        </Link>
+        </GuardedLink>
       </div>
     </nav>
   );

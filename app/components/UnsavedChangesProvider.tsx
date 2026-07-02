@@ -38,6 +38,10 @@ type UnsavedChangesContextValue = {
   markSectionsClean: (sectionIds?: string[]) => void;
   /** Disable beforeunload / link interception before programmatic full-page navigation. */
   releaseGuardForUnload: () => void;
+  /** Form baseline is synced — allow history guard and navigation blocking. */
+  setBaselineReady: (ready: boolean) => void;
+  /** Clear synthetic history guard entries after save or baseline sync. */
+  resetHistoryGuard: () => void;
 };
 
 const UnsavedChangesContext = createContext<UnsavedChangesContextValue | null>(null);
@@ -125,6 +129,7 @@ export function UnsavedChangesProvider({
   const pathnameWhenDirtyRef = useRef<string | null>(null);
   const backFallbackHrefRef = useRef(backFallbackHref);
   const saveAndLeaveGenerationRef = useRef(0);
+  const baselineReadyRef = useRef(false);
 
   backFallbackHrefRef.current = backFallbackHref;
   modalOpenRef.current = modalOpen;
@@ -134,6 +139,33 @@ export function UnsavedChangesProvider({
   }, []);
 
   const bump = useCallback(() => setRevision((value) => value + 1), []);
+
+  const resetHistoryGuard = useCallback(() => {
+    const depth = guardDepthRef.current;
+    guardDepthRef.current = 0;
+    pathnameWhenDirtyRef.current = null;
+    if (depth <= 0) return;
+
+    isBypassingGuardRef.current = true;
+    debugUnsaved("unwinding history guard", { depth });
+    window.history.go(-depth);
+    window.setTimeout(() => {
+      isBypassingGuardRef.current = false;
+    }, 0);
+  }, []);
+
+  const setBaselineReady = useCallback(
+    (ready: boolean) => {
+      if (baselineReadyRef.current === ready) return;
+      baselineReadyRef.current = ready;
+      debugUnsaved("baseline ready", { ready });
+      if (ready && !hasDirtySections()) {
+        resetHistoryGuard();
+      }
+      bump();
+    },
+    [bump, hasDirtySections, resetHistoryGuard]
+  );
 
   const registerSection = useCallback(
     (id: string, config: UnsavedSectionConfig) => {
@@ -174,7 +206,7 @@ export function UnsavedChangesProvider({
     [dirtySections]
   );
 
-  const hasUnsavedChanges = enabled && !isBypassingGuardRef.current && hasDirtySections();
+  const hasUnsavedChanges = enabled && baselineReadyRef.current && hasDirtySections();
 
   const markSectionsClean = useCallback(
     (sectionIds?: string[]) => {
@@ -215,7 +247,12 @@ export function UnsavedChangesProvider({
   }, []);
 
   const isNavigationBlocked = useCallback(() => {
-    return enabled && !isBypassingGuardRef.current && hasDirtySections();
+    return (
+      enabled &&
+      baselineReadyRef.current &&
+      !isBypassingGuardRef.current &&
+      hasDirtySections()
+    );
   }, [enabled, hasDirtySections]);
 
   const canSaveAndLeave = dirtySections.every(([, section]) => typeof section.save === "function");
@@ -298,6 +335,7 @@ export function UnsavedChangesProvider({
   useEffect(() => {
     isBypassingGuardRef.current = false;
     guardDepthRef.current = 0;
+    baselineReadyRef.current = false;
     pathnameWhenDirtyRef.current = null;
     debugUnsaved("pathname changed — guard reset", { pathname });
   }, [pathname]);
@@ -314,21 +352,11 @@ export function UnsavedChangesProvider({
       setSavingAll(false);
     }
 
-    const depth = guardDepthRef.current;
-    if (depth > 0 && !isBypassingGuardRef.current) {
-      guardDepthRef.current = 0;
-      pathnameWhenDirtyRef.current = null;
-      isBypassingGuardRef.current = true;
-      window.history.go(-depth);
-      const timer = window.setTimeout(() => {
-        isBypassingGuardRef.current = false;
-      }, 100);
-      return () => window.clearTimeout(timer);
-    }
-  }, [dirtySections.length, enabled, hasDirtySections]);
+    resetHistoryGuard();
+  }, [dirtySections.length, enabled, hasDirtySections, resetHistoryGuard]);
 
   useEffect(() => {
-    if (!enabled || !hasDirtySections() || isBypassingGuardRef.current) {
+    if (!enabled || !baselineReadyRef.current || !hasDirtySections() || isBypassingGuardRef.current) {
       return;
     }
 
@@ -482,6 +510,8 @@ export function UnsavedChangesProvider({
       saveAllDirtySections,
       markSectionsClean,
       releaseGuardForUnload,
+      setBaselineReady,
+      resetHistoryGuard,
     }),
     [
       dirtySections,
@@ -491,6 +521,8 @@ export function UnsavedChangesProvider({
       saveAllDirtySections,
       markSectionsClean,
       releaseGuardForUnload,
+      setBaselineReady,
+      resetHistoryGuard,
       unregisterSection,
     ]
   );

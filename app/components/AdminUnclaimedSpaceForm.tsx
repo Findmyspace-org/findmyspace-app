@@ -239,7 +239,8 @@ export function AdminUnclaimedSpaceForm({
     clearForAction: clearSaveFeedback,
   } = useSectionFeedback();
   const [publishing, setPublishing] = useState(false);
-  const [saveIntent, setSaveIntent] = useState<"continue" | "return" | null>(null);
+  type SaveNavigation = "stay" | "return-to-list" | "return-to-property";
+  const [saveIntent, setSaveIntent] = useState<SaveNavigation | null>(null);
   const [crmLink, setCrmLink] = useState<CrmLinkState>({
     crm_organisation_id:
       initialCrmLink?.crm_organisation_id ?? defaultOrganisationId ?? null,
@@ -271,13 +272,13 @@ export function AdminUnclaimedSpaceForm({
   }, []);
 
   const navigateAfterSave = useCallback(
-    (returnToProperty: boolean) => {
-      if (!returnToProperty) return;
+    (navigation: SaveNavigation) => {
+      if (navigation === "stay") return;
 
       unsavedCtx?.markSectionsClean();
       unsavedCtx?.releaseGuardForUnload();
 
-      if (propertyId) {
+      if (navigation === "return-to-property") {
         window.location.assign(appendSavedQuery(resolvedBackHref));
         return;
       }
@@ -289,14 +290,7 @@ export function AdminUnclaimedSpaceForm({
 
       window.location.assign(appendSavedQuery(listHref));
     },
-    [
-      appendSavedQuery,
-      listHref,
-      onSavedAndExit,
-      propertyId,
-      resolvedBackHref,
-      unsavedCtx,
-    ]
+    [appendSavedQuery, listHref, onSavedAndExit, resolvedBackHref, unsavedCtx]
   );
 
   useEffect(() => {
@@ -339,8 +333,10 @@ export function AdminUnclaimedSpaceForm({
     unsavedCtx?.hasUnsavedChanges ?? isMainFormDirty;
 
   const saving = formIsSaving;
-  const savingReturn = saving && saveIntent === "return";
-  const savingContinue = saving && saveIntent === "continue";
+  const savingReturn =
+    saving &&
+    (saveIntent === "return-to-list" || saveIntent === "return-to-property");
+  const savingContinue = saving && saveIntent === "stay";
 
   const initialImagesKey = useMemo(
     () => initialImages.map((img) => img.id).join(","),
@@ -363,6 +359,8 @@ export function AdminUnclaimedSpaceForm({
       state: nextState,
       crmLink: baselineCrm,
     });
+    unsavedCtx?.markSectionsClean(["admin-space-details"]);
+    unsavedCtx?.setBaselineReady(true);
 
     if (mode === "edit" && spaceId && !localImagesTouchedRef.current) {
       setImages(sortSpaceImages(initialImages));
@@ -380,6 +378,7 @@ export function AdminUnclaimedSpaceForm({
     defaultOrganisationId,
     defaultContactId,
     markSaved,
+    unsavedCtx,
   ]);
 
   const handleCrmLinkPersisted = useCallback(
@@ -389,8 +388,9 @@ export function AdminUnclaimedSpaceForm({
         state: formSnapshotRef.current.state,
         crmLink: next,
       });
+      unsavedCtx?.markSectionsClean(["admin-space-details"]);
     },
-    [markSaved]
+    [markSaved, unsavedCtx]
   );
 
   const persistMainForm = useCallback(async (): Promise<boolean> => {
@@ -458,10 +458,10 @@ export function AdminUnclaimedSpaceForm({
   }, [activeSpaceId, markSaved, propertyId, setSaveFailure, status]);
 
   const handleSave = useCallback(
-    async ({ returnToProperty }: { returnToProperty: boolean }): Promise<boolean> => {
+    async ({ navigation }: { navigation: SaveNavigation }): Promise<boolean> => {
       if (readOnly) return true;
       beginSave();
-      setSaveIntent(returnToProperty ? "return" : "continue");
+      setSaveIntent(navigation);
       clearSaveFeedback();
       clearSaveError();
       try {
@@ -536,17 +536,17 @@ export function AdminUnclaimedSpaceForm({
 
           if (propertyId) {
             finishSave({ ok: true, value: formSnapshot });
-            if (returnToProperty) {
-              navigateAfterSave(true);
+            if (navigation === "return-to-property") {
+              navigateAfterSave("return-to-property");
             } else {
               router.replace(
                 `/admin/properties/${propertyId}/spaces/${newId}/edit?saved=1`
               );
               onCreated?.(newId);
             }
-          } else if (returnToProperty) {
+          } else if (navigation === "return-to-list") {
             finishSave({ ok: true, value: formSnapshot });
-            navigateAfterSave(true);
+            navigateAfterSave("return-to-list");
           } else {
             setSaveSuccess(
               "Draft saved. You can upload photos and AI Information below."
@@ -577,8 +577,9 @@ export function AdminUnclaimedSpaceForm({
 
           finishSave({ ok: true, value: formSnapshotRef.current });
           unsavedCtx?.markSectionsClean();
-          if (returnToProperty) {
-            navigateAfterSave(true);
+          unsavedCtx?.resetHistoryGuard();
+          if (navigation === "return-to-property" || navigation === "return-to-list") {
+            navigateAfterSave(navigation);
           } else {
             setSaveSuccess("Saved successfully.");
           }
@@ -926,38 +927,55 @@ export function AdminUnclaimedSpaceForm({
             />
             <div className="flex flex-wrap gap-3">
             {activeMode === "edit" ? (
-              <>
-                <button
-                  type="button"
-                  disabled={saving || publishing || !hasUnsavedChanges}
-                  onClick={() =>
-                    void handleSave({ returnToProperty: Boolean(propertyId) })
-                  }
-                  className="rounded-lg bg-[#0f2740] px-5 py-2.5 text-sm font-semibold text-white hover:opacity-95 disabled:opacity-60"
-                >
-                  {savingReturn
-                    ? "Saving & returning…"
-                    : savingContinue
-                      ? "Saving…"
-                      : propertyId
-                        ? "Save & return to property"
-                        : "Save"}
-                </button>
-                <button
-                  type="button"
-                  disabled={saving || publishing || !hasUnsavedChanges}
-                  onClick={() => void handleSave({ returnToProperty: false })}
-                  className="rounded-lg border border-gray-300 bg-white px-5 py-2.5 text-sm font-semibold text-gray-800 hover:bg-gray-50 disabled:opacity-60"
-                >
-                  {savingContinue ? "Saving…" : "Save & continue editing"}
-                </button>
-              </>
+              propertyId ? (
+                <>
+                  <button
+                    type="button"
+                    disabled={saving || publishing || !hasUnsavedChanges}
+                    onClick={() => void handleSave({ navigation: "return-to-property" })}
+                    className="rounded-lg bg-[#0f2740] px-5 py-2.5 text-sm font-semibold text-white hover:opacity-95 disabled:opacity-60"
+                  >
+                    {savingReturn
+                      ? "Saving & returning…"
+                      : savingContinue
+                        ? "Saving…"
+                        : "Save & return to property"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={saving || publishing || !hasUnsavedChanges}
+                    onClick={() => void handleSave({ navigation: "stay" })}
+                    className="rounded-lg border border-gray-300 bg-white px-5 py-2.5 text-sm font-semibold text-gray-800 hover:bg-gray-50 disabled:opacity-60"
+                  >
+                    {savingContinue ? "Saving…" : "Save & continue editing"}
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    disabled={saving || publishing || !hasUnsavedChanges}
+                    onClick={() => void handleSave({ navigation: "stay" })}
+                    className="rounded-lg bg-[#0f2740] px-5 py-2.5 text-sm font-semibold text-white hover:opacity-95 disabled:opacity-60"
+                  >
+                    {savingContinue ? "Saving…" : "Save"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={saving || publishing || !hasUnsavedChanges}
+                    onClick={() => void handleSave({ navigation: "return-to-list" })}
+                    className="rounded-lg border border-gray-300 bg-white px-5 py-2.5 text-sm font-semibold text-gray-800 hover:bg-gray-50 disabled:opacity-60"
+                  >
+                    {savingReturn ? "Saving & returning…" : "Save & return to list"}
+                  </button>
+                </>
+              )
             ) : propertyId ? (
               <>
                 <button
                   type="button"
                   disabled={saving || publishing}
-                  onClick={() => void handleSave({ returnToProperty: false })}
+                  onClick={() => void handleSave({ navigation: "stay" })}
                   className="rounded-lg bg-[#0f2740] px-5 py-2.5 text-sm font-semibold text-white hover:opacity-95 disabled:opacity-60"
                 >
                   {savingContinue ? "Saving…" : "Save draft"}
@@ -965,7 +983,7 @@ export function AdminUnclaimedSpaceForm({
                 <button
                   type="button"
                   disabled={saving || publishing}
-                  onClick={() => void handleSave({ returnToProperty: true })}
+                  onClick={() => void handleSave({ navigation: "return-to-property" })}
                   className="rounded-lg border border-gray-300 bg-white px-5 py-2.5 text-sm font-semibold text-gray-800 hover:bg-gray-50 disabled:opacity-60"
                 >
                   {savingReturn ? "Saving & returning…" : "Save & return to property"}
@@ -975,7 +993,7 @@ export function AdminUnclaimedSpaceForm({
               <button
                 type="button"
                 disabled={saving || publishing}
-                onClick={() => void handleSave({ returnToProperty: false })}
+                onClick={() => void handleSave({ navigation: "stay" })}
                 className="rounded-lg border border-gray-300 bg-white px-5 py-2.5 text-sm font-semibold text-gray-800 hover:bg-gray-50 disabled:opacity-60"
               >
                 {savingContinue ? "Saving…" : "Save draft"}
@@ -1071,12 +1089,7 @@ function AdminSpaceDetailsDirtyRegistration({
   useRegisterUnsavedSection("admin-space-details", {
     label: "Space details",
     isDirty,
-    save: readOnly
-      ? undefined
-      : async () => {
-          if (!isDirty) return true;
-          return persistMainForm();
-        },
+    save: readOnly ? undefined : persistMainForm,
   });
   return null;
 }
