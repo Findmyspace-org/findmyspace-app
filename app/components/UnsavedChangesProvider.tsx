@@ -10,8 +10,10 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Loader2, X } from "lucide-react";
+import type { ComponentProps } from "react";
 
 export type UnsavedSectionConfig = {
   label: string;
@@ -31,6 +33,7 @@ type UnsavedChangesContextValue = {
   registerSection: (id: string, config: UnsavedSectionConfig) => void;
   unregisterSection: (id: string) => void;
   requestNavigation: (pending: PendingNavigation) => void;
+  saveAllDirtySections: (options?: { skipIds?: string[] }) => Promise<boolean>;
 };
 
 const UnsavedChangesContext = createContext<UnsavedChangesContextValue | null>(null);
@@ -144,6 +147,24 @@ export function UnsavedChangesProvider({
     return Array.from(sectionsRef.current.entries()).filter(([, section]) => section.isDirty);
   }, [revision]);
 
+  const saveAllDirtySections = useCallback(
+    async (options?: { skipIds?: string[] }) => {
+      const skip = new Set(options?.skipIds ?? []);
+      for (const [id, section] of dirtySections) {
+        if (skip.has(id)) continue;
+        if (!section.save) {
+          return false;
+        }
+        const ok = await section.save();
+        if (!ok) {
+          return false;
+        }
+      }
+      return true;
+    },
+    [dirtySections]
+  );
+
   const hasUnsavedChanges = enabled && !isBypassingGuardRef.current && dirtySections.length > 0;
 
   const canSaveAndLeave = dirtySections.every(([, section]) => typeof section.save === "function");
@@ -232,9 +253,23 @@ export function UnsavedChangesProvider({
       return;
     }
 
-    guardDepthRef.current = 0;
-    pathnameWhenDirtyRef.current = null;
-    isBypassingGuardRef.current = false;
+    if (modalOpenRef.current) {
+      setModalOpen(false);
+      setSaveError(null);
+      pendingNavRef.current = null;
+      setSavingAll(false);
+    }
+
+    const depth = guardDepthRef.current;
+    if (depth > 0) {
+      guardDepthRef.current = 0;
+      pathnameWhenDirtyRef.current = null;
+      isBypassingGuardRef.current = true;
+      window.history.go(-depth);
+      window.setTimeout(() => {
+        isBypassingGuardRef.current = false;
+      }, 0);
+    }
   }, [dirtySections.length, enabled]);
 
   useEffect(() => {
@@ -374,8 +409,16 @@ export function UnsavedChangesProvider({
       registerSection,
       unregisterSection,
       requestNavigation,
+      saveAllDirtySections,
     }),
-    [dirtySections, hasUnsavedChanges, registerSection, requestNavigation, unregisterSection]
+    [
+      dirtySections,
+      hasUnsavedChanges,
+      registerSection,
+      requestNavigation,
+      saveAllDirtySections,
+      unregisterSection,
+    ]
   );
 
   return (
@@ -445,5 +488,32 @@ export function UnsavedChangesProvider({
         </div>
       ) : null}
     </UnsavedChangesContext.Provider>
+  );
+}
+
+type GuardedLinkProps = ComponentProps<typeof Link>;
+
+/** Navigates via the unsaved-changes guard when the form is dirty. */
+export function GuardedLink({ href, onClick, ...props }: GuardedLinkProps) {
+  const ctx = useUnsavedChangesOptional();
+  const destination =
+    typeof href === "string"
+      ? href
+      : `${href.pathname || ""}${href.search || ""}${href.hash || ""}`;
+
+  return (
+    <Link
+      href={href}
+      {...props}
+      onClick={(event) => {
+        onClick?.(event);
+        if (event.defaultPrevented) return;
+        if (!ctx?.hasUnsavedChanges) return;
+
+        event.preventDefault();
+        event.stopPropagation();
+        ctx.requestNavigation({ type: "href", href: destination, source: "guarded-link" });
+      }}
+    />
   );
 }

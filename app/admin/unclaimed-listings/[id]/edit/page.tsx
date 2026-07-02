@@ -10,7 +10,7 @@ import { supabase } from "@/lib/supabase";
 import { adminApiFetch } from "@/lib/admin-api-client";
 import { AdminUnclaimedSpaceForm } from "@/app/components/AdminUnclaimedSpaceForm";
 import { AdminListingClaimPanel } from "@/app/components/AdminListingClaimPanel";
-import { UnsavedChangesProvider } from "@/app/components/UnsavedChangesProvider";
+import { GuardedLink, UnsavedChangesProvider } from "@/app/components/UnsavedChangesProvider";
 import { UnclaimedListingEnquirySocialProof } from "@/app/components/UnclaimedListingEnquirySocialProof";
 import { sortSpaceImages } from "@/lib/sort-space-images";
 import { spacePricingFormFromRow } from "@/lib/space-pricing";
@@ -140,16 +140,19 @@ export default function EditUnclaimedListingPage() {
   }
 
   return (
-    <UnsavedChangesProvider enabled={!readOnly}>
+    <UnsavedChangesProvider
+      enabled={!readOnly}
+      backFallbackHref="/admin/unclaimed-listings"
+    >
     <div className="mx-auto max-w-3xl">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <Link
+          <GuardedLink
             href="/admin/unclaimed-listings"
             className="inline-flex items-center gap-2 text-sm font-medium text-gray-700 hover:text-gray-900"
           >
             <ArrowLeft className="h-4 w-4" />
             Back to unclaimed listings
-          </Link>
+          </GuardedLink>
           {space.status === "draft" || space.status === "unclaimed" ? (
             <Link
               href={

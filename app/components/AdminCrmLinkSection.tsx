@@ -33,6 +33,13 @@ type Props = {
     organisation_name?: string | null;
     contact_name?: string | null;
   }) => void;
+  /** Called after CRM link is persisted to the server (edit mode). */
+  onPersisted?: (value: {
+    crm_organisation_id: string | null;
+    crm_contact_id: string | null;
+    organisation_name?: string | null;
+    contact_name?: string | null;
+  }) => void;
   initialLink?: SpaceCrmLinkSummary | null;
   readOnly?: boolean;
   /** Prefill org search when opening from CRM org page. */
@@ -46,6 +53,7 @@ export function AdminCrmLinkSection({
   spaceId,
   value,
   onChange,
+  onPersisted,
   initialLink,
   readOnly = false,
   defaultOrganisationId,
@@ -182,10 +190,12 @@ export function AdminCrmLinkSection({
           method: "DELETE",
         });
         setLink(null);
-        onChange?.({
+        const cleared = {
           crm_organisation_id: null,
           crm_contact_id: null,
-        });
+        };
+        onChange?.(cleared);
+        onPersisted?.(cleared);
         return;
       }
 
@@ -199,12 +209,14 @@ export function AdminCrmLinkSection({
       });
       const saved = (result.link as SpaceCrmLinkSummary) || next;
       setLink(saved);
-      onChange?.({
+      const persisted = {
         crm_organisation_id: saved.crm_organisation_id,
         crm_contact_id: saved.crm_contact_id,
         organisation_name: saved.organisation_name,
         contact_name: saved.contact_name,
-      });
+      };
+      onChange?.(persisted);
+      onPersisted?.(persisted);
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Could not save CRM link.");
     } finally {

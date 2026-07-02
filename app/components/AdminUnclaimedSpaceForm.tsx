@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft } from "lucide-react";
@@ -40,6 +39,7 @@ import {
 } from "@/lib/space-min-booking";
 import MarkdownDescriptionEditor from "@/app/components/MarkdownDescriptionEditor";
 import {
+  GuardedLink,
   UnsavedChangesProvider,
   UnsavedSectionIndicator,
   useRegisterUnsavedSection,
@@ -111,7 +111,11 @@ function payloadFromState(state: FormState, crmLink: CrmLinkState) {
     country: state.country,
     latitude: state.latitude,
     longitude: state.longitude,
-    attributes: state.attributes,
+    attributes: Object.fromEntries(
+      Object.keys(state.attributes)
+        .sort()
+        .map((key) => [key, [...(state.attributes[key] || [])].sort()])
+    ),
     ...groupSizePayloadFromForm(state.spaceType, state.minGroupSize, state.maxGroupSize),
     ...pricing.data,
     ...minBooking.data,
@@ -221,6 +225,7 @@ export function AdminUnclaimedSpaceForm({
   wrapWithUnsavedGuard = true,
 }: AdminUnclaimedSpaceFormProps) {
   const router = useRouter();
+  const unsavedCtx = useUnsavedChangesOptional();
   const [state, setState] = useState<FormState>(() => formStateFromInitial(initial));
   const [images, setImages] = useState<AdminSpaceImage[]>(() =>
     sortSpaceImages(initialImages)
@@ -302,6 +307,8 @@ export function AdminUnclaimedSpaceForm({
     () => ({ state, crmLink }),
     [state, crmLink]
   );
+  const formSnapshotRef = useRef(formSnapshot);
+  formSnapshotRef.current = formSnapshot;
 
   const {
     isDirty: isMainFormDirty,
@@ -317,6 +324,9 @@ export function AdminUnclaimedSpaceForm({
     current: formSnapshot,
     enabled: !readOnly,
   });
+
+  const hasUnsavedChanges =
+    unsavedCtx?.hasUnsavedChanges ?? isMainFormDirty;
 
   const saving = formIsSaving;
   const savingReturn = saving && saveIntent === "return";
@@ -361,6 +371,81 @@ export function AdminUnclaimedSpaceForm({
     defaultContactId,
     markSaved,
   ]);
+
+  const handleCrmLinkPersisted = useCallback(
+    (next: CrmLinkState) => {
+      setCrmLink(next);
+      markSaved({
+        state: formSnapshotRef.current.state,
+        crmLink: next,
+      });
+    },
+    [markSaved]
+  );
+
+  const persistMainForm = useCallback(async (): Promise<boolean> => {
+    const snapshot = formSnapshotRef.current;
+    const { state: formState, crmLink: formCrmLink } = snapshot;
+
+    const groupSizeErr = validateGroupSizeFormValues(
+      formState.spaceType,
+      formState.minGroupSize,
+      formState.maxGroupSize
+    );
+    if (groupSizeErr) {
+      setSaveFailure(groupSizeErr);
+      return false;
+    }
+
+    const pricingErr = validateSpacePricingFormValues(
+      formState.priceAmount,
+      formState.priceUnit,
+      formState.depositRequired,
+      formState.depositAmount
+    );
+    if (pricingErr) {
+      setSaveFailure(pricingErr);
+      return false;
+    }
+
+    const minBookingErr = validateMinBookingFormValues(
+      formState.minBookingDuration,
+      formState.minBookingUnit
+    );
+    if (minBookingErr) {
+      setSaveFailure(minBookingErr);
+      return false;
+    }
+
+    const periodErr = validateSpacePricingPeriodFormFields({
+      bookingUnit: formState.bookingUnit,
+      priceUnit: formState.priceUnit,
+      minBookingUnit: formState.minBookingUnit,
+      minBookingDuration: formState.minBookingDuration,
+    });
+    if (periodErr) {
+      setSaveFailure(periodErr);
+      return false;
+    }
+
+    if (!activeSpaceId) {
+      return false;
+    }
+
+    const body = payloadFromState(formState, formCrmLink);
+    const patchUrl = propertyId
+      ? `/api/admin/properties/${propertyId}/spaces/${activeSpaceId}`
+      : `/api/admin/spaces/${activeSpaceId}/unclaimed`;
+
+    await adminApiFetch(patchUrl, {
+      method: "PATCH",
+      body: JSON.stringify(
+        status === "draft" ? { ...body, status: "draft" as const } : body
+      ),
+    });
+    markSaved(formSnapshotRef.current);
+    return true;
+  }, [activeSpaceId, markSaved, propertyId, setSaveFailure, status]);
 
   const handleSave = useCallback(
     async ({ returnToProperty }: { returnToProperty: boolean }): Promise<boolean> => {
@@ -460,16 +545,27 @@ export function AdminUnclaimedSpaceForm({
             finishSave({ ok: true, value: formSnapshot });
           }
         } else if (activeSpaceId) {
-          const patchUrl = propertyId
-            ? `/api/admin/properties/${propertyId}/spaces/${activeSpaceId}`
-            : `/api/admin/spaces/${activeSpaceId}/unclaimed`;
-          await adminApiFetch(patchUrl, {
-            method: "PATCH",
-            body: JSON.stringify(
-              status === "draft" ? { ...body, status: "draft" as const } : body
-            ),
-          });
-          finishSave({ ok: true, value: formSnapshot });
+          if (isMainFormDirty) {
+            const mainOk = await persistMainForm();
+            if (!mainOk) {
+              finishSave({ ok: false, error: "Could not save space details." });
+              return false;
+            }
+          }
+
+          if (unsavedCtx) {
+            const sectionsOk = await unsavedCtx.saveAllDirtySections({
+              skipIds: ["admin-space-details"],
+            });
+            if (!sectionsOk) {
+              const sectionError = "Some sections could not be saved.";
+              setSaveFailure(sectionError);
+              finishSave({ ok: false, error: sectionError });
+              return false;
+            }
+          }
+
+          finishSave({ ok: true, value: formSnapshotRef.current });
           if (returnToProperty) {
             navigateAfterSave(true);
           } else {
@@ -499,13 +595,17 @@ export function AdminUnclaimedSpaceForm({
       mode,
       navigateAfterSave,
       onCreated,
+      persistMainForm,
       propertyId,
       readOnly,
       router,
+      saveError,
       setSaveFailure,
       setSaveSuccess,
       state,
       status,
+      unsavedCtx,
+      isMainFormDirty,
     ]
   );
 
@@ -580,7 +680,7 @@ export function AdminUnclaimedSpaceForm({
       <AdminSpaceDetailsDirtyRegistration
         isDirty={isMainFormDirty}
         readOnly={readOnly}
-        handleSave={handleSave}
+        persistMainForm={persistMainForm}
       />
     <div className="space-y-6 pb-4">
       <div className="flex flex-wrap items-center gap-2">
@@ -741,6 +841,7 @@ export function AdminUnclaimedSpaceForm({
             crm_contact_id: next.crm_contact_id,
           })
         }
+        onPersisted={handleCrmLinkPersisted}
       />
 
       <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
@@ -797,7 +898,7 @@ export function AdminUnclaimedSpaceForm({
               <>
                 <button
                   type="button"
-                  disabled={saving || publishing || !isMainFormDirty}
+                  disabled={saving || publishing || !hasUnsavedChanges}
                   onClick={() => void handleSave({ returnToProperty: true })}
                   className="rounded-lg bg-[#0f2740] px-5 py-2.5 text-sm font-semibold text-white hover:opacity-95 disabled:opacity-60"
                 >
@@ -811,7 +912,7 @@ export function AdminUnclaimedSpaceForm({
                 </button>
                 <button
                   type="button"
-                  disabled={saving || publishing || !isMainFormDirty}
+                  disabled={saving || publishing || !hasUnsavedChanges}
                   onClick={() => void handleSave({ returnToProperty: false })}
                   className="rounded-lg border border-gray-300 bg-white px-5 py-2.5 text-sm font-semibold text-gray-800 hover:bg-gray-50 disabled:opacity-60"
                 >
@@ -866,24 +967,24 @@ export function AdminUnclaimedSpaceForm({
           ) : null}
           <SectionInlineAlert status={saveStatus} error={saveError} className="mt-3" />
           <div className="flex flex-wrap items-center gap-4 border-t border-gray-100 pt-3 text-sm">
-            <Link
+            <GuardedLink
               href={resolvedBackHref}
               className="inline-flex items-center gap-1.5 font-medium text-gray-700 hover:text-gray-900"
             >
               <ArrowLeft className="h-4 w-4" />
               {resolvedBackLabel}
-            </Link>
+            </GuardedLink>
             {!propertyId ? (
-              <Link href={listHref} className="font-medium text-[#0f2740] hover:underline">
+              <GuardedLink href={listHref} className="font-medium text-[#0f2740] hover:underline">
                 {listLabel}
-              </Link>
+              </GuardedLink>
             ) : (
-              <Link
+              <GuardedLink
                 href="/admin/unclaimed-listings"
                 className="font-medium text-gray-600 hover:underline"
               >
                 All unclaimed listings
-              </Link>
+              </GuardedLink>
             )}
           </div>
         </div>
@@ -928,16 +1029,21 @@ function AdminCombinedSaveStateIndicator({
 function AdminSpaceDetailsDirtyRegistration({
   isDirty,
   readOnly,
-  handleSave,
+  persistMainForm,
 }: {
   isDirty: boolean;
   readOnly: boolean;
-  handleSave: (options: { returnToProperty: boolean }) => Promise<boolean>;
+  persistMainForm: () => Promise<boolean>;
 }) {
   useRegisterUnsavedSection("admin-space-details", {
     label: "Space details",
     isDirty,
-    save: readOnly ? undefined : () => handleSave({ returnToProperty: false }),
+    save: readOnly
+      ? undefined
+      : async () => {
+          if (!isDirty) return true;
+          return persistMainForm();
+        },
   });
   return null;
 }
