@@ -12,6 +12,7 @@ import {
 } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { isAuthRelatedPath } from "@/lib/auth-redirect";
 import { Loader2, X } from "lucide-react";
 import type { ComponentProps } from "react";
 
@@ -247,13 +248,14 @@ export function UnsavedChangesProvider({
   }, []);
 
   const isNavigationBlocked = useCallback(() => {
+    if (isAuthRelatedPath(pathname)) return false;
     return (
       enabled &&
       baselineReadyRef.current &&
       !isBypassingGuardRef.current &&
       hasDirtySections()
     );
-  }, [enabled, hasDirtySections]);
+  }, [enabled, hasDirtySections, pathname]);
 
   const canSaveAndLeave = dirtySections.every(([, section]) => typeof section.save === "function");
 
@@ -406,6 +408,14 @@ export function UnsavedChangesProvider({
   }, [dirtySections.length, enabled, hasDirtySections, isNavigationBlocked, openModalForNavigation, pathname]);
 
   useEffect(() => {
+    return () => {
+      isBypassingGuardRef.current = true;
+      guardDepthRef.current = 0;
+      baselineReadyRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
     if (!enabled) {
       return;
     }
@@ -432,6 +442,7 @@ export function UnsavedChangesProvider({
       }
 
       if (url.origin !== window.location.origin) return;
+      if (isAuthRelatedPath(url.pathname)) return;
       if (
         url.pathname === window.location.pathname &&
         url.search === window.location.search &&

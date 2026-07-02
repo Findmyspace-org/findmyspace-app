@@ -155,7 +155,6 @@ export default function AuthForm({
         if (error) {
           logAuthDiagnostic("signup-failed", { error: error.message });
           setMessage(error.message);
-          setLoading(false);
           return;
         }
 
@@ -182,17 +181,14 @@ export default function AuthForm({
                 ? profileError.message
                 : "Could not initialize your profile."
             );
-            setLoading(false);
             return;
           }
 
-          const { data: sess } = await supabase.auth.getSession();
-          if (sess?.session?.access_token) {
-            await claimPendingAdvisor(sess.session.access_token);
+          const signupSession = signUpData.session;
+          if (signupSession?.access_token) {
+            await claimPendingAdvisor(signupSession.access_token);
           }
         }
-
-        setLoading(false);
 
         if (isModal) {
           setFirstName("");
@@ -215,7 +211,7 @@ export default function AuthForm({
         return;
       }
 
-      const { error } = await supabase.auth.signInWithPassword({
+      const { data: signInData, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
@@ -223,30 +219,30 @@ export default function AuthForm({
       if (error) {
         logAuthDiagnostic("login-failed", { error: error.message });
         setMessage(error.message);
-        setLoading(false);
         return;
       }
 
-      const { data: sessAfter } = await supabase.auth.getSession();
+      const session = signInData.session;
       logAuthDiagnostic("login-success", {
-        user_id: sessAfter?.session?.user?.id || null,
+        user_id: session?.user?.id || null,
       });
-      if (sessAfter?.session?.user) {
+      if (session?.user) {
         try {
-          await ensureProfileRow(sessAfter.session.user);
+          await ensureProfileRow(session.user);
         } catch (profileError) {
           // Non-fatal: user can still proceed, and later flows also self-heal profile rows.
           console.error("Profile upsert after login failed:", profileError);
         }
       }
-      if (sessAfter?.session?.access_token) {
-        await claimPendingAdvisor(sessAfter.session.access_token);
+      if (session?.access_token) {
+        await claimPendingAdvisor(session.access_token);
       }
 
       window.location.replace(nextPath);
     } catch (error) {
       console.error(error);
       setMessage("Something went wrong. Please try again.");
+    } finally {
       setLoading(false);
     }
   }

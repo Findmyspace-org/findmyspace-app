@@ -28,6 +28,7 @@ export function AdminTopBar({
   const menuRef = useRef<HTMLDivElement | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [profileOpen, setProfileOpen] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
   const [profile, setProfile] = useState<{
     email: string | null;
     name: string | null;
@@ -38,8 +39,9 @@ export function AdminTopBar({
 
     async function loadProfile() {
       const {
-        data: { user },
-      } = await supabase.auth.getUser();
+        data: { session },
+      } = await supabase.auth.getSession();
+      const user = session?.user;
       if (!user || !mounted) return;
 
       const { data } = await supabase
@@ -85,8 +87,17 @@ export function AdminTopBar({
   }, []);
 
   async function handleLogout() {
-    await supabase.auth.signOut();
-    router.push("/");
+    if (loggingOut) return;
+    setLoggingOut(true);
+    setProfileOpen(false);
+
+    try {
+      await supabase.auth.signOut();
+    } catch (error) {
+      console.error("Logout failed:", error);
+    } finally {
+      window.location.replace("/");
+    }
   }
 
   function handleSearchSubmit(e: React.FormEvent) {

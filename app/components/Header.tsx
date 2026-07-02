@@ -121,17 +121,23 @@ export default function Header() {
     pathname?.startsWith("/admin");
 
   useEffect(() => {
+    if (hideHeader) {
+      setLoading(false);
+      return;
+    }
+
     let mounted = true;
 
     async function initUser() {
       try {
         const {
-          data: { user },
+          data: { session },
           error,
-        } = await supabase.auth.getUser();
+        } = await supabase.auth.getSession();
 
         if (!mounted) return;
 
+        const user = session?.user;
         if (error || !user) {
           setSessionEmail(null);
           setUserId(null);
@@ -187,7 +193,7 @@ export default function Header() {
       mounted = false;
       subscription.unsubscribe();
     };
-  }, []);
+  }, [hideHeader]);
 
   useEffect(() => {
     let mounted = true;

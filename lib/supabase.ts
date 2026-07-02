@@ -22,6 +22,7 @@ export const supabase =
     },
   });
 
-if (process.env.NODE_ENV !== "production") {
+// One browser client per tab — avoids navigator.locks contention on auth calls.
+if (typeof window !== "undefined") {
   globalThis.__supabase__ = supabase;
 }

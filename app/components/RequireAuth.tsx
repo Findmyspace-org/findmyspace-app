@@ -44,16 +44,9 @@ export default function RequireAuth({ children }: RequireAuthProps) {
         }
 
         if (!session?.user) {
-          const {
-            data: { user },
-            error: userError,
-          } = await supabase.auth.getUser();
-          if (!mounted) return;
-          if (userError || !user) {
-            setAllowed(false);
-            goLogin();
-            return;
-          }
+          setAllowed(false);
+          goLogin();
+          return;
         }
 
         setAllowed(true);

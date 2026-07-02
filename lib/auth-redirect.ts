@@ -1,5 +1,14 @@
 export const DEFAULT_AUTH_REDIRECT_PATH = "/dashboard";
 
+/** Login, signup, and OAuth callback routes — never block with edit-form guards. */
+export function isAuthRelatedPath(pathname: string): boolean {
+  return (
+    pathname === "/login" ||
+    pathname === "/signup" ||
+    pathname.startsWith("/auth")
+  );
+}
+
 export function sanitizeNextPath(
   rawNext: string | null | undefined,
   fallback: string = DEFAULT_AUTH_REDIRECT_PATH
