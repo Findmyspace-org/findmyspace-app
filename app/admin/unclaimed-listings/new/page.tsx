@@ -7,7 +7,7 @@ import { Suspense, useEffect, useState } from "react";
 import { ArrowLeft } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { AdminUnclaimedSpaceForm } from "@/app/components/AdminUnclaimedSpaceForm";
-import { GuardedLink, UnsavedChangesProvider } from "@/app/components/UnsavedChangesProvider";
+import { GuardedLink, useUnsavedBackFallback, useUnsavedGuardEnabled } from "@/app/components/UnsavedChangesProvider";
 
 function NewUnclaimedListingContent() {
   const searchParams = useSearchParams();
@@ -18,6 +18,9 @@ function NewUnclaimedListingContent() {
   const prefillTitle = searchParams.get("title") || undefined;
   const [role, setRole] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+
+  useUnsavedBackFallback("/admin/unclaimed-listings");
+  useUnsavedGuardEnabled(true);
 
   useEffect(() => {
     async function init() {
@@ -53,7 +56,6 @@ function NewUnclaimedListingContent() {
   }
 
   return (
-    <UnsavedChangesProvider backFallbackHref="/admin/unclaimed-listings">
     <div className="mx-auto max-w-3xl">
       <GuardedLink
           href="/admin/unclaimed-listings"
@@ -85,7 +87,6 @@ function NewUnclaimedListingContent() {
           />
         </div>
     </div>
-    </UnsavedChangesProvider>
   );
 }
 

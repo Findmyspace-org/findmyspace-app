@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-import { isPlatformAdminRole } from "@/lib/admin-roles";
+import { verifyAdminAccess } from "@/lib/verify-admin-access";
 
 export type AdminAuthOk = { userId: string; role: string };
 export type AdminAuthFail = { response: NextResponse };
@@ -12,19 +11,6 @@ export type AdminAuthFail = { response: NextResponse };
 export async function requireAdminApi(
   req: NextRequest
 ): Promise<AdminAuthOk | AdminAuthFail> {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!supabaseUrl || !anonKey || !serviceKey) {
-    return {
-      response: NextResponse.json(
-        { error: "Server configuration error." },
-        { status: 500 }
-      ),
-    };
-  }
-
   const authHeader = req.headers.get("authorization");
   if (!authHeader?.startsWith("Bearer ")) {
     return {
@@ -33,57 +19,20 @@ export async function requireAdminApi(
   }
 
   const accessToken = authHeader.replace("Bearer ", "");
+  const result = await verifyAdminAccess(accessToken);
 
-  const userClient = createClient(supabaseUrl, anonKey, {
-    global: {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    },
-    auth: { persistSession: false },
-  });
+  if (!result.ok) {
+    const status =
+      result.reason === "config"
+        ? 500
+        : result.reason === "unauthorized"
+          ? 401
+          : 403;
 
-  const {
-    data: { user },
-    error: userError,
-  } = await userClient.auth.getUser();
-
-  if (userError || !user) {
     return {
-      response: NextResponse.json({ error: "Unauthorized." }, { status: 401 }),
+      response: NextResponse.json({ error: result.message }, { status }),
     };
   }
 
-  const admin = createClient(supabaseUrl, serviceKey, {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-      detectSessionInUrl: false,
-    },
-  });
-
-  const { data: profile, error: profileError } = await (admin.from("profiles") as any)
-    .select("role, admin_access_disabled")
-    .eq("id", user.id)
-    .single();
-
-  const profileRow = profile as {
-    role?: string | null;
-    admin_access_disabled?: boolean | null;
-  } | null;
-
-  if (profileError || !isPlatformAdminRole(profileRow?.role)) {
-    return {
-      response: NextResponse.json({ error: "Forbidden." }, { status: 403 }),
-    };
-  }
-
-  if (profileRow?.admin_access_disabled) {
-    return {
-      response: NextResponse.json(
-        { error: "Your admin access is disabled." },
-        { status: 403 }
-      ),
-    };
-  }
-
-  return { userId: user.id, role: profileRow!.role! };
+  return { userId: result.admin.userId, role: result.admin.role };
 }

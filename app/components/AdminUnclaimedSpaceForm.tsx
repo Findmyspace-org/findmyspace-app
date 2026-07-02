@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft } from "lucide-react";
 import SpaceCategoryFields from "@/app/components/SpaceCategoryFields";
 import { LISTING_SPACE_TYPE_OPTIONS } from "@/app/data/spaceFeatureConfig";
@@ -222,7 +222,7 @@ export function AdminUnclaimedSpaceForm({
   listLabel = "All unclaimed listings",
   onCreated,
   onSavedAndExit,
-  wrapWithUnsavedGuard = true,
+  wrapWithUnsavedGuard = false,
 }: AdminUnclaimedSpaceFormProps) {
   const router = useRouter();
   const unsavedCtx = useUnsavedChangesOptional();
@@ -322,6 +322,7 @@ export function AdminUnclaimedSpaceForm({
     beginSave,
     finishSave,
     clearSaveError,
+    establishBaseline,
     markSaved,
   } = useFormSaveState({
     serialize: serializeAdminFormSnapshotValue,
@@ -330,7 +331,11 @@ export function AdminUnclaimedSpaceForm({
   });
 
   const hasUnsavedChanges =
-    unsavedCtx?.hasUnsavedChanges ?? isMainFormDirty;
+    isMainFormDirty || Boolean(unsavedCtx?.hasUnsavedChanges);
+
+  useLayoutEffect(() => {
+    unsavedCtx?.setFormDirty(isMainFormDirty);
+  }, [isMainFormDirty, unsavedCtx]);
 
   const saving = formIsSaving;
   const savingReturn =
@@ -343,7 +348,10 @@ export function AdminUnclaimedSpaceForm({
     [initialImages]
   );
 
-  useEffect(() => {
+  const unsavedCtxRef = useRef(unsavedCtx);
+  unsavedCtxRef.current = unsavedCtx;
+
+  useLayoutEffect(() => {
     if (lastServerSyncKeyRef.current === serverSyncKey) return;
     lastServerSyncKeyRef.current = serverSyncKey;
 
@@ -355,12 +363,11 @@ export function AdminUnclaimedSpaceForm({
 
     const nextState = formStateFromInitial(initial);
     setState(nextState);
-    markSaved({
+    establishBaseline({
       state: nextState,
       crmLink: baselineCrm,
     });
-    unsavedCtx?.markSectionsClean(["admin-space-details"]);
-    unsavedCtx?.setBaselineReady(true);
+    unsavedCtxRef.current?.setBaselineReady(true);
 
     if (mode === "edit" && spaceId && !localImagesTouchedRef.current) {
       setImages(sortSpaceImages(initialImages));
@@ -377,8 +384,7 @@ export function AdminUnclaimedSpaceForm({
     initialCrmLink,
     defaultOrganisationId,
     defaultContactId,
-    markSaved,
-    unsavedCtx,
+    establishBaseline,
   ]);
 
   const handleCrmLinkPersisted = useCallback(
@@ -388,9 +394,8 @@ export function AdminUnclaimedSpaceForm({
         state: formSnapshotRef.current.state,
         crmLink: next,
       });
-      unsavedCtx?.markSectionsClean(["admin-space-details"]);
     },
-    [markSaved, unsavedCtx]
+    [markSaved]
   );
 
   const persistMainForm = useCallback(async (): Promise<boolean> => {
@@ -1065,7 +1070,7 @@ function AdminCombinedSaveStateIndicator({
   lastSavedAt?: Date | null;
 }) {
   const unsavedCtx = useUnsavedChangesOptional();
-  const showDirty = unsavedCtx?.hasUnsavedChanges ?? isMainFormDirty;
+  const showDirty = isMainFormDirty || Boolean(unsavedCtx?.hasUnsavedChanges);
 
   return (
     <FormSaveStateIndicator

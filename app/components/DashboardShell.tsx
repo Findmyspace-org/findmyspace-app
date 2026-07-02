@@ -17,7 +17,7 @@
  * Admin dashboard) — those still live in the header.
  */
 
-import Link from "next/link";
+import { GuardedLink, UnsavedChangesProvider } from "@/app/components/UnsavedChangesProvider";
 import { usePathname } from "next/navigation";
 
 export type DashboardNavItem = {
@@ -79,7 +79,8 @@ export default function DashboardShell({
   }
 
   return (
-    <div className="min-h-screen bg-[#f7f9fb] text-[#192a3a]">
+    <UnsavedChangesProvider>
+      <div className="min-h-screen bg-[#f7f9fb] text-[#192a3a]">
       <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6 sm:py-7 lg:px-8">
         {/* Heading band — calm, structured, premium. Tightened on mobile so
             the workspace nav sits closer to the top of the viewport. */}
@@ -115,7 +116,7 @@ export default function DashboardShell({
                 const Icon = item.icon;
                 return (
                   <li key={item.href + item.label} className="shrink-0">
-                    <Link
+                    <GuardedLink
                       href={item.href}
                       aria-current={active ? "page" : undefined}
                       className={`inline-flex items-center gap-2 whitespace-nowrap rounded-full border px-3.5 py-2 text-sm font-medium transition ${
@@ -142,7 +143,7 @@ export default function DashboardShell({
                           {item.badgeCount > 99 ? "99+" : item.badgeCount}
                         </span>
                       ) : null}
-                    </Link>
+                    </GuardedLink>
                   </li>
                 );
               })}
@@ -161,7 +162,7 @@ export default function DashboardShell({
                   const Icon = item.icon;
                   return (
                     <li key={item.href + item.label}>
-                      <Link
+                      <GuardedLink
                         href={item.href}
                         aria-current={active ? "page" : undefined}
                         className={`group flex items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition ${
@@ -192,7 +193,7 @@ export default function DashboardShell({
                             {item.badgeCount > 99 ? "99+" : item.badgeCount}
                           </span>
                         ) : null}
-                      </Link>
+                      </GuardedLink>
                     </li>
                   );
                 })}
@@ -207,6 +208,7 @@ export default function DashboardShell({
           </section>
         </div>
       </div>
-    </div>
+      </div>
+    </UnsavedChangesProvider>
   );
 }

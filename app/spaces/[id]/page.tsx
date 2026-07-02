@@ -128,7 +128,7 @@ async function getSpace(id: string) {
 
   return {
     space: {
-      ...(rawSpace as Omit<Space, "image_urls" | "attributes">),
+      ...(rawSpace as unknown as Omit<Space, "image_urls" | "attributes">),
       image_urls: sortSpaceImages(
         (images || []) as { id: string; image_url: string; sort_order: number | null }[]
       ).map((image) => image.image_url),

@@ -5,6 +5,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -32,6 +33,7 @@ type UnsavedChangesContextValue = {
   hasUnsavedChanges: boolean;
   dirtySectionLabels: string[];
   registerSection: (id: string, config: UnsavedSectionConfig) => void;
+  updateSection: (id: string, config: UnsavedSectionConfig) => void;
   unregisterSection: (id: string) => void;
   requestNavigation: (pending: PendingNavigation) => void;
   saveAllDirtySections: (options?: { skipIds?: string[] }) => Promise<boolean>;
@@ -43,6 +45,14 @@ type UnsavedChangesContextValue = {
   setBaselineReady: (ready: boolean) => void;
   /** Clear synthetic history guard entries after save or baseline sync. */
   resetHistoryGuard: () => void;
+  /** Live guard check (reads refs — safe from event handlers). */
+  isNavigationBlocked: () => boolean;
+  /** Main form dirty flag when section registration lags behind useFormSaveState. */
+  setFormDirty: (dirty: boolean) => void;
+  /** Browser-back fallback when leaving via popstate. */
+  setBackFallbackHref: (href: string | undefined) => void;
+  /** Temporarily disable blocking (e.g. read-only or locked listing). */
+  setGuardEnabled: (enabled: boolean) => void;
 };
 
 const UnsavedChangesContext = createContext<UnsavedChangesContextValue | null>(null);
@@ -70,29 +80,86 @@ export function useUnsavedChangesOptional(): UnsavedChangesContextValue | null {
   return useContext(UnsavedChangesContext);
 }
 
+/** Set browser-back fallback for the current edit page (cleared on unmount). */
+export function useUnsavedBackFallback(href: string | undefined) {
+  const ctx = useUnsavedChangesOptional();
+  const setBackFallbackHrefRef = useRef(ctx?.setBackFallbackHref);
+  setBackFallbackHrefRef.current = ctx?.setBackFallbackHref;
+
+  useEffect(() => {
+    const setBackFallbackHref = setBackFallbackHrefRef.current;
+    if (!setBackFallbackHref) return;
+    setBackFallbackHref(href);
+    return () => {
+      setBackFallbackHrefRef.current?.(undefined);
+    };
+  }, [href]);
+}
+
+/** Enable/disable navigation blocking for the current page (default off at shell level). */
+export function useUnsavedGuardEnabled(active: boolean) {
+  const ctx = useUnsavedChangesOptional();
+  const setGuardEnabledRef = useRef(ctx?.setGuardEnabled);
+  setGuardEnabledRef.current = ctx?.setGuardEnabled;
+
+  useLayoutEffect(() => {
+    const setGuardEnabled = setGuardEnabledRef.current;
+    if (!setGuardEnabled) return;
+    setGuardEnabled(active);
+    return () => {
+      setGuardEnabledRef.current?.(false);
+    };
+  }, [active]);
+}
+
 export function useRegisterUnsavedSection(
   sectionId: string,
   config: UnsavedSectionConfig
 ) {
   const ctx = useUnsavedChangesOptional();
+  const ctxRef = useRef(ctx);
   const { label, isDirty, save } = config;
   const saveRef = useRef(save);
-  saveRef.current = save;
+
+  useEffect(() => {
+    saveRef.current = save;
+  }, [save]);
 
   const stableSave = useCallback(async () => {
     if (!saveRef.current) return true;
     return saveRef.current();
   }, []);
 
-  useEffect(() => {
-    if (!ctx) return;
-    ctx.registerSection(sectionId, {
+  const sectionConfig = useMemo((): UnsavedSectionConfig => {
+    return {
       label,
       isDirty,
       save: save ? stableSave : undefined,
-    });
-    return () => ctx.unregisterSection(sectionId);
-  }, [ctx, sectionId, label, isDirty, save, stableSave]);
+    };
+  }, [isDirty, label, save, stableSave]);
+
+  const sectionRegisteredRef = useRef(false);
+
+  // Register once per section; unregister only on unmount.
+  useEffect(() => {
+    const current = ctxRef.current;
+    if (!current) return;
+    current.registerSection(sectionId, sectionConfig);
+    sectionRegisteredRef.current = true;
+    return () => {
+      ctxRef.current?.unregisterSection(sectionId);
+      sectionRegisteredRef.current = false;
+    };
+    // Register/unregister lifecycle only — dirty updates go through updateSection.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sectionId]);
+
+  // Keep dirty state in sync before paint so click handlers see the latest value.
+  useLayoutEffect(() => {
+    ctxRef.current = ctx;
+    if (!ctx || !sectionRegisteredRef.current) return;
+    ctx.updateSection(sectionId, sectionConfig);
+  }, [ctx, sectionId, sectionConfig]);
 }
 
 export function UnsavedSectionIndicator({ show }: { show: boolean }) {
@@ -131,6 +198,15 @@ export function UnsavedChangesProvider({
   const backFallbackHrefRef = useRef(backFallbackHref);
   const saveAndLeaveGenerationRef = useRef(0);
   const baselineReadyRef = useRef(false);
+  const [baselineReady, setBaselineReadyState] = useState(false);
+  const externalFormDirtyRef = useRef(false);
+  /** Off by default — edit/create pages opt in via useUnsavedGuardEnabled. */
+  const guardEnabledRef = useRef(false);
+  const hasUnsavedChangesRef = useRef(false);
+  const isNavigationBlockedRef = useRef(false);
+  const openModalForNavigationRef = useRef<
+    ((pending: PendingNavigation) => void) | null
+  >(null);
 
   backFallbackHrefRef.current = backFallbackHref;
   modalOpenRef.current = modalOpen;
@@ -139,7 +215,62 @@ export function UnsavedChangesProvider({
     return Array.from(sectionsRef.current.values()).some((section) => section.isDirty);
   }, []);
 
+  const computeHasDirtyState = useCallback(() => {
+    return hasDirtySections() || externalFormDirtyRef.current;
+  }, [hasDirtySections]);
+
+  const computeNavigationBlocked = useCallback(() => {
+    if (isAuthRelatedPath(pathname)) return false;
+    return (
+      enabled &&
+      guardEnabledRef.current &&
+      baselineReadyRef.current &&
+      !isBypassingGuardRef.current &&
+      computeHasDirtyState()
+    );
+  }, [computeHasDirtyState, enabled, pathname]);
+
+  const syncNavigationGuardRefs = useCallback(() => {
+    const blocked = computeNavigationBlocked();
+    hasUnsavedChangesRef.current = blocked;
+    isNavigationBlockedRef.current = blocked;
+  }, [computeNavigationBlocked]);
+
   const bump = useCallback(() => setRevision((value) => value + 1), []);
+
+  const setBackFallbackHref = useCallback((href: string | undefined) => {
+    if (backFallbackHrefRef.current === href) return;
+    backFallbackHrefRef.current = href;
+    debugUnsaved("back fallback href", { href });
+  }, []);
+
+  const setGuardEnabled = useCallback(
+    (active: boolean) => {
+      if (guardEnabledRef.current === active) return;
+      guardEnabledRef.current = active;
+      debugUnsaved("guard enabled", { active });
+      syncNavigationGuardRefs();
+      bump();
+    },
+    [bump, syncNavigationGuardRefs]
+  );
+
+  const prevBlockedRef = useRef(false);
+  useLayoutEffect(() => {
+    const blocked = computeNavigationBlocked();
+    hasUnsavedChangesRef.current = blocked;
+    isNavigationBlockedRef.current = blocked;
+    if (DEV && prevBlockedRef.current !== blocked) {
+      debugUnsaved("guard refs synced", {
+        blocked,
+        baselineReady: baselineReadyRef.current,
+        bypass: isBypassingGuardRef.current,
+        sectionDirty: hasDirtySections(),
+        formDirty: externalFormDirtyRef.current,
+      });
+    }
+    prevBlockedRef.current = blocked;
+  });
 
   const resetHistoryGuard = useCallback(() => {
     const depth = guardDepthRef.current;
@@ -159,18 +290,50 @@ export function UnsavedChangesProvider({
     (ready: boolean) => {
       if (baselineReadyRef.current === ready) return;
       baselineReadyRef.current = ready;
+      setBaselineReadyState((current) => (current === ready ? current : ready));
       debugUnsaved("baseline ready", { ready });
-      if (ready && !hasDirtySections()) {
+      syncNavigationGuardRefs();
+      if (ready && !hasDirtySections() && !externalFormDirtyRef.current) {
         resetHistoryGuard();
       }
       bump();
     },
-    [bump, hasDirtySections, resetHistoryGuard]
+    [bump, hasDirtySections, resetHistoryGuard, syncNavigationGuardRefs]
   );
 
   const registerSection = useCallback(
     (id: string, config: UnsavedSectionConfig) => {
+      const prev = sectionsRef.current.get(id);
       sectionsRef.current.set(id, config);
+      if (
+        prev &&
+        prev.isDirty === config.isDirty &&
+        prev.label === config.label &&
+        Boolean(prev.save) === Boolean(config.save)
+      ) {
+        return;
+      }
+      bump();
+    },
+    [bump]
+  );
+
+  const updateSection = useCallback(
+    (id: string, config: UnsavedSectionConfig) => {
+      const prev = sectionsRef.current.get(id);
+      if (!prev) {
+        sectionsRef.current.set(id, config);
+        bump();
+        return;
+      }
+      sectionsRef.current.set(id, config);
+      if (
+        prev.isDirty === config.isDirty &&
+        prev.label === config.label &&
+        Boolean(prev.save) === Boolean(config.save)
+      ) {
+        return;
+      }
       bump();
     },
     [bump]
@@ -178,6 +341,7 @@ export function UnsavedChangesProvider({
 
   const unregisterSection = useCallback(
     (id: string) => {
+      if (!sectionsRef.current.has(id)) return;
       sectionsRef.current.delete(id);
       bump();
     },
@@ -207,7 +371,29 @@ export function UnsavedChangesProvider({
     [dirtySections]
   );
 
-  const hasUnsavedChanges = enabled && baselineReadyRef.current && hasDirtySections();
+  const hasUnsavedChanges = useMemo(() => {
+    void revision;
+    return (
+      enabled &&
+      guardEnabledRef.current &&
+      baselineReady &&
+      computeHasDirtyState()
+    );
+  }, [enabled, baselineReady, revision, computeHasDirtyState]);
+
+  const setFormDirty = useCallback(
+    (dirty: boolean) => {
+      if (externalFormDirtyRef.current === dirty) return;
+      externalFormDirtyRef.current = dirty;
+      syncNavigationGuardRefs();
+      debugUnsaved("form dirty flag", {
+        dirty,
+        blocked: isNavigationBlockedRef.current,
+      });
+      bump();
+    },
+    [bump, syncNavigationGuardRefs]
+  );
 
   const markSectionsClean = useCallback(
     (sectionIds?: string[]) => {
@@ -220,6 +406,10 @@ export function UnsavedChangesProvider({
             changed = true;
           }
         }
+        if (sectionIds.includes("admin-space-details") && externalFormDirtyRef.current) {
+          externalFormDirtyRef.current = false;
+          changed = true;
+        }
       } else {
         for (const [id, section] of sectionsRef.current) {
           if (section.isDirty) {
@@ -227,12 +417,17 @@ export function UnsavedChangesProvider({
             changed = true;
           }
         }
+        if (externalFormDirtyRef.current) {
+          externalFormDirtyRef.current = false;
+          changed = true;
+        }
       }
       if (changed) {
+        syncNavigationGuardRefs();
         bump();
       }
     },
-    [bump]
+    [bump, syncNavigationGuardRefs]
   );
 
   const releaseGuardForUnload = useCallback(() => {
@@ -241,21 +436,17 @@ export function UnsavedChangesProvider({
     pendingNavRef.current = null;
     pathnameWhenDirtyRef.current = null;
     saveAndLeaveGenerationRef.current += 1;
+    externalFormDirtyRef.current = false;
     setModalOpen(false);
     setSaveError(null);
     setSavingAll(false);
+    syncNavigationGuardRefs();
     debugUnsaved("guard released for unload navigation");
-  }, []);
+  }, [syncNavigationGuardRefs]);
 
   const isNavigationBlocked = useCallback(() => {
-    if (isAuthRelatedPath(pathname)) return false;
-    return (
-      enabled &&
-      baselineReadyRef.current &&
-      !isBypassingGuardRef.current &&
-      hasDirtySections()
-    );
-  }, [enabled, hasDirtySections, pathname]);
+    return computeNavigationBlocked();
+  }, [computeNavigationBlocked]);
 
   const canSaveAndLeave = dirtySections.every(([, section]) => typeof section.save === "function");
 
@@ -334,16 +525,54 @@ export function UnsavedChangesProvider({
     [isNavigationBlocked, navigateToPending, openModalForNavigation]
   );
 
-  useEffect(() => {
+  const prevPathnameRef = useRef<string | null>(null);
+
+  // Reset guard synchronously on route change — before paint and before click handlers.
+  useLayoutEffect(() => {
+    const previous = prevPathnameRef.current;
+    prevPathnameRef.current = pathname;
+
     isBypassingGuardRef.current = false;
     guardDepthRef.current = 0;
-    baselineReadyRef.current = false;
     pathnameWhenDirtyRef.current = null;
-    debugUnsaved("pathname changed — guard reset", { pathname });
-  }, [pathname]);
+    pendingNavRef.current = null;
+
+    if (previous === null) {
+      if (guardEnabledRef.current !== false) {
+        guardEnabledRef.current = false;
+        syncNavigationGuardRefs();
+      }
+      debugUnsaved("pathname mount — guard off until edit page opts in", { pathname });
+      return;
+    }
+
+    if (previous === pathname) {
+      return;
+    }
+
+    const hadSections = sectionsRef.current.size > 0;
+    const hadBaseline = baselineReadyRef.current;
+    const hadFormDirty = externalFormDirtyRef.current;
+    const hadGuardEnabled = guardEnabledRef.current;
+
+    sectionsRef.current.clear();
+    baselineReadyRef.current = false;
+    externalFormDirtyRef.current = false;
+    guardEnabledRef.current = false;
+    setBaselineReadyState((current) => (current ? false : current));
+    setModalOpen((current) => (current ? false : current));
+    setSaveError((current) => (current ? null : current));
+    setSavingAll((current) => (current ? false : current));
+    syncNavigationGuardRefs();
+
+    if (hadSections || hadBaseline || hadFormDirty || hadGuardEnabled) {
+      bump();
+    }
+    debugUnsaved("pathname changed — guard reset", { from: previous, to: pathname });
+  }, [pathname, syncNavigationGuardRefs, bump]);
 
   useEffect(() => {
-    if (!enabled || hasDirtySections()) {
+    if (!enabled || computeHasDirtyState()) {
       return;
     }
 
@@ -355,10 +584,10 @@ export function UnsavedChangesProvider({
     }
 
     resetHistoryGuard();
-  }, [dirtySections.length, enabled, hasDirtySections, resetHistoryGuard]);
+  }, [computeHasDirtyState, dirtySections.length, enabled, resetHistoryGuard, revision]);
 
   useEffect(() => {
-    if (!enabled || !baselineReadyRef.current || !hasDirtySections() || isBypassingGuardRef.current) {
+    if (!enabled || !baselineReadyRef.current || !computeHasDirtyState() || isBypassingGuardRef.current) {
       return;
     }
 
@@ -371,7 +600,7 @@ export function UnsavedChangesProvider({
     }
 
     const onBeforeUnload = (event: BeforeUnloadEvent) => {
-      if (!isNavigationBlocked()) return;
+      if (!isNavigationBlockedRef.current) return;
       event.preventDefault();
       event.returnValue = "";
     };
@@ -388,11 +617,11 @@ export function UnsavedChangesProvider({
         return;
       }
 
-      if (!hasDirtySections()) {
+      if (!computeHasDirtyState()) {
         return;
       }
 
-      openModalForNavigation({ type: "back", source: "popstate" });
+      openModalForNavigationRef.current?.({ type: "back", source: "popstate" });
       window.history.pushState({ unsavedChangesGuard: true }, "");
       guardDepthRef.current += 1;
       debugUnsaved("back intercepted — modal opened", { guardDepth: guardDepthRef.current });
@@ -405,15 +634,15 @@ export function UnsavedChangesProvider({
       window.removeEventListener("beforeunload", onBeforeUnload);
       window.removeEventListener("popstate", onPopState);
     };
-  }, [dirtySections.length, enabled, hasDirtySections, isNavigationBlocked, openModalForNavigation, pathname]);
+  }, [
+    computeHasDirtyState,
+    dirtySections.length,
+    enabled,
+    pathname,
+    revision,
+  ]);
 
-  useEffect(() => {
-    return () => {
-      isBypassingGuardRef.current = true;
-      guardDepthRef.current = 0;
-      baselineReadyRef.current = false;
-    };
-  }, []);
+  openModalForNavigationRef.current = openModalForNavigation;
 
   useEffect(() => {
     if (!enabled) {
@@ -421,15 +650,35 @@ export function UnsavedChangesProvider({
     }
 
     const onDocumentClick = (event: MouseEvent) => {
-      if (!isNavigationBlocked()) return;
+      // Recompute live — refs can lag one frame if layout effects have not run yet.
+      const blocked = computeNavigationBlocked();
+      isNavigationBlockedRef.current = blocked;
+      hasUnsavedChangesRef.current = blocked;
+
       const target = event.target;
+      const anchor =
+        target instanceof Element ? target.closest("a[href]") : null;
+      const href = anchor?.getAttribute("href") ?? null;
+
+      if (!blocked) {
+        if (DEV && href && anchor?.getAttribute("target") !== "_blank") {
+          debugUnsaved("link click allowed", {
+            href,
+            guardEnabled: guardEnabledRef.current,
+            baselineReady: baselineReadyRef.current,
+            bypass: isBypassingGuardRef.current,
+            sectionDirty: hasDirtySections(),
+            formDirty: externalFormDirtyRef.current,
+          });
+        }
+        return;
+      }
+
       if (!(target instanceof Element)) return;
 
-      const anchor = target.closest("a[href]");
       if (!anchor) return;
       if (anchor.getAttribute("target") === "_blank") return;
 
-      const href = anchor.getAttribute("href");
       if (!href || href.startsWith("#") || href.startsWith("mailto:") || href.startsWith("tel:")) {
         return;
       }
@@ -452,15 +701,38 @@ export function UnsavedChangesProvider({
       }
 
       event.preventDefault();
-      event.stopPropagation();
+      event.stopImmediatePropagation();
 
       const destination = url.pathname + url.search + url.hash;
-      openModalForNavigation({ type: "href", href: destination, source: "link-click" });
+      debugUnsaved("link click intercepted", {
+        destination,
+        guardEnabled: guardEnabledRef.current,
+        baselineReady: baselineReadyRef.current,
+        bypass: isBypassingGuardRef.current,
+        sectionDirty: hasDirtySections(),
+        formDirty: externalFormDirtyRef.current,
+        pending: pendingNavRef.current,
+      });
+      openModalForNavigationRef.current?.({
+        type: "href",
+        href: destination,
+        source: "link-click",
+      });
     };
 
     document.addEventListener("click", onDocumentClick, true);
     return () => document.removeEventListener("click", onDocumentClick, true);
-  }, [enabled, isNavigationBlocked, openModalForNavigation]);
+  }, [computeNavigationBlocked, enabled, hasDirtySections]);
+
+  useEffect(() => {
+    return () => {
+      isBypassingGuardRef.current = true;
+      guardDepthRef.current = 0;
+      baselineReadyRef.current = false;
+      externalFormDirtyRef.current = false;
+      setBaselineReadyState(false);
+    };
+  }, []);
 
   function handleLeaveWithoutSaving() {
     const pending = pendingNavRef.current;
@@ -503,6 +775,8 @@ export function UnsavedChangesProvider({
         return;
       }
       debugUnsaved("save and leave — all sections saved, navigating");
+      externalFormDirtyRef.current = false;
+      markSectionsClean();
       navigateToPending(pending);
     } finally {
       if (generation === saveAndLeaveGenerationRef.current) {
@@ -516,6 +790,7 @@ export function UnsavedChangesProvider({
       hasUnsavedChanges,
       dirtySectionLabels: dirtySections.map(([, section]) => section.label),
       registerSection,
+      updateSection,
       unregisterSection,
       requestNavigation,
       saveAllDirtySections,
@@ -523,11 +798,16 @@ export function UnsavedChangesProvider({
       releaseGuardForUnload,
       setBaselineReady,
       resetHistoryGuard,
+      isNavigationBlocked,
+      setFormDirty,
+      setBackFallbackHref,
+      setGuardEnabled,
     }),
     [
       dirtySections,
       hasUnsavedChanges,
       registerSection,
+      updateSection,
       requestNavigation,
       saveAllDirtySections,
       markSectionsClean,
@@ -535,6 +815,10 @@ export function UnsavedChangesProvider({
       setBaselineReady,
       resetHistoryGuard,
       unregisterSection,
+      isNavigationBlocked,
+      setFormDirty,
+      setBackFallbackHref,
+      setGuardEnabled,
     ]
   );
 
@@ -611,26 +895,62 @@ export function UnsavedChangesProvider({
 type GuardedLinkProps = ComponentProps<typeof Link>;
 
 /** Navigates via the unsaved-changes guard when the form is dirty. */
-export function GuardedLink({ href, onClick, ...props }: GuardedLinkProps) {
+export function GuardedLink({
+  href,
+  onClick,
+  onClickCapture,
+  ...props
+}: GuardedLinkProps) {
   const ctx = useUnsavedChangesOptional();
   const destination =
     typeof href === "string"
       ? href
       : `${href.pathname || ""}${href.search || ""}${href.hash || ""}`;
 
+  const tryGuardNavigation = (event: React.MouseEvent<HTMLAnchorElement>) => {
+    if (event.defaultPrevented) return;
+    if (!ctx) return;
+
+    const blocked = ctx.isNavigationBlocked();
+    if (DEV) {
+      debugUnsaved("guarded link click", {
+        destination,
+        blocked,
+        hasUnsavedChanges: ctx.hasUnsavedChanges,
+      });
+    }
+    if (!blocked) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    debugUnsaved("guarded link intercepted", { destination, source: "guarded-link" });
+    ctx.requestNavigation({ type: "href", href: destination, source: "guarded-link" });
+  };
+
   return (
     <Link
       href={href}
       {...props}
-      onClick={(event) => {
-        onClick?.(event);
-        if (event.defaultPrevented) return;
-        if (!ctx?.hasUnsavedChanges) return;
-
-        event.preventDefault();
-        event.stopPropagation();
-        ctx.requestNavigation({ type: "href", href: destination, source: "guarded-link" });
+      onClickCapture={(event) => {
+        onClickCapture?.(event);
+        tryGuardNavigation(event);
       }}
+      onClick={onClick}
     />
+  );
+}
+
+/** Programmatic navigation that respects the active unsaved-changes guard (sidebar, search, etc.). */
+export function useGuardedNavigation() {
+  const ctx = useUnsavedChangesOptional();
+  return useCallback(
+    (href: string, source = "programmatic") => {
+      if (!ctx) {
+        window.location.assign(href);
+        return;
+      }
+      ctx.requestNavigation({ type: "href", href, source });
+    },
+    [ctx]
   );
 }

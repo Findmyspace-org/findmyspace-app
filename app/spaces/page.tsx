@@ -408,7 +408,7 @@ function SpacesPageContent({ searchParamsString }: { searchParamsString: string 
         return;
       }
 
-      const baseSpaces = (data || []) as Space[];
+      const baseSpaces = (data || []) as unknown as Space[];
       const spaceIds = baseSpaces.map((space) => space.id);
 
       if (spaceIds.length === 0) {

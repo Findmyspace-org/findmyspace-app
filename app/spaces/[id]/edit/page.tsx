@@ -55,9 +55,10 @@ import { SpacePhotosPanel } from "@/app/components/SpacePhotosPanel";
 import { sortSpaceImages } from "@/lib/sort-space-images";
 import type { SpacePhotoImage } from "@/lib/space-photos-client";
 import {
-  UnsavedChangesProvider,
   UnsavedSectionIndicator,
   useRegisterUnsavedSection,
+  useUnsavedBackFallback,
+  useUnsavedGuardEnabled,
 } from "@/app/components/UnsavedChangesProvider";
 import {
   canOwnerEditListing,
@@ -907,6 +908,9 @@ export default function EditListingPage({ params }: PageProps) {
     ? getOwnerListingCompletionHref(listingId)
     : "/dashboard/listings";
 
+  useUnsavedBackFallback("/dashboard/listings");
+  useUnsavedGuardEnabled(canEditContent && !editingLocked);
+
   const isMainFormDirty = useMemo(() => {
     if (!canEditContent || editingLocked || loading || !listingId) return false;
     const current = buildOwnerListingSnapshot({
@@ -969,10 +973,6 @@ export default function EditListingPage({ params }: PageProps) {
 
   return (
     <RequireAuth>
-      <UnsavedChangesProvider
-        enabled={canEditContent && !editingLocked}
-        backFallbackHref="/dashboard/listings"
-      >
       <DashboardShell
         workspaceLabel="Hosting"
         pageTitle="Edit listing"
@@ -1372,7 +1372,6 @@ export default function EditListingPage({ params }: PageProps) {
           )}
         </div>
       </DashboardShell>
-      </UnsavedChangesProvider>
     </RequireAuth>
   );
 }

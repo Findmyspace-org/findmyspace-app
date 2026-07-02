@@ -16,11 +16,17 @@ const EMPTY_COUNTS: AdminInboxCounts = {
   },
 };
 
-export function useAdminInboxCounts() {
+export function useAdminInboxCounts(enabled = true) {
   const [counts, setCounts] = useState<AdminInboxCounts>(EMPTY_COUNTS);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(enabled);
 
   const refresh = useCallback(async () => {
+    if (!enabled) {
+      setCounts(EMPTY_COUNTS);
+      setLoading(false);
+      return;
+    }
+
     try {
       const data = (await adminApiFetch("/api/admin/inbox-counts")) as AdminInboxCounts;
       setCounts({
@@ -39,10 +45,12 @@ export function useAdminInboxCounts() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [enabled]);
 
   useEffect(() => {
     void refresh();
+
+    if (!enabled) return;
 
     function onRefresh() {
       void refresh();
@@ -54,7 +62,7 @@ export function useAdminInboxCounts() {
       window.removeEventListener("fms-inbox-refresh", onRefresh);
       window.removeEventListener("fms-admin-badge-refresh", onRefresh);
     };
-  }, [refresh]);
+  }, [refresh, enabled]);
 
   return { counts, loading, refresh };
 }

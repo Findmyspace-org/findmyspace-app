@@ -53,15 +53,24 @@ export function FormSaveStateIndicator({
     );
   }
 
+  if (!lastSavedAt) {
+    return (
+      <span
+        role="status"
+        className={`inline-flex rounded-full bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-600 ${className}`}
+      >
+        No unsaved changes
+      </span>
+    );
+  }
+
   return (
     <span
       role="status"
       className={`inline-flex flex-wrap items-center gap-x-1 rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-900 ${className}`}
     >
       <span>All changes saved</span>
-      {lastSavedAt ? (
-        <span className="font-normal text-emerald-800/80">· {formatLastSavedAt(lastSavedAt)}</span>
-      ) : null}
+      <span className="font-normal text-emerald-800/80">· {formatLastSavedAt(lastSavedAt)}</span>
     </span>
   );
 }

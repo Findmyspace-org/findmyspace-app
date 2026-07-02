@@ -70,6 +70,10 @@ function aiDocumentsPath(spaceId: string, apiMode: ApiMode) {
     : `/api/owner/listings/${spaceId}/ai-documents`;
 }
 
+function loadKeyFor(spaceId: string | undefined, apiMode: ApiMode): string | null {
+  return spaceId ? `${apiMode}:${spaceId}` : null;
+}
+
 export function SpaceAiInformationPanel({
   spaceId,
   apiMode,
@@ -79,21 +83,36 @@ export function SpaceAiInformationPanel({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingFlushRef = useRef(false);
   const textRef = useRef("");
+  const mountedRef = useRef(true);
+  const inFlightRef = useRef(false);
+  const lastLoadedKeyRef = useRef<string | null>(null);
+  const loadFailedKeyRef = useRef<string | null>(null);
+
   const [text, setText] = useState("");
   const [fileName, setFileName] = useState<string | null>(null);
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [setupHealth, setSetupHealth] = useState<AiKnowledgeSetupHealth | null>(null);
   const [savedTextBaseline, setSavedTextBaseline] = useState("");
   const { status, error, setSuccess, setFailure, clearForAction } = useSectionFeedback();
   const unsavedCtx = useUnsavedChangesOptional();
+  const markSectionsCleanRef = useRef(unsavedCtx?.markSectionsClean);
+  markSectionsCleanRef.current = unsavedCtx?.markSectionsClean;
 
-  const fetchJson = apiMode === "admin" ? adminApiFetch : ownerApiFetch;
   const maxMb = Math.floor(SPACE_AI_MAX_BYTES / (1024 * 1024));
+  const loadKey = loadKeyFor(spaceId, apiMode);
 
   textRef.current = text;
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   const applyDocument = useCallback((document: SpaceAiDocumentRow | null) => {
     if (document && hasAiKnowledgeContent(document.extracted_text)) {
@@ -107,30 +126,59 @@ export function SpaceAiInformationPanel({
       setFileName(null);
       setUpdatedAt(null);
     }
-    unsavedCtx?.markSectionsClean(["ai-information"]);
-  }, [unsavedCtx]);
+    markSectionsCleanRef.current?.(["ai-information"]);
+  }, []);
 
-  const loadDocument = useCallback(async () => {
-    if (!spaceId) return;
-    setLoading(true);
-    try {
-      const result = await fetchJson(aiDocumentsPath(spaceId, apiMode));
-      const document =
-        (result.document as SpaceAiDocumentRow | null) ??
-        ((result.documents as SpaceAiDocumentRow[] | undefined)?.find((row) =>
-          hasAiKnowledgeContent(row.extracted_text)
-        ) ??
-          null);
-      applyDocument(document);
-    } catch (err) {
-      logAiKnowledgeError("load", err);
-      setFailure(
-        err instanceof Error ? err.message : "Could not load AI Information."
-      );
-    } finally {
-      setLoading(false);
-    }
-  }, [apiMode, applyDocument, fetchJson, setFailure, spaceId]);
+  const loadDocument = useCallback(
+    async (options?: { force?: boolean }) => {
+      if (!spaceId || !loadKey) return;
+
+      if (!options?.force) {
+        if (inFlightRef.current) return;
+        if (lastLoadedKeyRef.current === loadKey) return;
+        if (loadFailedKeyRef.current === loadKey) return;
+      } else {
+        loadFailedKeyRef.current = null;
+        lastLoadedKeyRef.current = null;
+      }
+
+      inFlightRef.current = true;
+      setLoading(true);
+      setLoadError(null);
+      clearForAction();
+
+      try {
+        const fetchJson = apiMode === "admin" ? adminApiFetch : ownerApiFetch;
+        const result = await fetchJson(aiDocumentsPath(spaceId, apiMode));
+        if (!mountedRef.current) return;
+
+        const document =
+          (result.document as SpaceAiDocumentRow | null) ??
+          ((result.documents as SpaceAiDocumentRow[] | undefined)?.find((row) =>
+            hasAiKnowledgeContent(row.extracted_text)
+          ) ??
+            null);
+
+        applyDocument(document);
+        lastLoadedKeyRef.current = loadKey;
+        loadFailedKeyRef.current = null;
+      } catch (err) {
+        if (!mountedRef.current) return;
+        loadFailedKeyRef.current = loadKey;
+        logAiKnowledgeError("load", err);
+        const message =
+          err instanceof Error ? err.message : "Could not load AI Information.";
+        setLoadError(message);
+        setFailure(message);
+      } finally {
+        inFlightRef.current = false;
+        if (mountedRef.current) {
+          setLoading(false);
+        }
+      }
+    },
+    [apiMode, applyDocument, clearForAction, loadKey, setFailure, spaceId]
+  );
 
   const saveText = useCallback(async (): Promise<boolean> => {
     if (readOnly) return true;
@@ -148,6 +196,7 @@ export function SpaceAiInformationPanel({
     setSaving(true);
     clearForAction();
     try {
+      const fetchJson = apiMode === "admin" ? adminApiFetch : ownerApiFetch;
       await fetchJson(aiDocumentsPath(spaceId, apiMode), {
         method: "PATCH",
         body: aiKnowledgeSavePayload(trimmed),
@@ -173,7 +222,6 @@ export function SpaceAiInformationPanel({
   }, [
     apiMode,
     clearForAction,
-    fetchJson,
     readOnly,
     setFailure,
     setSuccess,
@@ -181,59 +229,79 @@ export function SpaceAiInformationPanel({
     text,
   ]);
 
+  const loadDocumentRef = useRef(loadDocument);
+  loadDocumentRef.current = loadDocument;
+
+  useEffect(() => {
+    if (!spaceId || !loadKey) return;
+
+    if (lastLoadedKeyRef.current !== loadKey && loadFailedKeyRef.current !== loadKey) {
+      lastLoadedKeyRef.current = null;
+    }
+
+    void loadDocumentRef.current();
+  }, [loadKey, spaceId]);
+
   useEffect(() => {
     if (!spaceId) return;
+    if (!pendingFlushRef.current) return;
 
     void (async () => {
-      if (pendingFlushRef.current) {
-        pendingFlushRef.current = false;
-        const trimmed = textRef.current.trim();
-        if (!trimmed) return;
+      pendingFlushRef.current = false;
+      const trimmed = textRef.current.trim();
+      if (!trimmed) return;
 
-        setSaving(true);
-        clearForAction();
-        try {
-          await fetchJson(aiDocumentsPath(spaceId, apiMode), {
-            method: "PATCH",
-            body: aiKnowledgeSavePayload(trimmed),
-          });
-          setFileName("Manual entry");
-          setUpdatedAt(new Date().toISOString());
-          setSavedTextBaseline(trimmed);
-          setSuccess("AI Information saved.");
-        } catch (err) {
-          logAiKnowledgeError("auto-save", err);
-          setFailure(
-            aiKnowledgeUserError(
-              err,
-              "AI Information could not be saved. Please try again."
-            )
-          );
-        } finally {
+      setSaving(true);
+      clearForAction();
+      try {
+        const fetchJson = apiMode === "admin" ? adminApiFetch : ownerApiFetch;
+        await fetchJson(aiDocumentsPath(spaceId, apiMode), {
+          method: "PATCH",
+          body: aiKnowledgeSavePayload(trimmed),
+        });
+        if (!mountedRef.current) return;
+        setFileName("Manual entry");
+        setUpdatedAt(new Date().toISOString());
+        setSavedTextBaseline(trimmed);
+        setSuccess("AI Information saved.");
+      } catch (err) {
+        if (!mountedRef.current) return;
+        logAiKnowledgeError("auto-save", err);
+        setFailure(
+          aiKnowledgeUserError(
+            err,
+            "AI Information could not be saved. Please try again."
+          )
+        );
+      } finally {
+        if (mountedRef.current) {
           setSaving(false);
         }
-        return;
       }
-
-      await loadDocument();
     })();
-  }, [apiMode, clearForAction, fetchJson, loadDocument, setFailure, setSuccess, spaceId]);
+  }, [apiMode, clearForAction, setFailure, setSuccess, spaceId]);
 
   useEffect(() => {
     if (apiMode !== "admin") return;
+
+    let cancelled = false;
     void (async () => {
       try {
         const health = (await adminApiFetch(
           "/api/admin/ai-knowledge/setup-health"
         )) as AiKnowledgeSetupHealth;
-        setSetupHealth(health);
+        if (!cancelled) {
+          setSetupHealth(health);
+        }
       } catch (err) {
         console.error("AI Information setup health check failed:", err);
       }
     })();
-  }, [apiMode]);
 
-  const documentUploadReady = setupHealth?.documentUploadReady ?? true;
+    return () => {
+      cancelled = true;
+    };
+  }, [apiMode]);
 
   async function handleUpload(fileList: FileList | null) {
     if (readOnly || !spaceId || !fileList?.length) return;
@@ -272,13 +340,15 @@ export function SpaceAiInformationPanel({
     setUploading(true);
     clearForAction();
     try {
+      const fetchJson = apiMode === "admin" ? adminApiFetch : ownerApiFetch;
       const form = new FormData();
       form.append("file", file);
       await fetchJson(aiDocumentsPath(spaceId, apiMode), {
         method: "POST",
         body: form,
       });
-      await loadDocument();
+      await loadDocument({ force: true });
+      setLoadError(null);
       setSuccess("Document uploaded and text extracted.");
     } catch (err) {
       logAiKnowledgeError("upload", err);
@@ -294,6 +364,8 @@ export function SpaceAiInformationPanel({
     !loading &&
     Boolean(spaceId) &&
     text.trim() !== savedTextBaseline;
+
+  const documentUploadReady = setupHealth?.documentUploadReady ?? true;
 
   useRegisterUnsavedSection("ai-information", {
     label: "AI information",
@@ -344,6 +416,19 @@ export function SpaceAiInformationPanel({
           </p>
         ) : null}
 
+        {loadError && !loading ? (
+          <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+            <p>{loadError}</p>
+            <button
+              type="button"
+              onClick={() => void loadDocument({ force: true })}
+              className="mt-2 text-sm font-medium text-red-900 underline hover:no-underline"
+            >
+              Retry loading
+            </button>
+          </div>
+        ) : null}
+
         {(fileName || updatedAt) && !loading ? (
           <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600">
             {fileName ? (
@@ -391,20 +476,20 @@ export function SpaceAiInformationPanel({
                 type="file"
                 accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                 className="hidden"
-              disabled={!spaceId || uploading || saving}
-              onChange={(event) => void handleUpload(event.target.files)}
-            />
-            <button
-              type="button"
-              disabled={
-                !spaceId || uploading || saving || loading || !documentUploadReady
-              }
-              title={
-                !documentUploadReady
-                  ? "Create private storage bucket listing-ai-knowledge to enable uploads"
-                  : undefined
-              }
-              onClick={() => fileInputRef.current?.click()}
+                disabled={!spaceId || uploading || saving}
+                onChange={(event) => void handleUpload(event.target.files)}
+              />
+              <button
+                type="button"
+                disabled={
+                  !spaceId || uploading || saving || loading || !documentUploadReady
+                }
+                title={
+                  !documentUploadReady
+                    ? "Create private storage bucket listing-ai-knowledge to enable uploads"
+                    : undefined
+                }
+                onClick={() => fileInputRef.current?.click()}
                 className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {uploading ? (

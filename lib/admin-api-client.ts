@@ -1,11 +1,8 @@
-import { supabase } from "@/lib/supabase";
+import { getBrowserAccessToken } from "@/lib/supabase-browser-session";
 import { parseApiFetchError } from "@/lib/api-fetch-errors";
 
 export async function adminApiFetch(path: string, init?: RequestInit) {
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  const token = session?.access_token;
+  const token = await getBrowserAccessToken();
   if (!token) throw new Error("Not signed in.");
 
   const res = await fetch(path, {

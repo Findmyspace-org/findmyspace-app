@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-export type FormSaveVisualState = "saved" | "dirty" | "saving" | "error";
+export type FormSaveVisualState = "saved" | "dirty" | "saving" | "error" | "idle";
 
 type UseFormSaveStateOptions<T> = {
   serialize: (value: T) => string;
@@ -20,20 +20,34 @@ export function useFormSaveState<T>({
   const [saveError, setSaveError] = useState<string | null>(null);
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
 
+  const currentRef = useRef(current);
+  useEffect(() => {
+    currentRef.current = current;
+  }, [current]);
+
   const isDirty = useMemo(() => {
     if (!enabled) return false;
     if (savedSnapshot === null) return false;
     return serialize(current) !== savedSnapshot;
   }, [current, enabled, savedSnapshot, serialize]);
 
+  const establishBaseline = useCallback(
+    (value?: T) => {
+      const snapshot = serialize(value ?? currentRef.current);
+      setSavedSnapshot(snapshot);
+      setSaveError(null);
+    },
+    [serialize]
+  );
+
   const markSaved = useCallback(
     (value?: T) => {
-      const snapshot = serialize(value ?? current);
+      const snapshot = serialize(value ?? currentRef.current);
       setSavedSnapshot(snapshot);
       setLastSavedAt(new Date());
       setSaveError(null);
     },
-    [current, serialize]
+    [serialize]
   );
 
   const beginSave = useCallback(() => {
@@ -63,7 +77,9 @@ export function useFormSaveState<T>({
       ? "error"
       : isDirty
         ? "dirty"
-        : "saved";
+        : lastSavedAt
+          ? "saved"
+          : "idle";
 
   return {
     isDirty,
@@ -71,6 +87,7 @@ export function useFormSaveState<T>({
     saveError,
     lastSavedAt,
     visualState,
+    establishBaseline,
     markSaved,
     beginSave,
     finishSave,

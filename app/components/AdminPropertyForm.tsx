@@ -77,22 +77,22 @@ function propertyValuesFromState(input: {
 }
 
 export function AdminPropertyForm(props: Props) {
-  if (props.wrapWithUnsavedGuard === false) {
-    return <AdminPropertyFormInner {...props} />;
+  if (props.wrapWithUnsavedGuard) {
+    return (
+      <UnsavedChangesProvider
+        enabled={props.mode === "edit"}
+        backFallbackHref={
+          props.mode === "edit" && props.propertyId
+            ? `/admin/properties/${props.propertyId}`
+            : "/admin/properties"
+        }
+      >
+        <AdminPropertyFormInner {...props} />
+      </UnsavedChangesProvider>
+    );
   }
 
-  return (
-    <UnsavedChangesProvider
-      enabled={props.mode === "edit"}
-      backFallbackHref={
-        props.mode === "edit" && props.propertyId
-          ? `/admin/properties/${props.propertyId}`
-          : "/admin/properties"
-      }
-    >
-      <AdminPropertyFormInner {...props} />
-    </UnsavedChangesProvider>
-  );
+  return <AdminPropertyFormInner {...props} />;
 }
 
 function AdminPropertyFormInner({
@@ -149,7 +149,7 @@ function AdminPropertyFormInner({
     beginSave,
     finishSave,
     clearSaveError,
-    markSaved,
+    establishBaseline,
   } = useFormSaveState({
     serialize: serializePropertyFormValues,
     current: currentValues,
@@ -167,10 +167,10 @@ function AdminPropertyFormInner({
     setCrmOrganisationId(nextValues.crmOrganisationId);
     setCrmOrganisationName(nextValues.crmOrganisationName);
     setLocation(nextValues.location);
-    markSaved(nextValues);
+    establishBaseline(nextValues);
     setMessage(null);
     clearSaveError();
-  }, [serverSyncKey, markSaved, clearSaveError]);
+  }, [serverSyncKey, establishBaseline, clearSaveError]);
 
   const applyOrgPrefill = useCallback((org: CrmOrganisationOption) => {
     setName((currentName) => {

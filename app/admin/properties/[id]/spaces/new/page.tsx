@@ -1,14 +1,10 @@
 "use client";
 
-import { hasAdminUiAccess } from "@/lib/client-admin-access";
-
-import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { supabase } from "@/lib/supabase";
 import { AdminUnclaimedSpaceForm } from "@/app/components/AdminUnclaimedSpaceForm";
 import { AdminPropertySpaceBreadcrumb } from "@/app/components/AdminPropertySpaceBreadcrumb";
-import { UnsavedChangesProvider } from "@/app/components/UnsavedChangesProvider";
+import { useUnsavedBackFallback, useUnsavedGuardEnabled } from "@/app/components/UnsavedChangesProvider";
 import { adminApiFetch } from "@/lib/admin-api-client";
 
 export default function NewPropertySpacePage() {
@@ -16,7 +12,9 @@ export default function NewPropertySpacePage() {
   const router = useRouter();
   const propertyId = typeof params.id === "string" ? params.id : "";
 
-  const [role, setRole] = useState<string | null>(null);
+  useUnsavedBackFallback(propertyId ? `/admin/properties/${propertyId}` : undefined);
+  useUnsavedGuardEnabled(true);
+
   const [loading, setLoading] = useState(true);
   const [propertyName, setPropertyName] = useState("");
   const [initialLocation, setInitialLocation] = useState<{
@@ -65,24 +63,8 @@ export default function NewPropertySpacePage() {
 
   useEffect(() => {
     async function init() {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) {
-        setRole(null);
-        setLoading(false);
-        return;
-      }
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("role")
-        .eq("id", user.id)
-        .maybeSingle();
-      const r = (profile as { role?: string } | null)?.role ?? null;
-      setRole(r);
-      if (hasAdminUiAccess(r)) {
-        await loadProperty();
-      }
+      setLoading(true);
+      await loadProperty();
       setLoading(false);
     }
     void init();
@@ -92,16 +74,7 @@ export default function NewPropertySpacePage() {
     return <div className="text-gray-600">Loading…</div>;
   }
 
-  if (!hasAdminUiAccess(role)) {
-    return (
-      <div>
-        <p className="text-red-600">Access denied.</p>
-      </div>
-    );
-  }
-
   return (
-    <UnsavedChangesProvider>
     <div className="mx-auto max-w-3xl">
       <AdminPropertySpaceBreadcrumb
         propertyId={propertyId}
@@ -133,6 +106,5 @@ export default function NewPropertySpacePage() {
         />
       </div>
     </div>
-    </UnsavedChangesProvider>
   );
 }

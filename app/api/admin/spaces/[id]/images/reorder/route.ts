@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApi } from "@/lib/require-admin-api";
 import {
   createServiceAdminClient,
-  fetchAdminUnclaimedSpace,
+  fetchAdminManageableSpace,
 } from "@/lib/admin-unclaimed-space";
 
 const UUID_RE =
@@ -12,7 +12,7 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const logPrefix = "[admin/unclaimed/images/reorder]";
+  const logPrefix = "[admin/spaces/images/reorder]";
 
   const auth = await requireAdminApi(req);
   if ("response" in auth) return auth.response;
@@ -30,7 +30,7 @@ export async function PATCH(
     );
   }
 
-  const existing = await fetchAdminUnclaimedSpace(admin, id);
+  const existing = await fetchAdminManageableSpace(admin, id);
   if (existing.error) {
     return NextResponse.json({ error: existing.error }, { status: 404 });
   }

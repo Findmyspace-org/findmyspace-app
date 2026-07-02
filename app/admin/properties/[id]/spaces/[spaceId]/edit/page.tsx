@@ -1,16 +1,13 @@
 "use client";
 
-import { hasAdminUiAccess } from "@/lib/client-admin-access";
-
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { Eye } from "lucide-react";
-import { supabase } from "@/lib/supabase";
 import { adminApiFetch } from "@/lib/admin-api-client";
 import { AdminUnclaimedSpaceForm } from "@/app/components/AdminUnclaimedSpaceForm";
 import { AdminPropertySpaceBreadcrumb } from "@/app/components/AdminPropertySpaceBreadcrumb";
-import { UnsavedChangesProvider } from "@/app/components/UnsavedChangesProvider";
+import { useUnsavedBackFallback, useUnsavedGuardEnabled } from "@/app/components/UnsavedChangesProvider";
 import { UnclaimedListingEnquirySocialProof } from "@/app/components/UnclaimedListingEnquirySocialProof";
 import { sortSpaceImages } from "@/lib/sort-space-images";
 import { spacePricingFormFromRow } from "@/lib/space-pricing";
@@ -60,7 +57,6 @@ function EditPropertySpacePageContent() {
   const propertyId = typeof params.id === "string" ? params.id : "";
   const spaceId = typeof params.spaceId === "string" ? params.spaceId : "";
 
-  const [role, setRole] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [propertyName, setPropertyName] = useState("");
@@ -72,6 +68,9 @@ function EditPropertySpacePageContent() {
   const [enquiryCount, setEnquiryCount] = useState(0);
   const [readOnly, setReadOnly] = useState(false);
   const [crmLink, setCrmLink] = useState<SpaceCrmLinkSummary | null>(null);
+
+  useUnsavedBackFallback(propertyId ? `/admin/properties/${propertyId}` : undefined);
+  useUnsavedGuardEnabled(!readOnly);
 
   const load = useCallback(async () => {
     if (!spaceId || !propertyId) return;
@@ -114,41 +113,11 @@ function EditPropertySpacePageContent() {
   }, [propertyId, spaceId]);
 
   useEffect(() => {
-    async function init() {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) {
-        setRole(null);
-        setLoading(false);
-        return;
-      }
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("role")
-        .eq("id", user.id)
-        .maybeSingle();
-      const r = (profile as { role?: string } | null)?.role ?? null;
-      setRole(r);
-      if (hasAdminUiAccess(r)) {
-        await load();
-      } else {
-        setLoading(false);
-      }
-    }
-    void init();
+    void load();
   }, [load]);
 
   if (loading) {
     return <div className="text-gray-600">Loading…</div>;
-  }
-
-  if (!hasAdminUiAccess(role)) {
-    return (
-      <div>
-        <p className="text-red-600">Access denied.</p>
-      </div>
-    );
   }
 
   if (!space) {
@@ -166,10 +135,6 @@ function EditPropertySpacePageContent() {
   }
 
   return (
-    <UnsavedChangesProvider
-      enabled={!readOnly}
-      backFallbackHref={`/admin/properties/${propertyId}`}
-    >
     <div className="mx-auto max-w-3xl">
       <AdminPropertySpaceBreadcrumb
         propertyId={propertyId}
@@ -266,6 +231,5 @@ function EditPropertySpacePageContent() {
         />
       </div>
     </div>
-    </UnsavedChangesProvider>
   );
 }

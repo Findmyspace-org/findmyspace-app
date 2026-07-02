@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronUp, GripVertical, Loader2, Plus, Trash2 } from "lucide-react";
+import { getBrowserAccessToken } from "@/lib/supabase-browser-session";
 import { supabase } from "@/lib/supabase";
 import {
   UnsavedSectionIndicator,
@@ -70,6 +71,12 @@ function serializeFieldsForDirtyCheck(fields: SpaceBookingRequirementFieldDraft[
 
 export function SpaceBookingRequirementsSection({ spaceId, disabled = false }: Props) {
   const unsavedCtx = useUnsavedChangesOptional();
+  const markSectionsCleanRef = useRef(unsavedCtx?.markSectionsClean);
+  markSectionsCleanRef.current = unsavedCtx?.markSectionsClean;
+  const mountedRef = useRef(true);
+  const inFlightRef = useRef(false);
+  const lastLoadedSpaceIdRef = useRef<string | null>(null);
+
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -86,6 +93,10 @@ export function SpaceBookingRequirementsSection({ spaceId, disabled = false }: P
 
   const load = useCallback(async () => {
     if (!spaceId) return;
+    if (inFlightRef.current) return;
+    if (lastLoadedSpaceIdRef.current === spaceId) return;
+
+    inFlightRef.current = true;
     setLoading(true);
     const { data, error } = await (supabase.from("space_booking_requirement_fields" as never) as any)
       .select(
@@ -94,6 +105,8 @@ export function SpaceBookingRequirementsSection({ spaceId, disabled = false }: P
       .eq("space_id", spaceId)
       .order("sort_order", { ascending: true });
 
+    if (!mountedRef.current) return;
+
     if (error) {
       setMessage(error.message);
       setFields([]);
@@ -101,14 +114,22 @@ export function SpaceBookingRequirementsSection({ spaceId, disabled = false }: P
       const rows = ((data || []) as Record<string, unknown>[]).map(normalizeSpaceBookingFieldRow);
       setFields(rows);
       setSavedSnapshot(serializeFieldsForDirtyCheck(rows));
-      unsavedCtx?.markSectionsClean(["booking-requirements"]);
+      markSectionsCleanRef.current?.(["booking-requirements"]);
       if (rows.some((row) => row.active)) setOpen(true);
+      lastLoadedSpaceIdRef.current = spaceId;
     }
     setLoading(false);
-  }, [spaceId, unsavedCtx]);
+    inFlightRef.current = false;
+  }, [spaceId]);
 
   useEffect(() => {
+    mountedRef.current = true;
+    lastLoadedSpaceIdRef.current = null;
     void load();
+    return () => {
+      mountedRef.current = false;
+      inFlightRef.current = false;
+    };
   }, [load]);
 
   function patchField(idOrKey: string, patch: Partial<SpaceBookingRequirementFieldDraft>) {
@@ -230,11 +251,9 @@ export function SpaceBookingRequirementsSection({ spaceId, disabled = false }: P
         }
       }
 
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
+      const accessToken = await getBrowserAccessToken();
 
-      if (!session?.access_token) {
+      if (!accessToken) {
         setMessage("Please sign in again to save booking requirements.");
         return false;
       }
@@ -242,7 +261,7 @@ export function SpaceBookingRequirementsSection({ spaceId, disabled = false }: P
       const res = await fetch(`/api/spaces/${spaceId}/booking-requirement-fields`, {
         method: "PUT",
         headers: {
-          Authorization: `Bearer ${session.access_token}`,
+          Authorization: `Bearer ${accessToken}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({

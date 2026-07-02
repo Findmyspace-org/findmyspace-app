@@ -1,7 +1,5 @@
 "use client";
 
-import { hasAdminUiAccess } from "@/lib/client-admin-access";
-
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
@@ -15,10 +13,10 @@ import {
   Users,
   Wallet,
 } from "lucide-react";
-import { supabase } from "@/lib/supabase";
 import { AdminActionRequiredPanel } from "@/app/components/AdminActionRequiredPanel";
 import type { AdminActionQueue } from "@/app/components/AdminActionRequiredPanel";
 import { adminApiFetch } from "@/lib/admin-api-client";
+import { useAdminRole } from "@/lib/use-admin-role";
 
 type ScoutStats = {
   draftScoutListings: number;
@@ -30,60 +28,57 @@ type ScoutStats = {
 };
 
 export default function AdminPage() {
-  const [role, setRole] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { isAdmin, loading: roleLoading } = useAdminRole();
   const [scoutStats, setScoutStats] = useState<ScoutStats | null>(null);
   const [actionQueue, setActionQueue] = useState<AdminActionQueue | null>(null);
+  const [dataLoading, setDataLoading] = useState(true);
 
   useEffect(() => {
-    async function checkRole() {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+    if (roleLoading) return;
 
-      if (!user) {
-        setRole(null);
-        setLoading(false);
-        return;
-      }
-
-      const { data } = await supabase
-        .from("profiles")
-        .select("role")
-        .eq("id", user.id)
-        .maybeSingle();
-
-      const userRole = (data as { role?: string | null } | null)?.role || "user";
-      setRole(userRole);
-
-      if (userRole === "admin") {
-        try {
-          const [stats, queue] = await Promise.all([
-            adminApiFetch("/api/admin/venue-scout/stats"),
-            adminApiFetch("/api/admin/action-queue"),
-          ]);
-          setScoutStats({
-            draftScoutListings: (stats.draftScoutListings as number) ?? 0,
-            publishedUnclaimed: (stats.publishedUnclaimed as number) ?? 0,
-            claimInterests: (stats.claimInterests as number) ?? 0,
-            enquiries: (stats.enquiries as number) ?? 0,
-            claimedListings: (stats.claimedListings as number) ?? 0,
-            activeListings: (stats.activeListings as number) ?? 0,
-          });
-          setActionQueue(queue as AdminActionQueue);
-        } catch {
-          setScoutStats(null);
-          setActionQueue(null);
-        }
-      }
-
-      setLoading(false);
+    if (!isAdmin) {
+      setScoutStats(null);
+      setActionQueue(null);
+      setDataLoading(false);
+      return;
     }
 
-    void checkRole();
-  }, []);
+    let mounted = true;
 
-  if (loading) {
+    async function loadDashboard() {
+      setDataLoading(true);
+      try {
+        const [stats, queue] = await Promise.all([
+          adminApiFetch("/api/admin/venue-scout/stats"),
+          adminApiFetch("/api/admin/action-queue"),
+        ]);
+        if (!mounted) return;
+        setScoutStats({
+          draftScoutListings: (stats.draftScoutListings as number) ?? 0,
+          publishedUnclaimed: (stats.publishedUnclaimed as number) ?? 0,
+          claimInterests: (stats.claimInterests as number) ?? 0,
+          enquiries: (stats.enquiries as number) ?? 0,
+          claimedListings: (stats.claimedListings as number) ?? 0,
+          activeListings: (stats.activeListings as number) ?? 0,
+        });
+        setActionQueue(queue as AdminActionQueue);
+      } catch {
+        if (!mounted) return;
+        setScoutStats(null);
+        setActionQueue(null);
+      } finally {
+        if (mounted) setDataLoading(false);
+      }
+    }
+
+    void loadDashboard();
+
+    return () => {
+      mounted = false;
+    };
+  }, [isAdmin, roleLoading]);
+
+  if (roleLoading || dataLoading) {
     return (
       <div className="mx-auto max-w-7xl rounded-lg border border-gray-200 bg-white p-6">
         Loading admin workspace…
@@ -91,15 +86,8 @@ export default function AdminPage() {
     );
   }
 
-  if (!hasAdminUiAccess(role)) {
-    return (
-      <div className="mx-auto max-w-7xl rounded-lg border border-red-200 bg-red-50 p-6">
-        <h1 className="text-xl font-bold text-red-800">Access denied</h1>
-        <p className="mt-2 text-sm text-red-700">
-          You do not have admin access to this area.
-        </p>
-      </div>
-    );
+  if (!isAdmin) {
+    return null;
   }
 
   return (

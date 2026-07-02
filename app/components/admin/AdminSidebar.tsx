@@ -1,17 +1,16 @@
 "use client";
 
 import type { ReactNode } from "react";
-import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { ChevronLeft, ChevronRight, ExternalLink } from "lucide-react";
+import { GuardedLink } from "@/app/components/UnsavedChangesProvider";
 import {
   ADMIN_COMMS_ITEM,
   ADMIN_NAV_SECTIONS,
   isAdminNavItemActive,
   type AdminNavKey,
 } from "@/lib/admin-navigation";
-import { useAdminRole } from "@/lib/use-admin-role";
 
 type BadgeMap = Partial<Record<AdminNavKey | "comms", number>>;
 
@@ -72,14 +71,14 @@ function SidebarLink({
   }
 
   return (
-    <Link
+    <GuardedLink
       href={href}
       className={className}
       title={collapsed ? label : undefined}
       onClick={onNavigate}
     >
       {content}
-    </Link>
+    </GuardedLink>
   );
 }
 
@@ -107,14 +106,15 @@ export function AdminSidebar({
   onToggleCollapse,
   mobileOpen,
   badges = {},
+  isSuperAdmin = false,
 }: {
   collapsed: boolean;
   onToggleCollapse: () => void;
   mobileOpen: boolean;
   badges?: BadgeMap;
+  isSuperAdmin?: boolean;
 }) {
   const pathname = usePathname() || "";
-  const { isSuperAdmin } = useAdminRole();
 
   const commsActive = pathname.startsWith("/admin/comms");
 
@@ -129,7 +129,7 @@ export function AdminSidebar({
           collapsed ? "justify-center" : "gap-2"
         }`}
       >
-        <Link href="/admin" className="flex min-w-0 items-center gap-2">
+        <GuardedLink href="/admin" className="flex min-w-0 items-center gap-2">
           <Image
             src="/map-pin.png"
             alt="FindMySpace"
@@ -147,7 +147,7 @@ export function AdminSidebar({
               </p>
             </div>
           ) : null}
-        </Link>
+        </GuardedLink>
       </div>
 
       <nav

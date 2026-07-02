@@ -10,7 +10,7 @@ import { supabase } from "@/lib/supabase";
 import { adminApiFetch } from "@/lib/admin-api-client";
 import { AdminUnclaimedSpaceForm } from "@/app/components/AdminUnclaimedSpaceForm";
 import { AdminListingClaimPanel } from "@/app/components/AdminListingClaimPanel";
-import { GuardedLink, UnsavedChangesProvider } from "@/app/components/UnsavedChangesProvider";
+import { GuardedLink, useUnsavedBackFallback, useUnsavedGuardEnabled } from "@/app/components/UnsavedChangesProvider";
 import { UnclaimedListingEnquirySocialProof } from "@/app/components/UnclaimedListingEnquirySocialProof";
 import { sortSpaceImages } from "@/lib/sort-space-images";
 import { spacePricingFormFromRow } from "@/lib/space-pricing";
@@ -61,6 +61,9 @@ export default function EditUnclaimedListingPage() {
   const [claimInterestCount, setClaimInterestCount] = useState(0);
   const [readOnly, setReadOnly] = useState(false);
   const [crmLink, setCrmLink] = useState<SpaceCrmLinkSummary | null>(null);
+
+  useUnsavedBackFallback("/admin/unclaimed-listings");
+  useUnsavedGuardEnabled(!readOnly);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -140,10 +143,6 @@ export default function EditUnclaimedListingPage() {
   }
 
   return (
-    <UnsavedChangesProvider
-      enabled={!readOnly}
-      backFallbackHref="/admin/unclaimed-listings"
-    >
     <div className="mx-auto max-w-3xl">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <GuardedLink
@@ -268,6 +267,5 @@ export default function EditUnclaimedListingPage() {
           />
         </div>
     </div>
-    </UnsavedChangesProvider>
   );
 }

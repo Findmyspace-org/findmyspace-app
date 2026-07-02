@@ -99,7 +99,14 @@ function AdminListingReviewsPageContent() {
       setMessage(error.message);
       setRows([]);
     } else {
-      setRows((data as ReviewRow[]) || []);
+      setRows(
+        ((data || []) as unknown as ReviewRow[]).map((row) => ({
+          ...row,
+          profiles: Array.isArray(row.profiles)
+            ? (row.profiles[0] ?? null)
+            : row.profiles,
+        }))
+      );
       setMessage("");
     }
     setLoading(false);

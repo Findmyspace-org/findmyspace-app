@@ -500,10 +500,32 @@ export async function fetchAdminPropertySpace(
   }
 
   const status = row.status || "";
-  const readOnly =
-    status === "owner_claimed" || status === "deleted";
+  const readOnly = status === "deleted";
 
   return { space: data, readOnly };
+}
+
+/** Any non-deleted space a platform admin may manage (images, etc.). */
+export async function fetchAdminManageableSpace(
+  admin: SupabaseClient,
+  spaceId: string
+) {
+  const { data, error } = await admin
+    .from("spaces")
+    .select("id, status, property_id, created_by_admin")
+    .eq("id", spaceId)
+    .maybeSingle();
+
+  if (error || !data) {
+    return { error: error?.message || "Space not found." };
+  }
+
+  const status = (data as { status: string | null }).status || "";
+  if (status === "deleted") {
+    return { error: "This space has been deleted." };
+  }
+
+  return { space: data };
 }
 
 export async function fetchAdminUnclaimedSpace(

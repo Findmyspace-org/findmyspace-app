@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApi } from "@/lib/require-admin-api";
 import {
   createServiceAdminClient,
-  fetchAdminUnclaimedSpace,
+  fetchAdminManageableSpace,
 } from "@/lib/admin-unclaimed-space";
 import {
   classifySpaceImagesInsertError,
@@ -25,7 +25,7 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const logPrefix = "[admin/unclaimed/images]";
+  const logPrefix = "[admin/spaces/images]";
   let spaceId = "";
 
   try {
@@ -50,7 +50,7 @@ export async function POST(
       return jsonError(missingServiceRoleMessage(), 500, "missing_service_role");
     }
 
-    const existing = await fetchAdminUnclaimedSpace(admin, id);
+    const existing = await fetchAdminManageableSpace(admin, id);
     if (existing.error) {
       console.warn(logPrefix, "Listing not found or not editable:", existing.error, {
         spaceId: id,
@@ -253,7 +253,7 @@ export async function DELETE(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const logPrefix = "[admin/unclaimed/images]";
+  const logPrefix = "[admin/spaces/images]";
   try {
     const auth = await requireAdminApi(req);
     if ("response" in auth) return auth.response;
@@ -272,7 +272,7 @@ export async function DELETE(
       return jsonError(missingServiceRoleMessage(), 500, "missing_service_role");
     }
 
-    const existing = await fetchAdminUnclaimedSpace(admin, id);
+    const existing = await fetchAdminManageableSpace(admin, id);
     if (existing.error) {
       return jsonError(existing.error, 404, "listing_not_found");
     }

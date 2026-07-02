@@ -1,8 +1,6 @@
 "use client";
 
-import Link from "next/link";
 import Image from "next/image";
-import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import {
   Bell,
@@ -13,68 +11,25 @@ import {
   Search,
   User,
 } from "lucide-react";
+import { GuardedLink, useGuardedNavigation } from "@/app/components/UnsavedChangesProvider";
 import { supabase } from "@/lib/supabase";
 
 export function AdminTopBar({
   onOpenSidebar,
   unreadCount = 0,
   actionRequiredCount = 0,
+  profileEmail = null,
 }: {
   onOpenSidebar: () => void;
   unreadCount?: number;
   actionRequiredCount?: number;
+  profileEmail?: string | null;
 }) {
-  const router = useRouter();
+  const guardedNavigate = useGuardedNavigation();
   const menuRef = useRef<HTMLDivElement | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [profileOpen, setProfileOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
-  const [profile, setProfile] = useState<{
-    email: string | null;
-    name: string | null;
-  } | null>(null);
-
-  useEffect(() => {
-    let mounted = true;
-
-    async function loadProfile() {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      const user = session?.user;
-      if (!user || !mounted) return;
-
-      const { data } = await supabase
-        .from("profiles")
-        .select("email, first_name, last_name, full_name")
-        .eq("id", user.id)
-        .maybeSingle();
-
-      const row = data as {
-        email?: string | null;
-        first_name?: string | null;
-        last_name?: string | null;
-        full_name?: string | null;
-      } | null;
-
-      const name =
-        `${row?.first_name || ""} ${row?.last_name || ""}`.trim() ||
-        row?.full_name ||
-        null;
-
-      if (mounted) {
-        setProfile({
-          email: row?.email || user.email || null,
-          name,
-        });
-      }
-    }
-
-    void loadProfile();
-    return () => {
-      mounted = false;
-    };
-  }, []);
 
   useEffect(() => {
     function onDocClick(e: MouseEvent) {
@@ -104,7 +59,7 @@ export function AdminTopBar({
     e.preventDefault();
     const q = searchQuery.trim();
     if (!q) return;
-    router.push(`/admin/users?search=${encodeURIComponent(q)}`);
+    guardedNavigate(`/admin/users?search=${encodeURIComponent(q)}`, "admin-search");
   }
 
   return (
@@ -118,10 +73,10 @@ export function AdminTopBar({
         <Menu className="h-5 w-5" />
       </button>
 
-      <Link href="/admin" className="hidden items-center gap-2 lg:flex">
+      <GuardedLink href="/admin" className="hidden items-center gap-2 lg:flex">
         <Image src="/map-pin.png" alt="" width={24} height={24} aria-hidden />
         <span className="text-sm font-semibold text-[#192a3a]">Admin</span>
-      </Link>
+      </GuardedLink>
 
       <form
         onSubmit={handleSearchSubmit}
@@ -140,7 +95,7 @@ export function AdminTopBar({
       </form>
 
       <div className="ml-auto flex items-center gap-2">
-        <Link
+        <GuardedLink
           href="/admin/comms"
           className="relative inline-flex h-9 items-center gap-2 rounded-lg border border-gray-200 px-2.5 text-gray-700 hover:bg-gray-50"
           aria-label={`Comms inbox${unreadCount ? `, ${unreadCount} unread` : ""}${actionRequiredCount ? `, ${actionRequiredCount} need action` : ""}`}
@@ -162,7 +117,7 @@ export function AdminTopBar({
               {actionRequiredCount} action
             </span>
           ) : null}
-        </Link>
+        </GuardedLink>
 
         <div className="relative" ref={menuRef}>
           <button
@@ -174,7 +129,7 @@ export function AdminTopBar({
               <User className="h-4 w-4 text-[#192a3a]" />
             </span>
             <span className="hidden max-w-[120px] truncate text-sm font-medium text-[#192a3a] md:inline">
-              {profile?.name || profile?.email || "Admin"}
+              {profileEmail || "Admin"}
             </span>
             <ChevronDown className="hidden h-4 w-4 text-gray-500 md:block" />
           </button>
@@ -183,20 +138,20 @@ export function AdminTopBar({
             <div className="absolute right-0 z-50 mt-2 w-56 rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
               <div className="border-b border-gray-100 px-3 py-2">
                 <p className="truncate text-sm font-medium text-[#192a3a]">
-                  {profile?.name || "Admin"}
+                  Admin
                 </p>
-                {profile?.email ? (
-                  <p className="truncate text-xs text-gray-500">{profile.email}</p>
+                {profileEmail ? (
+                  <p className="truncate text-xs text-gray-500">{profileEmail}</p>
                 ) : null}
               </div>
-              <Link
+              <GuardedLink
                 href="/"
                 className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
                 onClick={() => setProfileOpen(false)}
               >
                 <ExternalLink className="h-4 w-4" />
                 Public site
-              </Link>
+              </GuardedLink>
               <button
                 type="button"
                 onClick={() => void handleLogout()}
