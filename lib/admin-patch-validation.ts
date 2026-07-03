@@ -234,7 +234,8 @@ export function extractAdminSpaceContentPatch(
     patch.space_type = v;
   }
   if ("booking_unit" in body) {
-    const v = trimOrNull(body.booking_unit);
+    let v = trimOrNull(body.booking_unit);
+    if (v === "event") v = "day";
     if (v === null || !BOOKING_UNITS.has(v)) {
       return { ok: false, error: "booking_unit must be hour, day, or month." };
     }

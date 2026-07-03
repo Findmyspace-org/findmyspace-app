@@ -37,7 +37,7 @@ import {
 } from "@/lib/space-pricing";
 import {
   formatMinBookingDuration,
-  resolveMinBookingUnit,
+  resolveRentalBookingUnit,
 } from "@/lib/space-min-booking";
 
 import {
@@ -192,7 +192,7 @@ export default async function Page({
   const priceLabel = formatSpacePriceDisplay(space);
   const depositLabel = formatSpaceDepositDetail(space);
   const minBookingLabel = formatMinBookingDuration(space);
-  const bookingUnit = resolveMinBookingUnit(space);
+  const bookingUnit = resolveRentalBookingUnit(space);
 
   const address = formatListingAddress({
     street_address: space.street_address,
@@ -534,6 +534,8 @@ export default async function Page({
                 spaceId={space.id}
                 ownerId={space.owner_id!}
                 bookingUnit={bookingUnit}
+                priceAmount={space.price_amount}
+                priceUnit={space.price_unit}
                 pricePerHour={space.price_per_hour}
                 pricePerDay={space.price_per_day}
                 pricePerMonth={space.price_per_month}

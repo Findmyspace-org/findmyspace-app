@@ -213,6 +213,14 @@ export function minBookingValidationMessage(row: MinBookingRow): string | null {
     : null;
 }
 
+/** Rental period for calendar/date selection (hour, day, or month). */
+export function resolveRentalBookingUnit(row: MinBookingRow): string {
+  const unit = row.booking_unit;
+  if (unit === "hour" || unit === "day" || unit === "month") return unit;
+  if (unit === "event") return "day";
+  return "day";
+}
+
 /** Booking unit used to evaluate minimum duration in booking forms. */
 export function resolveMinBookingUnit(row: MinBookingRow): string {
   if (row.min_booking_hours != null && row.min_booking_hours >= 1) return "hour";

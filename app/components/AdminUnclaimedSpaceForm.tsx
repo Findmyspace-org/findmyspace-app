@@ -85,7 +85,8 @@ function payloadFromState(state: FormState, crmLink: CrmLinkState) {
     state.priceAmount,
     state.priceUnit,
     state.depositRequired,
-    state.depositAmount
+    state.depositAmount,
+    state.bookingUnit
   );
   if (!pricing.ok) {
     throw new Error(pricing.error);
@@ -118,6 +119,7 @@ function payloadFromState(state: FormState, crmLink: CrmLinkState) {
     ),
     ...groupSizePayloadFromForm(state.spaceType, state.minGroupSize, state.maxGroupSize),
     ...pricing.data,
+    booking_unit: state.bookingUnit || pricing.data.booking_unit,
     ...minBooking.data,
     crm_organisation_id: crmLink.crm_organisation_id,
     crm_contact_id: crmLink.crm_contact_id,

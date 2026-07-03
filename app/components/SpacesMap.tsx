@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import L from "leaflet";
 import { MapContainer, Marker, Popup, TileLayer, useMap } from "react-leaflet";
 import Link from "next/link";
+import { formatSpacePriceDisplay } from "@/lib/space-pricing";
 
 type Space = {
   id: string;
@@ -12,6 +13,8 @@ type Space = {
   city: string | null;
   suburb: string | null;
   address_line_1: string | null;
+  price_amount?: number | null;
+  price_unit?: string | null;
   price_per_hour?: number | null;
   price_per_day?: number | null;
   price_per_month?: number | null;
@@ -67,17 +70,7 @@ export default function SpacesMap({ spaces }: { spaces: Space[] }) {
   const defaultCenter: [number, number] = [-33.7342, 18.9621];
 
   function getPriceLabel(space: Space) {
-    if (space.booking_unit === "hour") {
-      return space.price_per_hour ? `R${space.price_per_hour} / hour` : "Price not set";
-    }
-
-    if (space.booking_unit === "month") {
-      return space.price_per_month
-        ? `R${space.price_per_month} / month`
-        : "Price not set";
-    }
-
-    return space.price_per_day ? `R${space.price_per_day} / day` : "Price not set";
+    return formatSpacePriceDisplay(space);
   }
 
   return (

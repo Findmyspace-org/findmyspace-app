@@ -10,6 +10,7 @@ import {
   renterRequirementKeysForCategory,
   RENTER_REQUIREMENT_LABELS,
 } from "@/lib/booking-intelligence";
+import { parseGroupSizeInput } from "@/lib/group-size";
 import { HelpCircle } from "lucide-react";
 
 /** Inner section card — matches `SpaceCategoryFields` rhythm. */
@@ -394,34 +395,43 @@ export function ListingBookingQualityFormFields({
             <BqSection title="Group size & access">
               <div className="mb-4 grid gap-3 sm:grid-cols-2">
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-gray-600">Minimum Group Size</label>
+                  <label className="mb-1 block text-xs font-medium text-gray-600">
+                    Minimum group size (optional)
+                  </label>
                   <input
                     type="number"
                     min={1}
                     value={data.min_group_size != null ? String(data.min_group_size) : ""}
-                    onChange={(e) =>
+                    onChange={(e) => {
+                      const raw = e.target.value;
                       patchRoot({
-                        min_group_size: e.target.value === "" ? null : Number(e.target.value),
-                      })
-                    }
+                        min_group_size:
+                          raw.trim() === "" ? null : parseGroupSizeInput(raw),
+                      });
+                    }}
                     className="w-full min-h-[40px] rounded-lg border border-[#d4dbe2] bg-white px-3 py-2 text-sm outline-none transition focus:border-[#c1121f] focus:ring-2 focus:ring-[#c1121f]/20"
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-gray-600">Maximum Group Size</label>
+                  <label className="mb-1 block text-xs font-medium text-gray-600">
+                    Maximum group size (recommended)
+                  </label>
                   <input
                     type="number"
                     min={1}
                     value={data.max_group_size != null ? String(data.max_group_size) : ""}
-                    onChange={(e) =>
+                    onChange={(e) => {
+                      const raw = e.target.value;
                       patchRoot({
-                        max_group_size: e.target.value === "" ? null : Number(e.target.value),
-                      })
-                    }
+                        max_group_size:
+                          raw.trim() === "" ? null : parseGroupSizeInput(raw),
+                      });
+                    }}
                     className="w-full min-h-[40px] rounded-lg border border-[#d4dbe2] bg-white px-3 py-2 text-sm outline-none transition focus:border-[#c1121f] focus:ring-2 focus:ring-[#c1121f]/20"
                   />
                   <p className="mt-1 text-xs text-gray-500">
-                    Set the smallest and largest group this space can comfortably host.
+                    Optional. Enter a maximum to show &ldquo;Up to N people&rdquo;, or both min and
+                    max for a range.
                   </p>
                 </div>
               </div>

@@ -93,7 +93,7 @@ const WEEKLY_PERIOD_CONFIG: PeriodConfig = {
 };
 
 export const SPACE_PRICING_PERIOD_HELPER_TEXT =
-  "Pricing period, rental period and minimum booking unit are linked to avoid inconsistent bookings.";
+  "Choose how renters book the space and how the price is charged. For event pricing, renters still choose a date and time, but the price applies to the whole booking.";
 
 export const SPACE_PRICING_PERIOD_VALIDATION_ERROR =
   "Please align the rental period, pricing type and minimum booking unit.";
@@ -286,10 +286,7 @@ export function syncSpacePricingPeriod(
   }
 
   if (sourceField === "pricing_type" && value === "per_event") {
-    const daily = getPeriodConfig("daily");
     next.pricingType = "per_event";
-    next.rentalPeriod = daily.rentalPeriod;
-    next.minBookingUnit = daily.minBookingUnit;
     return next;
   }
 
@@ -299,7 +296,9 @@ export function syncSpacePricingPeriod(
       const weekly = getPeriodConfig("weekly");
       next.rentalPeriod = "weekly";
       next.pricingType = weekly.pricingType;
-      next.minBookingUnit = weekly.minBookingUnit;
+      if (currentState.minBookingDuration?.trim()) {
+        next.minBookingUnit = weekly.minBookingUnit;
+      }
     }
     return next;
   }
@@ -307,7 +306,11 @@ export function syncSpacePricingPeriod(
   const config = getPeriodConfig(period);
   next.rentalPeriod = config.rentalPeriod;
   next.pricingType = config.pricingType;
-  next.minBookingUnit = config.minBookingUnit;
+  if (sourceField === "min_booking_unit") {
+    next.minBookingUnit = config.minBookingUnit;
+  } else if (currentState.minBookingDuration?.trim()) {
+    next.minBookingUnit = config.minBookingUnit;
+  }
 
   return next;
 }
@@ -376,15 +379,7 @@ export function validateSpacePricingPeriodAlignment(
   }
 
   if (pricingType === "per_event") {
-    if (rentalPeriod !== "daily") {
-      return SPACE_PRICING_PERIOD_VALIDATION_ERROR;
-    }
-    if (
-      hasMinDuration &&
-      minBookingUnit &&
-      minBookingUnit !== "days" &&
-      minBookingUnit !== "weeks"
-    ) {
+    if (hasMinDuration && !minBookingUnit) {
       return SPACE_PRICING_PERIOD_VALIDATION_ERROR;
     }
     return null;
@@ -434,7 +429,13 @@ export function validateSpacePricingPeriodFormFields(fields: {
 export function normalizeSpacePricingPeriodDbFields(
   fields: SpacePricingPeriodDbFields
 ): SpacePricingPeriodDbFields {
-  const form = spacePricingPeriodFormFromDb(fields);
+  const sanitizedBookingUnit =
+    fields.booking_unit === "event" ? "day" : fields.booking_unit;
+
+  const form = spacePricingPeriodFormFromDb({
+    ...fields,
+    booking_unit: sanitizedBookingUnit,
+  });
   const hasMin =
     (fields.min_booking_hours != null && fields.min_booking_hours >= 1) ||
     (fields.min_booking_days != null && fields.min_booking_days >= 1) ||
@@ -451,11 +452,10 @@ export function normalizeSpacePricingPeriodDbFields(
       };
     }
   } else if (form.pricingType === "per_event") {
-    const daily = getPeriodConfig("daily");
     synced = {
-      rentalPeriod: daily.rentalPeriod,
+      rentalPeriod: form.rentalPeriod || "daily",
       pricingType: "per_event",
-      minBookingUnit: hasMin ? daily.minBookingUnit : form.minBookingUnit,
+      minBookingUnit: hasMin ? form.minBookingUnit : "",
     };
   } else if (form.rentalPeriod) {
     const config = getPeriodConfig(form.rentalPeriod);
@@ -467,7 +467,12 @@ export function normalizeSpacePricingPeriodDbFields(
   }
 
   const mapped = spacePricingPeriodToFormFields(synced);
-  const booking_unit = mapped.bookingUnit || fields.booking_unit || "day";
+  const booking_unit =
+    mapped.bookingUnit ||
+    (sanitizedBookingUnit && sanitizedBookingUnit !== "event"
+      ? sanitizedBookingUnit
+      : null) ||
+    "day";
   const price_unit = mapped.priceUnit || fields.price_unit || "day";
 
   let min_booking_hours = fields.min_booking_hours;

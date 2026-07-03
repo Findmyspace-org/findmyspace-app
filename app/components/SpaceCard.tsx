@@ -8,17 +8,12 @@ import {
 import { useRouter } from "next/navigation";
 import { formatSpaceTypeLabel, getSportTypeBadgeLabels } from "@/app/data/spaceFeatureConfig";
 import type { CardAvailabilityHint } from "@/lib/browse-availability-signals";
-import { formatGroupSizeShort } from "@/lib/group-size";
+import { formatSpaceCapacity } from "@/lib/group-size";
 import {
   shouldHideListingPricing,
   ENQUIRY_PRICING_LABEL,
 } from "@/lib/listing-lifecycle";
-import {
-  formatSpaceDepositDetail,
-  formatSpacePriceDisplay,
-  formatSpacePriceShort,
-  formatSpacePriceSuffix,
-} from "@/lib/space-pricing";
+import { formatSpacePriceDisplay } from "@/lib/space-pricing";
 
 type Space = {
   id: string;
@@ -66,16 +61,7 @@ export default function SpaceCard({
   const router = useRouter();
 
   const hidePricing = shouldHideListingPricing(space);
-
-  function getPriceLabel() {
-    if (hidePricing) return ENQUIRY_PRICING_LABEL;
-    return formatSpacePriceShort(space);
-  }
-
-  function getPriceSuffix() {
-    if (hidePricing) return null;
-    return formatSpacePriceSuffix(space);
-  }
+  const priceLine = hidePricing ? ENQUIRY_PRICING_LABEL : formatSpacePriceDisplay(space);
 
   function formatSpaceType(value?: string | null) {
     return formatSpaceTypeLabel(value);
@@ -84,7 +70,7 @@ export default function SpaceCard({
   const coverImage = space.image_urls?.[0] || null;
   const locationLine = [space.suburb, space.city].filter(Boolean).join(", ") || "Location to be confirmed";
   const sportBadges = getSportTypeBadgeLabels(space.space_type, space.attributes);
-  const groupSizeLine = formatGroupSizeShort(space.min_group_size, space.max_group_size);
+  const groupSizeLine = formatSpaceCapacity(space.min_group_size, space.max_group_size);
 
   return (
     <article
@@ -164,12 +150,7 @@ export default function SpaceCard({
           </p>
         ) : null}
 
-        <p className="mt-3 text-base font-semibold text-[#0f172a]">
-          {getPriceLabel()}
-          {getPriceSuffix() ? (
-            <span className="font-normal text-[#475569]">{getPriceSuffix()}</span>
-          ) : null}
-        </p>
+        <p className="mt-3 text-base font-semibold text-[#0f172a]">{priceLine}</p>
 
         {availabilityHint ? (
           <p className="mt-2 text-xs text-slate-600">{availabilityHint.text}</p>

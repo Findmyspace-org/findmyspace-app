@@ -11,6 +11,11 @@
     "test:lifecycle-guards": "node scripts/test-lifecycle-guards.mjs",
     "test:property-logo": "node scripts/test-property-logo-validation.mjs",
     "test:public-browse": "node scripts/test-public-browse-eligibility.mjs",
+    "test:group-size-capacity": "node scripts/test-group-size-capacity.mjs",
+    "test:pricing-period-sync": "node scripts/test-pricing-period-sync.mjs",
+    "test:event-pricing-save": "node scripts/test-event-pricing-save.mjs",
+    "test:booking-event-pricing": "node scripts/test-booking-event-pricing.mjs",
+    "test:space-price-display": "node scripts/test-space-price-display.mjs",
     "test:form-save-state": "node scripts/test-form-save-state.mjs",
     "test:unsaved-guard": "node scripts/test-unsaved-guard.mjs"
   },

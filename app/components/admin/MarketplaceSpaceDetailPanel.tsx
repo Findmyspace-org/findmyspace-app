@@ -6,7 +6,7 @@ import { format } from "date-fns";
 import { Building2 } from "lucide-react";
 import { adminListingStatusLabel } from "@/lib/admin-listing-status-display";
 import { getAdminSpaceVisibilityInfo } from "@/lib/admin-space-visibility";
-import { formatGroupSizeAdmin } from "@/lib/group-size";
+import { formatGroupSizeAdminLabel } from "@/lib/group-size";
 import { formatSpacePriceDisplay } from "@/lib/space-pricing";
 import { publicListingModeLabel } from "@/lib/public-listing-mode";
 import { getDisplayName, isValidUuid } from "@/lib/utils";
@@ -73,7 +73,7 @@ export function MarketplaceSpaceDetailPanel({
     ? getDisplayName(ownerProfile)
     : "Unassigned";
   const groupLabel =
-    formatGroupSizeAdmin(space.min_group_size, space.max_group_size) || "—";
+    formatGroupSizeAdminLabel(space.min_group_size, space.max_group_size);
 
   return (
     <div className="border-t border-gray-100 bg-gray-50 px-4 py-4">

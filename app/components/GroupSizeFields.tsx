@@ -44,7 +44,7 @@ export function GroupSizeFields({
   return (
     <div className={className}>
       <label className="block">
-        <span className={labelClassName}>Minimum Group Size</span>
+        <span className={labelClassName}>Minimum group size (optional)</span>
         <input
           type="number"
           min={1}
@@ -57,7 +57,7 @@ export function GroupSizeFields({
         />
       </label>
       <label className="block">
-        <span className={labelClassName}>Maximum Group Size</span>
+        <span className={labelClassName}>Maximum group size (recommended)</span>
         <input
           type="number"
           min={1}
@@ -69,7 +69,7 @@ export function GroupSizeFields({
           placeholder="e.g. 80"
         />
         <p className={helpClassName}>
-          Set the smallest and largest group this space can comfortably host.
+          Optional. Enter a maximum to show &ldquo;Up to N people&rdquo;, or both min and max for a range.
         </p>
       </label>
     </div>

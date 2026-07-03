@@ -23,7 +23,7 @@ import {
 import {
   canDeleteUnclaimedListingByRecord,
 } from "@/lib/admin-unclaimed-space-delete-guards";
-import { formatGroupSizeAdmin } from "@/lib/group-size";
+import { formatGroupSizeAdminLabel } from "@/lib/group-size";
 
 type ListingRow = {
   id: string;
@@ -339,7 +339,7 @@ function AdminUnclaimedListingsPageContent({
                         {formatSpaceTypeLabel(row.space_type)}
                       </td>
                       <td className="hidden truncate px-2 py-3 text-xs text-gray-600 xl:table-cell">
-                        {formatGroupSizeAdmin(row.min_group_size, row.max_group_size) || "—"}
+                        {formatGroupSizeAdminLabel(row.min_group_size, row.max_group_size)}
                       </td>
                       <td className="hidden px-2 py-3 text-gray-600 2xl:table-cell">
                         {row.crm_linked ? (

@@ -6,23 +6,45 @@
 
 import assert from "node:assert/strict";
 
+function normalizeCanonicalPriceUnit(value) {
+  if (value == null || typeof value !== "string") return null;
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) return null;
+  if (normalized === "per_event" || normalized === "per-event") return "event";
+  const units = new Set(["hour", "day", "event", "month", "on_request"]);
+  if (units.has(normalized)) return normalized;
+  return null;
+}
+
 function resolveSpacePriceUnit(space) {
-  if (space.price_unit === "hour" || space.price_unit === "day" || space.price_unit === "event" || space.price_unit === "month" || space.price_unit === "on_request") {
-    return space.price_unit;
-  }
-  const unit = space.booking_unit || "day";
-  if (unit === "hour") return "hour";
-  if (unit === "month") return "month";
-  if (unit === "day") return "day";
+  const canonical = normalizeCanonicalPriceUnit(space.price_unit);
+  if (canonical) return canonical;
+
+  const hasCanonicalAmount =
+    space.price_amount != null && space.price_amount >= 0;
+
+  if (space.price_per_hour != null && space.price_per_hour > 0) return "hour";
+  if (space.price_per_month != null && space.price_per_month > 0) return "month";
+  if (space.price_per_day != null && space.price_per_day > 0) return "day";
+
+  if (hasCanonicalAmount) return null;
+
+  const rental = space.booking_unit?.trim().toLowerCase();
+  if (rental === "hour") return "hour";
+  if (rental === "month") return "month";
+  if (rental === "day") return "day";
+
   return null;
 }
 
 function resolveSpacePriceAmount(space) {
   if (space.price_amount != null && space.price_amount >= 0) return space.price_amount;
   const unit = resolveSpacePriceUnit(space);
+  if (!unit || unit === "on_request") return null;
   if (unit === "hour") return space.price_per_hour ?? null;
   if (unit === "month") return space.price_per_month ?? null;
-  if (unit === "day" || unit === "event") return space.price_per_day ?? null;
+  if (unit === "day") return space.price_per_day ?? null;
+  if (unit === "event") return null;
   return null;
 }
 
@@ -179,5 +201,46 @@ assert.equal(
   true,
   "explicit max URL param must enable price filtering"
 );
+
+// Event-priced live listing with only canonical fields (no legacy price_per_*)
+const eventPriced = {
+  public_listing_mode: "live",
+  status: "active",
+  price_amount: 2500,
+  price_unit: "event",
+  booking_unit: "day",
+  price_per_hour: null,
+  price_per_day: null,
+  price_per_month: null,
+};
+
+assert.equal(resolveSpacePriceUnit(eventPriced), "event");
+assert.equal(resolveSpacePriceAmount(eventPriced), 2500);
+assert.equal(getPublicBrowseEligibility(eventPriced).eligible, true);
+assert.equal(
+  spaceMatchesBrowsePriceRange(eventPriced, 2000, 3000, "all"),
+  true,
+  "event price amount must participate in browse price range filter"
+);
+assert.equal(
+  resolveBrowsePriceFilterAmount(eventPriced, "hour"),
+  null,
+  "hour filter excludes event-priced listings"
+);
+
+// Event-priced with hourly rental period (Perdeberg-style)
+const eventHourlyRental = {
+  public_listing_mode: "live",
+  status: "active",
+  price_amount: 49500,
+  price_unit: "event",
+  booking_unit: "hour",
+  price_per_hour: null,
+  price_per_day: null,
+  price_per_month: null,
+};
+assert.equal(resolveSpacePriceUnit(eventHourlyRental), "event");
+assert.equal(resolveSpacePriceAmount(eventHourlyRental), 49500);
+assert.equal(getPublicBrowseEligibility(eventHourlyRental).eligible, true);
 
 console.log("test-public-browse-eligibility: ok");

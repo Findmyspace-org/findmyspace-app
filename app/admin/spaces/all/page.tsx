@@ -31,7 +31,7 @@ import {
 import { isLiveListingStatus } from "@/lib/admin-listing-routing";
 import type { PublicListingMode } from "@/lib/public-listing-mode";
 import { isArchivedSpace } from "@/lib/space-archive";
-import { formatGroupSizeAdmin } from "@/lib/group-size";
+import { formatGroupSizeAdminLabel } from "@/lib/group-size";
 
 type SpaceRow = {
   id: string;
@@ -435,7 +435,7 @@ export default function AdminAllSpacesPage() {
                     </td>
                     <td className="px-4 py-3 text-gray-600">{location}</td>
                     <td className="px-4 py-3 text-gray-600">
-                      {formatGroupSizeAdmin(space.min_group_size, space.max_group_size) || "—"}
+                      {formatGroupSizeAdminLabel(space.min_group_size, space.max_group_size)}
                     </td>
                     <td className="px-4 py-3">
                       <span className={adminListingStatusBadgeClass(space.status)}>

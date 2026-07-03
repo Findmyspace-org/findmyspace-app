@@ -64,16 +64,44 @@ const PRICE_UNIT_DISPLAY: Record<Exclude<SpacePriceUnit, "on_request">, string> 
   month: "per month",
 };
 
+/** Normalize canonical `price_unit` from DB/form (trim, lowercase, aliases). */
+export function normalizeCanonicalPriceUnit(
+  value: string | null | undefined
+): SpacePriceUnit | null {
+  if (value == null || typeof value !== "string") return null;
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) return null;
+  if (normalized === "per_event" || normalized === "per-event") return "event";
+  if (isSpacePriceUnit(normalized)) return normalized;
+  return null;
+}
+
+/**
+ * Pricing unit for display and charge logic.
+ * Uses canonical `price_unit` first — never maps rental `booking_unit` over `price_unit = event`.
+ */
 export function resolveSpacePriceUnit(
   space: SpacePricingInput
 ): SpacePriceUnit | null {
-  if (isSpacePriceUnit(space.price_unit)) return space.price_unit;
+  const canonical = normalizeCanonicalPriceUnit(space.price_unit);
+  if (canonical) return canonical;
 
-  const unit = space.booking_unit || "day";
-  if (unit === "hour") return "hour";
-  if (unit === "month") return "month";
-  if (unit === "event") return "event";
-  if (unit === "day") return "day";
+  const hasCanonicalAmount =
+    space.price_amount != null && space.price_amount >= 0;
+
+  // Legacy price columns imply pricing unit (not rental period).
+  if (space.price_per_hour != null && space.price_per_hour > 0) return "hour";
+  if (space.price_per_month != null && space.price_per_month > 0) return "month";
+  if (space.price_per_day != null && space.price_per_day > 0) return "day";
+
+  // Canonical amount without price_unit: do not guess label from booking_unit.
+  if (hasCanonicalAmount) return null;
+
+  const rental = space.booking_unit?.trim().toLowerCase();
+  if (rental === "hour") return "hour";
+  if (rental === "month") return "month";
+  if (rental === "day") return "day";
+
   return null;
 }
 
@@ -83,9 +111,11 @@ export function resolveSpacePriceAmount(space: SpacePricingInput): number | null
   }
 
   const unit = resolveSpacePriceUnit(space);
+  if (!unit || unit === "on_request") return null;
   if (unit === "hour") return space.price_per_hour ?? null;
   if (unit === "month") return space.price_per_month ?? null;
-  if (unit === "day" || unit === "event") return space.price_per_day ?? null;
+  if (unit === "day") return space.price_per_day ?? null;
+  if (unit === "event") return null;
   return null;
 }
 
@@ -109,12 +139,18 @@ export function formatSpacePriceDisplay(space: SpacePricingInput): string {
   if (unit === "on_request") return "Price on request";
 
   const amount = resolveSpacePriceAmount(space);
-  if (unit && amount != null && amount >= 0) {
-    return `${formatPriceAmount(amount)} ${PRICE_UNIT_DISPLAY[unit]}`;
+  if (amount != null && amount >= 0) {
+    if (unit) {
+      return `${formatPriceAmount(amount)} ${PRICE_UNIT_DISPLAY[unit]}`;
+    }
+    return formatPriceAmount(amount);
   }
 
   return "Price not set";
 }
+
+/** @alias formatSpacePriceDisplay */
+export const formatSpacePrice = formatSpacePriceDisplay;
 
 /** Price line with optional minimum booking duration suffix. */
 export function formatSpacePriceWithMinBooking(
@@ -197,18 +233,46 @@ export function spaceHasLegacyBookablePrice(space: SpacePricingInput): boolean {
   return (space.price_per_day ?? 0) > 0;
 }
 
+const RENTAL_BOOKING_UNITS = new Set(["hour", "day", "month"]);
+
+function normalizeRentalBookingUnit(
+  value: string | null | undefined
+): "hour" | "day" | "month" | null {
+  if (value && RENTAL_BOOKING_UNITS.has(value)) {
+    return value as "hour" | "day" | "month";
+  }
+  return null;
+}
+
+export type SyncLegacyPriceFieldsOptions = {
+  /** How renters select booking duration (hour/day/month). Used when price_unit is event. */
+  rentalBookingUnit?: string | null;
+};
+
 export function syncLegacyPriceFields(
   priceAmount: number | null,
-  priceUnit: SpacePriceUnit | null
+  priceUnit: SpacePriceUnit | null,
+  options?: SyncLegacyPriceFieldsOptions
 ): {
   booking_unit: string;
   price_per_hour: number | null;
   price_per_day: number | null;
   price_per_month: number | null;
 } {
+  const rentalUnit = normalizeRentalBookingUnit(options?.rentalBookingUnit);
+
   if (!priceUnit || priceUnit === "on_request") {
     return {
-      booking_unit: "day",
+      booking_unit: rentalUnit ?? "day",
+      price_per_hour: null,
+      price_per_day: null,
+      price_per_month: null,
+    };
+  }
+
+  if (priceUnit === "event") {
+    return {
+      booking_unit: rentalUnit ?? "day",
       price_per_hour: null,
       price_per_day: null,
       price_per_month: null,
@@ -230,15 +294,6 @@ export function syncLegacyPriceFields(
       price_per_hour: null,
       price_per_day: null,
       price_per_month: priceAmount,
-    };
-  }
-
-  if (priceUnit === "event") {
-    return {
-      booking_unit: "event",
-      price_per_hour: null,
-      price_per_day: priceAmount,
-      price_per_month: null,
     };
   }
 
@@ -327,7 +382,8 @@ export function spacePricingPayloadFromForm(
   priceAmount: string,
   priceUnit: string,
   depositRequired: boolean,
-  depositAmount: string
+  depositAmount: string,
+  rentalBookingUnit?: string | null
 ):
   | {
       ok: true;
@@ -354,7 +410,9 @@ export function spacePricingPayloadFromForm(
   const unit = priceUnit as SpacePriceUnit;
   const parsedAmount =
     unit === "on_request" ? null : parsePriceAmountInput(priceAmount);
-  const legacy = syncLegacyPriceFields(parsedAmount, unit);
+  const legacy = syncLegacyPriceFields(parsedAmount, unit, {
+    rentalBookingUnit,
+  });
 
   return {
     ok: true,
@@ -432,11 +490,21 @@ export function parseSpacePricingInput(
     return { ok: false, error: "Select a pricing type." };
   }
 
+  const rentalBookingUnitRaw = body.booking_unit;
+  const rentalBookingUnit =
+    typeof rentalBookingUnitRaw === "string" &&
+    ["hour", "day", "month"].includes(rentalBookingUnitRaw.trim())
+      ? rentalBookingUnitRaw.trim()
+      : rentalBookingUnitRaw === "event"
+        ? "day"
+        : null;
+
   const parsed = spacePricingPayloadFromForm(
     priceAmount,
     priceUnit,
     depositRequired,
-    depositAmount
+    depositAmount,
+    rentalBookingUnit
   );
   if (!parsed.ok) return parsed;
   return { ok: true, data: parsed.data };

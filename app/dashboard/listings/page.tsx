@@ -21,6 +21,8 @@ import {
   isBookableListingStatus,
   isOwnerCompletionFlowStatus,
 } from "@/lib/listing-lifecycle";
+import { formatGroupSizeShort } from "@/lib/group-size";
+import { formatSpacePriceDisplay } from "@/lib/space-pricing";
 import {
   ArrowRight,
   MapPin,
@@ -50,9 +52,13 @@ type Space = {
   address_line_1: string | null;
   space_type: string | null;
   booking_unit: string | null;
+  price_amount?: number | null;
+  price_unit?: string | null;
   price_per_hour: number | null;
   price_per_day: number | null;
   price_per_month: number | null;
+  min_group_size?: number | null;
+  max_group_size?: number | null;
   status: string | null;
   public_listing_mode?: string | null;
   created_at: string | null;
@@ -77,9 +83,13 @@ type SpaceRow = {
   address_line_1: string | null;
   space_type: string | null;
   booking_unit: string | null;
+  price_amount?: number | null;
+  price_unit?: string | null;
   price_per_hour: number | null;
   price_per_day: number | null;
   price_per_month: number | null;
+  min_group_size?: number | null;
+  max_group_size?: number | null;
   status: string | null;
   public_listing_mode: string | null;
   created_at: string | null;
@@ -246,7 +256,7 @@ function MyListingsPageContent({
       const { data, error } = await supabase
         .from("spaces")
         .select(
-          "id, owner_id, title, description, city, suburb, address_line_1, space_type, booking_unit, price_per_hour, price_per_day, price_per_month, status, public_listing_mode, created_at, ownership_proof_status, deposit_type, deposit_months, monthly_payment_day, property_id"
+          "id, owner_id, title, description, city, suburb, address_line_1, space_type, booking_unit, price_amount, price_unit, price_per_hour, price_per_day, price_per_month, min_group_size, max_group_size, status, public_listing_mode, created_at, ownership_proof_status, deposit_type, deposit_months, monthly_payment_day, property_id"
         )
         .eq("owner_id", user.id)
         .order("created_at", { ascending: false });
@@ -345,17 +355,11 @@ function MyListingsPageContent({
   }
 
   function getPriceLabel(space: Space) {
-    if (space.booking_unit === "hour") {
-      return space.price_per_hour ? `R${space.price_per_hour} / hour` : "Not set";
-    }
+    return formatSpacePriceDisplay(space);
+  }
 
-    if (space.booking_unit === "month") {
-      return space.price_per_month
-        ? `R${space.price_per_month} / month`
-        : "Not set";
-    }
-
-    return space.price_per_day ? `R${space.price_per_day} / day` : "Not set";
+  function getCapacityLabel(space: Space) {
+    return formatGroupSizeShort(space.min_group_size, space.max_group_size);
   }
 
   function getStatusBadgeClass(status: string | null) {
@@ -650,6 +654,7 @@ function MyListingsPageContent({
               getStatusBadgeClass={getStatusBadgeClass}
               getVerificationBadgeClass={getVerificationBadgeClass}
               getPriceLabel={getPriceLabel}
+              getCapacityLabel={getCapacityLabel}
               getNextAction={getNextAction}
               nextActionButtonClass={nextActionButtonClass}
               onViewDetails={setSelectedSpace}

@@ -77,7 +77,8 @@ export function SpaceMinBookingFields({
         </label>
       </div>
       <p className={helpClassName}>
-        Optional. Leave blank if there is no minimum booking duration.
+        Optional. Use this only if renters must book for a minimum number of hours, days or
+        months.
       </p>
     </div>
   );

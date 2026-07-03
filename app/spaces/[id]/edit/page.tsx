@@ -667,7 +667,8 @@ export default function EditListingPage(_props: PageProps) {
       priceAmount,
       priceUnit,
       depositRequired,
-      depositAmount
+      depositAmount,
+      bookingUnit
     );
     if (!pricingPayload.ok) {
       setSaveFailure(pricingPayload.error);
@@ -751,7 +752,7 @@ export default function EditListingPage(_props: PageProps) {
       latitude,
       longitude,
       space_type: spaceType,
-      booking_unit: pricingPayload.data.booking_unit,
+      booking_unit: bookingUnit,
       price_amount: pricingPayload.data.price_amount,
       price_unit: pricingPayload.data.price_unit,
       price_per_hour: pricingPayload.data.price_per_hour,

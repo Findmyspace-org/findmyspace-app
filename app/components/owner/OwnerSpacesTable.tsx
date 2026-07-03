@@ -21,6 +21,8 @@ export type OwnerSpaceTableRow = {
   price_per_hour: number | null;
   price_per_day: number | null;
   price_per_month: number | null;
+  min_group_size?: number | null;
+  max_group_size?: number | null;
   status: string | null;
   public_listing_mode?: string | null;
   created_at: string | null;
@@ -39,6 +41,7 @@ type OwnerSpacesTableProps = {
   getStatusBadgeClass: (status: string | null) => string;
   getVerificationBadgeClass: (status: string | null | undefined) => string;
   getPriceLabel: (space: OwnerSpaceTableRow) => string;
+  getCapacityLabel?: (space: OwnerSpaceTableRow) => string | null;
   getNextAction: (space: OwnerSpaceTableRow) => OwnerListingNextAction | null;
   nextActionButtonClass: (action: OwnerListingNextAction) => string;
   onViewDetails: (space: OwnerSpaceTableRow) => void;
@@ -67,6 +70,7 @@ export function OwnerSpacesTable({
   getStatusBadgeClass,
   getVerificationBadgeClass,
   getPriceLabel,
+  getCapacityLabel,
   getNextAction,
   nextActionButtonClass,
   onViewDetails,
@@ -82,6 +86,7 @@ export function OwnerSpacesTable({
             <th className="w-14 px-2 py-3 font-medium">Image</th>
             <th className="min-w-0 px-2 py-3 font-medium">Space</th>
             <th className="hidden w-28 px-2 py-3 font-medium md:table-cell">Price</th>
+            <th className="hidden w-32 px-2 py-3 font-medium lg:table-cell">Capacity</th>
             <th className="w-[7.5rem] px-2 py-3 font-medium">Status</th>
             <th className="hidden min-w-[11rem] px-2 py-3 font-medium lg:table-cell">
               Verification
@@ -229,6 +234,9 @@ export function OwnerSpacesTable({
                 </td>
                 <td className="hidden truncate px-2 py-3 text-xs text-gray-600 md:table-cell">
                   {getPriceLabel(space)}
+                </td>
+                <td className="hidden truncate px-2 py-3 text-xs text-gray-600 lg:table-cell">
+                  {getCapacityLabel?.(space) ?? "—"}
                 </td>
                 <td className="px-2 py-3 align-middle">
                   <span

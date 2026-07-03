@@ -99,10 +99,16 @@ export function SpacePricingPeriodSection({
       }
     }
 
-    if (synced.minBookingUnit) {
+    if (
+      synced.minBookingUnit &&
+      (sourceField === "min_booking_unit" ||
+        minBookingDuration.trim())
+    ) {
       onMinBookingUnitChange(
         minBookingUnitPluralToSingular(synced.minBookingUnit)
       );
+    } else if (nextPriceUnit === "event" && !minBookingDuration.trim()) {
+      onMinBookingUnitChange("");
     }
   }
 

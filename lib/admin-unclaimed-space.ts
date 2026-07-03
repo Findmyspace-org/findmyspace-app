@@ -131,7 +131,9 @@ export function parseUnclaimedSpaceInput(
     data.space_type = v;
   }
   if ("booking_unit" in body) {
-    const v = trimOrNull(body.booking_unit);
+    let v = trimOrNull(body.booking_unit);
+    // price_unit "event" must not map to booking_unit "event" — rental period uses hour/day/month.
+    if (v === "event") v = "day";
     if (v && !BOOKING_UNITS.has(v)) return { ok: false, error: "Invalid booking unit." };
     data.booking_unit = v;
   }
@@ -237,7 +239,9 @@ export function parseUnclaimedSpaceInput(
     data.price_unit = pricingParsed.data.price_unit;
     data.deposit_required = pricingParsed.data.deposit_required;
     data.deposit_amount = pricingParsed.data.deposit_amount;
-    data.booking_unit = pricingParsed.data.booking_unit;
+    if (!data.booking_unit) {
+      data.booking_unit = pricingParsed.data.booking_unit;
+    }
   }
 
   const minBookingParsed = parseMinBookingInput(body);
@@ -328,24 +332,33 @@ export function applyUnclaimedSpaceUpdatePatch(
     if (d.deposit_required !== undefined) patch.deposit_required = d.deposit_required;
     if (d.deposit_amount !== undefined) patch.deposit_amount = d.deposit_amount;
 
+    const rentalBookingUnit =
+      d.booking_unit && BOOKING_UNITS.has(d.booking_unit) ? d.booking_unit : null;
+
     const pricingParsed = parseSpacePricingInput({
       price_amount: d.price_amount,
       price_unit: d.price_unit,
       deposit_required: d.deposit_required ?? false,
       deposit_amount: d.deposit_amount ?? null,
+      booking_unit: rentalBookingUnit,
     });
     if (pricingParsed.ok && pricingParsed.data) {
-      patch.booking_unit = pricingParsed.data.booking_unit;
-      patch.price_per_hour = pricingParsed.data.price_per_hour;
-      patch.price_per_day = pricingParsed.data.price_per_day;
-      patch.price_per_month = pricingParsed.data.price_per_month;
+      const legacy = syncLegacyPriceFields(
+        pricingParsed.data.price_amount,
+        pricingParsed.data.price_unit,
+        { rentalBookingUnit }
+      );
+      patch.booking_unit = legacy.booking_unit;
+      patch.price_per_hour = legacy.price_per_hour;
+      patch.price_per_day = legacy.price_per_day;
+      patch.price_per_month = legacy.price_per_month;
     }
   }
 
   finalizeSpacePricingLegacyFields(patch);
 }
 
-/** Keep rental-period booking_unit and legacy price columns aligned with price_unit. */
+/** Keep legacy price columns aligned with price_unit without corrupting rental booking_unit. */
 export function finalizeSpacePricingLegacyFields(patch: Record<string, unknown>): void {
   const unitRaw = patch.price_unit;
   if (typeof unitRaw !== "string" || !isSpacePriceUnit(unitRaw.trim())) return;
@@ -358,7 +371,12 @@ export function finalizeSpacePricingLegacyFields(patch: Record<string, unknown>)
         ? patch.price_amount
         : null;
 
-  const legacy = syncLegacyPriceFields(amount, unit);
+  const rentalBookingUnit =
+    typeof patch.booking_unit === "string" && BOOKING_UNITS.has(patch.booking_unit)
+      ? patch.booking_unit
+      : null;
+
+  const legacy = syncLegacyPriceFields(amount, unit, { rentalBookingUnit });
   patch.booking_unit = legacy.booking_unit;
   patch.price_per_hour = legacy.price_per_hour;
   patch.price_per_day = legacy.price_per_day;
@@ -373,7 +391,13 @@ export function buildUnclaimedSpaceRow(
 ): Record<string, unknown> {
   const street = input.street_address ?? input.address_line_1 ?? null;
   const priceUnit = (input.price_unit as SpacePriceUnit | null) ?? null;
-  const legacy = syncLegacyPriceFields(input.price_amount ?? null, priceUnit);
+  const rentalBookingUnit =
+    input.booking_unit && BOOKING_UNITS.has(input.booking_unit)
+      ? input.booking_unit
+      : null;
+  const legacy = syncLegacyPriceFields(input.price_amount ?? null, priceUnit, {
+    rentalBookingUnit,
+  });
 
   return {
     owner_id: null,

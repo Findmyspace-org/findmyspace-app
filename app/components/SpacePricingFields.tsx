@@ -37,6 +37,7 @@ export function SpacePricingFields({
   helpClassName = "mt-1 text-xs text-gray-500",
 }: SpacePricingFieldsProps) {
   const isPriceOnRequest = priceUnit === "on_request";
+  const isPerEvent = priceUnit === "event";
 
   return (
     <div className={className}>
@@ -55,6 +56,12 @@ export function SpacePricingFields({
               </option>
             ))}
           </select>
+          {isPerEvent ? (
+            <p className={helpClassName}>
+              Use this when the price is for the whole booking or event, rather than per hour or
+              per day. Renters will still select a date and time.
+            </p>
+          ) : null}
         </label>
 
         <label className="block">

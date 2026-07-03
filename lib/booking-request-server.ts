@@ -1,5 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { buildInitialBookingCharges } from "@/lib/invoice";
+import {
+  computeBookingTotals,
+  resolveBookingUnitPrice,
+} from "@/lib/booking-pricing";
 import { isSpaceBookable } from "@/lib/listing-lifecycle";
 import {
   buildBookingTermsAcceptancePayload,
@@ -38,6 +42,8 @@ type SpacePricingRow = {
   public_listing_mode: string | null;
   property_id: string | null;
   booking_unit: string | null;
+  price_amount: number | null;
+  price_unit: string | null;
   price_per_hour: number | null;
   price_per_day: number | null;
   price_per_month: number | null;
@@ -84,12 +90,6 @@ function getMinimumQuantity(space: SpacePricingRow, bookingUnit: string): number
   if (bookingUnit === "hour") return Number(space.min_booking_hours || 0);
   if (bookingUnit === "month") return Number(space.min_booking_months || 0);
   return Number(space.min_booking_days || 0);
-}
-
-function getUnitPrice(space: SpacePricingRow, bookingUnit: string): number {
-  if (bookingUnit === "hour") return Number(space.price_per_hour || 0);
-  if (bookingUnit === "month") return Number(space.price_per_month || 0);
-  return Number(space.price_per_day || 0);
 }
 
 export async function loadSpaceBookingPrerequisites(
@@ -167,7 +167,7 @@ export async function createBookingRequestServer(
   const { data: spaceRow, error: spaceErr } = await admin
     .from("spaces")
     .select(
-      "id, owner_id, status, public_listing_mode, property_id, booking_unit, price_per_hour, price_per_day, price_per_month, platform_fee_percent, deposit_type, deposit_months, monthly_payment_day, min_booking_hours, min_booking_days, min_booking_months"
+      "id, owner_id, status, public_listing_mode, property_id, booking_unit, price_amount, price_unit, price_per_hour, price_per_day, price_per_month, platform_fee_percent, deposit_type, deposit_months, monthly_payment_day, min_booking_hours, min_booking_days, min_booking_months"
     )
     .eq("id", spaceId)
     .maybeSingle();
@@ -197,10 +197,22 @@ export async function createBookingRequestServer(
     throw new Error("This booking does not meet the minimum duration.");
   }
 
-  const unitPrice = getUnitPrice(space, unit);
-  if (unitPrice <= 0) {
+  const totals = computeBookingTotals(space, unit, quantity, startAt);
+  if (!totals) {
     throw new Error("This listing does not have valid pricing yet.");
   }
+
+  const {
+    totalPrice,
+    depositAmount,
+    monthlyRent,
+    initialPaymentAmount,
+    nextPaymentDate,
+    monthsTotal,
+    monthsPaid,
+    platformFee,
+    ownerAmount,
+  } = totals;
 
   const { propertyTerms, fields } = await loadSpaceBookingPrerequisites(admin, spaceId);
   const requiresPropertyTerms = propertyRequiresTermsAcceptance(propertyTerms);
@@ -219,36 +231,6 @@ export async function createBookingRequestServer(
   if (validationError) {
     throw new Error(validationError);
   }
-
-  const platformFeePercent = Number(space.platform_fee_percent ?? 15);
-  const depositMonths = Number(space.deposit_months ?? 0);
-  const monthlyPaymentDay = Number(space.monthly_payment_day ?? 1);
-
-  let totalPrice = Number((quantity * unitPrice).toFixed(2));
-  let depositAmount = 0;
-  let monthlyRent = 0;
-  let initialPaymentAmount = totalPrice;
-  let nextPaymentDate: string | null = null;
-  let monthsTotal = 0;
-  let monthsPaid = 0;
-
-  if (unit === "month") {
-    monthlyRent = unitPrice;
-    monthsTotal = quantity;
-    depositAmount = Number((monthlyRent * depositMonths).toFixed(2));
-    initialPaymentAmount = Number((monthlyRent + depositAmount).toFixed(2));
-    totalPrice = initialPaymentAmount;
-    monthsPaid = 1;
-
-    const startDate = new Date(startAt);
-    const nextPayment = new Date(startDate);
-    nextPayment.setMonth(nextPayment.getMonth() + 1);
-    nextPayment.setDate(monthlyPaymentDay);
-    nextPaymentDate = nextPayment.toISOString();
-  }
-
-  const platformFee = Number((totalPrice * (platformFeePercent / 100)).toFixed(2));
-  const ownerAmount = Number((totalPrice - platformFee).toFixed(2));
 
   const termsPayload =
     requiresPropertyTerms && propertyTerms

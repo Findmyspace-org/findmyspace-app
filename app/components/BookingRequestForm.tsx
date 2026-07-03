@@ -21,6 +21,11 @@ import {
 } from "@/lib/bookingDraftStorage";
 import { isSpaceBookable } from "@/lib/listing-lifecycle";
 import {
+  formatSpacePriceWithMinBooking,
+  resolveSpacePriceAmount,
+  resolveSpacePriceUnit,
+} from "@/lib/space-pricing";
+import {
   ACCESS_FREQUENCY_OPTIONS,
   BookingRequestDetailPayload,
   DEFAULT_LISTING_BOOKING_REQUIREMENTS,
@@ -79,6 +84,8 @@ type BookingRequestFormProps = {
   spaceId: string;
   ownerId: string;
   bookingUnit: string | null;
+  priceAmount?: number | null;
+  priceUnit?: string | null;
   pricePerHour: number | null;
   pricePerDay: number | null;
   pricePerMonth: number | null;
@@ -111,6 +118,8 @@ export default function BookingRequestForm({
   spaceId,
   ownerId,
   bookingUnit,
+  priceAmount = null,
+  priceUnit = null,
   pricePerHour,
   pricePerDay,
   pricePerMonth,
@@ -428,22 +437,38 @@ export default function BookingRequestForm({
     }
   }
 
+  function pricingContext() {
+    return {
+      price_amount: priceAmount,
+      price_unit: priceUnit,
+      booking_unit: bookingUnit,
+      price_per_hour: pricePerHour,
+      price_per_day: pricePerDay,
+      price_per_month: pricePerMonth,
+    };
+  }
+
   function getUnitPrice() {
+    const resolvedUnit = resolveSpacePriceUnit(pricingContext());
+    if (resolvedUnit === "event") {
+      return resolveSpacePriceAmount(pricingContext()) || 0;
+    }
     if (bookingUnit === "hour") return pricePerHour || 0;
     if (bookingUnit === "month") return pricePerMonth || 0;
     return pricePerDay || 0;
   }
 
   function getPriceLabel() {
-    if (bookingUnit === "hour") {
-      return pricePerHour ? `R${pricePerHour} / hour` : "Price not set";
-    }
+    return formatSpacePriceWithMinBooking({
+      ...pricingContext(),
+      min_booking_hours: minHours ?? null,
+      min_booking_days: minDays ?? null,
+      min_booking_months: minMonths ?? null,
+    });
+  }
 
-    if (bookingUnit === "month") {
-      return pricePerMonth ? `R${pricePerMonth} / month` : "Price not set";
-    }
-
-    return pricePerDay ? `R${pricePerDay} / day` : "Price not set";
+  function isEventPricing() {
+    return resolveSpacePriceUnit(pricingContext()) === "event";
   }
 
   function getBusinessDateParts(value: string) {
@@ -799,6 +824,24 @@ export default function BookingRequestForm({
     }
 
     const quantity = calculateQuantity(startAt, endAt);
+    const resolvedPriceUnit = resolveSpacePriceUnit(pricingContext());
+
+    if (resolvedPriceUnit === "event") {
+      const totalPrice = Number(unitPrice.toFixed(2));
+      return {
+        quantity: 1,
+        unitPrice,
+        totalPrice,
+        platformFeePercent,
+        depositAmount: 0,
+        initialPaymentAmount: totalPrice,
+        monthlyRent: 0,
+        nextPaymentDate: null as string | null,
+        monthsTotal: 0,
+        monthsPaid: 0,
+        monthlyPaymentDay,
+      };
+    }
 
     if (bookingUnit === "month") {
       const monthlyRent = unitPrice;
@@ -856,6 +899,8 @@ export default function BookingRequestForm({
     pricePerHour,
     pricePerDay,
     pricePerMonth,
+    priceAmount,
+    priceUnit,
     spaceSettings,
   ]);
 
@@ -1325,6 +1370,15 @@ export default function BookingRequestForm({
                 )}
                 <p className="mt-2 text-base font-semibold text-[#192a3a]">
                   Initial total: R{bookingSummary.totalPrice.toFixed(2)}
+                </p>
+              </>
+            ) : isEventPricing() ? (
+              <>
+                <p>
+                  <b>Event price:</b> {getPriceLabel()}
+                </p>
+                <p className="mt-2 text-base font-semibold text-[#192a3a]">
+                  Total: R{bookingSummary.totalPrice.toFixed(2)}
                 </p>
               </>
             ) : (
