@@ -136,13 +136,23 @@ export function AdminRoleProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<Omit<AdminRoleState, "refresh">>(INITIAL_STATE);
   const refreshGenerationRef = useRef(0);
 
-  const load = useCallback(async (force = false) => {
+  const load = useCallback(async (options?: { force?: boolean; silent?: boolean }) => {
+    const force = options?.force ?? false;
+    const silent = options?.silent ?? false;
     const generation = ++refreshGenerationRef.current;
-    setState((current) => ({
-      ...current,
-      loading: true,
-      sessionError: null,
-    }));
+
+    if (!silent) {
+      setState((current) => ({
+        ...current,
+        loading: true,
+        sessionError: null,
+      }));
+    } else {
+      setState((current) => ({
+        ...current,
+        sessionError: null,
+      }));
+    }
 
     try {
       if (force) {
@@ -202,6 +212,10 @@ export function AdminRoleProvider({ children }: { children: ReactNode }) {
         error: error instanceof Error ? error.message : String(error),
       });
 
+      if (silent) {
+        return;
+      }
+
       setState((current) => ({
         ...current,
         loading: false,
@@ -214,22 +228,33 @@ export function AdminRoleProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const refresh = useCallback(() => {
-    void load(true);
+    void load({ force: true, silent: false });
   }, [load]);
 
   useEffect(() => {
-    void load(false);
+    void load({ force: false, silent: false });
 
     let authTimer: ReturnType<typeof setTimeout> | null = null;
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(() => {
+    } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "TOKEN_REFRESHED") {
+        invalidateBrowserSessionCache();
+        return;
+      }
+
+      if (event === "INITIAL_SESSION") {
+        return;
+      }
+
+      const silent = event === "USER_UPDATED";
+
       invalidateBrowserSessionCache();
       invalidateAdminSessionCache();
       if (authTimer) clearTimeout(authTimer);
       authTimer = setTimeout(() => {
-        void load(true);
+        void load({ force: true, silent });
       }, 80);
     });
 

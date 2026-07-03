@@ -66,8 +66,16 @@ export default function RequireAuth({ children }: RequireAuthProps) {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange((event, session) => {
       if (!mounted) return;
+
+      if (event === "TOKEN_REFRESHED") {
+        if (session?.user) {
+          setAllowed(true);
+          setChecking(false);
+        }
+        return;
+      }
 
       if (session?.user) {
         setAllowed(true);

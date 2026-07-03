@@ -17,6 +17,7 @@ import {
   spaceHasPricing,
   type PropertySpaceHealthInput,
 } from "@/lib/property-space-ops";
+import { fetchOwnerPropertyById } from "@/lib/owner-properties-query";
 import { isArchivedSpace } from "@/lib/space-archive";
 
 export async function GET(
@@ -27,17 +28,15 @@ export async function GET(
   const auth = await requireOwnerPropertyApi(req, id);
   if ("response" in auth) return auth.response;
 
-  const { data: property, error } = await auth.admin
-    .from("properties")
-    .select("id, name, description, address_line1, suburb, city, province, postal_code, country, owner_accepted_at, terms_title, terms_text, terms_document_url, require_terms_acceptance, terms_acceptance_label, terms_updated_at")
-    .eq("id", id)
-    .maybeSingle();
-
-  if (error || !property) {
-    return NextResponse.json({ error: "Property not found." }, { status: 404 });
+  const propertyResult = await fetchOwnerPropertyById(auth.admin, id);
+  if (!propertyResult.ok) {
+    return NextResponse.json(
+      { error: propertyResult.error },
+      { status: propertyResult.status }
+    );
   }
 
-  const row = property as Record<string, unknown>;
+  const row = propertyResult.property;
 
   const { data: spaces, error: spacesErr } = await auth.admin
     .from("spaces")

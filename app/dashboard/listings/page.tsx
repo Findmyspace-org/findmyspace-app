@@ -9,8 +9,8 @@ import RequireAuth from "@/app/components/RequireAuth";
 import DashboardShell from "@/app/components/DashboardShell";
 import { HOST_NAV } from "@/lib/dashboard-nav";
 import OwnerVerificationAlerts from "@/app/components/OwnerVerificationAlerts";
+import { OwnerSpacesTable } from "@/app/components/owner/OwnerSpacesTable";
 import {
-  FOCUS_HIGHLIGHT_CLASS,
   useFocusHighlight,
 } from "@/lib/use-focus-highlight";
 import { ownerClaimCanSubmitForSpace } from "@/lib/claim-readiness";
@@ -34,7 +34,6 @@ import {
   BadgeCheck,
   PauseCircle,
   PlayCircle,
-  ImageIcon,
   Search,
   X,
 } from "lucide-react";
@@ -64,6 +63,8 @@ type Space = {
   deposit_type?: DepositType;
   deposit_months?: number | null;
   monthly_payment_day?: number | null;
+  property_id?: string | null;
+  property_name?: string | null;
 };
 
 type SpaceRow = {
@@ -86,6 +87,7 @@ type SpaceRow = {
   deposit_type: DepositType;
   deposit_months: number | null;
   monthly_payment_day: number | null;
+  property_id: string | null;
 };
 
 type SpaceImageRow = {
@@ -132,6 +134,7 @@ function MyListingsPageContent({
 
   const [searchText, setSearchText] = useState("");
   const [selectedSpace, setSelectedSpace] = useState<Space | null>(null);
+  const [pauseUpdatingId, setPauseUpdatingId] = useState<string | null>(null);
 
   const { highlightedId } = useFocusHighlight({
     focusId: focusSpaceId,
@@ -176,6 +179,12 @@ function MyListingsPageContent({
         /* non-fatal */
       }
     })();
+  }, [focusSpaceId, loading, spaces]);
+
+  useEffect(() => {
+    if (!focusSpaceId || loading) return;
+    const match = spaces.find((space) => space.id === focusSpaceId);
+    if (match) setSelectedSpace(match);
   }, [focusSpaceId, loading, spaces]);
 
   async function loadMyListings() {
@@ -237,7 +246,7 @@ function MyListingsPageContent({
       const { data, error } = await supabase
         .from("spaces")
         .select(
-          "id, owner_id, title, description, city, suburb, address_line_1, space_type, booking_unit, price_per_hour, price_per_day, price_per_month, status, public_listing_mode, created_at, ownership_proof_status, deposit_type, deposit_months, monthly_payment_day"
+          "id, owner_id, title, description, city, suburb, address_line_1, space_type, booking_unit, price_per_hour, price_per_day, price_per_month, status, public_listing_mode, created_at, ownership_proof_status, deposit_type, deposit_months, monthly_payment_day, property_id"
         )
         .eq("owner_id", user.id)
         .order("created_at", { ascending: false });
@@ -250,8 +259,16 @@ function MyListingsPageContent({
 
       const baseSpaces = (data || []) as unknown as SpaceRow[];
       const spaceIds = baseSpaces.map((space) => space.id);
+      const propertyIds = [
+        ...new Set(
+          baseSpaces
+            .map((space) => space.property_id)
+            .filter((id): id is string => Boolean(id))
+        ),
+      ];
 
       const imageMap = new Map<string, string>();
+      const propertyNameMap = new Map<string, string>();
       const profileMap = new Map<
         string,
         {
@@ -280,6 +297,17 @@ function MyListingsPageContent({
         }
       }
 
+      if (propertyIds.length > 0) {
+        const { data: propertyRows } = await supabase
+          .from("properties")
+          .select("id, name")
+          .in("id", propertyIds);
+
+        for (const property of (propertyRows as { id: string; name: string }[]) || []) {
+          propertyNameMap.set(property.id, property.name);
+        }
+      }
+
       if (profileData?.id) {
         profileMap.set(profileData.id, {
           owner_verification_status: profileData.owner_verification_status,
@@ -298,6 +326,10 @@ function MyListingsPageContent({
         deposit_type: space.deposit_type || "none",
         deposit_months: space.deposit_months ?? 0,
         monthly_payment_day: space.monthly_payment_day ?? 1,
+        property_id: space.property_id,
+        property_name: space.property_id
+          ? propertyNameMap.get(space.property_id) || null
+          : null,
       }));
 
       const visibleSpaces = mergedSpaces.filter(
@@ -393,11 +425,13 @@ function MyListingsPageContent({
     nextStatus: "active" | "paused" | "deleted"
   ) {
     setMessage("");
+    setPauseUpdatingId(spaceId);
 
     const targetSpace = spaces.find((space) => space.id === spaceId);
 
     if (!targetSpace) {
       setMessage("Listing not found.");
+      setPauseUpdatingId(null);
       return;
     }
 
@@ -406,6 +440,7 @@ function MyListingsPageContent({
         setMessage(
           "Complete the listing setup and submit for admin review before it can go live."
         );
+        setPauseUpdatingId(null);
         return;
       }
 
@@ -415,6 +450,7 @@ function MyListingsPageContent({
         setMessage(
           `This listing cannot be activated yet. Missing: ${missingChecks.join(", ")}.`
         );
+        setPauseUpdatingId(null);
         return;
       }
     }
@@ -425,6 +461,7 @@ function MyListingsPageContent({
 
     if (error) {
       setMessage(error.message);
+      setPauseUpdatingId(null);
       return;
     }
 
@@ -436,6 +473,14 @@ function MyListingsPageContent({
         )
     );
 
+    setSelectedSpace((current) =>
+      current?.id === spaceId ? { ...current, status: nextStatus } : current
+    );
+    setPauseUpdatingId(null);
+  }
+
+  function canTogglePause(space: Space) {
+    return space.status === "active" || space.status === "paused";
   }
 
 
@@ -464,6 +509,7 @@ function MyListingsPageContent({
         space.city,
         space.space_type,
         space.booking_unit,
+        space.property_name,
       ]
         .filter(Boolean)
         .join(" ")
@@ -581,149 +627,38 @@ function MyListingsPageContent({
 
           {loading ? (
             <Box>Loading your spaces...</Box>
-          ) : filteredSpaces.length === 0 ? (
-            <Box>No spaces found.</Box>
-          ) : (
-            <div className="space-y-4">
-              {filteredSpaces.map((space) => {
-                const nextAction = getNextAction(space);
-                const isLiveListing =
-                  space.status === "active" || space.status === "paused";
-                return (
-                  <div
-                    key={space.id}
-                    id={`space-${space.id}`}
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => setSelectedSpace(space)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        setSelectedSpace(space);
-                      }
-                    }}
-                    className={`w-full overflow-hidden rounded-md border border-gray-200 bg-white text-left shadow-sm transition hover:border-gray-300 hover:bg-[#fbfcfd] focus:outline-none focus:ring-2 focus:ring-[#192a3a]/20 ${
-                      highlightedId === space.id ? FOCUS_HIGHLIGHT_CLASS : ""
-                    }`}
-                  >
-                    <div className="grid items-center gap-3 p-3 md:grid-cols-[92px_1fr_auto]">
-                      <div className="relative h-[72px] w-full overflow-hidden rounded-md bg-gray-100 md:w-[92px]">
-                        {space.cover_image_url ? (
-                          <Image
-                            src={space.cover_image_url}
-                            alt={space.title || "Listing image"}
-                            fill
-                            className="object-cover"
-                            unoptimized
-                          />
-                        ) : (
-                          <div className="flex h-full items-center justify-center bg-gray-100 text-gray-400">
-                            <ImageIcon className="h-6 w-6" aria-hidden />
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="min-w-0">
-                        <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-                          <div className="min-w-0">
-                            <h2 className="truncate text-base font-semibold text-[#192a3a]">
-                              {space.title || "Untitled listing"}
-                            </h2>
-                            <div className="mt-1 flex items-start gap-2 text-sm text-gray-600">
-                              <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-gray-500" />
-                              <p className="truncate">
-                                {[space.address_line_1, space.suburb, space.city]
-                                  .filter(Boolean)
-                                  .join(", ") || "Address not set"}
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="mt-2 flex flex-wrap gap-1.5">
-                          <span
-                            className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${getVerificationBadgeClass(
-                              space.owner_verification_status
-                            )}`}
-                          >
-                            Owner verification: {space.owner_verification_status || "pending"}
-                          </span>
-
-                          <span
-                            className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${getVerificationBadgeClass(
-                              space.bank_verification_status
-                            )}`}
-                          >
-                            Bank verification: {space.bank_verification_status || "pending"}
-                          </span>
-
-                          <span
-                            className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${getVerificationBadgeClass(
-                              space.ownership_proof_status
-                            )}`}
-                          >
-                            Ownership proof: {space.ownership_proof_status || "pending"}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="flex flex-col items-end justify-center gap-2 md:min-w-[140px] md:items-end">
-                        <span
-                          className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${getStatusBadgeClass(
-                            space.status
-                          )}`}
-                        >
-                          {getStatusLabel(space)}
-                        </span>
-
-                        {nextAction ? (
-                          <Link
-                            href={nextAction.href}
-                            onClick={(e) => e.stopPropagation()}
-                            className={`inline-flex items-center gap-1 rounded-md px-3 py-1.5 text-xs font-semibold ${nextActionButtonClass(nextAction)}`}
-                          >
-                            {nextAction.label}
-                            <ArrowRight className="h-3.5 w-3.5" />
-                          </Link>
-                        ) : null}
-
-                        {isLiveListing && (
-                          <label
-                            className="inline-flex items-center"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                updateListingStatus(
-                                  space.id,
-                                  space.status === "paused" ? "active" : "paused"
-                                );
-                              }}
-                              disabled={space.status !== "paused" && space.status !== "active"}
-                              aria-label={space.status === "paused" ? "Activate listing" : "Pause listing"}
-                              className={`relative inline-flex h-5 w-10 items-center rounded-full transition ${space.status === "active"
-                                ? "bg-green-600"
-                                : "bg-gray-300"
-                                } ${space.status !== "paused" && space.status !== "active"
-                                  ? "cursor-not-allowed opacity-50"
-                                  : ""
-                                }`}
-                            >
-                              <span
-                                className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${space.status === "paused" ? "translate-x-1" : "translate-x-5"
-                                  }`}
-                              />
-                            </button>
-                          </label>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
+          ) : spaces.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-gray-300 bg-white p-10 text-center">
+              <p className="text-sm text-gray-600">
+                You don&apos;t have any spaces yet. Add your first space to start receiving
+                booking requests.
+              </p>
+              <Link
+                href="/dashboard/new-space"
+                className="mt-6 inline-flex rounded-md bg-[#192a3a] px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+              >
+                + Add space
+              </Link>
             </div>
+          ) : filteredSpaces.length === 0 ? (
+            <Box>No spaces match your search or filters.</Box>
+          ) : (
+            <OwnerSpacesTable
+              spaces={filteredSpaces}
+              highlightedId={highlightedId}
+              getStatusLabel={getStatusLabel}
+              getStatusBadgeClass={getStatusBadgeClass}
+              getVerificationBadgeClass={getVerificationBadgeClass}
+              getPriceLabel={getPriceLabel}
+              getNextAction={getNextAction}
+              nextActionButtonClass={nextActionButtonClass}
+              onViewDetails={setSelectedSpace}
+              onTogglePause={(spaceId, nextStatus) =>
+                void updateListingStatus(spaceId, nextStatus)
+              }
+              pauseUpdatingId={pauseUpdatingId}
+              canTogglePause={canTogglePause}
+            />
           )}
         {selectedSpace && (
           <>
@@ -736,7 +671,7 @@ function MyListingsPageContent({
               <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
-                    Listing details
+                    Space details
                   </p>
                   <h2 className="mt-1 text-lg font-semibold text-[#192a3a]">
                     {selectedSpace.title || "Untitled listing"}

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import SpaceCategoryFields from "@/app/components/SpaceCategoryFields";
 import { LISTING_SPACE_TYPE_OPTIONS } from "@/app/data/spaceFeatureConfig";
@@ -189,8 +189,10 @@ function buildOwnerListingSnapshot(values: {
   return JSON.stringify(values);
 }
 
-export default function EditListingPage({ params }: PageProps) {
+export default function EditListingPage(_props: PageProps) {
   const router = useRouter();
+  const routeParams = useParams();
+  const routeSpaceId = typeof routeParams.id === "string" ? routeParams.id : "";
 
   const [listingId, setListingId] = useState("");
   const [ownerId, setOwnerId] = useState("");
@@ -245,6 +247,7 @@ export default function EditListingPage({ params }: PageProps) {
   });
   const [renterRequirementsCommitted, setRenterRequirementsCommitted] = useState(false);
   const savedListingBaselineRef = useRef("");
+  const loadedSpaceIdRef = useRef<string | null>(null);
 
   const intelCategory = useMemo(() => mapSpaceTypeToIntelCategory(spaceType), [spaceType]);
   const listingQualityOptionsEdit = useMemo(
@@ -271,14 +274,10 @@ export default function EditListingPage({ params }: PageProps) {
   }
 
   useEffect(() => {
-    async function resolveParamsAndLoad() {
-      const { id } = await params;
-      setListingId(id);
-      await loadListing(id);
-    }
-
-    resolveParamsAndLoad();
-  }, [params]);
+    if (!routeSpaceId) return;
+    setListingId(routeSpaceId);
+    void loadListing(routeSpaceId);
+  }, [routeSpaceId]);
 
   useEffect(() => {
     if (loading || typeof window === "undefined") return;
@@ -299,7 +298,12 @@ export default function EditListingPage({ params }: PageProps) {
     if (patch.longitude !== undefined) setLongitude(patch.longitude);
   }
 
-  async function loadListing(id: string) {
+  async function loadListing(id: string, options?: { force?: boolean }) {
+    if (!options?.force && loadedSpaceIdRef.current === id) {
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     setMessage("");
 
@@ -501,6 +505,7 @@ export default function EditListingPage({ params }: PageProps) {
       bookingRequirements: loadedRequirements,
     });
 
+    loadedSpaceIdRef.current = id;
     setLoading(false);
   }
 
@@ -621,7 +626,7 @@ export default function EditListingPage({ params }: PageProps) {
       setOwnershipProofStatus("pending");
       setNewOwnershipProofFile(null);
       setMessage("Ownership proof uploaded successfully and sent for review.");
-      await loadListing(listingId);
+      await loadListing(listingId, { force: true });
     } catch (error) {
       console.error(error);
       setMessage(

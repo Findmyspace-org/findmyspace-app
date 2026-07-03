@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { UnsavedChangesProvider } from "@/app/components/UnsavedChangesProvider";
 import { AdminSidebar } from "./AdminSidebar";
@@ -74,7 +74,14 @@ function AdminShellInner({ children }: { children: React.ReactNode }) {
   } = useAdminRole();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
+  const hasResolvedSessionRef = useRef(false);
   const { counts } = useAdminInboxCounts(isAdmin);
+
+  useEffect(() => {
+    if (!roleLoading) {
+      hasResolvedSessionRef.current = true;
+    }
+  }, [roleLoading]);
 
   useEffect(() => {
     try {
@@ -95,7 +102,7 @@ function AdminShellInner({ children }: { children: React.ReactNode }) {
     router.replace(`/login?next=${next}`);
   }, [roleLoading, signedIn, pathname, router]);
 
-  if (roleLoading) {
+  if (roleLoading && !hasResolvedSessionRef.current) {
     return <AdminShellLoading />;
   }
 

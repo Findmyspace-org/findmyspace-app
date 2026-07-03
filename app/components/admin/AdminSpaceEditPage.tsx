@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Eye } from "lucide-react";
 import { adminApiFetch } from "@/lib/admin-api-client";
 import { AdminUnclaimedSpaceForm } from "@/app/components/AdminUnclaimedSpaceForm";
@@ -151,6 +151,9 @@ function AdminSpaceEditPageContent({
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [payload, setPayload] = useState<ManagePayload | null>(null);
+  const loadedSpaceIdRef = useRef<string | null>(null);
+  const payloadRef = useRef<ManagePayload | null>(null);
+  payloadRef.current = payload;
 
   const propertyId = payload?.space.property_id ?? payload?.property?.id ?? null;
   const returnHref = useMemo(
@@ -161,8 +164,12 @@ function AdminSpaceEditPageContent({
   useUnsavedBackFallback(returnHref);
   useUnsavedGuardEnabled(!payload?.readOnly);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (options?: { force?: boolean }) => {
     if (!spaceId) return;
+    if (!options?.force && loadedSpaceIdRef.current === spaceId && payloadRef.current) {
+      return;
+    }
+
     setLoading(true);
     try {
       const result = (await adminApiFetch(
@@ -176,6 +183,7 @@ function AdminSpaceEditPageContent({
       ) {
         setMessage("This space does not belong to the selected property.");
         setPayload(null);
+        loadedSpaceIdRef.current = null;
         setLoading(false);
         return;
       }
@@ -184,17 +192,20 @@ function AdminSpaceEditPageContent({
         ...result,
         images: sortSpaceImages(result.images || []),
       });
+      loadedSpaceIdRef.current = spaceId;
       setMessage("");
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Failed to load space.");
       setPayload(null);
+      loadedSpaceIdRef.current = null;
     }
     setLoading(false);
   }, [propertyIdConstraint, spaceId]);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    loadedSpaceIdRef.current = null;
+    void load({ force: true });
+  }, [spaceId, load]);
 
   if (loading) {
     return <div className="text-gray-600">Loading…</div>;

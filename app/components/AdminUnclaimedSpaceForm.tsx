@@ -350,6 +350,13 @@ export function AdminUnclaimedSpaceForm({
 
   useLayoutEffect(() => {
     if (lastServerSyncKeyRef.current === serverSyncKey) return;
+    if (
+      isMainFormDirty &&
+      lastServerSyncKeyRef.current != null &&
+      serverSyncKey.startsWith("edit:")
+    ) {
+      return;
+    }
     lastServerSyncKeyRef.current = serverSyncKey;
 
     const baselineCrm = {
