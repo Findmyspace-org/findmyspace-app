@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { ExternalLink, Pencil } from "lucide-react";
 import { AdminNav } from "@/app/components/AdminNav";
 import { adminApiFetch } from "@/lib/admin-api-client";
@@ -29,6 +30,7 @@ import {
   type PropertySpaceHealthFilter,
   type PropertySpaceRow,
 } from "@/lib/property-space-ops";
+import { ArchivePropertyModal } from "@/app/components/admin/ArchivePropertyModal";
 
 type PropertyDetail = {
   id: string;
@@ -71,6 +73,7 @@ function AdminPropertyDetailContent({
   showSavedBanner: boolean;
 }) {
   const params = useParams();
+  const router = useRouter();
   const propertyId = typeof params.id === "string" ? params.id : "";
 
   const [loading, setLoading] = useState(true);
@@ -101,6 +104,7 @@ function AdminPropertyDetailContent({
   const [successMessage, setSuccessMessage] = useState("");
   const [galleryMessage, setGalleryMessage] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
+  const [showArchiveModal, setShowArchiveModal] = useState(false);
 
   useUnsavedBackFallback("/admin/properties");
   useUnsavedGuardEnabled(editing);
@@ -452,6 +456,38 @@ function AdminPropertyDetailContent({
             onMessage={(msg) => setMessage(msg ?? "")}
           />
         </div>
+
+        <section className="mt-8 rounded-xl border border-red-200 bg-red-50/60 p-5">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-red-900">
+            Archive property
+          </h2>
+          <p className="mt-2 max-w-2xl text-sm text-red-900/90">
+            Archive this property and all spaces under it. Archived spaces will no longer
+            appear publicly and cannot be booked. Existing booking history will be
+            preserved.
+          </p>
+          <button
+            type="button"
+            onClick={() => setShowArchiveModal(true)}
+            className="mt-4 rounded-lg bg-red-800 px-4 py-2 text-sm font-semibold text-white hover:bg-red-900"
+          >
+            Archive property
+          </button>
+        </section>
+
+        {showArchiveModal ? (
+          <ArchivePropertyModal
+            propertyId={propertyId}
+            propertyName={property.name}
+            open={showArchiveModal}
+            onClose={() => setShowArchiveModal(false)}
+            onArchived={(summary) => {
+              router.push(
+                `/admin/properties?archived=${encodeURIComponent(summary.property_name)}`
+              );
+            }}
+          />
+        ) : null}
       </div>
     </main>
   );

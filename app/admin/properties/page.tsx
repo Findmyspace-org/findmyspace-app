@@ -3,9 +3,12 @@
 import Link from "next/link";
 import Image from "next/image";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Building2, Plus, Search } from "lucide-react";
 import { AdminNav } from "@/app/components/AdminNav";
 import { adminApiFetch } from "@/lib/admin-api-client";
+import { AdminRowActionsMenu } from "@/app/components/admin/AdminRowActionsMenu";
+import { ArchivePropertyModal } from "@/app/components/admin/ArchivePropertyModal";
 
 type PropertyRow = {
   id: string;
@@ -21,10 +24,13 @@ type PropertyRow = {
 };
 
 function AdminPropertiesPageContent() {
+  const searchParams = useSearchParams();
+  const archivedName = searchParams.get("archived");
   const [loading, setLoading] = useState(true);
   const [properties, setProperties] = useState<PropertyRow[]>([]);
   const [message, setMessage] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
+  const [archiveTarget, setArchiveTarget] = useState<PropertyRow | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -42,6 +48,12 @@ function AdminPropertiesPageContent() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (!archivedName) return;
+    setMessage(`Archived “${archivedName}”.`);
+    window.history.replaceState({}, "", "/admin/properties");
+  }, [archivedName]);
 
   const filtered = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -81,7 +93,15 @@ function AdminPropertiesPageContent() {
           </Link>
         </div>
 
-        {message ? <p className="mt-4 text-sm text-red-600">{message}</p> : null}
+        {message ? (
+          <p
+            className={`mt-4 text-sm ${
+              /archived|success/i.test(message) ? "text-emerald-700" : "text-red-600"
+            }`}
+          >
+            {message}
+          </p>
+        ) : null}
 
         <div className="relative mt-6 w-full sm:max-w-xs">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
@@ -115,6 +135,7 @@ function AdminPropertiesPageContent() {
                   <th className="px-4 py-3">Spaces</th>
                   <th className="px-4 py-3">Owner</th>
                   <th className="px-4 py-3">CRM</th>
+                  <th className="w-24 px-4 py-3 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -163,6 +184,23 @@ function AdminPropertiesPageContent() {
                     <td className="px-4 py-3 text-gray-700">
                       {row.crm_organisation_name || "—"}
                     </td>
+                    <td className="px-4 py-3 text-right">
+                      <AdminRowActionsMenu
+                        actions={[
+                          {
+                            key: "view",
+                            label: "View property",
+                            href: `/admin/properties/${row.id}`,
+                          },
+                          {
+                            key: "archive",
+                            label: "Archive property",
+                            destructive: true,
+                            onClick: () => setArchiveTarget(row),
+                          },
+                        ]}
+                      />
+                    </td>
                   </tr>
                   );
                 })}
@@ -171,6 +209,24 @@ function AdminPropertiesPageContent() {
           </div>
         )}
       </div>
+
+      {archiveTarget ? (
+        <ArchivePropertyModal
+          propertyId={archiveTarget.id}
+          propertyName={archiveTarget.name}
+          open={Boolean(archiveTarget)}
+          onClose={() => setArchiveTarget(null)}
+          onArchived={(summary) => {
+            setProperties((current) =>
+              current.filter((row) => row.id !== archiveTarget.id)
+            );
+            setMessage(
+              `Archived “${summary.property_name}” and ${summary.spaces_archived} space${summary.spaces_archived === 1 ? "" : "s"}.`
+            );
+            setArchiveTarget(null);
+          }}
+        />
+      ) : null}
     </main>
   );
 }

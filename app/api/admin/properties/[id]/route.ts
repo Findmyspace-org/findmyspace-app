@@ -3,6 +3,7 @@ import { requireAdminApi } from "@/lib/require-admin-api";
 import { adminAudit } from "@/lib/admin-audit";
 import { createServiceAdminClient } from "@/lib/admin-unclaimed-space";
 import { formatPropertyAddress, parsePropertyInput } from "@/lib/admin-property";
+import { isArchivedProperty } from "@/lib/property-archive";
 import { hasAiKnowledgeContent } from "@/lib/space-ai-knowledge";
 import {
   buildPropertySpaceRow,
@@ -42,6 +43,10 @@ export async function GET(
   }
 
   const row = property as Record<string, unknown>;
+  if (isArchivedProperty({ archived_at: row.archived_at as string | null })) {
+    return NextResponse.json({ error: "Property is archived.", archived: true }, { status: 410 });
+  }
+
   let crmOrganisation: { id: string; name: string } | null = null;
   if (row.crm_organisation_id) {
     const { data: org } = await admin

@@ -305,4 +305,14 @@ test("missing storage objects are non-fatal during delete cleanup", () => {
   assert.equal(isStorageObjectMissingError("permission denied for bucket space-images"), false);
 });
 
+function isArchivedProperty(property) {
+  return Boolean(property?.archived_at);
+}
+
+test("archived property detection", () => {
+  assert.equal(isArchivedProperty({ archived_at: "2026-01-01T00:00:00Z" }), true);
+  assert.equal(isArchivedProperty({ archived_at: null }), false);
+  assert.equal(isArchivedProperty(null), false);
+});
+
 console.log("\nAll lifecycle guard tests passed.");

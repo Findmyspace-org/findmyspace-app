@@ -17,6 +17,7 @@ export async function GET(req: NextRequest) {
     .select(
       "id, name, city, suburb, owner_id, owner_email, owner_invited_at, owner_accepted_at, crm_organisation_id, created_at"
     )
+    .is("archived_at", null)
     .order("created_at", { ascending: false });
 
   if (error) {
@@ -50,7 +51,11 @@ export async function GET(req: NextRequest) {
 
   if (propertyIds.length > 0) {
     const [{ data: spaces }, { data: propertyImages }] = await Promise.all([
-      admin.from("spaces").select("id, property_id").in("property_id", propertyIds),
+      admin
+        .from("spaces")
+        .select("id, property_id")
+        .in("property_id", propertyIds)
+        .neq("status", "deleted"),
       admin
         .from("property_images")
         .select("property_id, image_url, sort_order")

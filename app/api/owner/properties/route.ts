@@ -33,6 +33,7 @@ export async function GET(req: NextRequest) {
     .from("properties")
     .select("id, name, city, suburb, address_line1, province, owner_accepted_at, created_at")
     .eq("owner_id", user.id)
+    .is("archived_at", null)
     .order("name", { ascending: true });
 
   if (error) {
@@ -43,11 +44,12 @@ export async function GET(req: NextRequest) {
   const propertyIds = rows.map((r) => r.id as string);
   const spaceCountByProperty = new Map<string, number>();
 
-  if (propertyIds.length > 0) {
+    if (propertyIds.length > 0) {
     const { data: spaces } = await client
       .from("spaces")
       .select("property_id")
-      .in("property_id", propertyIds);
+      .in("property_id", propertyIds)
+      .neq("status", "deleted");
 
     for (const space of (spaces as { property_id: string }[]) || []) {
       spaceCountByProperty.set(
