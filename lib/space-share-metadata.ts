@@ -15,10 +15,19 @@ export function formatPublicSpaceShareDescription(spaceTitle: string): string {
 /** Branded OG/Twitter fallback when a listing has no cover image. */
 export const FALLBACK_SHARE_IMAGE_PATH = "/images/findmyspace-share-card.jpg";
 
+/** FindMySpace PNG logo used on dynamic OG images. */
+export const FINDMYSPACE_LOGO_PATH = "/logo.png";
+
+export const SPACE_OG_TAGLINE = "The right space in the right place";
+
+export const SPACE_OG_IMAGE_WIDTH = 1200;
+export const SPACE_OG_IMAGE_HEIGHT = 630;
+
 export type SpaceShareMetadataInput = {
   id: string;
   title?: string | null;
   public_listing_mode?: string | null;
+  coverImageId?: string | null;
 };
 
 export type SpaceImageRow = {
@@ -70,6 +79,57 @@ export function resolveSpaceCoverImageUrlFromUrls(
   return toAbsolutePublicUrl(FALLBACK_SHARE_IMAGE_PATH, siteUrl);
 }
 
+/** Absolute URL for the dynamic branded OG image route. */
+export function buildSpaceOgImageUrl(
+  spaceId: string,
+  coverImageId?: string | null,
+  siteUrl = getCanonicalPublicSiteUrl()
+): string {
+  const base = `${siteUrl}/api/og/space/${spaceId}`;
+  const version = coverImageId?.trim();
+  if (version) return `${base}?v=${encodeURIComponent(version)}`;
+  return base;
+}
+
+function resolveCoverFromImages(images: SpaceImageRow[]): {
+  hasCover: boolean;
+  coverImageId: string | null;
+} {
+  const sorted = sortSpaceImages(images);
+  const cover = sorted[0];
+  const url = cover?.image_url?.trim();
+  if (!url) return { hasCover: false, coverImageId: null };
+  return { hasCover: true, coverImageId: cover.id };
+}
+
+/** Share image for metadata: dynamic OG route when cover exists, else static fallback. */
+export function resolvePublicSpaceShareImageUrl(input: {
+  spaceId: string;
+  coverImageId?: string | null;
+  imageUrls?: string[];
+  images?: SpaceImageRow[];
+  siteUrl?: string;
+}): string {
+  const siteUrl = input.siteUrl ?? getCanonicalPublicSiteUrl();
+
+  let hasCover = false;
+  let coverImageId = input.coverImageId?.trim() || null;
+
+  if (input.images?.length) {
+    const resolved = resolveCoverFromImages(input.images);
+    hasCover = resolved.hasCover;
+    coverImageId = resolved.coverImageId ?? coverImageId;
+  } else if (input.imageUrls?.some((url) => url?.trim())) {
+    hasCover = true;
+  }
+
+  if (!hasCover) {
+    return toAbsolutePublicUrl(FALLBACK_SHARE_IMAGE_PATH, siteUrl);
+  }
+
+  return buildSpaceOgImageUrl(input.spaceId, coverImageId, siteUrl);
+}
+
 function buildPrivateSpaceMetadata(
   spaceId: string,
   siteUrl: string
@@ -114,9 +174,13 @@ export function buildPublicSpaceShareMetadata(input: {
   const title = input.space.title?.trim() || PRIVATE_SPACE_SHARE_TITLE;
   const description = formatPublicSpaceShareDescription(title);
   const pageUrl = `${siteUrl}/spaces/${spaceId}`;
-  const imageUrl = input.imageUrls
-    ? resolveSpaceCoverImageUrlFromUrls(input.imageUrls, siteUrl)
-    : resolveSpaceCoverImageUrl(input.images ?? [], siteUrl);
+  const imageUrl = resolvePublicSpaceShareImageUrl({
+    spaceId,
+    coverImageId: input.space.coverImageId,
+    imageUrls: input.imageUrls,
+    images: input.images,
+    siteUrl,
+  });
 
   return {
     title,

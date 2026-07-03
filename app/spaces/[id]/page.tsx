@@ -85,6 +85,7 @@ type Space = {
   latitude: number | null;
   longitude: number | null;
   image_urls: string[];
+  cover_image_id?: string | null;
   attributes: Record<string, string[]>;
 };
 
@@ -129,12 +130,15 @@ async function getSpace(id: string) {
     }
   );
 
+  const sortedImages = sortSpaceImages(
+    (images || []) as { id: string; image_url: string; sort_order: number | null }[]
+  );
+
   return {
     space: {
-      ...(rawSpace as unknown as Omit<Space, "image_urls" | "attributes">),
-      image_urls: sortSpaceImages(
-        (images || []) as { id: string; image_url: string; sort_order: number | null }[]
-      ).map((image) => image.image_url),
+      ...(rawSpace as unknown as Omit<Space, "image_urls" | "attributes" | "cover_image_id">),
+      image_urls: sortedImages.map((image) => image.image_url),
+      cover_image_id: sortedImages[0]?.id ?? null,
       attributes: grouped,
     },
     errorMessage: null,
@@ -174,6 +178,7 @@ export async function generateMetadata({
       title: space.title,
       public_listing_mode: (space as { public_listing_mode?: string | null })
         .public_listing_mode,
+      coverImageId: space.cover_image_id,
     },
     imageUrls: space.image_urls,
     siteUrl,

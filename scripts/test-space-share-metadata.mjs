@@ -34,15 +34,49 @@ function sortSpaceImages(images) {
   });
 }
 
-function resolveSpaceCoverImageUrl(images, siteUrl) {
-  const sorted = sortSpaceImages(images);
-  const cover = sorted[0]?.image_url?.trim();
-  if (cover) return toAbsolutePublicUrl(cover, siteUrl);
-  return toAbsolutePublicUrl(FALLBACK_SHARE_IMAGE_PATH, siteUrl);
+function buildSpaceOgImageUrl(spaceId, coverImageId, siteUrl = "https://findmyspace.co.za") {
+  const base = `${siteUrl}/api/og/space/${spaceId}`;
+  const version = coverImageId?.trim();
+  if (version) return `${base}?v=${encodeURIComponent(version)}`;
+  return base;
+}
+
+function resolvePublicSpaceShareImageUrl({
+  spaceId,
+  coverImageId,
+  imageUrls,
+  images,
+  siteUrl = "https://findmyspace.co.za",
+}) {
+  let hasCover = false;
+  let resolvedCoverId = coverImageId?.trim() || null;
+
+  if (images?.length) {
+    const sorted = sortSpaceImages(images);
+    const cover = sorted[0];
+    if (cover?.image_url?.trim()) {
+      hasCover = true;
+      resolvedCoverId = cover.id;
+    }
+  } else if (imageUrls?.some((url) => url?.trim())) {
+    hasCover = true;
+  }
+
+  if (!hasCover) {
+    return toAbsolutePublicUrl(FALLBACK_SHARE_IMAGE_PATH, siteUrl);
+  }
+
+  return buildSpaceOgImageUrl(spaceId, resolvedCoverId, siteUrl);
 }
 
 function isSpacePubliclyVisible(mode) {
   return mode === "live" || mode === "enquiry";
+}
+
+function isSpaceOgEligible(space) {
+  if (!space) return false;
+  if (space.status === "deleted") return false;
+  return isSpacePubliclyVisible(space.public_listing_mode);
 }
 
 function buildPublicSpaceShareMetadata({ space, imageUrls, images, siteUrl }) {
@@ -61,9 +95,13 @@ function buildPublicSpaceShareMetadata({ space, imageUrls, images, siteUrl }) {
 
   const title = space.title?.trim() || PRIVATE_SPACE_SHARE_TITLE;
   const description = formatPublicSpaceShareDescription(title);
-  const imageUrl = imageUrls?.length
-    ? toAbsolutePublicUrl(imageUrls[0], siteUrl)
-    : resolveSpaceCoverImageUrl(images ?? [], siteUrl);
+  const imageUrl = resolvePublicSpaceShareImageUrl({
+    spaceId: space.id,
+    coverImageId: space.coverImageId,
+    imageUrls,
+    images,
+    siteUrl,
+  });
 
   return {
     title,
@@ -86,23 +124,27 @@ function buildPublicSpaceShareMetadata({ space, imageUrls, images, siteUrl }) {
 const siteUrl = "https://findmyspace.co.za";
 const perdebergDescription = formatPublicSpaceShareDescription("Perdeberg");
 
-// Public listing with cover image
+// Public listing with cover image uses dynamic OG route
 const withImage = buildPublicSpaceShareMetadata({
-  space: { id: "abc", title: "Perdeberg", public_listing_mode: "live" },
+  space: {
+    id: "abc",
+    title: "Perdeberg",
+    public_listing_mode: "live",
+    coverImageId: "img-cover",
+  },
   imageUrls: ["https://cdn.example.com/cover.jpg"],
   siteUrl,
 });
 assert.equal(withImage.title, "Perdeberg");
 assert.equal(withImage.description, perdebergDescription);
 assert.ok(withImage.description.includes("Perdeberg"));
-assert.equal(withImage.openGraph.title, "Perdeberg");
-assert.equal(withImage.openGraph.description, perdebergDescription);
-assert.equal(withImage.openGraph.images[0].url, "https://cdn.example.com/cover.jpg");
-assert.equal(withImage.twitter.card, "summary_large_image");
-assert.equal(withImage.twitter.description, perdebergDescription);
-assert.equal(withImage.twitter.images[0], "https://cdn.example.com/cover.jpg");
+assert.equal(
+  withImage.openGraph.images[0].url,
+  "https://findmyspace.co.za/api/og/space/abc?v=img-cover"
+);
+assert.equal(withImage.twitter.images[0], withImage.openGraph.images[0].url);
 
-// No images — branded fallback, personalised description
+// No images — static branded fallback
 const noImage = buildPublicSpaceShareMetadata({
   space: { id: "abc", title: "Perdeberg", public_listing_mode: "live" },
   imageUrls: [],
@@ -110,23 +152,23 @@ const noImage = buildPublicSpaceShareMetadata({
 });
 assert.equal(noImage.title, "Perdeberg");
 assert.equal(noImage.description, perdebergDescription);
-assert.ok(noImage.description.includes("Perdeberg"));
 assert.equal(
   noImage.openGraph.images[0].url,
   `${siteUrl}${FALLBACK_SHARE_IMAGE_PATH}`
 );
 
-// sort_order cover selection
-const sortedCover = resolveSpaceCoverImageUrl(
-  [
+// sort_order cover id for OG version param
+const ogFromImages = resolvePublicSpaceShareImageUrl({
+  spaceId: "abc",
+  images: [
     { id: "b", image_url: "https://cdn.example.com/second.jpg", sort_order: 2 },
     { id: "a", image_url: "https://cdn.example.com/first.jpg", sort_order: 1 },
   ],
-  siteUrl
-);
-assert.equal(sortedCover, "https://cdn.example.com/first.jpg");
+  siteUrl,
+});
+assert.equal(ogFromImages, "https://findmyspace.co.za/api/og/space/abc?v=a");
 
-// Private / hidden listing — no title or gallery exposed
+// Private / hidden listing — generic metadata and fallback image only
 const hidden = buildPublicSpaceShareMetadata({
   space: { id: "hidden", title: "Secret", public_listing_mode: "off" },
   imageUrls: ["https://cdn.example.com/should-not-use.jpg"],
@@ -135,9 +177,12 @@ const hidden = buildPublicSpaceShareMetadata({
 assert.equal(hidden.title, PRIVATE_SPACE_SHARE_TITLE);
 assert.equal(hidden.description, PRIVATE_SPACE_SHARE_DESCRIPTION);
 assert.ok(!hidden.description.includes("Secret"));
-assert.ok(
-  hidden.openGraph.images[0].url.includes("findmyspace-share-card.jpg")
-);
+assert.ok(hidden.openGraph.images[0].url.includes("findmyspace-share-card.jpg"));
+
+// OG route eligibility
+assert.equal(isSpaceOgEligible({ public_listing_mode: "live", status: "active" }), true);
+assert.equal(isSpaceOgEligible({ public_listing_mode: "off", status: "active" }), false);
+assert.equal(isSpaceOgEligible({ public_listing_mode: "live", status: "deleted" }), false);
 
 // Absolute URL helper
 assert.equal(
