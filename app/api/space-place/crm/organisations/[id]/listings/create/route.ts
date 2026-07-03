@@ -6,6 +6,7 @@ import {
   syncSpaceAttributes,
 } from "@/lib/admin-unclaimed-space";
 import { validateSpaceCrmLink } from "@/lib/space-crm-link";
+import { adminCanonicalSpaceEditHref } from "@/lib/admin-listing-routing";
 
 export async function POST(
   req: NextRequest,
@@ -111,7 +112,9 @@ export async function POST(
   return NextResponse.json({
     ok: true,
     id: spaceId,
-    admin_edit_url: `/admin/unclaimed-listings/${spaceId}/edit`,
+    admin_edit_url: adminCanonicalSpaceEditHref(spaceId, {
+      returnTo: "/admin/unclaimed-listings",
+    }),
     space: inserted,
   });
 }

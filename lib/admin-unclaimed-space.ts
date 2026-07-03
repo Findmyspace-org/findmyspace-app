@@ -505,6 +505,30 @@ export async function fetchAdminPropertySpace(
   return { space: data, readOnly };
 }
 
+/** Full admin edit load — any non-deleted space; platform admins retain edit rights. */
+export async function fetchAdminEditableSpace(
+  admin: SupabaseClient,
+  spaceId: string
+) {
+  const { data, error } = await admin
+    .from("spaces")
+    .select("*")
+    .eq("id", spaceId)
+    .maybeSingle();
+
+  if (error || !data) {
+    return { error: error?.message || "Space not found." };
+  }
+
+  const row = data as { status: string | null; property_id: string | null };
+  const status = row.status || "";
+  if (status === "deleted") {
+    return { error: "This space has been deleted." };
+  }
+
+  return { space: data, readOnly: false as const };
+}
+
 /** Any non-deleted space a platform admin may manage (images, etc.). */
 export async function fetchAdminManageableSpace(
   admin: SupabaseClient,

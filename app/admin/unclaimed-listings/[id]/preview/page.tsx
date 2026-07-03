@@ -2,6 +2,7 @@
 
 import { hasAdminUiAccess } from "@/lib/client-admin-access";
 
+import { adminCanonicalSpaceEditHref } from "@/lib/admin-listing-routing";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
@@ -100,7 +101,7 @@ export default function AdminUnclaimedListingPreviewPage() {
       <main className="p-8">
         <p className="text-red-600">{message || "Listing not found."}</p>
         <Link
-          href={`/admin/unclaimed-listings/${id}/edit`}
+          href={adminCanonicalSpaceEditHref(id, { returnTo: "/admin/unclaimed-listings" })}
           className="mt-4 inline-block text-sm underline"
         >
           Back to edit
@@ -116,7 +117,7 @@ export default function AdminUnclaimedListingPreviewPage() {
       <div className="mx-auto max-w-7xl">
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <Link
-            href={`/admin/unclaimed-listings/${id}/edit`}
+            href={adminCanonicalSpaceEditHref(id, { returnTo: "/admin/unclaimed-listings" })}
             className="inline-flex items-center gap-2 text-sm font-medium text-gray-700 hover:text-gray-900"
           >
             <ArrowLeft className="h-4 w-4" />

@@ -1,6 +1,7 @@
 import {
+  adminCanonicalSpaceEditHref,
   adminListingReviewHref,
-  adminLiveSpaceEditHref,
+  adminQuickContentEditHref,
   adminSpaceEditHref,
   adminUnclaimedEditHref,
   isLiveListingStatus,
@@ -143,21 +144,17 @@ export function adminSpacePublicViewHref(space: {
 export function adminSpaceStatusActionHref(space: {
   id: string;
   status?: string | null;
+  property_id?: string | null;
 }): string {
   if (needsReviewWorkflow(space.status)) {
     return adminListingReviewHref(space.id);
   }
 
-  if (isLiveListingStatus(space.status)) {
-    return adminLiveSpaceEditHref(space.id);
-  }
-
-  if (space.status === "draft" || space.status === "unclaimed") {
-    return adminUnclaimedEditHref(space.id);
-  }
-
-  return `/admin/spaces/all`;
+  return adminSpaceEditHref(space);
 }
+
+/** @deprecated Use adminQuickContentEditHref */
+export { adminQuickContentEditHref as adminLiveSpaceEditHref };
 
 export function canAdminToggleLiveStatus(
   space: {
@@ -170,9 +167,7 @@ export function canAdminToggleLiveStatus(
 }
 
 export function canAdminEditSpaceInTable(status: string | null | undefined): boolean {
-  if (isLiveListingStatus(status)) return false;
-  if (status === "active") return false;
-  return true;
+  return status !== "deleted";
 }
 
 export function isEnquiryPublicSpace(space: {

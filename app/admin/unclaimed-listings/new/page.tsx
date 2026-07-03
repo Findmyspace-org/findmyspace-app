@@ -81,7 +81,7 @@ function NewUnclaimedListingContent() {
               window.history.replaceState(
                 null,
                 "",
-                `/admin/unclaimed-listings/${id}/edit`
+                `/admin/spaces/${id}/edit?returnTo=${encodeURIComponent("/admin/unclaimed-listings")}`
               );
             }}
           />

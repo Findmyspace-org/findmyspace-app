@@ -1,5 +1,6 @@
 "use client";
 
+import { adminCanonicalSpaceEditHref } from "@/lib/admin-listing-routing";
 import Link from "next/link";
 import { useState } from "react";
 import { Check, Copy, ExternalLink, Eye, Link2, Pencil, Upload } from "lucide-react";
@@ -37,7 +38,9 @@ export function VenueScoutNextActions({
 
   const draftPreviewHref = `/admin/unclaimed-listings/${spaceId}/preview`;
   const publicHref = `/spaces/${spaceId}`;
-  const fullEditHref = `/admin/unclaimed-listings/${spaceId}/edit`;
+  const fullEditHref = adminCanonicalSpaceEditHref(spaceId, {
+    returnTo: "/admin/venue-scout",
+  });
 
   return (
     <section className="rounded-xl border border-[#0f2740]/20 bg-[#f0f4f8] p-5">

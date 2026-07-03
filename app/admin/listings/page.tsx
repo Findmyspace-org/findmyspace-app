@@ -16,6 +16,7 @@ import {
   LayoutDashboard,
   MessageSquare,
   PauseCircle,
+  Pencil,
   Save,
   Search,
   ShieldCheck,
@@ -25,6 +26,7 @@ import { supabase } from "@/lib/supabase";
 import { AdminNav } from "@/app/components/AdminNav";
 import { adminApiFetch } from "@/lib/admin-api-client";
 import {
+  adminCanonicalSpaceEditHref,
   adminListingReviewHref,
   isLiveListingStatus,
   needsReviewWorkflow,
@@ -780,10 +782,10 @@ function AdminListingsPageContent() {
 
                       <div className="rounded-sm border border-blue-200 bg-blue-50/50 p-4">
                         <h3 className="mb-2 text-sm font-semibold text-[#192a3a]">
-                          Admin content edit
+                          Quick content edit
                         </h3>
                         <p className="mb-3 text-xs text-gray-600">
-                          Safe listing fields only (no status, fees, deposits, or ownership). Requires a short reason. Saves via admin API.
+                          Safe listing fields only (no status, fees, deposits, or ownership). Requires a short reason. For full editing — location, photos, booking requirements, AI — use Edit listing below.
                         </p>
                         {(() => {
                           const d =
@@ -1173,6 +1175,16 @@ function AdminListingsPageContent() {
                       </div>
 
                       <div className="flex flex-wrap gap-3">
+                        <Link
+                          href={adminCanonicalSpaceEditHref(record.space.id, {
+                            returnTo: "/admin/listings",
+                          })}
+                          className="inline-flex items-center gap-2 rounded-md bg-[#0f2740] px-4 py-2 text-sm font-medium text-white"
+                        >
+                          <Pencil className="h-4 w-4" />
+                          Edit listing
+                        </Link>
+
                         {needsReviewWorkflow(record.space.status) ? (
                           <Link
                             href={adminListingReviewHref(record.space.id)}
@@ -1225,7 +1237,9 @@ function AdminListingsPageContent() {
                           </>
                         ) : record.space.status === "unclaimed" ? (
                           <Link
-                            href={`/admin/unclaimed-listings/${record.space.id}/edit`}
+                            href={adminCanonicalSpaceEditHref(record.space.id, {
+                              returnTo: "/admin/unclaimed-listings",
+                            })}
                             className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-sm"
                           >
                             Manage unclaimed

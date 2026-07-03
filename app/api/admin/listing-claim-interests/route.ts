@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApi } from "@/lib/require-admin-api";
 import { createServiceAdminClient } from "@/lib/admin-unclaimed-space";
 import { enrichSpacesWithCrmSummaries } from "@/lib/space-crm-link";
+import { adminCanonicalSpaceEditHref } from "@/lib/admin-listing-routing";
 
 export async function GET(req: NextRequest) {
   const auth = await requireAdminApi(req);
@@ -117,7 +118,9 @@ export async function GET(req: NextRequest) {
             suburb: space.suburb,
             public_url:
               space.status === "unclaimed" ? `/spaces/${space.id}` : null,
-            admin_edit_url: `/admin/unclaimed-listings/${space.id}/edit`,
+            admin_edit_url: adminCanonicalSpaceEditHref(space.id, {
+              returnTo: "/admin/listing-claim-interests",
+            }),
           }
         : null,
       crm: crm?.crm_linked

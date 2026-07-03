@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireCrmApi } from "@/lib/require-crm-api";
 import { adminListingStatusLabel } from "@/lib/admin-listing-status-display";
+import { adminCanonicalSpaceEditHref } from "@/lib/admin-listing-routing";
 import { contactDisplayName } from "@/lib/space-crm-link";
 
 const LISTING_STATUSES = [
@@ -73,7 +74,9 @@ export async function GET(
     status_label: adminListingStatusLabel(listing.status),
     linked_via:
       listing.crm_contact_id === contactId ? "contact" : "organisation",
-    admin_edit_url: `/admin/unclaimed-listings/${listing.id}/edit`,
+    admin_edit_url: adminCanonicalSpaceEditHref(listing.id, {
+      returnTo: "/admin/unclaimed-listings",
+    }),
     public_url:
       listing.status === "unclaimed" || listing.status === "active"
         ? `/spaces/${listing.id}`

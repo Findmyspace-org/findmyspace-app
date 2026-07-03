@@ -142,12 +142,9 @@ function serializeAdminFormSnapshot(state: FormState, crmLink: CrmLinkState) {
 }
 
 async function fetchPersistedAdminSpaceImages(
-  spaceId: string,
-  propertyId?: string
+  spaceId: string
 ): Promise<AdminSpaceImage[]> {
-  const result = propertyId
-    ? await adminApiFetch(`/api/admin/properties/${propertyId}/spaces/${spaceId}`)
-    : await adminApiFetch(`/api/admin/spaces/${spaceId}/unclaimed`);
+  const result = await adminApiFetch(`/api/admin/spaces/${spaceId}/manage`);
   return sortSpaceImages((result.images as AdminSpaceImage[]) || []);
 }
 
@@ -448,11 +445,7 @@ export function AdminUnclaimedSpaceForm({
     }
 
     const body = payloadFromState(formState, formCrmLink);
-    const patchUrl = propertyId
-      ? `/api/admin/properties/${propertyId}/spaces/${activeSpaceId}`
-      : `/api/admin/spaces/${activeSpaceId}/unclaimed`;
-
-    await adminApiFetch(patchUrl, {
+    await adminApiFetch(`/api/admin/spaces/${activeSpaceId}/manage`, {
       method: "PATCH",
       body: JSON.stringify(
         status === "draft" ? { ...body, status: "draft" as const } : body
@@ -460,7 +453,7 @@ export function AdminUnclaimedSpaceForm({
     });
     markSaved(formSnapshotRef.current);
     return true;
-  }, [activeSpaceId, markSaved, propertyId, setSaveFailure, status]);
+  }, [activeSpaceId, markSaved, setSaveFailure, status]);
 
   const handleSave = useCallback(
     async ({ navigation }: { navigation: SaveNavigation }): Promise<boolean> => {
@@ -545,7 +538,7 @@ export function AdminUnclaimedSpaceForm({
               navigateAfterSave("return-to-property");
             } else {
               router.replace(
-                `/admin/properties/${propertyId}/spaces/${newId}/edit?saved=1`
+                `/admin/spaces/${newId}/edit?returnTo=${encodeURIComponent(`/admin/properties/${propertyId}`)}&saved=1`
               );
               onCreated?.(newId);
             }
@@ -663,10 +656,7 @@ export function AdminUnclaimedSpaceForm({
         }
       }
 
-      const persistedImages = await fetchPersistedAdminSpaceImages(
-        activeSpaceId,
-        propertyId
-      );
+      const persistedImages = await fetchPersistedAdminSpaceImages(activeSpaceId);
       setImages(persistedImages);
       if (persistedImages.length < 1) {
         setSaveFailure(MIN_PUBLIC_PHOTOS_ERROR);
@@ -702,12 +692,30 @@ export function AdminUnclaimedSpaceForm({
     persistMainForm,
   ]);
 
+  const canPublishUnclaimed =
+    status === "draft" || status === "unclaimed" || status === null;
+
   const statusBadge =
-    status === "unclaimed"
-      ? "bg-amber-100 text-amber-900"
-      : status === "owner_claimed"
-        ? "bg-green-100 text-green-800"
-        : "bg-gray-100 text-gray-700";
+    status === "active"
+      ? "bg-green-100 text-green-800"
+      : status === "paused"
+        ? "bg-slate-100 text-slate-800"
+        : status === "unclaimed"
+          ? "bg-amber-100 text-amber-900"
+          : status === "owner_claimed"
+            ? "bg-green-100 text-green-800"
+            : "bg-gray-100 text-gray-700";
+
+  const statusBadgeLabel =
+    status === "active"
+      ? "Live"
+      : status === "paused"
+        ? "Paused"
+        : status === "unclaimed"
+          ? "Unclaimed"
+          : status === "owner_claimed"
+            ? "Owner claimed"
+            : "Draft";
 
   const resolvedBackLabel =
     backLabel ?? (propertyId ? "Back to property" : "Back to unclaimed listings");
@@ -722,11 +730,7 @@ export function AdminUnclaimedSpaceForm({
     <div className="space-y-6 pb-4">
       <div className="flex flex-wrap items-center gap-2">
         <span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusBadge}`}>
-          {status === "unclaimed"
-            ? "Unclaimed"
-            : status === "owner_claimed"
-              ? "Owner claimed"
-              : "Draft"}
+          {statusBadgeLabel}
         </span>
         {enquiryCount > 0 ? (
           <span className="rounded-full bg-blue-100 px-3 py-1 text-xs font-semibold text-blue-800">
@@ -740,8 +744,7 @@ export function AdminUnclaimedSpaceForm({
 
       {readOnly ? (
         <p className="rounded-lg bg-blue-50 px-3 py-2 text-sm text-blue-900">
-          This listing has been claimed by an owner. Editing is disabled here — use
-          admin spaces tools or wait for the owner verification flow.
+          This space is read-only and cannot be edited.
         </p>
       ) : null}
 
@@ -1004,7 +1007,7 @@ export function AdminUnclaimedSpaceForm({
                 {savingContinue ? "Saving…" : "Save draft"}
               </button>
             )}
-            {activeSpaceId ? (
+            {activeSpaceId && canPublishUnclaimed ? (
               <button
                 type="button"
                 disabled={saving || publishing}

@@ -97,7 +97,7 @@ export default function NewPropertySpacePage() {
           backLabel="Back to property"
           onCreated={(newSpaceId) => {
             router.replace(
-              `/admin/properties/${propertyId}/spaces/${newSpaceId}/edit?saved=1`
+              `/admin/spaces/${newSpaceId}/edit?returnTo=${encodeURIComponent(`/admin/properties/${propertyId}`)}&saved=1`
             );
           }}
           onSavedAndExit={() => {

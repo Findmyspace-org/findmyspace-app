@@ -26,48 +26,76 @@ export function adminListingReviewHref(spaceId: string): string {
   return `/admin/listing-reviews/${spaceId}`;
 }
 
-export function adminUnclaimedEditHref(spaceId: string): string {
-  return `/admin/unclaimed-listings/${spaceId}/edit`;
+export function adminUnclaimedEditHref(
+  spaceId: string,
+  options?: { returnTo?: string }
+): string {
+  return adminCanonicalSpaceEditHref(spaceId, {
+    returnTo: options?.returnTo ?? "/admin/unclaimed-listings",
+  });
 }
 
-export function adminLiveSpaceEditHref(spaceId: string): string {
+/** Inline quick content edit on Marketplace → Listings (not the main Edit action). */
+export function adminQuickContentEditHref(spaceId: string): string {
   return `/admin/listings?space=${encodeURIComponent(spaceId)}`;
+}
+
+/** @deprecated Use adminCanonicalSpaceEditHref — kept for quick-content panel deep links. */
+export function adminLiveSpaceEditHref(spaceId: string): string {
+  return adminQuickContentEditHref(spaceId);
 }
 
 export function adminPropertySpaceEditHref(
   propertyId: string,
-  spaceId: string
+  spaceId: string,
+  options?: { returnTo?: string }
 ): string {
-  return `/admin/properties/${propertyId}/spaces/${spaceId}/edit`;
+  return adminCanonicalSpaceEditHref(spaceId, {
+    returnTo: options?.returnTo ?? `/admin/properties/${propertyId}`,
+  });
+}
+
+/** Canonical full admin space edit — all admin Edit actions should use this. */
+export function adminCanonicalSpaceEditHref(
+  spaceId: string,
+  options?: { returnTo?: string }
+): string {
+  const path = `/admin/spaces/${spaceId}/edit`;
+  const returnTo = options?.returnTo?.trim();
+  if (!returnTo) return path;
+  return `${path}?returnTo=${encodeURIComponent(returnTo)}`;
 }
 
 /** Single source of truth for admin Edit links across property hub, matrix, and queues. */
-export function adminSpaceEditHref(space: {
-  id: string;
-  status?: string | null;
-  property_id?: string | null;
-}): string {
-  const status = space.status;
-  const propertyId = space.property_id;
-  const id = space.id;
-
-  if (propertyId) {
-    return adminPropertySpaceEditHref(propertyId, id);
+export function adminSpaceEditHref(
+  space: {
+    id: string;
+    status?: string | null;
+    property_id?: string | null;
+  },
+  options?: { returnTo?: string }
+): string {
+  if (options?.returnTo) {
+    return adminCanonicalSpaceEditHref(space.id, options);
   }
 
-  if (needsReviewWorkflow(status)) {
-    return adminListingReviewHref(id);
+  if (space.property_id) {
+    return adminCanonicalSpaceEditHref(space.id, {
+      returnTo: `/admin/properties/${space.property_id}`,
+    });
   }
 
-  if (status === "draft" || status === "unclaimed") {
-    return adminUnclaimedEditHref(id);
+  if (isLiveListingStatus(space.status)) {
+    return adminCanonicalSpaceEditHref(space.id, { returnTo: "/admin/listings" });
   }
 
-  if (isLiveListingStatus(status)) {
-    return adminLiveSpaceEditHref(id);
+  if (space.status === "draft" || space.status === "unclaimed") {
+    return adminCanonicalSpaceEditHref(space.id, {
+      returnTo: "/admin/unclaimed-listings",
+    });
   }
 
-  return adminUnclaimedEditHref(id);
+  return adminCanonicalSpaceEditHref(space.id, { returnTo: "/admin/spaces/all" });
 }
 
 export function ownerCompletionHref(spaceId: string): string {

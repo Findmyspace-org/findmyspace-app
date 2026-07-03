@@ -18,6 +18,7 @@ import {
   History,
   LayoutDashboard,
   PauseCircle,
+  Pencil,
   Save,
   Search,
   ShieldCheck,
@@ -29,6 +30,7 @@ import { supabase } from "@/lib/supabase";
 import { AdminNav } from "@/app/components/AdminNav";
 import { adminApiFetch } from "@/lib/admin-api-client";
 import {
+  adminCanonicalSpaceEditHref,
   adminListingReviewHref,
   adminUnclaimedEditHref,
   isLiveListingStatus,
@@ -1010,6 +1012,16 @@ export default function AdminSpacesPage() {
 
                             <div className="rounded-sm border border-gray-200 bg-white p-2">
                               <div className="flex flex-wrap items-center justify-end gap-1.5">
+                                <Link
+                                  href={adminCanonicalSpaceEditHref(space.id, {
+                                    returnTo: "/admin/spaces",
+                                  })}
+                                  className={buttonPrimary}
+                                >
+                                  <Pencil className="h-3.5 w-3.5" />
+                                  Edit listing
+                                </Link>
+
                                 {needsReviewWorkflow(space.status) ? (
                                   <Link
                                     href={adminListingReviewHref(space.id)}

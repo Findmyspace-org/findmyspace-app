@@ -19,6 +19,7 @@ import {
   type ClaimTokenRow,
   type ListingClaimTokenStatus,
 } from "@/lib/listing-claim-token";
+import { adminCanonicalSpaceEditHref } from "@/lib/admin-listing-routing";
 
 export type CreateListingClaimLinkResult =
   | {
@@ -329,7 +330,9 @@ async function notifyListingClaimed(
   }
 ) {
   const appBaseUrl = getCanonicalPublicSiteUrl();
-  const adminUrl = `${appBaseUrl}/admin/unclaimed-listings/${params.spaceId}/edit`;
+  const adminUrl = `${appBaseUrl}${adminCanonicalSpaceEditHref(params.spaceId, {
+    returnTo: "/admin/unclaimed-listings",
+  })}`;
 
   const adminCopy = buildListingClaimedAdminCopy({
     listingTitle: params.listingTitle,
@@ -365,7 +368,9 @@ async function notifyListingClaimed(
       type: "listing_claimed",
       title: adminCopy.notificationTitle,
       message: adminCopy.notificationMessage,
-      href: `/admin/unclaimed-listings/${params.spaceId}/edit`,
+      href: adminCanonicalSpaceEditHref(params.spaceId, {
+        returnTo: "/admin/unclaimed-listings",
+      }),
       related_entity_type: "space",
       related_entity_id: params.spaceId,
       is_read: false,

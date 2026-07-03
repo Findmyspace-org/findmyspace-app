@@ -2,6 +2,7 @@
 
 import { hasAdminUiAccess } from "@/lib/client-admin-access";
 
+import { adminCanonicalSpaceEditHref } from "@/lib/admin-listing-routing";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
@@ -187,6 +188,14 @@ export default function AdminListingReviewDetailPage() {
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
+            <Link
+              href={adminCanonicalSpaceEditHref(spaceId, {
+                returnTo: "/admin/listing-reviews",
+              })}
+              className="inline-flex items-center gap-1 rounded-md bg-[#0f2740] px-3 py-2 text-sm font-medium text-white hover:opacity-95"
+            >
+              Full edit
+            </Link>
             <Link
               href={`/spaces/${spaceId}`}
               target="_blank"

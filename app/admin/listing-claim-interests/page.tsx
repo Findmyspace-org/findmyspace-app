@@ -2,6 +2,7 @@
 
 import { hasAdminUiAccess } from "@/lib/client-admin-access";
 
+import { adminCanonicalSpaceEditHref } from "@/lib/admin-listing-routing";
 import Link from "next/link";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
@@ -133,7 +134,9 @@ function ClaimInterestDetailDrawer({
               suburb: space.suburb,
               public_url:
                 space.status === "unclaimed" ? `/spaces/${space.id}` : null,
-              admin_edit_url: `/admin/unclaimed-listings/${space.id}/edit`,
+              admin_edit_url: adminCanonicalSpaceEditHref(space.id, {
+                returnTo: "/admin/listing-claim-interests",
+              }),
             }
           : null,
         crm: null,
