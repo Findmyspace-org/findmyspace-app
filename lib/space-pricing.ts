@@ -1,3 +1,8 @@
+import {
+  formatMinBookingDuration,
+  type MinBookingRow,
+} from "@/lib/space-min-booking";
+
 export const SPACE_PRICE_UNITS = [
   "hour",
   "day",
@@ -67,6 +72,7 @@ export function resolveSpacePriceUnit(
   const unit = space.booking_unit || "day";
   if (unit === "hour") return "hour";
   if (unit === "month") return "month";
+  if (unit === "event") return "event";
   if (unit === "day") return "day";
   return null;
 }
@@ -108,6 +114,16 @@ export function formatSpacePriceDisplay(space: SpacePricingInput): string {
   }
 
   return "Price not set";
+}
+
+/** Price line with optional minimum booking duration suffix. */
+export function formatSpacePriceWithMinBooking(
+  space: SpacePricingInput & MinBookingRow
+): string {
+  const price = formatSpacePriceDisplay(space);
+  const min = formatMinBookingDuration(space);
+  if (min) return `${price} · minimum ${min}`;
+  return price;
 }
 
 export function formatSpacePriceShort(space: SpacePricingInput): string {
@@ -214,6 +230,15 @@ export function syncLegacyPriceFields(
       price_per_hour: null,
       price_per_day: null,
       price_per_month: priceAmount,
+    };
+  }
+
+  if (priceUnit === "event") {
+    return {
+      booking_unit: "event",
+      price_per_hour: null,
+      price_per_day: priceAmount,
+      price_per_month: null,
     };
   }
 

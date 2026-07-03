@@ -101,6 +101,17 @@ export function formatGroupSizeAdmin(
   return null;
 }
 
+/** @alias formatGroupSizePublic */
+export const formatSpaceCapacity = formatGroupSizePublic;
+
+/** Admin/owner tables when capacity is unset. */
+export function formatGroupSizeAdminLabel(
+  min: number | null | undefined,
+  max: number | null | undefined
+): string {
+  return formatGroupSizeAdmin(min, max) ?? "Capacity not specified";
+}
+
 export function parseGroupSizeBucketFilter(
   value: string
 ): { min: number; max: number } | null {
