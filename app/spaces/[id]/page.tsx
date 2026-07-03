@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import { notFound } from "next/navigation";
+import type { Metadata } from "next";
 import Link from "next/link";
 import BookingSheetBootstrap from "./booking-sheet-bootstrap";
 import { supabase } from "@/lib/supabase";
@@ -39,6 +40,8 @@ import {
   formatMinBookingDuration,
   resolveRentalBookingUnit,
 } from "@/lib/space-min-booking";
+import { buildPublicSpaceShareMetadata } from "@/lib/space-share-metadata";
+import { getCanonicalPublicSiteUrl } from "@/lib/site-url";
 
 import {
   ArrowLeft,
@@ -146,6 +149,35 @@ async function getHostProfile(ownerId: string) {
     .single();
 
   return (data as HostProfile | null) ?? null;
+}
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}): Promise<Metadata> {
+  const { id } = await params;
+  const { space } = await getSpace(id);
+  const siteUrl = getCanonicalPublicSiteUrl();
+
+  if (!space) {
+    return buildPublicSpaceShareMetadata({
+      space: { id, public_listing_mode: null },
+      imageUrls: [],
+      siteUrl,
+    });
+  }
+
+  return buildPublicSpaceShareMetadata({
+    space: {
+      id: space.id,
+      title: space.title,
+      public_listing_mode: (space as { public_listing_mode?: string | null })
+        .public_listing_mode,
+    },
+    imageUrls: space.image_urls,
+    siteUrl,
+  });
 }
 
 function formatLabel(value: string | null) {
