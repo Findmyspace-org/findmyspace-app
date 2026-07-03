@@ -113,7 +113,7 @@ export const ADMIN_NAV_SECTIONS: AdminNavSection[] = [
       {
         key: "unclaimed-listings",
         href: "/admin/unclaimed-listings",
-        label: "Unclaimed listings",
+        label: "Unclaimed Spaces",
         icon: Building2,
       },
       {
@@ -133,7 +133,7 @@ export const ADMIN_NAV_SECTIONS: AdminNavSection[] = [
       {
         key: "spaces-all",
         href: "/admin/spaces/all",
-        label: "All spaces",
+        label: "All Spaces",
         icon: LayoutGrid,
         matchPrefix: "/admin/spaces/all",
       },
@@ -145,13 +145,13 @@ export const ADMIN_NAV_SECTIONS: AdminNavSection[] = [
       {
         key: "listings",
         href: "/admin/listings",
-        label: "Listings",
+        label: "Marketplace Spaces",
         icon: ClipboardList,
       },
       {
         key: "spaces",
         href: "/admin/spaces",
-        label: "Spaces",
+        label: "Space Approvals",
         icon: Building2,
         matchPrefix: "/admin/spaces",
       },

@@ -6,6 +6,16 @@ export function isValidUuid(value: unknown): value is string {
   return typeof value === "string" && value.trim() !== "" && UUID_RE.test(value.trim());
 }
 
+const NULLISH_PARAM = new Set(["null", "undefined", ""]);
+
+/** Parse a URL/search param as a UUID, or null if missing or invalid. */
+export function parseNullableUuidParam(value: string | null | undefined): string | null {
+  if (value == null) return null;
+  const trimmed = value.trim();
+  if (NULLISH_PARAM.has(trimmed.toLowerCase())) return null;
+  return isValidUuid(trimmed) ? trimmed : null;
+}
+
 export function getDisplayName(profile?: {
   first_name?: string | null;
   last_name?: string | null;

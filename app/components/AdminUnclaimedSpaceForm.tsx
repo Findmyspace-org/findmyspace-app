@@ -738,7 +738,7 @@ export function AdminUnclaimedSpaceForm({
           </span>
         ) : null}
         <span className="text-xs text-gray-500">
-          Set venue pricing below. Unclaimed listings may still show pricing as to be confirmed publicly until published.
+          Set venue pricing below. Unclaimed spaces may still show pricing as to be confirmed publicly until published.
         </span>
       </div>
 

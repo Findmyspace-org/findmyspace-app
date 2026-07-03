@@ -880,7 +880,7 @@ export default function Header() {
               icon: Building2,
             },
             {
-              label: "My listings",
+              label: "My spaces",
               href: "/dashboard/listings",
               icon: Building2,
             },

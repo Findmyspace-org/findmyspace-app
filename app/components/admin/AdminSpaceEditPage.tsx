@@ -224,9 +224,9 @@ function AdminSpaceEditPageContent({
   const backLabel = propertyId
     ? "Back to property"
     : returnHref.includes("unclaimed")
-      ? "Back to unclaimed listings"
+      ? "Back to unclaimed spaces"
       : returnHref.includes("listings")
-        ? "Back to listings"
+        ? "Back to marketplace spaces"
         : "Back";
 
   return (
@@ -293,8 +293,8 @@ function AdminSpaceEditPageContent({
       <h1 className="text-2xl font-semibold text-gray-900">Edit space</h1>
       <p className="mt-2 text-sm text-gray-600">
         {propertyId
-          ? `Manage listing details for ${propertyName}. Platform admins can edit any non-deleted space.`
-          : "Manage listing details, photos, booking requirements, and AI information."}
+          ? `Edit the details, pricing, location, photos and booking requirements for this space under ${propertyName}. Platform admins can edit any non-deleted space.`
+          : "Edit the details, pricing, location, photos and booking requirements for this space."}
       </p>
       <p className="mt-1 text-xs font-medium uppercase tracking-wide text-gray-500">
         Status: {spaceStatusLabel(space.status)}

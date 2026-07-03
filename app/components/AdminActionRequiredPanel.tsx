@@ -44,7 +44,7 @@ export function AdminActionRequiredPanel({ queue }: { queue: AdminActionQueue })
       key: "enquiries",
       count: queue.newListingEnquiries,
       label: "New listing enquiries",
-      helper: "Unclaimed listing requests waiting for a response.",
+      helper: "Unclaimed space requests waiting for a response.",
       href: "/admin/listing-enquiries?status=new",
       cta: "Review enquiries",
       icon: Inbox,

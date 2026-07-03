@@ -68,8 +68,8 @@ function AdminPropertiesPageContent() {
           <div>
             <h1 className="text-2xl font-semibold text-gray-900">Properties</h1>
             <p className="mt-1 text-sm text-gray-600">
-              Venue-level ownership and grouping. Spaces remain independent marketplace
-              listings.
+              Properties are parent venues or locations. Add spaces under a property for renters
+              to book.
             </p>
           </div>
           <Link

@@ -133,7 +133,7 @@ export default function AdminPage() {
                 icon: Compass,
               },
               {
-                label: "Unclaimed listings",
+                label: "Unclaimed spaces",
                 value: scoutStats.publishedUnclaimed,
                 href: "/admin/unclaimed-listings",
                 icon: Building2,
@@ -197,7 +197,7 @@ export default function AdminPage() {
           </p>
           <div className="mt-4 flex flex-wrap gap-2">
             {[
-              { href: "/admin/spaces/all", label: "All spaces", icon: LayoutGrid },
+              { href: "/admin/spaces/all", label: "All Spaces", icon: LayoutGrid },
               { href: "/admin/spaces", label: "Space verification", icon: ShieldCheck },
               { href: "/admin/listings", label: "Listings", icon: ClipboardList },
               { href: "/admin/bookings", label: "Bookings", icon: Wallet },

@@ -494,7 +494,7 @@ function MyListingsPageContent({
     <RequireAuth>
       <DashboardShell
         workspaceLabel="Hosting"
-        pageTitle="My listings"
+        pageTitle="My spaces"
         pageSubtitle="Manage individual spaces people can book."
         navItems={HOST_NAV}
         activeHref="/dashboard/listings"
@@ -513,7 +513,7 @@ function MyListingsPageContent({
                   href="/dashboard/new-space"
                   className="rounded-md bg-[#192a3a] px-3 py-2 text-sm font-medium text-white hover:opacity-90 sm:px-4"
                 >
-                  + Add new listing
+                  + Add space
                 </Link>
               </div>
             </div>
@@ -524,7 +524,7 @@ function MyListingsPageContent({
                 <input
                   value={searchText}
                   onChange={(e) => setSearchText(e.target.value)}
-                  placeholder="Search by listing name or area"
+                  placeholder="Search by space name or area"
                   className="w-full rounded-md border border-gray-300 bg-white py-2 pl-10 pr-3 text-sm outline-none focus:border-[#192a3a]"
                 />
               </div>
@@ -580,9 +580,9 @@ function MyListingsPageContent({
           )}
 
           {loading ? (
-            <Box>Loading your listings...</Box>
+            <Box>Loading your spaces...</Box>
           ) : filteredSpaces.length === 0 ? (
-            <Box>No listings found.</Box>
+            <Box>No spaces found.</Box>
           ) : (
             <div className="space-y-4">
               {filteredSpaces.map((space) => {

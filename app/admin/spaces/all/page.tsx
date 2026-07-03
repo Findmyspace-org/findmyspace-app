@@ -290,11 +290,10 @@ export default function AdminAllSpacesPage() {
     <div className="mx-auto max-w-[1400px]">
       <div className="mb-6">
         <h1 className="text-2xl font-bold tracking-tight text-[#192a3a]">
-          All spaces
+          All Spaces
         </h1>
         <p className="mt-1 text-sm text-gray-600">
-          Every space across Venue Scout, unclaimed listings, properties, and
-          owner listings — one operational view.
+          View and manage all spaces across acquisition, properties, and marketplace status.
         </p>
       </div>
 

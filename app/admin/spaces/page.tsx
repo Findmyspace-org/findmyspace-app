@@ -36,11 +36,12 @@ import {
   isLiveListingStatus,
   needsReviewWorkflow,
 } from "@/lib/admin-listing-routing";
+import { isValidUuid } from "@/lib/utils";
 import DecisionSuggestion from "@/app/components/DecisionSuggestion";
 
 type Space = {
   id: string;
-  owner_id: string;
+  owner_id: string | null;
   title: string;
   city: string | null;
   suburb: string | null;
@@ -194,7 +195,13 @@ export default function AdminSpacesPage() {
 
     const baseSpaces = (data || []) as Space[];
     const spaceIds = baseSpaces.map((space) => space.id);
-    const ownerIds = Array.from(new Set(baseSpaces.map((space) => space.owner_id)));
+    const ownerIds = Array.from(
+      new Set(
+        baseSpaces
+          .map((space) => space.owner_id)
+          .filter((id): id is string => isValidUuid(id))
+      )
+    );
 
     const imageMap = new Map<string, string>();
     const ownershipMap = new Map<
@@ -290,15 +297,15 @@ export default function AdminSpacesPage() {
         ownershipMap.get(space.id)?.status ||
         space.ownership_proof_status ||
         "pending",
-      owner_first_name: profileMap.get(space.owner_id)?.first_name || null,
-      owner_last_name: profileMap.get(space.owner_id)?.last_name || null,
-      owner_full_name: profileMap.get(space.owner_id)?.full_name || null,
-      owner_email: profileMap.get(space.owner_id)?.email || null,
-      owner_phone: profileMap.get(space.owner_id)?.phone || null,
+      owner_first_name: (space.owner_id && profileMap.get(space.owner_id)?.first_name) || null,
+      owner_last_name: (space.owner_id && profileMap.get(space.owner_id)?.last_name) || null,
+      owner_full_name: (space.owner_id && profileMap.get(space.owner_id)?.full_name) || null,
+      owner_email: (space.owner_id && profileMap.get(space.owner_id)?.email) || null,
+      owner_phone: (space.owner_id && profileMap.get(space.owner_id)?.phone) || null,
       owner_verification_status:
-        profileMap.get(space.owner_id)?.owner_verification_status || "pending",
+        (space.owner_id && profileMap.get(space.owner_id)?.owner_verification_status) || "pending",
       bank_verification_status:
-        profileMap.get(space.owner_id)?.bank_verification_status || "pending",
+        (space.owner_id && profileMap.get(space.owner_id)?.bank_verification_status) || "pending",
       platform_fee_percent: space.platform_fee_percent ?? 15,
     }));
 
@@ -691,10 +698,10 @@ export default function AdminSpacesPage() {
   return (
     <main className="min-h-screen bg-white px-6 py-10 text-black">
       <div className="mx-auto max-w-7xl">
-        <h1 className="mb-2 text-4xl font-bold">Admin - Spaces</h1>
+        <h1 className="mb-2 text-4xl font-bold">Admin - Space Approvals</h1>
         <p className="mb-8 text-gray-600">
-          Browse listings, verify ownership proof, and manage live pause/resume.
-          Approve or reject listings from{" "}
+          Review owner verification, ownership proof, and bank details before spaces go live.
+          Approve or reject from{" "}
           <Link href="/admin/listing-reviews" className="font-medium underline">
             Listing reviews
           </Link>
@@ -719,7 +726,7 @@ export default function AdminSpacesPage() {
 
         <div className="mb-6 rounded-md border border-gray-300 bg-white p-4 shadow-sm">
           <label className="mb-3 block text-sm font-medium text-[#192a3a]">
-            Search listing
+            Search space
           </label>
           <div className="flex items-center gap-3 rounded-md border border-gray-300 px-3 py-2">
             <Search className="h-4 w-4 text-gray-500" />
@@ -1019,7 +1026,7 @@ export default function AdminSpacesPage() {
                                   className={buttonPrimary}
                                 >
                                   <Pencil className="h-3.5 w-3.5" />
-                                  Edit listing
+                                  Edit space
                                 </Link>
 
                                 {needsReviewWorkflow(space.status) ? (

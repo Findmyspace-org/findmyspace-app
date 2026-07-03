@@ -330,8 +330,8 @@ export default function HostDashboardPage() {
               </h2>
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 <WorkspaceCard
-                  title="My listings"
-                  description="Manage spaces, photos, pricing and availability."
+                  title="My spaces"
+                  description="Manage individual spaces people can book."
                   icon={<Building2 className="h-5 w-5" aria-hidden />}
                   href="/dashboard/listings"
                   meta={`${activeListingsCount} active`}

@@ -63,7 +63,7 @@ export const HOST_NAV: DashboardNavItem[] = [
     icon: LayoutDashboard,
   },
   {
-    label: "My listings",
+    label: "My spaces",
     href: "/dashboard/listings",
     icon: Building2,
     matchPrefix: true,

@@ -166,9 +166,9 @@ function AdminUnclaimedListingsPageContent({
 
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-semibold text-gray-900">Unclaimed listings</h1>
+            <h1 className="text-2xl font-semibold text-gray-900">Unclaimed spaces</h1>
             <p className="mt-1 text-sm text-gray-600">
-              Admin-created venues — scout, publish, and track through claim and review.
+              Admin-created spaces that do not yet have an owner managing them.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -191,7 +191,7 @@ function AdminUnclaimedListingsPageContent({
               className="inline-flex items-center gap-2 rounded-lg bg-[#0f2740] px-4 py-2 text-sm font-semibold text-white"
             >
               <Plus className="h-4 w-4" />
-              New Unclaimed Listing
+              New unclaimed space
             </Link>
           </div>
         </div>
@@ -287,7 +287,7 @@ function AdminUnclaimedListingsPageContent({
                         <Link
                           href={editHref}
                           className="block h-12 w-12 overflow-hidden rounded-lg border border-gray-200 bg-gray-100"
-                          title="Edit listing"
+                          title="Edit space"
                         >
                           {row.cover_image_url ? (
                             <Image

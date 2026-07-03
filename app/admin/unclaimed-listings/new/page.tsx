@@ -62,11 +62,11 @@ function NewUnclaimedListingContent() {
           className="mb-4 inline-flex items-center gap-2 text-sm font-medium text-gray-700 hover:text-gray-900"
         >
           <ArrowLeft className="h-4 w-4" />
-          Back to unclaimed listings
+          Back to unclaimed spaces
         </GuardedLink>
-        <h1 className="text-2xl font-semibold text-gray-900">New unclaimed listing</h1>
+        <h1 className="text-2xl font-semibold text-gray-900">New unclaimed space</h1>
         <p className="mt-1 text-sm text-gray-600">
-          Save a draft, add photos, then publish when ready. No owner account is required.
+          Save a draft, add photos, then publish when ready. No owner account is required yet.
         </p>
         <div className="mt-6">
           <AdminUnclaimedSpaceForm

@@ -5,6 +5,7 @@ import {
   adminSpaceEditHref,
   adminSpacePublicViewHref,
 } from "@/lib/admin-space-visibility";
+import { isValidUuid } from "@/lib/utils";
 
 export async function GET(req: NextRequest) {
   const auth = await requireAdminApi(req);
@@ -44,8 +45,12 @@ export async function GET(req: NextRequest) {
   const rows = (spaces as Record<string, unknown>[]) || [];
   const ids = rows.map((s) => s.id as string);
   const ownerIds = [
-    ...new Set(rows.map((s) => s.owner_id as string | null).filter(Boolean)),
-  ] as string[];
+    ...new Set(
+      rows
+        .map((s) => s.owner_id as string | null)
+        .filter((id): id is string => isValidUuid(id))
+    ),
+  ];
   const propertyIds = [
     ...new Set(rows.map((s) => s.property_id as string | null).filter(Boolean)),
   ] as string[];
