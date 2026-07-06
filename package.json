@@ -16,6 +16,7 @@
     "test:event-pricing-save": "node scripts/test-event-pricing-save.mjs",
     "test:booking-event-pricing": "node scripts/test-booking-event-pricing.mjs",
     "test:space-price-display": "node scripts/test-space-price-display.mjs",
+    "test:venue-scout-import": "node scripts/test-venue-scout-import.mjs",
     "test:form-save-state": "node scripts/test-form-save-state.mjs",
     "test:unsaved-guard": "node scripts/test-unsaved-guard.mjs"
   },

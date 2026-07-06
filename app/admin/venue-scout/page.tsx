@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import {
   Building2,
   ClipboardList,
-  Compass,
+  Globe2,
   Inbox,
   Link2,
   MapPin,
@@ -59,8 +59,11 @@ export default function VenueScoutDashboardPage() {
   }, []);
 
   useEffect(() => {
-    if (isAdmin) void load();
-    else if (!roleLoading) setLoading(false);
+    const timer = window.setTimeout(() => {
+      if (isAdmin) void load();
+      else if (!roleLoading) setLoading(false);
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [isAdmin, roleLoading, load]);
 
   if (roleLoading || (isAdmin && loading)) {
@@ -94,6 +97,13 @@ export default function VenueScoutDashboardPage() {
           >
             <Plus className="h-4 w-4" />
             Scout new space
+          </Link>
+          <Link
+            href="/admin/venue-scout/import"
+            className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-800 hover:bg-gray-50"
+          >
+            <Globe2 className="h-4 w-4" />
+            Import website
           </Link>
         </div>
 
@@ -134,6 +144,13 @@ export default function VenueScoutDashboardPage() {
           >
             <Building2 className="h-4 w-4" />
             Properties
+          </Link>
+          <Link
+            href="/admin/venue-scout/imports"
+            className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800 hover:bg-gray-50"
+          >
+            <Globe2 className="h-4 w-4" />
+            Website imports
           </Link>
           <Link
             href="/admin/unclaimed-listings"
