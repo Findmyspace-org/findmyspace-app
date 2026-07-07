@@ -6,12 +6,14 @@ import { arrayMove } from "@dnd-kit/sortable";
 import type { PipelineStage } from "@/lib/space-place/constants";
 import { PIPELINE_STAGES } from "@/lib/space-place/constants";
 import type { CrmOrganisationListRow } from "@/lib/crm-desktop/types";
-import { updateCrmPipelineStage } from "@/lib/space-place/crm-mutations";
 import { useCrmRefresh } from "@/lib/crm-desktop/crm-refresh";
 import { pipelineStageRequiresReason } from "@/lib/crm-marketing/pipeline";
 import type { ClosePipelineLostFormPayload } from "@/lib/crm-marketing/types";
 import { adminApiFetch } from "@/lib/admin-api-client";
-import { reorderCrmPipelineCard } from "@/lib/crm-desktop/api-client";
+import {
+  moveCrmPipelineOrganisationStage,
+  reorderCrmPipelineCard,
+} from "@/lib/crm-desktop/api-client";
 import {
   clampSmartReorderIndex,
   isValidSmartReorderTarget,
@@ -193,36 +195,57 @@ export function useCrmPipelineDrag({
       const previousRank = row.pipeline_manual_rank;
       applyOptimisticMove(row.id, toStage);
 
-      const { error } = await updateCrmPipelineStage({
-        organisationId: row.id,
-        pipelineStage: toStage,
-        previousStage: fromStage,
-        profileId: profileId ?? null,
-        contactId: row.primary_contact_id,
-      });
-
-      if (error) {
-        setSaving(false);
-        revertMove(row.id, fromStage, previousRank);
-        setMoveError(error);
-        return false;
-      }
-
       try {
-        await persistReorder(
-          { ...row, pipeline_stage: toStage },
-          toStage,
-          overOrganisationId
+        const result = await moveCrmPipelineOrganisationStage({
+          organisationId: row.id,
+          previousStage: fromStage,
+          destinationStage: toStage,
+          beforeOrganisationId: overOrganisationId,
+          contactId: row.primary_contact_id,
+          idempotencyKey: crypto.randomUUID(),
+          sortMode,
+        });
+
+        if (!result.ok) {
+          revertMove(row.id, fromStage, previousRank);
+          setMoveError(
+            typeof result.error === "string"
+              ? result.error
+              : "Failed to move card. Please try again."
+          );
+          return false;
+        }
+
+        const savedRank =
+          typeof result.pipeline_manual_rank === "number"
+            ? result.pipeline_manual_rank
+            : previousRank;
+        const updatedAt =
+          typeof result.updated_at === "string"
+            ? result.updated_at
+            : row.updated_at;
+
+        setRows((current) =>
+          current.map((item) =>
+            item.id === row.id
+              ? {
+                  ...item,
+                  pipeline_stage: toStage,
+                  pipeline_manual_rank: savedRank,
+                  updated_at: updatedAt,
+                }
+              : item
+          )
         );
-      } catch (reorderError) {
-        setMoveError(
-          reorderError instanceof Error
-            ? reorderError.message
-            : "Stage updated but order could not be saved."
-        );
+      } catch (error) {
+        console.error("Pipeline cross-column move failed:", error);
+        revertMove(row.id, fromStage, previousRank);
+        setMoveError("Failed to move card. Please try again.");
+        return false;
+      } finally {
+        setSaving(false);
       }
 
-      setSaving(false);
       invalidate();
       onMoveComplete?.();
 
@@ -235,10 +258,10 @@ export function useCrmPipelineDrag({
     [
       applyOptimisticMove,
       revertMove,
-      profileId,
       invalidate,
       onMoveComplete,
-      persistReorder,
+      setRows,
+      sortMode,
     ]
   );
 
@@ -328,7 +351,7 @@ export function useCrmPipelineDrag({
           rows.filter((item) => item.pipeline_stage === fromStage),
           sortMode
         );
-        let oldIndex = stageRows.findIndex((item) => item.id === orgId);
+        const oldIndex = stageRows.findIndex((item) => item.id === orgId);
         let newIndex = stageRows.findIndex((item) => item.id === overOrganisationId);
         if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return;
 

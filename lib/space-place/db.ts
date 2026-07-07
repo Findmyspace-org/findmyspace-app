@@ -10,4 +10,5 @@ export const crmDb = {
   inbox: () => supabase.from("crm_inbox") as any,
   emailMessages: () => supabase.from("crm_email_messages") as any,
   spacerInvites: () => supabase.from("crm_spacer_invites") as any,
+  rpc: (fn: string, args: Record<string, unknown>) => supabase.rpc(fn, args) as any,
 };

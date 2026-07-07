@@ -44,9 +44,30 @@ function createMockStore(seed: {
     }),
     engagements: () => ({
       insert: async (row) => {
+        if (
+          row.type === "task" &&
+          row.task_id &&
+          engagements.some(
+            (e) => e.type === "task" && e.task_id === row.task_id
+          )
+        ) {
+          return { error: { message: "duplicate task completion engagement" } };
+        }
         engagements.push(row);
         return { error: null };
       },
+      select: () => ({
+        eq: (col, val) => ({
+          eq: (col2, val2) => ({
+            maybeSingle: async () => {
+              const found = engagements.find(
+                (e) => e[col] === val && e[col2] === val2
+              );
+              return { data: found ? { id: "eng-existing" } : null, error: null };
+            },
+          }),
+        }),
+      }),
     }),
     organisations: () => ({
       update: (patch) => ({
@@ -110,6 +131,11 @@ assert.equal(result.error, null);
 assert.equal(state().tasks.get("t1")?.status, "done");
 assert.equal(state().engagements.length, 1);
 assert.equal(state().engagements[0].type, "task");
+assert.equal(state().engagements[0].task_id, "t1");
+
+result = await completeCrmTaskWithStore(store, baseInput);
+assert.equal(result.error, null);
+assert.equal(state().engagements.length, 1, "duplicate completion is idempotent");
 
 const followUpMock = createMockStore({
   tasks: {

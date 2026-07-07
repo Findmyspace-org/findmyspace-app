@@ -2,14 +2,10 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import type {
-  CrmContact,
-  CrmEngagement,
-  CrmProfile,
-  CrmTask,
-} from "@/lib/space-place/types";
+import { ChevronRight } from "lucide-react";
+import type { CrmContact, CrmTask } from "@/lib/space-place/types";
 import type { CrmEmailMessageWithRelations } from "@/lib/space-place/types";
-import { displayName, formatDateTime } from "@/lib/space-place/format";
+import { formatDateTime } from "@/lib/space-place/format";
 import {
   ENGAGEMENT_FILTERS,
   engagementTypeIcon,
@@ -17,58 +13,31 @@ import {
   matchesEngagementFilter,
   type EngagementFilter,
 } from "@/lib/space-place/engagement-ui";
+import {
+  buildCrmTimelineItems,
+  type CrmTimelineEngagementInput,
+  type CrmTimelineItem,
+} from "@/lib/crm-desktop/timeline-items";
 
-export type CrmTimelineEngagement = CrmEngagement & {
-  crm_contacts?: Pick<CrmContact, "id" | "full_name" | "first_name" | "last_name"> | null;
-  contact?: Pick<CrmContact, "id" | "full_name" | "first_name" | "last_name"> | null;
-  creator?: Pick<CrmProfile, "id" | "full_name"> | null;
-};
-
-export type CrmTimelineItem = {
-  id: string;
-  kind: "engagement" | "task" | "email";
-  type: string;
-  occurred_at: string;
-  summary: string | null;
-  outcome: string | null;
-  contact_id: string | null;
-  contact_name: string | null;
-  creator_name: string | null;
-  status?: string;
-  related_task_id?: string | null;
-  detail?: string | null;
-};
+export type { CrmTimelineEngagementInput as CrmTimelineEngagement, CrmTimelineItem };
 
 type Props = {
-  engagements: CrmTimelineEngagement[];
+  engagements: CrmTimelineEngagementInput[];
   tasks: CrmTask[];
   emails?: CrmEmailMessageWithRelations[];
   organisationName?: string;
+  organisationId?: string;
+  contacts?: CrmContact[];
   loading?: boolean;
+  onTaskOpen?: (item: CrmTimelineItem) => void;
 };
 
-function relatedFollowUpTask(
-  engagement: CrmTimelineEngagement,
-  tasks: CrmTask[]
-): CrmTask | undefined {
-  const occurred = new Date(engagement.occurred_at).getTime();
-  return tasks
-    .filter((t) => {
-      if (t.status === "cancelled") return false;
-      if (t.organisation_id !== engagement.organisation_id) return false;
-      if (
-        engagement.contact_id &&
-        t.contact_id &&
-        t.contact_id !== engagement.contact_id
-      ) {
-        return false;
-      }
-      return new Date(t.created_at).getTime() >= occurred - 60_000;
-    })
-    .sort(
-      (a, b) =>
-        new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-    )[0];
+function timelineTypeLabel(item: CrmTimelineItem): string {
+  if (item.kind === "task") {
+    return item.task_status === "done" ? "Task completed" : "Open task";
+  }
+  if (item.type === "task") return "Task completed";
+  return engagementTypeLabel(item.type);
 }
 
 export function CrmTimeline({
@@ -76,69 +45,23 @@ export function CrmTimeline({
   tasks,
   emails = [],
   organisationName,
+  contacts = [],
   loading,
+  onTaskOpen,
 }: Props) {
   const [filter, setFilter] = useState<EngagementFilter | "tasks">("all");
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  const items = useMemo(() => {
-    const rows: CrmTimelineItem[] = [];
-
-    for (const e of engagements) {
-      const contact = e.contact || e.crm_contacts;
-      rows.push({
-        id: `eng-${e.id}`,
-        kind: "engagement",
-        type: e.type,
-        occurred_at: e.occurred_at,
-        summary: e.summary,
-        outcome: e.outcome,
-        contact_id: e.contact_id,
-        contact_name: contact
-          ? displayName(contact.full_name, contact.first_name, contact.last_name)
-          : null,
-        creator_name: e.creator?.full_name ?? null,
-        related_task_id: relatedFollowUpTask(e, tasks)?.id ?? null,
-        detail: e.outcome,
-      });
-    }
-
-    for (const t of tasks) {
-      rows.push({
-        id: `task-${t.id}`,
-        kind: "task",
-        type: t.status === "done" ? "task_done" : "task",
-        occurred_at: t.completed_at || t.due_date || t.created_at,
-        summary: t.title,
-        outcome: t.description,
-        contact_id: t.contact_id,
-        contact_name: null,
-        creator_name: null,
-        status: t.status,
-        detail: t.description,
-      });
-    }
-
-    for (const em of emails) {
-      rows.push({
-        id: `email-${em.id}`,
-        kind: "email",
-        type: "email",
-        occurred_at: em.sent_at || em.imported_at,
-        summary: em.subject,
-        outcome: em.body_text?.slice(0, 280) ?? null,
-        contact_id: em.contact_id,
-        contact_name: em.crm_contacts?.full_name ?? null,
-        creator_name: null,
-        detail: em.body_text,
-      });
-    }
-
-    return rows.sort(
-      (a, b) =>
-        new Date(b.occurred_at).getTime() - new Date(a.occurred_at).getTime()
-    );
-  }, [engagements, tasks, emails]);
+  const items = useMemo(
+    () =>
+      buildCrmTimelineItems({
+        engagements,
+        tasks,
+        emails,
+        contacts,
+      }),
+    [engagements, tasks, emails, contacts]
+  );
 
   const filtered = useMemo(() => {
     return items.filter((item) => {
@@ -190,56 +113,100 @@ export function CrmTimeline({
       ) : (
         <ul className="divide-y divide-gray-100 rounded-lg border border-gray-200 bg-white">
           {filtered.map((item) => {
-            const Icon = engagementTypeIcon(item.type);
+            const Icon = engagementTypeIcon(
+              item.kind === "task"
+                ? item.task_status === "done"
+                  ? "task"
+                  : "note"
+                : item.type
+            );
             const expanded = expandedId === item.id;
+            const isTaskOpenable = Boolean(item.task_id && onTaskOpen && !item.task_missing);
+            const isTaskBroken = Boolean(item.task_missing);
+
+            const content = (
+              <>
+                <span className="mt-0.5 rounded-full bg-gray-100 p-2">
+                  <Icon className="h-4 w-4 text-gray-600" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-medium text-[#192a3a]">
+                      {timelineTypeLabel(item)}
+                    </span>
+                    <span className="text-xs text-gray-500">
+                      {formatDateTime(item.occurred_at)}
+                    </span>
+                    {item.task_status === "done" ? (
+                      <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium uppercase text-gray-600">
+                        Completed
+                      </span>
+                    ) : null}
+                  </span>
+                  {organisationName ? (
+                    <span className="text-xs text-gray-500">{organisationName}</span>
+                  ) : null}
+                  {item.contact_name ? (
+                    <span className="block text-xs text-gray-500">
+                      Contact: {item.contact_name}
+                    </span>
+                  ) : null}
+                  {item.creator_name ? (
+                    <span className="block text-xs text-gray-500">
+                      By {item.creator_name}
+                    </span>
+                  ) : null}
+                  <span className="mt-1 block text-sm text-gray-700">
+                    {item.summary || "—"}
+                  </span>
+                  {item.outcome && !expanded && !isTaskOpenable ? (
+                    <span className="mt-1 block truncate text-xs text-gray-500">
+                      {item.outcome}
+                    </span>
+                  ) : null}
+                  {isTaskBroken ? (
+                    <span className="mt-1 block text-xs text-gray-400">
+                      Task record unavailable
+                    </span>
+                  ) : null}
+                </span>
+                {isTaskOpenable ? (
+                  <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-gray-400" />
+                ) : null}
+              </>
+            );
+
             return (
               <li key={item.id} className="px-4 py-3">
-                <button
-                  type="button"
-                  className="flex w-full items-start gap-3 text-left"
-                  onClick={() =>
-                    setExpandedId(expanded ? null : item.id)
-                  }
-                >
-                  <span className="mt-0.5 rounded-full bg-gray-100 p-2">
-                    <Icon className="h-4 w-4 text-gray-600" />
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="flex flex-wrap items-center gap-2">
-                      <span className="text-sm font-medium text-[#192a3a]">
-                        {engagementTypeLabel(item.type)}
-                        {item.status === "done" ? " (completed)" : ""}
-                      </span>
-                      <span className="text-xs text-gray-500">
-                        {formatDateTime(item.occurred_at)}
-                      </span>
-                    </span>
-                    {organisationName ? (
-                      <span className="text-xs text-gray-500">
-                        {organisationName}
-                      </span>
-                    ) : null}
-                    {item.contact_name ? (
-                      <span className="block text-xs text-gray-500">
-                        Contact: {item.contact_name}
-                      </span>
-                    ) : null}
-                    {item.creator_name ? (
-                      <span className="block text-xs text-gray-500">
-                        By {item.creator_name}
-                      </span>
-                    ) : null}
-                    <span className="mt-1 block text-sm text-gray-700">
-                      {item.summary || "—"}
-                    </span>
-                    {item.outcome && !expanded ? (
-                      <span className="mt-1 block truncate text-xs text-gray-500">
-                        {item.outcome}
-                      </span>
-                    ) : null}
-                  </span>
-                </button>
-                {expanded && item.detail ? (
+                {isTaskOpenable ? (
+                  <button
+                    type="button"
+                    className="flex w-full cursor-pointer items-start gap-3 rounded-md text-left hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#c1121f]/30"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onTaskOpen?.(item);
+                    }}
+                    aria-label={`Open task ${item.summary || ""}`}
+                  >
+                    {content}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className={`flex w-full items-start gap-3 text-left ${
+                      isTaskBroken ? "cursor-default opacity-80" : ""
+                    }`}
+                    disabled={isTaskBroken}
+                    onClick={() =>
+                      !isTaskBroken
+                        ? setExpandedId(expanded ? null : item.id)
+                        : undefined
+                    }
+                  >
+                    {content}
+                  </button>
+                )}
+                {expanded && item.detail && !isTaskOpenable ? (
                   <p className="mt-2 whitespace-pre-wrap pl-11 text-sm text-gray-600">
                     {item.detail}
                   </p>
@@ -253,6 +220,7 @@ export function CrmTimeline({
                   <Link
                     href={`/admin/crm/contacts/${item.contact_id}`}
                     className="mt-1 block pl-11 text-xs text-[#c1121f] hover:underline"
+                    onClick={(event) => event.stopPropagation()}
                   >
                     View contact
                   </Link>

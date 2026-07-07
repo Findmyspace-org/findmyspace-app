@@ -28,6 +28,79 @@ export type CompleteCrmTaskInput = {
   pipelineStageOverride?: PipelineStage | null;
 };
 
+async function completeTaskRecordCore(
+  store: CrmMutationStore,
+  input: {
+    taskId: string;
+    profileId: string;
+    organisationId: string | null;
+    contactId: string | null;
+    taskTitle: string;
+    outcome: string;
+  }
+): Promise<{ error: string | null; completedAt: string | null }> {
+  if (store.rpc) {
+    const { data, error } = await store.rpc("crm_complete_task_record", {
+      p_task_id: input.taskId,
+      p_profile_id: input.profileId,
+      p_organisation_id: input.organisationId,
+      p_contact_id: input.contactId,
+      p_task_title: input.taskTitle,
+      p_outcome: input.outcome,
+    });
+    if (error) return { error: error.message, completedAt: null };
+    const row = data?.[0];
+    return { error: null, completedAt: row?.completed_at ?? null };
+  }
+
+  const nowIso = new Date().toISOString();
+
+  if (store.engagements().select) {
+    const existing = await store
+      .engagements()
+      .select!("id")
+      .eq("task_id", input.taskId)
+      .eq("type", "task")
+      .maybeSingle();
+    if (existing.data) {
+      return { error: null, completedAt: nowIso };
+    }
+  }
+
+  const { error: taskErr } = await store
+    .tasks()
+    .update({ status: "done", completed_at: nowIso })
+    .eq("id", input.taskId);
+
+  if (taskErr) return { error: taskErr.message, completedAt: null };
+
+  if (!input.organisationId) {
+    return { error: null, completedAt: nowIso };
+  }
+
+  const { error: engagementErr } = await store.engagements().insert({
+    organisation_id: input.organisationId,
+    contact_id: input.contactId,
+    type: "task",
+    summary: input.taskTitle,
+    outcome: input.outcome,
+    direction: "internal",
+    occurred_at: nowIso,
+    created_by: input.profileId,
+    task_id: input.taskId,
+  });
+
+  if (engagementErr) {
+    await store
+      .tasks()
+      .update({ status: "open", completed_at: null })
+      .eq("id", input.taskId);
+    return { error: engagementErr.message, completedAt: null };
+  }
+
+  return { error: null, completedAt: nowIso };
+}
+
 export async function logCrmAuditNote(
   store: CrmMutationStore,
   input: {
@@ -90,14 +163,23 @@ export async function completeCrmTaskWithStore(
   const validationError = validateCompleteCrmTaskInput(input);
   if (validationError) return { error: validationError };
 
-  const nowIso = new Date().toISOString();
+  const outcomeText = formatTaskOutcomeForEngagement(
+    input.outcomeValue,
+    input.extraNotes || ""
+  );
 
-  const { error: taskErr } = await store
-    .tasks()
-    .update({ status: "done", completed_at: nowIso })
-    .eq("id", input.taskId);
+  const core = await completeTaskRecordCore(store, {
+    taskId: input.taskId,
+    profileId: input.profileId,
+    organisationId: input.organisationId,
+    contactId: input.contactId,
+    taskTitle: input.taskTitle,
+    outcome: outcomeText,
+  });
 
-  if (taskErr) return { error: taskErr.message };
+  if (core.error) return { error: core.error };
+
+  const nowIso = core.completedAt ?? new Date().toISOString();
 
   const rollbackTask = async () => {
     await store
@@ -107,25 +189,6 @@ export async function completeCrmTaskWithStore(
   };
 
   if (input.organisationId) {
-    const outcomeText = formatTaskOutcomeForEngagement(
-      input.outcomeValue,
-      input.extraNotes || ""
-    );
-    const { error: engagementErr } = await store.engagements().insert({
-      organisation_id: input.organisationId,
-      contact_id: input.contactId,
-      type: "task",
-      summary: input.taskTitle,
-      outcome: outcomeText,
-      direction: "internal",
-      occurred_at: nowIso,
-      created_by: input.profileId,
-    });
-    if (engagementErr) {
-      await rollbackTask();
-      return { error: engagementErr.message };
-    }
-
     const suggested =
       input.pipelineStageOverride ??
       getSuggestedPipelineStage(input.outcomeValue);

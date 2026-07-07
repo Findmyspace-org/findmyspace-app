@@ -1341,6 +1341,9 @@ export function parseCrmListFilters(
     noContact:
       searchParams.get("no_contact") === "1" ||
       Boolean(presetFilters.noContact),
+    primaryRequired:
+      searchParams.get("primary_required") === "1" ||
+      Boolean(presetFilters.primaryRequired),
     noSpaces:
       searchParams.get("no_spaces") === "1" || Boolean(presetFilters.noSpaces),
     noEmail:

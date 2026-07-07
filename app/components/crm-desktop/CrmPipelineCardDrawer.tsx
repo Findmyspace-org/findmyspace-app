@@ -24,7 +24,7 @@ import { EditOrganisationPanel } from "@/app/space-place/components/EditOrganisa
 import { CreateContactPanel } from "@/app/space-place/components/CreateContactPanel";
 import { CrmMarketplaceListingsSection } from "@/app/space-place/components/CrmMarketplaceListingsSection";
 import { CrmDesktopDrawer } from "./CrmDesktopDrawer";
-import { CrmTimeline } from "./CrmTimeline";
+import { CrmTimeline, type CrmTimelineItem } from "./CrmTimeline";
 import { CrmOverdueBadge, CrmPipelineBadge } from "./CrmStatusBadge";
 import { organisationRowToActionContext } from "./crm-action-context";
 import { useCrmQuickAction } from "./CrmQuickActionProvider";
@@ -35,6 +35,9 @@ import {
 } from "@/lib/space-place/next-task";
 import { useSpacePlace } from "@/app/space-place/SpacePlaceContext";
 import { adminApiFetch } from "@/lib/admin-api-client";
+import { setCrmOrganisationPrimaryContact } from "@/lib/crm-desktop/api-client";
+import { patchOrganisationRowPrimaryContact } from "@/lib/crm-desktop/organisation-contact-status";
+import { patchOrganisationRowFromTasks } from "@/lib/crm-desktop/patch-organisation-row-from-tasks";
 
 import type { CrmOrganisationListRow } from "@/lib/crm-desktop/types";
 
@@ -50,11 +53,18 @@ type Props = {
   row: CrmOrganisationListRow | null;
   onClose: () => void;
   onRefresh: () => void;
+  onRowPatched?: (row: CrmOrganisationListRow) => void;
 };
 
-export function CrmPipelineCardDrawer({ row, onClose, onRefresh }: Props) {
+export function CrmPipelineCardDrawer({
+  row,
+  onClose,
+  onRefresh,
+  onRowPatched,
+}: Props) {
   const { openQuickMenu, openQuickAction } = useCrmQuickAction();
-  const { isAdmin, canViewAllOrganisations, profile } = useSpacePlace();
+  const { isAdmin, canViewAllOrganisations, profile, loading: profileLoading } =
+    useSpacePlace();
   const [org, setOrg] = useState<CrmOrganisation | null>(null);
   const [contacts, setContacts] = useState<CrmContact[]>([]);
   const [tasks, setTasks] = useState<CrmTask[]>([]);
@@ -64,11 +74,12 @@ export function CrmPipelineCardDrawer({ row, onClose, onRefresh }: Props) {
   const [loading, setLoading] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [createContactOpen, setCreateContactOpen] = useState(false);
+  const [contactPanelError, setContactPanelError] = useState<string | null>(null);
   const [marketingSummary, setMarketingSummary] =
     useState<MarketingOrgSummary | null>(null);
 
   const loadDetail = useCallback(async () => {
-    if (!row) return;
+    if (!row) return null;
     setLoading(true);
     const id = row.id;
     const [o, c, t, e, em, p] = await Promise.all([
@@ -99,18 +110,19 @@ export function CrmPipelineCardDrawer({ row, onClose, onRefresh }: Props) {
     );
 
     setOrg((o.data as CrmOrganisation) || null);
-    setContacts((c.data as CrmContact[]) || []);
-    setTasks((t.data as CrmTask[]) || []);
+    const contactList = (c.data as CrmContact[]) || [];
+    const taskList = (t.data as CrmTask[]) || [];
+    const engagementList = ((e.data as SpaceEngagementRow[]) || []).map((eng) => ({
+      ...eng,
+      contact: eng.crm_contacts ?? null,
+      creator: eng.created_by
+        ? { id: eng.created_by, full_name: creatorMap[eng.created_by] ?? null }
+        : null,
+    }));
+    setContacts(contactList);
+    setTasks(taskList);
     setSpacers((p.data as CrmProfile[]) || []);
-    setEngagements(
-      ((e.data as SpaceEngagementRow[]) || []).map((eng) => ({
-        ...eng,
-        contact: eng.crm_contacts ?? null,
-        creator: eng.created_by
-          ? { id: eng.created_by, full_name: creatorMap[eng.created_by] ?? null }
-          : null,
-      }))
-    );
+    setEngagements(engagementList);
     setEmails((em.data as CrmEmailMessageWithRelations[]) || []);
     if (row) {
       void adminApiFetch(
@@ -120,6 +132,12 @@ export function CrmPipelineCardDrawer({ row, onClose, onRefresh }: Props) {
         .catch(() => setMarketingSummary(null));
     }
     setLoading(false);
+    return {
+      org: (o.data as CrmOrganisation) || null,
+      contacts: contactList,
+      tasks: taskList,
+      engagements: engagementList,
+    };
   }, [row]);
 
   useEffect(() => {
@@ -135,16 +153,18 @@ export function CrmPipelineCardDrawer({ row, onClose, onRefresh }: Props) {
     }
   }, [row, loadDetail]);
 
-  const primaryContact = contacts[0] ?? null;
+  const primaryContactId = org?.primary_contact_id ?? row?.primary_contact_id ?? null;
+  const primaryContact =
+    contacts.find((contact) => contact.id === primaryContactId) ?? null;
   const nextTask = useMemo(() => {
     if (!row) return null;
     const resolved = resolveNextCrmTaskForOrganisation(
       tasks,
       row.id,
-      primaryContact?.id
+      primaryContactId
     );
     return resolved ? tasks.find((t) => t.id === resolved.id) ?? null : null;
-  }, [tasks, row, primaryContact?.id]);
+  }, [tasks, row, primaryContactId]);
 
   const actionContext = useMemo(() => {
     if (!row) return {};
@@ -157,6 +177,85 @@ export function CrmPipelineCardDrawer({ row, onClose, onRefresh }: Props) {
   }, [row, nextTask]);
 
   async function handleRefresh() {
+    const data = await loadDetail();
+    onRefresh();
+    if (row && data && onRowPatched) {
+      onRowPatched(
+        patchOrganisationRowFromTasks(
+          row,
+          data.tasks,
+          data.engagements,
+          data.org
+        )
+      );
+    }
+  }
+
+  function handleTaskOpen(item: CrmTimelineItem) {
+    if (!row || !item.task_id) return;
+    const task = tasks.find((entry) => entry.id === item.task_id);
+    if (!task) {
+      console.warn("Timeline task reference missing:", item.task_id);
+      return;
+    }
+
+    openQuickAction(
+      "edit_task",
+      {
+        organisationId: row.id,
+        organisationName: row.name,
+        taskId: task.id,
+        taskTitle: task.title,
+        contactId: task.contact_id ?? row.primary_contact_id ?? undefined,
+        pipelineStage: row.pipeline_stage,
+        assignedTo: row.assigned_to,
+      },
+      () => {
+        void handleRefresh();
+      }
+    );
+  }
+
+  function handleOpenCreateContact() {
+    if (profileLoading) return;
+    if (!profile) {
+      setContactPanelError("You must be signed in to add contacts.");
+      return;
+    }
+    if (!row) return;
+    setContactPanelError(null);
+    setCreateContactOpen(true);
+  }
+
+  async function handleContactCreated(
+    contact: CrmContact,
+    meta?: { setAsPrimary?: boolean }
+  ) {
+    if (!row) return;
+
+    const displayName =
+      contact.full_name || contact.first_name || "Unnamed contact";
+    let patched: CrmOrganisationListRow = {
+      ...row,
+      contact_count: row.contact_count + 1,
+    };
+
+    if (meta?.setAsPrimary) {
+      const result = await setCrmOrganisationPrimaryContact(row.id, contact.id);
+      if (result.ok) {
+        patched = patchOrganisationRowPrimaryContact(patched, {
+          id: contact.id,
+          name: displayName,
+          role: contact.role,
+          email: contact.email,
+          phone: contact.phone || contact.whatsapp,
+        });
+      }
+    }
+
+    setContacts((current) => [...current, contact]);
+    setCreateContactOpen(false);
+    onRowPatched?.(patched);
     await loadDetail();
     onRefresh();
   }
@@ -283,17 +382,26 @@ export function CrmPipelineCardDrawer({ row, onClose, onRefresh }: Props) {
                 <h3 className="text-sm font-semibold text-[#192a3a]">Contacts</h3>
                 <button
                   type="button"
-                  onClick={() => setCreateContactOpen(true)}
-                  className="inline-flex items-center gap-1 text-xs font-medium text-[#c1121f]"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    handleOpenCreateContact();
+                  }}
+                  disabled={createContactOpen || profileLoading}
+                  className="inline-flex cursor-pointer items-center gap-1 rounded px-1 py-0.5 text-xs font-medium text-[#c1121f] hover:bg-[#c1121f]/5 hover:underline disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <Plus className="h-3.5 w-3.5" /> Add contact
                 </button>
               </div>
+              {contactPanelError ? (
+                <p className="mt-1 text-xs text-red-600" role="alert">
+                  {contactPanelError}
+                </p>
+              ) : null}
               <ul className="mt-2 space-y-2">
                 {contacts.length === 0 ? (
-                  <li className="text-sm text-gray-500">No contacts yet.</li>
+                  <li className="text-sm text-gray-500">No contacts added</li>
                 ) : (
-                  contacts.map((c, index) => (
+                  contacts.map((c) => (
                     <li
                       key={c.id}
                       className="rounded-lg border border-gray-100 bg-gray-50 p-3 text-sm"
@@ -306,7 +414,7 @@ export function CrmPipelineCardDrawer({ row, onClose, onRefresh }: Props) {
                           >
                             {c.full_name || c.first_name || "Contact"}
                           </Link>
-                          {index === 0 ? (
+                          {org?.primary_contact_id === c.id ? (
                             <span className="ml-2 text-[10px] uppercase text-gray-400">
                               Primary
                             </span>
@@ -352,8 +460,11 @@ export function CrmPipelineCardDrawer({ row, onClose, onRefresh }: Props) {
                 engagements={engagements}
                 tasks={tasks}
                 emails={emails}
+                contacts={contacts}
+                organisationId={row.id}
                 organisationName={row.name}
                 loading={loading}
+                onTaskOpen={handleTaskOpen}
               />
             </section>
 
@@ -434,6 +545,7 @@ export function CrmPipelineCardDrawer({ row, onClose, onRefresh }: Props) {
           organisation={org}
           spacers={spacers}
           isAdmin={isAdmin}
+          stackAboveDrawer
           onClose={() => setEditOpen(false)}
           onSaved={() => {
             setEditOpen(false);
@@ -442,18 +554,18 @@ export function CrmPipelineCardDrawer({ row, onClose, onRefresh }: Props) {
         />
       ) : null}
 
-      {org && profile ? (
+      {row && profile ? (
         <CreateContactPanel
           open={createContactOpen}
-          defaultOrganisationId={org.id}
+          defaultOrganisationId={row.id}
+          lockOrganisation
+          offerSetAsPrimary
+          stackAboveDrawer
           isAdmin={isAdmin}
           canViewAllOrganisations={canViewAllOrganisations}
           userId={profile.id}
           onClose={() => setCreateContactOpen(false)}
-          onCreated={() => {
-            setCreateContactOpen(false);
-            void handleRefresh();
-          }}
+          onCreated={(contact, meta) => void handleContactCreated(contact, meta)}
         />
       ) : null}
     </>

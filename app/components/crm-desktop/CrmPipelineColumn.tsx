@@ -22,6 +22,7 @@ type Props = {
   isDropTarget?: boolean;
   onToggleCollapse?: () => void;
   onOpenCard: (row: CrmOrganisationListRow) => void;
+  onRowPatched: (row: CrmOrganisationListRow) => void;
   onRefresh?: () => void;
   dragEnabled?: boolean;
   activeRow?: CrmOrganisationListRow | null;
@@ -37,6 +38,7 @@ export function CrmPipelineColumn({
   isDropTarget = false,
   onToggleCollapse,
   onOpenCard,
+  onRowPatched,
   onRefresh,
   dragEnabled = true,
   activeRow = null,
@@ -112,6 +114,7 @@ export function CrmPipelineColumn({
                 key={row.id}
                 row={row}
                 onOpen={onOpenCard}
+                onRowPatched={onRowPatched}
                 onRefresh={onRefresh}
                 dragEnabled={dragEnabled}
                 activeRow={activeRow}

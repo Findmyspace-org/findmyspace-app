@@ -241,4 +241,27 @@ assert.match(
   /requireCrmDesktopApi/
 );
 
+const reorderSource = readFileSync(
+  "lib/crm-desktop/pipeline-reorder.ts",
+  "utf8"
+);
+const enrichmentSource = readFileSync(
+  "lib/crm-desktop/pipeline-stage-enrichment.ts",
+  "utf8"
+);
+assert.ok(
+  !/\.select\(\s*[^)]*next_task_due/.test(reorderSource),
+  "pipeline-reorder must not select next_task_due from crm_organisations"
+);
+assert.match(enrichmentSource, /resolveNextCrmActionForOrganisation/);
+assert.match(reorderSource, /enrichStageOrganisationsForOrdering/);
+
+const dragSource = readFileSync(
+  "app/components/crm-desktop/useCrmPipelineDrag.ts",
+  "utf8"
+);
+assert.match(dragSource, /moveCrmPipelineOrganisationStage/);
+assert.match(dragSource, /Failed to move card/);
+assert.match(dragSource, /confirmClosedLost/);
+
 console.log("test-crm-pipeline-ordering: all assertions passed");

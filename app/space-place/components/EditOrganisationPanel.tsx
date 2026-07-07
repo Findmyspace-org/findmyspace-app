@@ -23,6 +23,7 @@ type EditOrganisationPanelProps = {
   onSaved: (organisation: CrmOrganisation) => void;
   isAdmin: boolean;
   spacers: CrmProfile[];
+  stackAboveDrawer?: boolean;
 };
 
 export function EditOrganisationPanel({
@@ -32,6 +33,7 @@ export function EditOrganisationPanel({
   onSaved,
   isAdmin,
   spacers,
+  stackAboveDrawer = false,
 }: EditOrganisationPanelProps) {
   const [name, setName] = useState(organisation.name);
   const [type, setType] = useState(organisation.type || "");
@@ -147,6 +149,7 @@ export function EditOrganisationPanel({
       error={error}
       success={success}
       formId={FORM_ID}
+      overlayZIndexClass={stackAboveDrawer ? "z-[70]" : "z-50"}
     >
       <form id={FORM_ID} onSubmit={handleSubmit} className="space-y-4">
         <label className="block">

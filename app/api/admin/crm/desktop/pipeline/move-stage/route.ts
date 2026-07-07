@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireCrmDesktopApi } from "@/lib/require-crm-desktop-api";
-import { reorderPipelineCard } from "@/lib/crm-desktop/pipeline-reorder";
+import { movePipelineOrganisationStage } from "@/lib/crm-desktop/pipeline-stage-move";
 import type { PipelineStage } from "@/lib/space-place/constants";
 import { getPipelineBoardSortMode } from "@/lib/crm-desktop/pipeline-ordering";
 
@@ -11,25 +11,39 @@ export async function POST(req: NextRequest) {
   try {
     const body = (await req.json()) as {
       organisationId?: string;
-      pipelineStage?: PipelineStage;
+      previousStage?: PipelineStage;
+      destinationStage?: PipelineStage;
       beforeOrganisationId?: string | null;
       afterOrganisationId?: string | null;
+      contactId?: string | null;
+      idempotencyKey?: string;
       sortMode?: string;
     };
 
-    if (!body.organisationId || !body.pipelineStage) {
+    if (
+      !body.organisationId ||
+      !body.previousStage ||
+      !body.destinationStage ||
+      !body.idempotencyKey
+    ) {
       return NextResponse.json(
-        { error: "organisationId and pipelineStage are required." },
+        {
+          error:
+            "organisationId, previousStage, destinationStage and idempotencyKey are required.",
+        },
         { status: 400 }
       );
     }
 
-    const result = await reorderPipelineCard(auth.adminClient, {
+    const result = await movePipelineOrganisationStage(auth.adminClient, {
       organisationId: body.organisationId,
-      pipelineStage: body.pipelineStage,
+      previousStage: body.previousStage,
+      destinationStage: body.destinationStage,
       beforeOrganisationId: body.beforeOrganisationId,
       afterOrganisationId: body.afterOrganisationId,
       profileId: auth.userId,
+      contactId: body.contactId,
+      idempotencyKey: body.idempotencyKey,
       sortMode: getPipelineBoardSortMode(body.sortMode),
     });
 
@@ -39,12 +53,16 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       ok: true,
+      organisationId: result.organisationId,
+      previousStage: result.previousStage,
+      newStage: result.newStage,
       pipeline_manual_rank: result.pipeline_manual_rank,
+      updated_at: result.updated_at,
     });
   } catch (error) {
-    console.error("[crm/pipeline/reorder]", error);
+    console.error("[crm/pipeline/move-stage]", error);
     return NextResponse.json(
-      { error: "Failed to reorder card." },
+      { error: "Failed to move organisation." },
       { status: 500 }
     );
   }

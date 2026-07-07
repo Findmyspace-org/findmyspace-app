@@ -155,6 +155,15 @@ export function CrmPipelineBoard({
     setSelectedRow(row);
   }, []);
 
+  const handleRowPatched = useCallback(
+    (patched: CrmOrganisationListRow) => {
+      onRowsChange((current) =>
+        current.map((row) => (row.id === patched.id ? patched : row))
+      );
+    },
+    [onRowsChange]
+  );
+
   const activeStages = PIPELINE_STAGES.filter((s) => s !== TERMINAL_STAGE);
   const terminalStages = PIPELINE_STAGES.filter((s) => s === TERMINAL_STAGE);
   const isDragActive = Boolean(activeRow);
@@ -179,6 +188,7 @@ export function CrmPipelineBoard({
                 isDragActive={isDragActive}
                 isDropTarget={dragOverStage === stage}
                 onOpenCard={handleOpenCard}
+                onRowPatched={handleRowPatched}
                 onRefresh={onRefresh}
                 dragEnabled={dragEnabled}
                 activeRow={activeRow}
@@ -196,6 +206,7 @@ export function CrmPipelineBoard({
                 isDropTarget={dragOverStage === stage}
                 onToggleCollapse={() => setTerminalCollapsed((v) => !v)}
                 onOpenCard={handleOpenCard}
+                onRowPatched={handleRowPatched}
                 onRefresh={onRefresh}
                 dragEnabled={dragEnabled}
                 activeRow={activeRow}
@@ -289,6 +300,12 @@ export function CrmPipelineBoard({
         row={selectedRow}
         onClose={() => setSelectedRow(null)}
         onRefresh={onRefresh}
+        onRowPatched={(patched) => {
+          onRowsChange((current) =>
+            current.map((item) => (item.id === patched.id ? patched : item))
+          );
+          setSelectedRow(patched);
+        }}
       />
 
       {pendingMove && profile ? (

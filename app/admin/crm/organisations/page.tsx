@@ -53,6 +53,7 @@ function OrganisationsPageInner() {
       overdue: params.overdue === "1" ? "1" : undefined,
       no_next: params.no_next === "1" ? "1" : undefined,
       no_contact: params.no_contact === "1" ? "1" : undefined,
+      primary_required: params.primary_required === "1" ? "1" : undefined,
       no_spaces: params.no_spaces === "1" ? "1" : undefined,
       no_follow_up: params.no_follow_up === "1" ? "1" : undefined,
       no_email: params.no_email === "1" ? "1" : undefined,
@@ -174,7 +175,8 @@ function OrganisationsPageInner() {
           {[
             ["overdue", "Overdue"],
             ["no_next", "No next step"],
-            ["no_contact", "No contact"],
+            ["no_contact", "No contacts"],
+            ["primary_required", "Primary required"],
             ["no_spaces", "No spaces"],
             ["stale", "Stale 30d"],
           ].map(([key, label]) => (

@@ -233,8 +233,11 @@ export function CrmQuickActionDrawer({
       change_pipeline: "Change pipeline stage",
       assign_owner: "Assign CRM owner",
     };
+    if (action === "edit_task" && task && task.status !== "open") {
+      return "Task details";
+    }
     return map[action];
-  }, [action]);
+  }, [action, task]);
 
   const subtitle = useMemo(() => {
     const parts = [
@@ -426,6 +429,9 @@ export function CrmQuickActionDrawer({
       action
     );
 
+  const taskReadOnly =
+    action === "edit_task" && Boolean(task && task.status !== "open");
+
   return (
     <CrmDesktopDrawer
       open
@@ -435,8 +441,17 @@ export function CrmQuickActionDrawer({
       saving={saving}
       error={error}
       success={success}
+      overlayZIndexClass="z-[70]"
       footer={
-        action === "menu" ? null : (
+        action === "menu" ? null : taskReadOnly ? (
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-full rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium"
+          >
+            Close
+          </button>
+        ) : (
           <div className="flex gap-3">
             <button
               type="button"
@@ -541,12 +556,33 @@ export function CrmQuickActionDrawer({
 
       {action === "add_task" || action === "schedule_followup" || action === "edit_task" ? (
         <div className="space-y-4">
+          {taskReadOnly && task ? (
+            <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700">
+              <p>
+                <span className="font-medium text-gray-500">Status:</span>{" "}
+                {task.status}
+              </p>
+              {task.completed_at ? (
+                <p className="mt-1">
+                  <span className="font-medium text-gray-500">Completed:</span>{" "}
+                  {new Date(task.completed_at).toLocaleString()}
+                </p>
+              ) : null}
+              {task.due_date ? (
+                <p className="mt-1">
+                  <span className="font-medium text-gray-500">Due date:</span>{" "}
+                  {task.due_date}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
           <label className="block text-sm">
             <span className="mb-1 block text-gray-600">Title</span>
             <input
               value={taskTitle}
               onChange={(e) => setTaskTitle(e.target.value)}
-              className="w-full rounded-lg border border-gray-200 px-3 py-2"
+              readOnly={taskReadOnly}
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 read-only:bg-gray-50"
             />
           </label>
           <label className="block text-sm">
@@ -554,8 +590,9 @@ export function CrmQuickActionDrawer({
             <textarea
               value={taskDescription}
               onChange={(e) => setTaskDescription(e.target.value)}
+              readOnly={taskReadOnly}
               rows={3}
-              className="w-full rounded-lg border border-gray-200 px-3 py-2"
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 read-only:bg-gray-50"
             />
           </label>
           <label className="block text-sm">
@@ -564,7 +601,8 @@ export function CrmQuickActionDrawer({
               type="date"
               value={taskDueDate}
               onChange={(e) => setTaskDueDate(e.target.value)}
-              className="w-full rounded-lg border border-gray-200 px-3 py-2"
+              readOnly={taskReadOnly}
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 read-only:bg-gray-50"
             />
           </label>
           <label className="block text-sm">
@@ -572,7 +610,8 @@ export function CrmQuickActionDrawer({
             <select
               value={taskPriority}
               onChange={(e) => setTaskPriority(e.target.value)}
-              className="w-full rounded-lg border border-gray-200 px-3 py-2"
+              disabled={taskReadOnly}
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 disabled:bg-gray-50"
             >
               {TASK_PRIORITIES.map((p) => (
                 <option key={p} value={p}>
@@ -586,7 +625,8 @@ export function CrmQuickActionDrawer({
             <select
               value={taskOwnerId}
               onChange={(e) => setTaskOwnerId(e.target.value)}
-              className="w-full rounded-lg border border-gray-200 px-3 py-2"
+              disabled={taskReadOnly}
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 disabled:bg-gray-50"
             >
               <option value="">Select assignee</option>
               {assignees.map((a) => (

@@ -22,13 +22,18 @@ const FORM_ID = "create-contact-form";
 type CreateContactPanelProps = {
   open: boolean;
   onClose: () => void;
-  onCreated: (contact: CrmContact) => void;
+  onCreated: (contact: CrmContact, meta?: { setAsPrimary?: boolean }) => void;
   /** True admin only (reserved for admin-only UI). */
   isAdmin: boolean;
   /** Admin or office_manager — all orgs in dropdown. */
   canViewAllOrganisations: boolean;
   userId: string;
   defaultOrganisationId?: string;
+  offerSetAsPrimary?: boolean;
+  /** Render above CRM desktop drawers (z-[60]). */
+  stackAboveDrawer?: boolean;
+  /** Keep organisation fixed to defaultOrganisationId. */
+  lockOrganisation?: boolean;
 };
 
 export function CreateContactPanel({
@@ -39,6 +44,9 @@ export function CreateContactPanel({
   canViewAllOrganisations,
   userId,
   defaultOrganisationId = "",
+  offerSetAsPrimary = false,
+  stackAboveDrawer = false,
+  lockOrganisation = false,
 }: CreateContactPanelProps) {
   const [organisations, setOrganisations] = useState<CrmOrganisation[]>([]);
   const [spacers, setSpacers] = useState<CrmProfile[]>([]);
@@ -53,6 +61,7 @@ export function CreateContactPanel({
   const [status, setStatus] = useState("lead");
   const [notes, setNotes] = useState("");
   const [assignedTo, setAssignedTo] = useState(userId);
+  const [setAsPrimary, setSetAsPrimary] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -94,6 +103,7 @@ export function CreateContactPanel({
     setStatus("lead");
     setNotes("");
     setAssignedTo(userId);
+    setSetAsPrimary(false);
     setError(null);
     setSuccess(null);
   }, [defaultOrganisationId, userId]);
@@ -165,7 +175,9 @@ export function CreateContactPanel({
     }
 
     setSuccess("Contact created.");
-    onCreated(data as CrmContact);
+    onCreated(data as CrmContact, {
+      setAsPrimary: offerSetAsPrimary && setAsPrimary,
+    });
     setTimeout(() => {
       onClose();
     }, 600);
@@ -183,6 +195,7 @@ export function CreateContactPanel({
       formId={FORM_ID}
       saveLabel="Create"
       savingLabel="Creating…"
+      overlayZIndexClass={stackAboveDrawer ? "z-[70]" : "z-50"}
     >
       <form id={FORM_ID} onSubmit={handleSubmit} className="space-y-4">
         <label className="block">
@@ -192,7 +205,7 @@ export function CreateContactPanel({
             value={organisationId}
             onChange={(e) => setOrganisationId(e.target.value)}
             className={FIELD_CLASS}
-            disabled={organisations.length === 0}
+            disabled={organisations.length === 0 || lockOrganisation}
           >
             <option value="">
               {organisations.length === 0
@@ -299,6 +312,18 @@ export function CreateContactPanel({
             className={FIELD_CLASS}
           />
         </label>
+
+        {offerSetAsPrimary && organisationId ? (
+          <label className="flex items-center gap-2 text-sm text-gray-700">
+            <input
+              type="checkbox"
+              checked={setAsPrimary}
+              onChange={(e) => setSetAsPrimary(e.target.checked)}
+              className="rounded border-gray-300"
+            />
+            Set as primary contact
+          </label>
+        ) : null}
 
         {canViewAllOrganisations ? (
           <label className="block">

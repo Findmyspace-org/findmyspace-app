@@ -63,6 +63,7 @@ export type CrmEngagement = {
   occurred_at: string;
   created_by: string | null;
   created_at: string;
+  task_id: string | null;
 };
 
 export type CrmTask = {

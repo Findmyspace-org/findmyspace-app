@@ -14,6 +14,7 @@ type CrmDesktopDrawerProps = {
   children: React.ReactNode;
   footer?: React.ReactNode;
   widthClass?: string;
+  overlayZIndexClass?: string;
 };
 
 export function CrmDesktopDrawer({
@@ -27,6 +28,7 @@ export function CrmDesktopDrawer({
   children,
   footer,
   widthClass = "max-w-lg",
+  overlayZIndexClass = "z-[60]",
 }: CrmDesktopDrawerProps) {
   useEffect(() => {
     if (!open) return;
@@ -41,7 +43,7 @@ export function CrmDesktopDrawer({
 
   return (
     <div
-      className="fixed inset-0 z-[60] flex justify-end bg-black/40"
+      className={`fixed inset-0 ${overlayZIndexClass} flex justify-end bg-black/40`}
       role="dialog"
       aria-modal="true"
       onClick={() => {

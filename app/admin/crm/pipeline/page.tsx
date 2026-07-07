@@ -50,6 +50,7 @@ function buildFilterParams(
     "overdue",
     "no_next",
     "no_contact",
+    "primary_required",
     "no_spaces",
     "no_follow_up",
     "no_email",
@@ -246,7 +247,8 @@ function PipelinePageInner() {
         {[
           ["overdue", "Overdue"],
           ["no_next", "No next task"],
-          ["no_contact", "No contact"],
+          ["no_contact", "No contacts"],
+          ["primary_required", "Primary required"],
           ["no_spaces", "No spaces"],
           ["stale", "No recent interaction"],
           ["no_email", "No email"],

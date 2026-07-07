@@ -26,7 +26,9 @@ export type CrmOrganisationListRow = {
   property_count: number;
   last_interaction_at: string | null;
   last_interaction_summary: string | null;
+  /** Enriched from open tasks / follow-up activities — not a DB column on crm_organisations. */
   next_task_id: string | null;
+  /** Enriched alias of next_action_date for legacy list views. */
   next_task_due: string | null;
   next_task_title: string | null;
   next_action_title: string | null;
@@ -161,6 +163,7 @@ export type CrmListFilters = {
   noNextStep?: boolean;
   noFollowUpDate?: boolean;
   noContact?: boolean;
+  primaryRequired?: boolean;
   noSpaces?: boolean;
   noEmail?: boolean;
   noPhone?: boolean;

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import type { CrmOrganisationContactSummary } from "@/lib/crm-desktop/types";
+import { resolveOrganisationContactStatus } from "@/lib/crm-desktop/organisation-contact-status";
 
 export function CrmOrganisationContactsCell({
   primaryContactId,
@@ -19,18 +20,36 @@ export function CrmOrganisationContactsCell({
   contactCount: number;
 }) {
   const [open, setOpen] = useState(false);
+  const status = resolveOrganisationContactStatus({
+    contact_count: contactCount,
+    primary_contact_id: primaryContactId,
+    primary_contact_name: primaryContactName,
+    primary_contact_role: primaryContactRole,
+    primary_contact_email: null,
+    primary_contact_phone: null,
+  });
 
-  if (!primaryContactName) {
-    return <span className="text-sm text-gray-400">No contact</span>;
+  if (status.contactWarningType === "no_contacts") {
+    return <span className="text-sm text-gray-400">No contacts added</span>;
+  }
+
+  if (status.contactWarningType === "primary_required") {
+    return (
+      <span className="text-sm text-amber-800">No primary contact</span>
+    );
+  }
+
+  if (!status.primaryContact) {
+    return <span className="text-sm text-gray-400">No contacts added</span>;
   }
 
   return (
     <div className="text-sm">
       <Link
-        href={`/admin/crm/contacts/${primaryContactId}`}
+        href={`/admin/crm/contacts/${status.primaryContact.id}`}
         className="font-medium text-[#192a3a] hover:text-[#c1121f]"
       >
-        {primaryContactName}
+        {status.primaryContact.name}
       </Link>
       {primaryContactRole ? (
         <p className="text-xs text-gray-500">{primaryContactRole}</p>

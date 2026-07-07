@@ -1,6 +1,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { formatISO, startOfDay, subDays } from "date-fns";
 import type { CrmListFilters } from "./types";
+import {
+  resolveNoEmailOrganisationIds,
+  resolveNoPhoneOrganisationIds,
+} from "./organisation-contact-completeness";
 
 const STALE_DAYS = 30;
 
@@ -21,6 +25,7 @@ export async function resolveOrganisationFilterIds(
     filters.overdue ||
     filters.noNextStep ||
     filters.noContact ||
+    filters.primaryRequired ||
     filters.noSpaces ||
     filters.noFollowUpDate ||
     filters.noEmail ||
@@ -118,65 +123,67 @@ export async function resolveOrganisationFilterIds(
     );
   }
 
+  if (filters.primaryRequired) {
+    const [{ data: orgs }, { data: contacts }] = await Promise.all([
+      adminClient
+        .from("crm_organisations")
+        .select("id, primary_contact_id")
+        .neq("status", "archived"),
+      adminClient.from("crm_contacts").select("organisation_id"),
+    ]);
+    const contactCountByOrg = new Map<string, number>();
+    for (const c of (contacts || []) as { organisation_id: string }[]) {
+      contactCountByOrg.set(
+        c.organisation_id,
+        (contactCountByOrg.get(c.organisation_id) || 0) + 1
+      );
+    }
+    ensure(
+      new Set(
+        ((orgs || []) as { id: string; primary_contact_id: string | null }[])
+          .filter(
+            (o) =>
+              (contactCountByOrg.get(o.id) || 0) > 0 && !o.primary_contact_id
+          )
+          .map((o) => o.id)
+      )
+    );
+  }
+
   if (filters.noEmail || filters.noPhone) {
-    const { data: contacts } = await adminClient
-      .from("crm_contacts")
-      .select("organisation_id, email, phone, whatsapp")
-      .order("created_at", { ascending: true });
-    const orgFirstContact = new Map<
-      string,
-      { email: string | null; phone: string | null; whatsapp: string | null }
-    >();
-    for (const c of (contacts || []) as {
-      organisation_id: string;
-      email: string | null;
-      phone: string | null;
-      whatsapp: string | null;
-    }[]) {
-      if (!orgFirstContact.has(c.organisation_id)) {
-        orgFirstContact.set(c.organisation_id, c);
-      }
-    }
-    const ids = new Set<string>();
-    for (const [orgId, contact] of orgFirstContact.entries()) {
-      if (filters.noEmail && !contact.email?.trim()) ids.add(orgId);
-      if (
-        filters.noPhone &&
-        !contact.phone?.trim() &&
-        !contact.whatsapp?.trim()
-      ) {
-        ids.add(orgId);
-      }
-    }
-    if (filters.noEmail && filters.noPhone) {
-      /* union handled per-flag above; for both, include orgs missing either from primary */
-    }
-    if (filters.noEmail && !filters.noPhone) {
-      const { data: orgs } = await adminClient
+    const [{ data: orgs }, { data: contacts }] = await Promise.all([
+      adminClient
         .from("crm_organisations")
         .select("id")
-        .neq("status", "archived");
-      const noPrimary = ((orgs || []) as { id: string }[])
-        .map((o) => o.id)
-        .filter((id) => {
-          const c = orgFirstContact.get(id);
-          return !c || !c.email?.trim();
-        });
-      ensure(new Set(noPrimary));
-    } else if (filters.noPhone && !filters.noEmail) {
-      const { data: orgs } = await adminClient
-        .from("crm_organisations")
-        .select("id")
-        .neq("status", "archived");
-      const noPrimary = ((orgs || []) as { id: string }[])
-        .map((o) => o.id)
-        .filter((id) => {
-          const c = orgFirstContact.get(id);
-          return !c || (!c.phone?.trim() && !c.whatsapp?.trim());
-        });
-      ensure(new Set(noPrimary));
-    } else {
-      ensure(ids);
+        .neq("status", "archived"),
+      adminClient
+        .from("crm_contacts")
+        .select("organisation_id, email, phone, whatsapp"),
+    ]);
+    const allOrgIds = ((orgs || []) as { id: string }[]).map((org) => org.id);
+
+    if (filters.noEmail) {
+      ensure(
+        resolveNoEmailOrganisationIds(
+          allOrgIds,
+          (contacts || []) as {
+            organisation_id: string;
+            email: string | null;
+          }[]
+        )
+      );
+    }
+    if (filters.noPhone) {
+      ensure(
+        resolveNoPhoneOrganisationIds(
+          allOrgIds,
+          (contacts || []) as {
+            organisation_id: string;
+            phone: string | null;
+            whatsapp: string | null;
+          }[]
+        )
+      );
     }
   }
 

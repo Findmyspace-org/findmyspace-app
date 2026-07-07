@@ -2,13 +2,14 @@
 
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Building2, MapPin, Plus, User } from "lucide-react";
+import { Building2, MapPin, Plus } from "lucide-react";
 import type { CrmOrganisationListRow } from "@/lib/crm-desktop/types";
 import {
   buildOrganisationQualityIndicators,
   CrmQualityIndicators,
 } from "./CrmQualityIndicators";
 import { CrmOverdueBadge } from "./CrmStatusBadge";
+import { CrmPipelineContactSummary } from "./CrmPipelineContactSummary";
 import { organisationRowToActionContext } from "./crm-action-context";
 import { useCrmQuickAction } from "./CrmQuickActionProvider";
 import { formatActivityDate, formatDueDate } from "@/lib/space-place/format";
@@ -18,6 +19,7 @@ import { isValidSmartReorderTarget } from "@/lib/crm-desktop/pipeline-ordering";
 type Props = {
   row: CrmOrganisationListRow;
   onOpen: (row: CrmOrganisationListRow) => void;
+  onRowPatched: (row: CrmOrganisationListRow) => void;
   onRefresh?: () => void;
   dragEnabled?: boolean;
   isDragOverlay?: boolean;
@@ -28,6 +30,7 @@ type Props = {
 export function CrmPipelineCard({
   row,
   onOpen,
+  onRowPatched,
   onRefresh,
   dragEnabled = true,
   isDragOverlay = false,
@@ -123,17 +126,14 @@ export function CrmPipelineCard({
               </span>
             ) : null}
           </div>
-          {row.primary_contact_name ? (
-            <p className="mt-1.5 text-xs text-gray-600">
-              <User className="mr-0.5 inline h-3 w-3" />
-              {row.primary_contact_name}
-              {row.primary_contact_role ? (
-                <span className="text-gray-400"> · {row.primary_contact_role}</span>
-              ) : null}
-            </p>
-          ) : (
-            <p className="mt-1.5 text-xs text-amber-700">No primary contact</p>
-          )}
+
+          <CrmPipelineContactSummary
+            row={row}
+            isDragging={isDragging}
+            onRowPatched={onRowPatched}
+            onRefresh={onRefresh}
+          />
+
           <p className="mt-1 text-[11px] text-gray-500">
             Owner: {row.assigned_name || "Unassigned"}
           </p>
@@ -217,5 +217,13 @@ export function CrmPipelineCard({
 
 /** Static card preview used in drag overlay. */
 export function CrmPipelineCardPreview({ row }: { row: CrmOrganisationListRow }) {
-  return <CrmPipelineCard row={row} onOpen={() => {}} isDragOverlay dragEnabled={false} />;
+  return (
+    <CrmPipelineCard
+      row={row}
+      onOpen={() => {}}
+      onRowPatched={() => {}}
+      isDragOverlay
+      dragEnabled={false}
+    />
+  );
 }

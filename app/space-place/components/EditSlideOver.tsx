@@ -16,6 +16,8 @@ type EditSlideOverProps = {
   formId?: string;
   saveLabel?: string;
   savingLabel?: string;
+  /** Use z-[70] when opening above CRM desktop drawers (z-[60]). */
+  overlayZIndexClass?: string;
 };
 
 export function EditSlideOver({
@@ -30,6 +32,7 @@ export function EditSlideOver({
   formId,
   saveLabel = "Save",
   savingLabel = "Saving…",
+  overlayZIndexClass = "z-50",
 }: EditSlideOverProps) {
   useEffect(() => {
     if (!open) return;
@@ -44,7 +47,7 @@ export function EditSlideOver({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex justify-end bg-black/40"
+      className={`fixed inset-0 ${overlayZIndexClass} flex justify-end bg-black/40`}
       role="dialog"
       aria-modal="true"
       aria-labelledby="edit-slide-over-title"

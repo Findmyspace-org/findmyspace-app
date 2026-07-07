@@ -95,6 +95,22 @@ export async function reorderCrmPipelineCard(input: {
   });
 }
 
+export async function moveCrmPipelineOrganisationStage(input: {
+  organisationId: string;
+  previousStage: string;
+  destinationStage: string;
+  beforeOrganisationId?: string | null;
+  afterOrganisationId?: string | null;
+  contactId?: string | null;
+  idempotencyKey: string;
+  sortMode?: string;
+}) {
+  return adminApiFetch("/api/admin/crm/desktop/pipeline/move-stage", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
 export async function fetchCrmDesktopSpaces(
   params: Record<string, string | number | boolean | undefined> = {}
 ) {
@@ -109,6 +125,19 @@ export async function fetchCrmDesktopSearch(q: string) {
     `/api/admin/crm/desktop/search${buildQuery({ q })}`
   );
   return json.groups as CrmSearchResultGroup[];
+}
+
+export async function setCrmOrganisationPrimaryContact(
+  organisationId: string,
+  contactId: string | null
+) {
+  return adminApiFetch(
+    `/api/admin/crm/desktop/organisations/${organisationId}/primary-contact`,
+    {
+      method: "POST",
+      body: JSON.stringify({ contactId }),
+    }
+  );
 }
 
 export async function fetchCrmDesktopProfiles() {
