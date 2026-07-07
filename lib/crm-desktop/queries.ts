@@ -22,6 +22,7 @@ import {
   resolveNextCrmActionForOrganisation,
   linkFollowUpTasksToEngagements,
 } from "./next-action";
+import { fetchOrganisationMarketplaceCounts } from "./organisation-marketplace-counts";
 import { applyNextActionToRow } from "./pipeline-ordering";
 import {
   CRM_IN_FILTER_CHUNK_SIZE,
@@ -196,7 +197,7 @@ async function enrichOrganisations(
   const orgIds = orgs.map((o) => o.id as string);
   const nameMap = profileNameMap(profiles);
 
-  const [contactsRes, spacesRes, propertiesRes, engagementsRes, tasksRes] =
+  const [contactsRes, propertiesRes, engagementsRes, tasksRes] =
     await Promise.all([
       adminClient
         .from("crm_contacts")
@@ -206,13 +207,10 @@ async function enrichOrganisations(
         .in("organisation_id", orgIds)
         .order("created_at", { ascending: true }),
       adminClient
-        .from("spaces")
-        .select("id, crm_organisation_id")
-        .in("crm_organisation_id", orgIds),
-      adminClient
         .from("properties")
         .select("id, crm_organisation_id")
-        .in("crm_organisation_id", orgIds),
+        .in("crm_organisation_id", orgIds)
+        .is("archived_at", null),
       adminClient
         .from("crm_engagements")
         .select("organisation_id, id, contact_id, occurred_at, summary, type")
@@ -227,6 +225,11 @@ async function enrichOrganisations(
         .in("organisation_id", orgIds)
         .eq("status", "open"),
     ]);
+
+  const marketplaceCounts = await fetchOrganisationMarketplaceCounts(
+    adminClient,
+    orgIds
+  );
 
   const contactsByOrg = new Map<string, typeof contactsRes.data>();
   for (const c of (contactsRes.data || []) as {
@@ -245,14 +248,6 @@ async function enrichOrganisations(
     contactsByOrg.set(c.organisation_id, list);
   }
 
-  const spaceCount = new Map<string, number>();
-  for (const s of (spacesRes.data || []) as { crm_organisation_id: string }[]) {
-    spaceCount.set(
-      s.crm_organisation_id,
-      (spaceCount.get(s.crm_organisation_id) || 0) + 1,
-    );
-  }
-
   const propertyCount = new Map<string, number>();
   for (const p of (propertiesRes.data || []) as {
     crm_organisation_id: string;
@@ -261,6 +256,13 @@ async function enrichOrganisations(
       p.crm_organisation_id,
       (propertyCount.get(p.crm_organisation_id) || 0) + 1,
     );
+  }
+
+  const spaceCount = new Map<string, number>();
+  for (const orgId of orgIds) {
+    const counts = marketplaceCounts.get(orgId);
+    spaceCount.set(orgId, counts?.linkedSpaceCount ?? 0);
+    propertyCount.set(orgId, counts?.linkedPropertyCount ?? 0);
   }
 
   const lastEngagement = new Map<

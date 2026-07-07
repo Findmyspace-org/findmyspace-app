@@ -164,6 +164,16 @@ export function CrmPipelineBoard({
     [onRowsChange]
   );
 
+  const handleDrawerRowPatched = useCallback(
+    (patched: CrmOrganisationListRow) => {
+      handleRowPatched(patched);
+      setSelectedRow((current) =>
+        current?.id === patched.id ? { ...current, ...patched } : current
+      );
+    },
+    [handleRowPatched]
+  );
+
   const activeStages = PIPELINE_STAGES.filter((s) => s !== TERMINAL_STAGE);
   const terminalStages = PIPELINE_STAGES.filter((s) => s === TERMINAL_STAGE);
   const isDragActive = Boolean(activeRow);
@@ -300,12 +310,7 @@ export function CrmPipelineBoard({
         row={selectedRow}
         onClose={() => setSelectedRow(null)}
         onRefresh={onRefresh}
-        onRowPatched={(patched) => {
-          onRowsChange((current) =>
-            current.map((item) => (item.id === patched.id ? patched : item))
-          );
-          setSelectedRow(patched);
-        }}
+        onRowPatched={handleDrawerRowPatched}
       />
 
       {pendingMove && profile ? (

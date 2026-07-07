@@ -123,6 +123,12 @@ export function buildOrganisationQualityIndicators(
   }
 
   if (row.space_count === 0 && row.property_count === 0) {
+    items.push({
+      key: "no_properties",
+      label: "No properties linked",
+      action: "add_note",
+    });
+  } else if (row.property_count > 0 && row.space_count === 0) {
     items.push({ key: "no_spaces", label: "No spaces", action: "add_note" });
   }
 

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ExternalLink,
   Mail,
@@ -11,7 +11,6 @@ import {
   Plus,
   User,
 } from "lucide-react";
-import { crmDb } from "@/lib/space-place/db";
 import type {
   CrmContact,
   CrmOrganisation,
@@ -22,7 +21,10 @@ import type {
 import { type SpaceEngagementRow } from "@/app/space-place/components/SpaceActivityHistory";
 import { EditOrganisationPanel } from "@/app/space-place/components/EditOrganisationPanel";
 import { CreateContactPanel } from "@/app/space-place/components/CreateContactPanel";
-import { CrmMarketplaceListingsSection } from "@/app/space-place/components/CrmMarketplaceListingsSection";
+import {
+  CrmMarketplaceListingsSection,
+  type MarketplaceListingsData,
+} from "@/app/space-place/components/CrmMarketplaceListingsSection";
 import { CrmDesktopDrawer } from "./CrmDesktopDrawer";
 import { CrmTimeline, type CrmTimelineItem } from "./CrmTimeline";
 import { CrmOverdueBadge, CrmPipelineBadge } from "./CrmStatusBadge";
@@ -34,19 +36,31 @@ import {
   resolveNextCrmTaskForOrganisation,
 } from "@/lib/space-place/next-task";
 import { useSpacePlace } from "@/app/space-place/SpacePlaceContext";
-import { adminApiFetch } from "@/lib/admin-api-client";
 import { setCrmOrganisationPrimaryContact } from "@/lib/crm-desktop/api-client";
 import { patchOrganisationRowPrimaryContact } from "@/lib/crm-desktop/organisation-contact-status";
 import { patchOrganisationRowFromTasks } from "@/lib/crm-desktop/patch-organisation-row-from-tasks";
+import { patchOrganisationRowMarketplaceCounts } from "@/lib/crm-desktop/patch-organisation-row-marketplace";
+import {
+  loadOrganisationDrawerDetail,
+  marketplaceCountsEqual,
+  reloadOrganisationDrawerMarketplace,
+  type DrawerMarketplaceCounts,
+  type MarketingOrgSummary,
+  type OrganisationDrawerDetail,
+} from "@/lib/crm-desktop/organisation-drawer-detail";
 
 import type { CrmOrganisationListRow } from "@/lib/crm-desktop/types";
 
-type MarketingOrgSummary = {
-  total: number;
-  sendable: number;
-  pending: number;
-  blocked: number;
-  lists: string[];
+const EMPTY_MARKETPLACE: OrganisationDrawerDetail["marketplace"] = {
+  listings: [],
+  properties: [],
+  counts: {
+    linkedPropertyCount: 0,
+    linkedSpaceCount: 0,
+    hasLinkedProperties: false,
+    hasLinkedSpaces: false,
+  },
+  error: null,
 };
 
 type Props = {
@@ -65,97 +79,185 @@ export function CrmPipelineCardDrawer({
   const { openQuickMenu, openQuickAction } = useCrmQuickAction();
   const { isAdmin, canViewAllOrganisations, profile, loading: profileLoading } =
     useSpacePlace();
+
+  const organisationId = row?.id ?? null;
+  const open = Boolean(row);
+
+  const rowRef = useRef(row);
+  const onRefreshRef = useRef(onRefresh);
+  const onRowPatchedRef = useRef(onRowPatched);
+  rowRef.current = row;
+  onRefreshRef.current = onRefresh;
+  onRowPatchedRef.current = onRowPatched;
+
+  const abortRef = useRef<AbortController | null>(null);
+  const requestIdRef = useRef(0);
+  const inflightRef = useRef(false);
+  const lastReportedCountsRef = useRef<DrawerMarketplaceCounts | null>(null);
+  const hasLoadedRef = useRef(false);
+
   const [org, setOrg] = useState<CrmOrganisation | null>(null);
   const [contacts, setContacts] = useState<CrmContact[]>([]);
   const [tasks, setTasks] = useState<CrmTask[]>([]);
   const [engagements, setEngagements] = useState<SpaceEngagementRow[]>([]);
   const [emails, setEmails] = useState<CrmEmailMessageWithRelations[]>([]);
   const [spacers, setSpacers] = useState<CrmProfile[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [marketplace, setMarketplace] =
+    useState<OrganisationDrawerDetail["marketplace"]>(EMPTY_MARKETPLACE);
+  const [marketplaceRefreshing, setMarketplaceRefreshing] = useState(false);
+  const [marketingSummary, setMarketingSummary] =
+    useState<MarketingOrgSummary | null>(null);
+  const [marketingError, setMarketingError] = useState<string | null>(null);
+  const [detailError, setDetailError] = useState<string | null>(null);
   const [editOpen, setEditOpen] = useState(false);
   const [createContactOpen, setCreateContactOpen] = useState(false);
   const [contactPanelError, setContactPanelError] = useState<string | null>(null);
-  const [marketingSummary, setMarketingSummary] =
-    useState<MarketingOrgSummary | null>(null);
 
-  const loadDetail = useCallback(async () => {
-    if (!row) return null;
-    setLoading(true);
-    const id = row.id;
-    const [o, c, t, e, em, p] = await Promise.all([
-      crmDb.organisations().select("*").eq("id", id).single(),
-      crmDb.contacts().select("*").eq("organisation_id", id),
-      crmDb.tasks().select("*").eq("organisation_id", id).order("due_date"),
-      crmDb
-        .engagements()
-        .select(`*, crm_contacts ( id, full_name, first_name, last_name )`)
-        .eq("organisation_id", id)
-        .order("occurred_at", { ascending: false })
-        .limit(30),
-      crmDb
-        .emailMessages()
-        .select(`*, crm_contacts ( id, full_name, email ), crm_organisations ( id, name )`)
-        .eq("organisation_id", id)
-        .order("sent_at", { ascending: false })
-        .limit(20),
-      crmDb.profiles().select("*").eq("active", true).order("full_name"),
-    ]);
-
-    const { data: profs } = await crmDb.profiles().select("id, full_name");
-    const creatorMap = Object.fromEntries(
-      ((profs as { id: string; full_name: string | null }[]) || []).map((x) => [
-        x.id,
-        x.full_name,
-      ])
+  const reportCountsToBoard = useCallback((counts: DrawerMarketplaceCounts) => {
+    const last = lastReportedCountsRef.current;
+    if (last && marketplaceCountsEqual(last, counts)) return;
+    lastReportedCountsRef.current = counts;
+    const currentRow = rowRef.current;
+    if (!currentRow || !onRowPatchedRef.current) return;
+    onRowPatchedRef.current(
+      patchOrganisationRowMarketplaceCounts(currentRow, {
+        linkedPropertyCount: counts.linkedPropertyCount,
+        linkedSpaceCount: counts.linkedSpaceCount,
+      })
     );
+  }, []);
 
-    setOrg((o.data as CrmOrganisation) || null);
-    const contactList = (c.data as CrmContact[]) || [];
-    const taskList = (t.data as CrmTask[]) || [];
-    const engagementList = ((e.data as SpaceEngagementRow[]) || []).map((eng) => ({
-      ...eng,
-      contact: eng.crm_contacts ?? null,
-      creator: eng.created_by
-        ? { id: eng.created_by, full_name: creatorMap[eng.created_by] ?? null }
-        : null,
-    }));
-    setContacts(contactList);
-    setTasks(taskList);
-    setSpacers((p.data as CrmProfile[]) || []);
-    setEngagements(engagementList);
-    setEmails((em.data as CrmEmailMessageWithRelations[]) || []);
-    if (row) {
-      void adminApiFetch(
-        `/api/admin/crm/marketing/org-summary?organisationId=${row.id}`
-      )
-        .then((json) => setMarketingSummary(json.summary as MarketingOrgSummary))
-        .catch(() => setMarketingSummary(null));
+  const applyDetail = useCallback(
+    (detail: OrganisationDrawerDetail) => {
+      setOrg(detail.org);
+      setContacts(detail.contacts);
+      setTasks(detail.tasks);
+      setEngagements(detail.engagements);
+      setEmails(detail.emails);
+      setSpacers(detail.spacers);
+      setMarketplace(detail.marketplace);
+      setMarketingSummary(detail.marketingSummary);
+      setMarketingError(null);
+      setDetailError(null);
+      reportCountsToBoard(detail.marketplace.counts);
+      hasLoadedRef.current = true;
+    },
+    [reportCountsToBoard]
+  );
+
+  const loadDetail = useCallback(
+    async (options?: { background?: boolean; force?: boolean }) => {
+      if (!organisationId) return null;
+      if (inflightRef.current && !options?.force) return null;
+
+      const requestId = ++requestIdRef.current;
+      abortRef.current?.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
+      inflightRef.current = true;
+
+      const isBackground = options?.background === true && hasLoadedRef.current;
+      if (isBackground) {
+        setRefreshing(true);
+      } else {
+        setInitialLoading(true);
+      }
+      setDetailError(null);
+
+      try {
+        const detail = await loadOrganisationDrawerDetail(organisationId, {
+          signal: controller.signal,
+        });
+        if (requestId !== requestIdRef.current) return null;
+        applyDetail(detail);
+        return detail;
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          return null;
+        }
+        if (requestId !== requestIdRef.current) return null;
+        setDetailError("Could not load organisation details.");
+        return null;
+      } finally {
+        if (requestId === requestIdRef.current) {
+          inflightRef.current = false;
+          setInitialLoading(false);
+          setRefreshing(false);
+        }
+      }
+    },
+    [organisationId, applyDetail]
+  );
+
+  const reloadMarketplace = useCallback(async () => {
+    if (!organisationId) return;
+    setMarketplaceRefreshing(true);
+    try {
+      const next = await reloadOrganisationDrawerMarketplace(organisationId);
+      setMarketplace(next);
+      reportCountsToBoard(next.counts);
+    } catch {
+      setMarketplace((current) => ({
+        ...current,
+        error: "Could not load marketplace listings.",
+      }));
+    } finally {
+      setMarketplaceRefreshing(false);
     }
-    setLoading(false);
-    return {
-      org: (o.data as CrmOrganisation) || null,
-      contacts: contactList,
-      tasks: taskList,
-      engagements: engagementList,
-    };
-  }, [row]);
+  }, [organisationId, reportCountsToBoard]);
 
   useEffect(() => {
-    if (row) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- load detail when card opens
-      void loadDetail();
-    } else {
+    if (!open || !organisationId) {
+      abortRef.current?.abort();
+      requestIdRef.current += 1;
+      inflightRef.current = false;
+      hasLoadedRef.current = false;
+      lastReportedCountsRef.current = null;
       setOrg(null);
       setContacts([]);
       setTasks([]);
       setEngagements([]);
       setEmails([]);
+      setSpacers([]);
+      setMarketplace(EMPTY_MARKETPLACE);
+      setMarketingSummary(null);
+      setMarketingError(null);
+      setDetailError(null);
+      setInitialLoading(false);
+      setRefreshing(false);
+      setMarketplaceRefreshing(false);
+      return;
     }
-  }, [row, loadDetail]);
+
+    void loadDetail();
+
+    return () => {
+      abortRef.current?.abort();
+    };
+  }, [open, organisationId, loadDetail]);
+
+  const marketplaceData = useMemo<MarketplaceListingsData>(
+    () => ({
+      listings: marketplace.listings,
+      properties: marketplace.properties,
+      counts: marketplace.counts,
+      loading: marketplaceRefreshing,
+      error: marketplace.error,
+      reload: reloadMarketplace,
+    }),
+    [
+      marketplace.listings,
+      marketplace.properties,
+      marketplace.counts,
+      marketplace.error,
+      marketplaceRefreshing,
+      reloadMarketplace,
+    ]
+  );
 
   const primaryContactId = org?.primary_contact_id ?? row?.primary_contact_id ?? null;
-  const primaryContact =
-    contacts.find((contact) => contact.id === primaryContactId) ?? null;
   const nextTask = useMemo(() => {
     if (!row) return null;
     const resolved = resolveNextCrmTaskForOrganisation(
@@ -176,20 +278,21 @@ export function CrmPipelineCardDrawer({
     });
   }, [row, nextTask]);
 
-  async function handleRefresh() {
-    const data = await loadDetail();
-    onRefresh();
-    if (row && data && onRowPatched) {
-      onRowPatched(
+  const handleRefresh = useCallback(async () => {
+    const detail = await loadDetail({ background: true, force: true });
+    onRefreshRef.current();
+    const currentRow = rowRef.current;
+    if (currentRow && detail && onRowPatchedRef.current) {
+      onRowPatchedRef.current(
         patchOrganisationRowFromTasks(
-          row,
-          data.tasks,
-          data.engagements,
-          data.org
+          currentRow,
+          detail.tasks,
+          detail.engagements,
+          detail.org
         )
       );
     }
-  }
+  }, [loadDetail]);
 
   function handleTaskOpen(item: CrmTimelineItem) {
     if (!row || !item.task_id) return;
@@ -255,9 +358,8 @@ export function CrmPipelineCardDrawer({
 
     setContacts((current) => [...current, contact]);
     setCreateContactOpen(false);
-    onRowPatched?.(patched);
-    await loadDetail();
-    onRefresh();
+    onRowPatchedRef.current?.(patched);
+    await handleRefresh();
   }
 
   const ownerName =
@@ -265,19 +367,39 @@ export function CrmPipelineCardDrawer({
     row?.assigned_name ||
     "Unassigned";
 
+  const showInitialSkeleton = initialLoading && !hasLoadedRef.current;
+
   return (
     <>
       <CrmDesktopDrawer
-        open={Boolean(row)}
+        open={open}
         title={row?.name || "Organisation"}
         subtitle={row?.type ? row.type : undefined}
         onClose={onClose}
         widthClass="max-w-2xl"
       >
-        {loading && !org ? (
+        {showInitialSkeleton ? (
           <p className="text-sm text-gray-500">Loading organisation…</p>
         ) : row ? (
           <div className="space-y-6">
+            {detailError ? (
+              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+                {detailError}{" "}
+                <button
+                  type="button"
+                  onClick={() => void loadDetail({ force: true })}
+                  className="font-medium underline"
+                >
+                  Retry
+                </button>
+              </div>
+            ) : null}
+            {refreshing ? (
+              <p className="text-xs text-gray-400" aria-live="polite">
+                Refreshing…
+              </p>
+            ) : null}
+
             <div className="flex flex-wrap gap-2">
               {org ? <CrmPipelineBadge stage={org.pipeline_stage} /> : null}
               <button
@@ -450,6 +572,8 @@ export function CrmPipelineCardDrawer({
                   mode="organisation"
                   entityId={org.id}
                   organisationName={org.name}
+                  stackAboveDrawer
+                  data={marketplaceData}
                 />
               ) : null}
             </section>
@@ -463,14 +587,25 @@ export function CrmPipelineCardDrawer({
                 contacts={contacts}
                 organisationId={row.id}
                 organisationName={row.name}
-                loading={loading}
+                loading={refreshing}
                 onTaskOpen={handleTaskOpen}
               />
             </section>
 
             <section>
               <h3 className="text-sm font-semibold text-[#192a3a]">Marketing</h3>
-              {marketingSummary ? (
+              {marketingError ? (
+                <div className="mt-2 text-sm text-red-600">
+                  {marketingError}{" "}
+                  <button
+                    type="button"
+                    onClick={() => void handleRefresh()}
+                    className="font-medium underline"
+                  >
+                    Retry
+                  </button>
+                </div>
+              ) : marketingSummary ? (
                 <div className="mt-2 rounded-lg border border-gray-100 bg-gray-50 p-3 text-sm">
                   <p>{marketingSummary.total} in marketing audience</p>
                   <p className="text-gray-600">

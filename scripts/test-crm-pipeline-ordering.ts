@@ -222,8 +222,14 @@ const contactRowSource = readFileSync(
 );
 assert.match(contactRowSource, /mailto/);
 assert.match(contactRowSource, /telHref/);
-assert.match(contactRowSource, /CrmContactQuickActions/);
+assert.match(contactRowSource, /CrmContactEmailActions/);
+assert.match(contactRowSource, /CrmContactPhoneActions/);
+assert.match(contactRowSource, /Set as primary/);
 assert.match(contactRowSource, /Primary/);
+assert.doesNotMatch(
+  contactRowSource,
+  /flex shrink-0 flex-col items-end/
+);
 
 const quickActionsSource = readFileSync(
   "app/components/crm-desktop/CrmContactQuickActions.tsx",
@@ -231,6 +237,8 @@ const quickActionsSource = readFileSync(
 );
 assert.match(quickActionsSource, /Copy email/);
 assert.match(quickActionsSource, /Copy phone/);
+assert.match(quickActionsSource, /CrmContactEmailActions/);
+assert.match(quickActionsSource, /CrmContactPhoneActions/);
 assert.match(quickActionsSource, /inline-flex shrink-0/);
 
 assert.equal(crmContactMailHref("test@example.com", "contact-1")?.startsWith("mailto:"), true);

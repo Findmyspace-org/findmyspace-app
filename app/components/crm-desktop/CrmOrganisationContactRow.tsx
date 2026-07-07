@@ -5,7 +5,10 @@ import { useState } from "react";
 import { Star } from "lucide-react";
 import type { CrmContact } from "@/lib/space-place/types";
 import { crmContactMailHref, telHref } from "@/lib/space-place/contact-actions";
-import { CrmContactQuickActions } from "./CrmContactQuickActions";
+import {
+  CrmContactEmailActions,
+  CrmContactPhoneActions,
+} from "./CrmContactQuickActions";
 
 type Props = {
   contact: CrmContact;
@@ -50,66 +53,91 @@ export function CrmOrganisationContactRow({
       data-contact-id={contact.id}
       className="rounded-lg border border-gray-200 bg-white px-3 py-2.5"
     >
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+      <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
             <Link
               href={`/admin/crm/contacts/${contact.id}`}
               className="font-semibold text-[#192a3a] hover:text-[#c1121f]"
+              onClick={(event) => event.stopPropagation()}
             >
               {name}
             </Link>
-            {isPrimary ? (
-              <span className="rounded-full bg-[#192a3a]/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-[#192a3a]">
-                Primary
-              </span>
-            ) : null}
-          </div>
-          {contact.role ? (
-            <p className="mt-0.5 text-sm text-gray-600">{contact.role}</p>
-          ) : null}
-          <div className="mt-1 space-y-0.5 text-sm text-gray-700">
-            {email ? (
-              mailto ? (
-                <a href={mailto} className="block truncate hover:text-[#c1121f] hover:underline">
-                  {email}
-                </a>
-              ) : (
-                <p className="truncate">{email}</p>
-              )
-            ) : null}
-            {phone ? (
-              tel ? (
-                <a href={tel} className="block hover:text-[#c1121f] hover:underline">
-                  {phone}
-                </a>
-              ) : (
-                <p>{phone}</p>
-              )
+            {contact.role ? (
+              <span className="text-sm text-gray-600">{contact.role}</span>
             ) : null}
           </div>
         </div>
-        <div className="flex shrink-0 flex-col items-end gap-1.5">
-          <CrmContactQuickActions
-            email={email}
-            phone={phone}
-            contactId={contact.id}
-          />
-          {canManagePrimary && onSetPrimary ? (
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          {isPrimary ? (
+            <span className="rounded-full bg-[#192a3a]/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-[#192a3a]">
+              Primary
+            </span>
+          ) : canManagePrimary && onSetPrimary ? (
             <button
               type="button"
               disabled={saving}
-              onClick={() =>
-                void handleSetPrimary(isPrimary ? null : contact.id)
-              }
+              onClick={(event) => {
+                event.stopPropagation();
+                void handleSetPrimary(contact.id);
+              }}
               className="inline-flex shrink-0 items-center gap-1 rounded-md border border-gray-200 bg-white px-2 py-1 text-xs font-medium text-gray-700 hover:border-[#c1121f]/30 hover:text-[#c1121f] disabled:opacity-50"
             >
-              <Star className={`h-3.5 w-3.5 ${isPrimary ? "fill-current" : ""}`} />
-              {isPrimary ? "Remove primary" : "Set as primary"}
+              <Star className="h-3.5 w-3.5" />
+              Set as primary
+            </button>
+          ) : null}
+          {isPrimary && canManagePrimary && onSetPrimary ? (
+            <button
+              type="button"
+              disabled={saving}
+              onClick={(event) => {
+                event.stopPropagation();
+                void handleSetPrimary(null);
+              }}
+              className="text-xs font-medium text-gray-500 hover:text-[#c1121f] hover:underline disabled:opacity-50"
+            >
+              Remove primary
             </button>
           ) : null}
         </div>
       </div>
+
+      {email ? (
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+          {mailto ? (
+            <a
+              href={mailto}
+              className="min-w-0 flex-1 break-all text-sm text-gray-700 hover:text-[#c1121f] hover:underline sm:truncate"
+              onClick={(event) => event.stopPropagation()}
+            >
+              {email}
+            </a>
+          ) : (
+            <p className="min-w-0 flex-1 break-all text-sm text-gray-700 sm:truncate">
+              {email}
+            </p>
+          )}
+          <CrmContactEmailActions email={email} contactId={contact.id} />
+        </div>
+      ) : null}
+
+      {phone ? (
+        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+          {tel ? (
+            <a
+              href={tel}
+              className="min-w-0 flex-1 text-sm text-gray-700 hover:text-[#c1121f] hover:underline"
+              onClick={(event) => event.stopPropagation()}
+            >
+              {phone}
+            </a>
+          ) : (
+            <p className="min-w-0 flex-1 text-sm text-gray-700">{phone}</p>
+          )}
+          <CrmContactPhoneActions phone={phone} />
+        </div>
+      ) : null}
     </article>
   );
 }
