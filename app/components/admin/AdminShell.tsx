@@ -134,6 +134,16 @@ function AdminShellInner({ children }: { children: React.ReactNode }) {
     verification: counts.modules.verification,
   };
 
+  const isCrmDesktop = pathname.startsWith("/admin/crm");
+
+  if (isCrmDesktop) {
+    return (
+      <UnsavedChangesProvider>
+        {children}
+      </UnsavedChangesProvider>
+    );
+  }
+
   return (
     <UnsavedChangesProvider>
       <div className="flex h-[100dvh] overflow-hidden bg-[#f4f6f8] text-[#192a3a]">

@@ -18,9 +18,23 @@
     "test:space-price-display": "node scripts/test-space-price-display.mjs",
     "test:venue-scout-import": "node scripts/test-venue-scout-import.mjs",
     "test:form-save-state": "node scripts/test-form-save-state.mjs",
-    "test:unsaved-guard": "node scripts/test-unsaved-guard.mjs"
+    "test:unsaved-guard": "node scripts/test-unsaved-guard.mjs",
+    "test:crm-desktop-access": "tsx scripts/test-crm-desktop-access.ts",
+    "test:crm-mutations": "tsx scripts/test-crm-mutations.ts",
+    "test:crm-filter-pagination": "tsx scripts/test-crm-filter-pagination.ts",
+    "test:crm-marketing": "tsx scripts/test-crm-marketing.ts",
+    "test:crm-close-pipeline": "tsx scripts/test-crm-close-pipeline-integration.ts",
+    "test:crm-marketing-permissions": "node --env-file=.env.local scripts/test-crm-marketing-permissions.mjs",
+    "verify:crm-pipeline-browser": "tsx scripts/verify-crm-pipeline-browser.ts",
+    "test:crm-marketing-management": "tsx scripts/test-crm-marketing-management.ts",
+    "verify:crm-marketing-db": "node --env-file=.env.local scripts/verify-crm-marketing-db.mjs",
+    "repair:crm-migration-history": "node --env-file=.env.local scripts/repair-crm-migration-history.mjs",
+    "db:push-crm": "node --env-file=.env.local scripts/apply-crm-migrations.mjs"
   },
   "dependencies": {
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
     "@sparticuz/chromium": "^131.0.0",
     "@supabase/supabase-js": "^2.99.2",
     "date-fns": "^4.1.0",
@@ -53,6 +67,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.1.7",
     "tailwindcss": "^4",
+    "tsx": "^4.23.0",
     "typescript": "^5"
   }
 }

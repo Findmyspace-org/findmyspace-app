@@ -4,6 +4,7 @@ import {
   hasSpacePlaceAccess,
   isSpacePlaceRole,
 } from "@/lib/space-place/access";
+import { isPlatformAdminRole } from "@/lib/admin-roles";
 import type { CrmProfile, CrmRole } from "@/lib/space-place/types";
 
 export type CrmAuthOk = {
@@ -167,7 +168,7 @@ export async function requireCrmApi(
   let crmProfile = await loadCrmProfile(adminClient, user.id);
 
   if (!hasSpacePlaceAccess(crmProfile)) {
-    if (platformRole === "admin") {
+    if (isPlatformAdminRole(platformRole)) {
       crmProfile = await ensurePlatformAdminCrmProfile(
         adminClient,
         user,

@@ -32,6 +32,7 @@ export function engagementTypeLabel(type: string): string {
     email: "Email",
     meeting: "Meeting",
     note: "Note",
+    task: "Task completed",
     manual_quick_update: "Quick update",
   };
   return map[type] ?? type;

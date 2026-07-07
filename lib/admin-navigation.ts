@@ -31,6 +31,7 @@ export type AdminNavKey =
   | "unclaimed-listings"
   | "properties"
   | "space-place-crm"
+  | "space-place-mobile"
   | "listing-reviews"
   | "listing-enquiries"
   | "listing-claim-interests"
@@ -125,8 +126,15 @@ export const ADMIN_NAV_SECTIONS: AdminNavSection[] = [
       },
       {
         key: "space-place-crm",
+        href: "/admin/crm",
+        label: "CRM Desktop",
+        icon: Users,
+        matchPrefix: "/admin/crm",
+      },
+      {
+        key: "space-place-mobile",
         href: "/space-place",
-        label: "Space Place CRM",
+        label: "Space Place (mobile)",
         icon: Users,
         external: true,
       },

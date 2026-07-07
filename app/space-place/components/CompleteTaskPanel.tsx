@@ -1,14 +1,16 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { crmDb } from "@/lib/space-place/db";
+import {
+  completeCrmTask,
+  validateCompleteCrmTaskInput,
+} from "@/lib/space-place/crm-mutations";
 import { PIPELINE_STAGE_LABELS, TASK_PRIORITIES } from "@/lib/space-place/constants";
 import type { CrmProfile, CrmTaskWithRelations } from "@/lib/space-place/types";
 import { formatSpacerOptionLabel } from "@/lib/space-place/spacers";
 import {
   DEFAULT_TASK_OUTCOME,
   TASK_OUTCOME_OPTIONS,
-  formatTaskOutcomeForEngagement,
   getSuggestedPipelineStage,
 } from "@/lib/space-place/task-outcomes";
 import { EditSlideOver } from "./EditSlideOver";
@@ -104,121 +106,60 @@ export function CompleteTaskPanel({
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (createFollowUp) {
-      if (!task.organisation_id) {
-        setError("Follow-up requires an organisation on this task.");
-        return;
-      }
-      if (!followUpTitle.trim()) {
-        setError("Follow-up title is required.");
-        return;
-      }
-      if (!followUpDueDate) {
-        setError("Follow-up due date is required.");
-        return;
-      }
-      if (!(TASK_PRIORITIES as readonly string[]).includes(followUpPriority)) {
-        setError("Priority must be low, normal or high.");
-        return;
-      }
-      if (!resolveFollowUpOwnerId()) {
-        setError("Please select who this follow-up is assigned to.");
-        return;
-      }
+    if (saving) return;
+
+    const followUpOwner = resolveFollowUpOwnerId();
+    const validationError = validateCompleteCrmTaskInput({
+      taskId: task.id,
+      organisationId: task.organisation_id,
+      contactId: task.contact_id,
+      taskTitle: task.title,
+      profileId,
+      outcomeValue,
+      extraNotes,
+      applyPipelineUpdate,
+      currentPipelineStage,
+      createFollowUp,
+      followUpTitle,
+      followUpDescription,
+      followUpDueDate,
+      followUpPriority,
+      followUpOwnerId: followUpOwner,
+    });
+    if (validationError) {
+      setError(validationError);
+      return;
     }
 
     setSaving(true);
     setError(null);
     setSuccess(null);
 
-    const nowIso = new Date().toISOString();
-    const { error: taskErr } = await crmDb
-      .tasks()
-      .update({ status: "done", completed_at: nowIso })
-      .eq("id", task.id);
+    const { error: completeError } = await completeCrmTask({
+      taskId: task.id,
+      organisationId: task.organisation_id,
+      contactId: task.contact_id,
+      taskTitle: task.title,
+      profileId,
+      outcomeValue,
+      extraNotes,
+      applyPipelineUpdate,
+      currentPipelineStage,
+      createFollowUp,
+      followUpTitle,
+      followUpDescription,
+      followUpDueDate,
+      followUpPriority,
+      followUpOwnerId: followUpOwner,
+    });
 
-    if (taskErr) {
-      setSaving(false);
-      setError(taskErr.message);
+    setSaving(false);
+
+    if (completeError) {
+      setError(completeError);
       return;
     }
 
-    if (task.organisation_id) {
-      const outcomeText = formatTaskOutcomeForEngagement(outcomeValue, extraNotes);
-      const { error: engagementErr } = await crmDb.engagements().insert({
-        organisation_id: task.organisation_id,
-        contact_id: task.contact_id,
-        type: "task",
-        summary: task.title,
-        outcome: outcomeText,
-        direction: "internal",
-        occurred_at: nowIso,
-        created_by: profileId,
-      });
-
-      if (engagementErr) {
-        setSaving(false);
-        setError(engagementErr.message);
-        return;
-      }
-
-      if (
-        applyPipelineUpdate &&
-        suggestedPipelineStage &&
-        suggestedPipelineStage !== currentPipelineStage
-      ) {
-        const { error: pipelineErr } = await crmDb
-          .organisations()
-          .update({ pipeline_stage: suggestedPipelineStage })
-          .eq("id", task.organisation_id);
-
-        if (pipelineErr) {
-          setSaving(false);
-          setError(pipelineErr.message);
-          return;
-        }
-      }
-    }
-
-    if (createFollowUp) {
-      const ownerId = resolveFollowUpOwnerId();
-      if (!task.organisation_id) {
-        setSaving(false);
-        setError("Follow-up requires an organisation on this task.");
-        return;
-      }
-      if (!followUpTitle.trim() || !followUpDueDate) {
-        setSaving(false);
-        setError("Follow-up title and due date are required.");
-        return;
-      }
-      if (!ownerId) {
-        setSaving(false);
-        setError("Please select who this follow-up is assigned to.");
-        return;
-      }
-
-      const followUpPayload = {
-        organisation_id: task.organisation_id,
-        contact_id: task.contact_id,
-        title: followUpTitle.trim(),
-        description: followUpDescription.trim() || null,
-        due_date: followUpDueDate,
-        status: "open" as const,
-        priority: followUpPriority,
-        owner_id: ownerId,
-      };
-      console.log("[CompleteTaskPanel] follow-up insert", followUpPayload);
-
-      const { error: followUpErr } = await crmDb.tasks().insert(followUpPayload);
-      if (followUpErr) {
-        setSaving(false);
-        setError(followUpErr.message);
-        return;
-      }
-    }
-
-    setSaving(false);
     setSuccess(
       createFollowUp
         ? "Task completed and follow-up created."
