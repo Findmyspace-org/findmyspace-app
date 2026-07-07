@@ -82,6 +82,19 @@ export async function fetchCrmDesktopBoardOrganisations(
   return json as PaginatedResult<CrmOrganisationListRow>;
 }
 
+export async function reorderCrmPipelineCard(input: {
+  organisationId: string;
+  pipelineStage: string;
+  beforeOrganisationId?: string | null;
+  afterOrganisationId?: string | null;
+  sortMode?: string;
+}) {
+  return adminApiFetch("/api/admin/crm/desktop/pipeline/reorder", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
 export async function fetchCrmDesktopSpaces(
   params: Record<string, string | number | boolean | undefined> = {}
 ) {

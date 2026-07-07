@@ -10,6 +10,10 @@ import {
   CrmPipelineViewToggle,
   getCrmPipelineView,
 } from "@/app/components/crm-desktop/CrmPipelineViewToggle";
+import {
+  CrmPipelineSortToggle,
+  getCrmPipelineBoardSortFromParams,
+} from "@/app/components/crm-desktop/CrmPipelineSortToggle";
 import { CrmOverdueBadge, CrmPipelineBadge } from "@/app/components/crm-desktop/CrmStatusBadge";
 import { useCrmQuickAction } from "@/app/components/crm-desktop/CrmQuickActionProvider";
 import {
@@ -69,6 +73,7 @@ function PipelinePageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const view = getCrmPipelineView(searchParams);
+  const boardSort = getCrmPipelineBoardSortFromParams(searchParams);
   const { openQuickMenu, openQuickAction } = useCrmQuickAction();
   const { version } = useCrmRefresh();
 
@@ -173,6 +178,7 @@ function PipelinePageInner() {
 
       <div className="flex flex-wrap items-center gap-3">
         <CrmPipelineViewToggle />
+        {view === "board" ? <CrmPipelineSortToggle /> : null}
       </div>
 
       <div className="flex flex-wrap items-end gap-3 rounded-lg border border-gray-200 bg-white p-4">
@@ -281,6 +287,7 @@ function PipelinePageInner() {
           }}
           onRefresh={() => void loadBoard()}
           onRowsChange={setBoardRows}
+          sortMode={boardSort}
         />
       ) : (
         <>

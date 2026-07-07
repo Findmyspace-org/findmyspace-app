@@ -17,8 +17,12 @@ import { resolveContactFilterIds } from "./contact-filter-ids";
 import { getCrmPresetView } from "./preset-views";
 import {
   resolveNextCrmTaskForContact,
-  resolveNextCrmTaskForOrganisation,
 } from "@/lib/space-place/next-task";
+import {
+  resolveNextCrmActionForOrganisation,
+  linkFollowUpTasksToEngagements,
+} from "./next-action";
+import { applyNextActionToRow } from "./pipeline-ordering";
 import {
   CRM_IN_FILTER_CHUNK_SIZE,
   chunkArray,
@@ -26,6 +30,7 @@ import {
   paginateIdsBySortField,
 } from "./filtered-pagination";
 import { PIPELINE_STAGES } from "@/lib/space-place/constants";
+import { crmTodayIsoDate } from "./timezone";
 
 const OPEN_PIPELINE_STAGES = [
   "prospect",
@@ -37,7 +42,7 @@ const OPEN_PIPELINE_STAGES = [
 const STALE_CONTACT_DAYS = 30;
 
 function todayIsoDate(): string {
-  return formatISO(startOfDay(new Date()), { representation: "date" });
+  return crmTodayIsoDate();
 }
 
 function profileNameMap(
@@ -210,13 +215,15 @@ async function enrichOrganisations(
         .in("crm_organisation_id", orgIds),
       adminClient
         .from("crm_engagements")
-        .select("organisation_id, occurred_at, summary, type")
+        .select("organisation_id, id, contact_id, occurred_at, summary, type")
         .in("organisation_id", orgIds)
         .order("occurred_at", { ascending: false })
         .limit(orgIds.length * 3),
       adminClient
         .from("crm_tasks")
-        .select("id, organisation_id, contact_id, due_date, title, status")
+        .select(
+          "id, organisation_id, contact_id, due_date, title, status, created_at"
+        )
         .in("organisation_id", orgIds)
         .eq("status", "open"),
     ]);
@@ -275,40 +282,66 @@ async function enrichOrganisations(
 
   const nextTask = new Map<
     string,
-    { id: string; due_date: string | null; title: string }
+    ReturnType<typeof resolveNextCrmActionForOrganisation>
   >();
+  const allOpenTasks = ((tasksRes.data || []) as {
+    id: string;
+    organisation_id: string;
+    contact_id: string | null;
+    due_date: string | null;
+    title: string;
+    status: string;
+    created_at: string;
+  }[]);
+
+  const engagementsByOrg = new Map<string, typeof engagementsRes.data>();
+  for (const e of (engagementsRes.data || []) as {
+    organisation_id: string;
+    id: string;
+    contact_id: string | null;
+    type: string;
+    summary: string | null;
+    occurred_at: string;
+  }[]) {
+    const list = engagementsByOrg.get(e.organisation_id) || [];
+    list.push(e);
+    engagementsByOrg.set(e.organisation_id, list);
+  }
+
   for (const orgRow of orgs) {
     const orgId = orgRow.id as string;
     const contacts = contactsByOrg.get(orgId) || [];
-    const primaryId = contacts[0]?.id ?? null;
-    const orgTasks = ((tasksRes.data || []) as {
-      id: string;
-      organisation_id: string;
-      contact_id: string | null;
-      due_date: string | null;
-      title: string;
-      status: string;
-    }[]).filter((t) => t.organisation_id === orgId);
-    const resolved = resolveNextCrmTaskForOrganisation(
+    const primaryId = (orgRow.primary_contact_id as string | null) ?? null;
+    const orgTasks = allOpenTasks.filter((t) => t.organisation_id === orgId);
+    const linkedEngagements = linkFollowUpTasksToEngagements(
+      (engagementsByOrg.get(orgId) || []).map((e) => ({
+        id: e.id,
+        organisation_id: e.organisation_id,
+        contact_id: e.contact_id,
+        type: e.type,
+        summary: e.summary,
+        occurred_at: e.occurred_at,
+      })),
+      orgTasks
+    );
+    const resolved = resolveNextCrmActionForOrganisation(
       orgTasks,
       orgId,
-      primaryId
+      primaryId,
+      linkedEngagements
     );
-    if (resolved) {
-      nextTask.set(orgId, {
-        id: resolved.id,
-        due_date: resolved.due_date,
-        title: resolved.title,
-      });
-    }
+    if (resolved) nextTask.set(orgId, resolved);
   }
 
   return orgs.map((org) => {
     const id = org.id as string;
     const contacts = contactsByOrg.get(id) || [];
-    const primary = contacts[0];
+    const explicitPrimaryId = (org.primary_contact_id as string | null) ?? null;
+    const primary = explicitPrimaryId
+      ? contacts.find((c) => c.id === explicitPrimaryId) ?? null
+      : null;
     const additional: CrmOrganisationContactSummary[] = contacts
-      .slice(1)
+      .filter((c) => c.id !== primary?.id)
       .map((c) => ({
         id: c.id,
         name: contactDisplayName(c),
@@ -317,10 +350,10 @@ async function enrichOrganisations(
         phone: c.phone || c.whatsapp || null,
       }));
     const eng = lastEngagement.get(id);
-    const task = nextTask.get(id);
+    const action = nextTask.get(id);
     const assignedTo = (org.assigned_to as string | null) ?? null;
 
-    return {
+    const baseRow: CrmOrganisationListRow = {
       id,
       name: org.name as string,
       type: (org.type as string | null) ?? null,
@@ -340,12 +373,22 @@ async function enrichOrganisations(
       property_count: propertyCount.get(id) || 0,
       last_interaction_at: eng?.occurred_at ?? null,
       last_interaction_summary: eng?.summary ?? null,
-      next_task_id: task?.id ?? null,
-      next_task_due: task?.due_date ?? null,
-      next_task_title: task?.title ?? null,
+      next_task_id: action?.taskId ?? null,
+      next_task_due: action?.actionDate ?? null,
+      next_task_title: action?.title ?? null,
+      next_action_title: action?.title ?? null,
+      next_action_date: action?.actionDate ?? null,
+      next_action_date_group: action?.dateGroup ?? "none",
+      pipeline_manual_rank:
+        (org.pipeline_manual_rank as number | null | undefined) ?? null,
+      pipeline_rank_updated_at:
+        (org.pipeline_rank_updated_at as string | null | undefined) ?? null,
+      pipeline_rank_updated_by:
+        (org.pipeline_rank_updated_by as string | null | undefined) ?? null,
       created_at: org.created_at as string,
       updated_at: org.updated_at as string,
     };
+    return applyNextActionToRow(baseRow, action ?? null);
   });
 }
 

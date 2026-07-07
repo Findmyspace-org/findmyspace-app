@@ -27,6 +27,10 @@ export type CrmOrganisation = {
   listed_at: string | null;
   closed_at: string | null;
   lost_reason: string | null;
+  primary_contact_id: string | null;
+  pipeline_manual_rank: number | null;
+  pipeline_rank_updated_at: string | null;
+  pipeline_rank_updated_by: string | null;
   created_at: string;
   updated_at: string;
 };

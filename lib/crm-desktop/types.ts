@@ -29,6 +29,12 @@ export type CrmOrganisationListRow = {
   next_task_id: string | null;
   next_task_due: string | null;
   next_task_title: string | null;
+  next_action_title: string | null;
+  next_action_date: string | null;
+  next_action_date_group: "overdue" | "today" | "future" | "none";
+  pipeline_manual_rank: number | null;
+  pipeline_rank_updated_at: string | null;
+  pipeline_rank_updated_by: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -170,4 +176,5 @@ export type CrmListFilters = {
   pageSize?: number;
   preset?: string;
   boardMode?: boolean;
+  boardSort?: string;
 };

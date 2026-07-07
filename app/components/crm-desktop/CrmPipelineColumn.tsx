@@ -1,6 +1,10 @@
 "use client";
 
 import { useDroppable } from "@dnd-kit/core";
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import {
   PIPELINE_STAGE_LABELS,
@@ -20,6 +24,8 @@ type Props = {
   onOpenCard: (row: CrmOrganisationListRow) => void;
   onRefresh?: () => void;
   dragEnabled?: boolean;
+  activeRow?: CrmOrganisationListRow | null;
+  sortMode?: "smart" | "manual";
 };
 
 export function CrmPipelineColumn({
@@ -33,6 +39,8 @@ export function CrmPipelineColumn({
   onOpenCard,
   onRefresh,
   dragEnabled = true,
+  activeRow = null,
+  sortMode = "smart",
 }: Props) {
   const { setNodeRef, isOver: droppableOver } = useDroppable({
     id: stage,
@@ -42,6 +50,7 @@ export function CrmPipelineColumn({
   const highlight = isDropTarget || droppableOver;
   const isTerminal = stage === "closed_lost";
   const showBody = !collapsed || isDragActive || highlight;
+  const itemIds = rows.map((row) => row.id);
 
   return (
     <section
@@ -80,7 +89,6 @@ export function CrmPipelineColumn({
         ) : null}
       </header>
 
-      {/* Always mount droppable zone so collapsed terminal column accepts drops */}
       <div
         ref={setNodeRef}
         className={`flex flex-1 flex-col gap-2 p-2 ${
@@ -98,15 +106,19 @@ export function CrmPipelineColumn({
             Drop organisations here
           </p>
         ) : (
-          rows.map((row) => (
-            <CrmPipelineCard
-              key={row.id}
-              row={row}
-              onOpen={onOpenCard}
-              onRefresh={onRefresh}
-              dragEnabled={dragEnabled}
-            />
-          ))
+          <SortableContext items={itemIds} strategy={verticalListSortingStrategy}>
+            {rows.map((row) => (
+              <CrmPipelineCard
+                key={row.id}
+                row={row}
+                onOpen={onOpenCard}
+                onRefresh={onRefresh}
+                dragEnabled={dragEnabled}
+                activeRow={activeRow}
+                sortMode={sortMode}
+              />
+            ))}
+          </SortableContext>
         )}
       </div>
     </section>

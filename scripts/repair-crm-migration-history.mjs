@@ -8,8 +8,8 @@
  *
  * Manual repair if CLI auth fails:
  *   npx supabase link --project-ref <PROJECT_REF>
- *   npx supabase migration repair --status applied 051_20260707_crm_marketing
- *   npx supabase migration repair --status applied 052_20260707_crm_close_pipeline_rpc
+ *   npx supabase migration repair --status applied 051
+ *   npx supabase migration repair --status applied 052
  */
 
 import { readFileSync, existsSync } from "node:fs";
@@ -36,8 +36,8 @@ const accessToken = env.SUPABASE_ACCESS_TOKEN || process.env.SUPABASE_ACCESS_TOK
 const projectRef = url ? new URL(url).hostname.split(".")[0] : "unknown";
 
 const MIGRATIONS = [
-  { version: "051_20260707_crm_marketing", table: "crm_marketing_contacts" },
-  { version: "052_20260707_crm_close_pipeline_rpc", rpc: "crm_close_organisation_pipeline_lost" },
+  { version: "051", table: "crm_marketing_contacts" },
+  { version: "052", rpc: "crm_close_organisation_pipeline_lost" },
 ];
 
 console.log(`Repository: ${process.cwd()}`);
@@ -65,6 +65,27 @@ async function objectExists({ table, rpc }) {
     return !error || !/could not find the function/i.test(error.message);
   }
   return false;
+}
+
+async function queryRemoteVersions(token) {
+  const res = await fetch(
+    `https://api.supabase.com/v1/projects/${projectRef}/database/query`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        query:
+          "SELECT version FROM supabase_migrations.schema_migrations ORDER BY version;",
+      }),
+    }
+  );
+  const body = await res.json().catch(() => []);
+  if (!res.ok) return [];
+  const rows = Array.isArray(body) ? body : body?.result || [];
+  return rows.map((row) => String(row.version));
 }
 
 for (const migration of MIGRATIONS) {
@@ -96,6 +117,13 @@ for (const migration of MIGRATIONS) {
     console.warn(`Skipping repair for ${migration.version}: objects not present in database.`);
     continue;
   }
+
+  const remoteVersions = await queryRemoteVersions(accessToken);
+  if (remoteVersions.includes(migration.version)) {
+    console.log(`Skipping repair for ${migration.version}: already recorded remotely.`);
+    continue;
+  }
+
   console.log(`Repairing migration history: ${migration.version}`);
   execSync(`npx supabase@latest migration repair --status applied ${migration.version}`, {
     env: { ...env, SUPABASE_ACCESS_TOKEN: accessToken },

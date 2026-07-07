@@ -25,10 +25,16 @@
     "test:crm-marketing": "tsx scripts/test-crm-marketing.ts",
     "test:crm-close-pipeline": "tsx scripts/test-crm-close-pipeline-integration.ts",
     "test:crm-marketing-permissions": "node --env-file=.env.local scripts/test-crm-marketing-permissions.mjs",
+    "verify:crm-contacts-pipeline-browser": "tsx scripts/verify-crm-contacts-pipeline-browser.ts",
     "verify:crm-pipeline-browser": "tsx scripts/verify-crm-pipeline-browser.ts",
     "test:crm-marketing-management": "tsx scripts/test-crm-marketing-management.ts",
     "verify:crm-marketing-db": "node --env-file=.env.local scripts/verify-crm-marketing-db.mjs",
+    "test:crm-pipeline-ordering": "tsx scripts/test-crm-pipeline-ordering.ts",
+    "test:crm-primary-contact": "tsx scripts/test-crm-primary-contact.ts",
+    "apply:migration-053": "node --env-file=.env.local scripts/apply-migration-053.mjs",
+    "apply:migration-054": "node --env-file=.env.local scripts/apply-migration-054.mjs",
     "repair:crm-migration-history": "node --env-file=.env.local scripts/repair-crm-migration-history.mjs",
+    "audit:supabase-migration-push": "node --env-file=.env.local scripts/audit-supabase-migration-push.mjs",
     "db:push-crm": "node --env-file=.env.local scripts/apply-crm-migrations.mjs"
   },
   "dependencies": {

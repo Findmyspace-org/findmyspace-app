@@ -14,7 +14,7 @@ export function organisationRowToActionContext(
     pipelineStage: row.pipeline_stage,
     assignedTo: row.assigned_to,
     taskId: row.next_task_id ?? undefined,
-    taskTitle: row.next_task_title ?? undefined,
+    taskTitle: row.next_action_title ?? row.next_task_title ?? undefined,
   };
 }
 
@@ -44,6 +44,12 @@ export function pipelineRowToOrganisationListRow(
     next_task_id: row.next_task_id,
     next_task_due: row.next_task_due,
     next_task_title: row.next_task_title,
+    next_action_title: row.next_task_title,
+    next_action_date: row.next_task_due,
+    next_action_date_group: "none",
+    pipeline_manual_rank: null,
+    pipeline_rank_updated_at: null,
+    pipeline_rank_updated_by: null,
     created_at: "",
     updated_at: row.updated_at || "",
   };

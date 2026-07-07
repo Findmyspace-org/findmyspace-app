@@ -25,7 +25,8 @@ import {
 } from "@/app/space-place/components/SpaceActivityHistory";
 import { CrmEmailList } from "@/app/space-place/components/CrmEmailList";
 import { CrmMarketplaceListingsSection } from "@/app/space-place/components/CrmMarketplaceListingsSection";
-import { ContactEmailActions } from "@/app/space-place/components/ContactEmailActions";
+import { CrmOrganisationContactRow } from "@/app/components/crm-desktop/CrmOrganisationContactRow";
+import { adminApiFetch } from "@/lib/admin-api-client";
 import { CrmOverdueBadge, CrmPipelineBadge } from "@/app/components/crm-desktop/CrmStatusBadge";
 import { CrmTimeline } from "@/app/components/crm-desktop/CrmTimeline";
 import { useCrmQuickAction } from "@/app/components/crm-desktop/CrmQuickActionProvider";
@@ -126,7 +127,17 @@ function OrganisationDetailInner() {
   }, [load]);
 
   const roster = useMemo(() => dedupeActiveSpacers(spacers), [spacers]);
-  const primaryContact = contacts[0] ?? null;
+  const sortedContacts = useMemo(
+    () =>
+      [...contacts].sort(
+        (a, b) =>
+          new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      ),
+    [contacts]
+  );
+  const primaryContactId = org?.primary_contact_id ?? null;
+  const primaryContact =
+    sortedContacts.find((c) => c.id === primaryContactId) ?? null;
   const nextTask = useMemo(
     () => resolveNextCrmTaskForOrganisation(tasks, id, primaryContact?.id),
     [tasks, id, primaryContact?.id]
@@ -160,6 +171,29 @@ function OrganisationDetailInner() {
       setMessage(error.message);
       return;
     }
+    await load();
+  }
+
+  async function setPrimaryContact(contactId: string | null) {
+    if (!org) return;
+    const result = await adminApiFetch(
+      `/api/admin/crm/desktop/organisations/${org.id}/primary-contact`,
+      {
+        method: "POST",
+        body: JSON.stringify({ contactId }),
+      }
+    );
+    if (!result.ok) {
+      setMessage(
+        typeof result.error === "string"
+          ? result.error
+          : "Failed to update primary contact."
+      );
+      return;
+    }
+    setOrg((current) =>
+      current ? { ...current, primary_contact_id: contactId } : current
+    );
     await load();
   }
 
@@ -334,31 +368,25 @@ function OrganisationDetailInner() {
       ) : null}
 
       {tab === "contacts" ? (
-        <div className="space-y-3">
+        <div className="space-y-2">
           <button
             type="button"
             onClick={() => setCreateContactOpen(true)}
-            className="rounded-lg border border-[#c1121f] px-4 py-2 text-sm font-medium text-[#c1121f]"
+            className="mb-2 rounded-lg border border-[#c1121f] px-4 py-2 text-sm font-medium text-[#c1121f]"
           >
             Add contact
           </button>
-          {contacts.map((c) => (
-            <div
-              key={c.id}
-              className="rounded-lg border border-gray-200 bg-white p-4"
-            >
-              <Link
-                href={`/admin/crm/contacts/${c.id}`}
-                className="font-semibold text-[#192a3a] hover:text-[#c1121f]"
-              >
-                {c.full_name || c.first_name}
-              </Link>
-              <p className="text-sm text-gray-600">{c.role}</p>
-              {c.email ? (
-                <ContactEmailActions email={c.email} contactId={c.id} className="mt-2" compact />
-              ) : null}
-            </div>
-          ))}
+          <div className="space-y-2">
+            {sortedContacts.map((c) => (
+              <CrmOrganisationContactRow
+                key={c.id}
+                contact={c}
+                isPrimary={Boolean(primaryContactId && c.id === primaryContactId)}
+                canManagePrimary={isAdmin}
+                onSetPrimary={setPrimaryContact}
+              />
+            ))}
+          </div>
         </div>
       ) : null}
 

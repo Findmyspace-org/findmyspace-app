@@ -24,6 +24,10 @@ import { CrmPipelineColumn } from "./CrmPipelineColumn";
 import { CrmPipelineCardPreview } from "./CrmPipelineCard";
 import { CrmPipelineCardDrawer } from "./CrmPipelineCardDrawer";
 import { CrmPipelineClosedLostConfirmation } from "./CrmPipelineClosedLostConfirmation";
+import {
+  sortPipelineBoardRows,
+  type CrmPipelineBoardSortMode,
+} from "@/lib/crm-desktop/pipeline-ordering";
 import { useCrmPipelineDrag } from "./useCrmPipelineDrag";
 import { useCrmQuickAction } from "./CrmQuickActionProvider";
 import { organisationRowToActionContext } from "./crm-action-context";
@@ -39,6 +43,7 @@ type Props = {
   onLoadMore: () => void;
   onRefresh: () => void;
   onRowsChange: React.Dispatch<React.SetStateAction<CrmOrganisationListRow[]>>;
+  sortMode?: CrmPipelineBoardSortMode;
 };
 
 const TERMINAL_STAGE: PipelineStage = "closed_lost";
@@ -52,6 +57,7 @@ export function CrmPipelineBoard({
   onLoadMore,
   onRefresh,
   onRowsChange,
+  sortMode = "smart",
 }: Props) {
   const { profile } = useSpacePlace();
   const { openQuickAction } = useCrmQuickAction();
@@ -104,6 +110,7 @@ export function CrmPipelineBoard({
       onRefresh();
     },
     dragEnabled,
+    sortMode,
     onDragOverStage: (stage) => {
       setDragOverStage(stage);
       if (stage === TERMINAL_STAGE) setTerminalCollapsed(false);
@@ -132,8 +139,12 @@ export function CrmPipelineBoard({
       list.push(row);
       map.set(stage, list);
     }
+    for (const stage of PIPELINE_STAGES) {
+      const list = map.get(stage) || [];
+      map.set(stage, sortPipelineBoardRows(list, sortMode));
+    }
     return map;
-  }, [rows]);
+  }, [rows, sortMode]);
 
   const noTaskPromptRow = useMemo(
     () => rows.find((r) => r.id === noTaskPromptOrgId) ?? null,
@@ -170,6 +181,8 @@ export function CrmPipelineBoard({
                 onOpenCard={handleOpenCard}
                 onRefresh={onRefresh}
                 dragEnabled={dragEnabled}
+                activeRow={activeRow}
+                sortMode={sortMode}
               />
             ))}
             {terminalStages.map((stage) => (
@@ -185,6 +198,8 @@ export function CrmPipelineBoard({
                 onOpenCard={handleOpenCard}
                 onRefresh={onRefresh}
                 dragEnabled={dragEnabled}
+                activeRow={activeRow}
+                sortMode={sortMode}
               />
             ))}
           </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useDraggable } from "@dnd-kit/core";
+import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Building2, MapPin, Plus, User } from "lucide-react";
 import type { CrmOrganisationListRow } from "@/lib/crm-desktop/types";
@@ -13,12 +13,16 @@ import { organisationRowToActionContext } from "./crm-action-context";
 import { useCrmQuickAction } from "./CrmQuickActionProvider";
 import { formatActivityDate, formatDueDate } from "@/lib/space-place/format";
 import { isCrmTaskOverdue } from "@/lib/space-place/next-task";
+import { isValidSmartReorderTarget } from "@/lib/crm-desktop/pipeline-ordering";
 
 type Props = {
   row: CrmOrganisationListRow;
   onOpen: (row: CrmOrganisationListRow) => void;
   onRefresh?: () => void;
   dragEnabled?: boolean;
+  isDragOverlay?: boolean;
+  activeRow?: CrmOrganisationListRow | null;
+  sortMode?: "smart" | "manual";
 };
 
 export function CrmPipelineCard({
@@ -26,36 +30,59 @@ export function CrmPipelineCard({
   onOpen,
   onRefresh,
   dragEnabled = true,
+  isDragOverlay = false,
+  activeRow = null,
+  sortMode = "smart",
 }: Props) {
   const { openQuickAction } = useCrmQuickAction();
   const ctx = organisationRowToActionContext(row);
   const indicators = buildOrganisationQualityIndicators(row);
+  const actionTitle = row.next_action_title ?? row.next_task_title;
+  const actionDate = row.next_action_date ?? row.next_task_due;
   const overdue =
-    row.next_task_due &&
-    row.next_task_title &&
-    isCrmTaskOverdue(row.next_task_due, "open");
+    actionDate && actionTitle && isCrmTaskOverdue(actionDate, "open");
 
-  const { attributes, listeners, setNodeRef, transform, isDragging } =
-    useDraggable({
-      id: row.id,
-      data: { row, type: "card" },
-      disabled: !dragEnabled,
-    });
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+    isOver,
+  } = useSortable({
+    id: row.id,
+    data: { row, type: "card", stage: row.pipeline_stage },
+    disabled: !dragEnabled || isDragOverlay,
+  });
 
-  const style = transform
-    ? { transform: CSS.Translate.toString(transform), opacity: isDragging ? 0.4 : 1 }
-    : undefined;
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging && !isDragOverlay ? 0.35 : 1,
+  };
+
+  const validSmartTarget =
+    sortMode !== "smart" ||
+    !activeRow ||
+    activeRow.id === row.id ||
+    isValidSmartReorderTarget(activeRow, row);
+  const showDropHighlight = isOver && validSmartTarget;
 
   return (
     <article
-      ref={setNodeRef}
-      style={style}
+      ref={isDragOverlay ? undefined : setNodeRef}
+      style={isDragOverlay ? undefined : style}
       data-organisation-id={row.id}
       aria-label={`${row.name}, ${row.pipeline_stage.replace(/_/g, " ")}`}
       className={`rounded-lg border bg-white p-3 shadow-sm transition ${
-        isDragging
-          ? "border-[#c1121f]/40 shadow-md"
-          : "border-gray-200 hover:border-[#c1121f]/25"
+        isDragOverlay
+          ? "border-[#c1121f]/30 shadow-lg"
+          : showDropHighlight
+            ? "border-[#c1121f]/40 ring-2 ring-[#c1121f]/15"
+            : isDragging
+              ? "border-[#c1121f]/40 shadow-md"
+              : "border-gray-200 hover:border-[#c1121f]/25"
       }`}
     >
       <div className="flex items-start gap-2">
@@ -72,7 +99,10 @@ export function CrmPipelineCard({
         <div className="min-w-0 flex-1">
           <button
             type="button"
-            onClick={() => onOpen(row)}
+            onClick={() => {
+              if (isDragging) return;
+              onOpen(row);
+            }}
             className="block w-full text-left"
           >
             <h4 className="text-sm font-semibold leading-snug text-[#192a3a]">
@@ -116,32 +146,38 @@ export function CrmPipelineCard({
             </p>
           ) : null}
           <div className="mt-2 rounded-md border border-gray-100 bg-gray-50 px-2 py-1.5">
-            {row.next_task_title ? (
+            {actionTitle ? (
               <button
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  openQuickAction("edit_task", ctx, onRefresh);
+                  if (row.next_task_id) {
+                    openQuickAction("edit_task", ctx, onRefresh);
+                  } else {
+                    openQuickAction(
+                      "add_task",
+                      { ...ctx, prefillTaskTitle: actionTitle },
+                      onRefresh
+                    );
+                  }
                 }}
                 className="block w-full text-left"
               >
-                <p className="text-xs font-medium text-[#192a3a]">
-                  {row.next_task_title}
-                </p>
+                <p className="text-xs font-medium text-[#192a3a]">{actionTitle}</p>
                 <div className="mt-0.5 flex flex-wrap items-center gap-1">
-                  {row.next_task_due ? (
+                  {actionDate ? (
                     <span className="text-[11px] text-gray-500">
-                      {formatDueDate(row.next_task_due)}
+                      {formatDueDate(actionDate)}
                     </span>
                   ) : (
-                    <span className="text-[11px] text-gray-400">No due date</span>
+                    <span className="text-[11px] text-gray-400">No dated action</span>
                   )}
                   {overdue ? <CrmOverdueBadge /> : null}
                 </div>
               </button>
             ) : (
               <div className="flex items-center justify-between gap-2">
-                <span className="text-xs text-gray-500">No next task</span>
+                <span className="text-xs text-gray-500">No dated action</span>
                 <button
                   type="button"
                   onClick={(e) => {
@@ -181,12 +217,5 @@ export function CrmPipelineCard({
 
 /** Static card preview used in drag overlay. */
 export function CrmPipelineCardPreview({ row }: { row: CrmOrganisationListRow }) {
-  return (
-    <div className="w-[260px] rounded-lg border border-[#c1121f]/30 bg-white p-3 shadow-lg">
-      <p className="text-sm font-semibold text-[#192a3a]">{row.name}</p>
-      <p className="mt-1 text-xs text-gray-500">
-        {row.next_task_title || "No next task"}
-      </p>
-    </div>
-  );
+  return <CrmPipelineCard row={row} onOpen={() => {}} isDragOverlay dragEnabled={false} />;
 }
