@@ -4,6 +4,8 @@ import {
   normaliseMarketingEmail,
 } from "./eligibility";
 import type { RecipientPreviewResult } from "./types";
+import type { CampaignAudienceDefinition } from "./audience-definition";
+import { resolveAudienceMarketingContactIds } from "./audience-resolution";
 
 type PreviewCandidate = {
   marketingContactId: string;
@@ -25,6 +27,8 @@ export type RecipientPreviewInput = {
   listIds?: string[];
   marketingContactIds?: string[];
   filters?: Record<string, string | undefined>;
+  audienceDefinition?: CampaignAudienceDefinition | unknown;
+  actorId?: string | null;
 };
 
 function contactDisplayName(row: {
@@ -42,6 +46,15 @@ async function fetchCandidates(
   input: RecipientPreviewInput
 ): Promise<PreviewCandidate[]> {
   const ids = new Set<string>();
+
+  if (input.audienceDefinition) {
+    const resolved = await resolveAudienceMarketingContactIds(
+      adminClient,
+      input.audienceDefinition,
+      input.actorId
+    );
+    for (const id of resolved.marketingContactIds) ids.add(id);
+  }
 
   if (input.marketingContactIds?.length) {
     for (const id of input.marketingContactIds) ids.add(id);
@@ -68,6 +81,10 @@ async function fetchCandidates(
 
   if (ids.size > 0) {
     query = query.in("id", [...ids]);
+  } else if (!input.audienceDefinition) {
+    return [];
+  } else {
+    return [];
   }
 
   const filters = input.filters || {};

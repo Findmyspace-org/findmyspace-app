@@ -29,6 +29,8 @@ export type MarketingContactPreview = {
 
 export type CrmMarketingOverviewStats = {
   total: number;
+  allCrmContacts: number;
+  contactsWithEmail: number;
   sendable: number;
   pendingConsent: number;
   unsubscribed: number;
@@ -42,6 +44,13 @@ export type CrmMarketingOverviewStats = {
   signedUp: number;
   listed: number;
   recentlyAdded: number;
+  prospect: number;
+  firstContact: number;
+  followUp: number;
+  inProgress: number;
+  municipalities: number;
+  schools: number;
+  venues: number;
 };
 
 export type CrmMarketingContactRow = {
@@ -140,9 +149,60 @@ export type MarketingCampaignDraftInput = {
   subject?: string;
   previewText?: string;
   senderName?: string;
+  senderEmail?: string;
   replyTo?: string;
+  internalNotes?: string;
+  campaignType?: string;
+  templateId?: string | null;
+  contentJson?: unknown;
+  audienceDefinition?: unknown;
   listIds?: string[];
-  filters?: Record<string, string | undefined>;
   bodyHtml?: string;
   bodyText?: string;
+  filters?: Record<string, string | undefined>;
+};
+
+export type CrmMarketingTemplateRow = {
+  id: string;
+  name: string;
+  description: string | null;
+  templateType: string;
+  isDefault: boolean;
+  isActive: boolean;
+  headerJson: Record<string, unknown>;
+  footerJson: Record<string, unknown>;
+  contentStyleJson: Record<string, unknown>;
+  htmlTemplate: string | null;
+  plainTextTemplate: string | null;
+  previewImageUrl: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CrmMarketingCampaignRow = {
+  id: string;
+  name: string;
+  subject: string | null;
+  previewText: string | null;
+  senderName: string | null;
+  senderEmail: string | null;
+  replyTo: string | null;
+  internalNotes: string | null;
+  campaignType: string;
+  status: string;
+  templateId: string | null;
+  templateSnapshotJson: unknown;
+  renderedHtml: string | null;
+  renderedPlainText: string | null;
+  contentJson: unknown;
+  audienceDefinition: unknown;
+  audienceSnapshotCount: number;
+  audienceSnapshotJson: unknown;
+  audiencePreviewedAt: string | null;
+  listIds: string[];
+  estimatedAudience: number;
+  eligibleRecipients: number;
+  excludedRecipients: number;
+  createdAt: string;
+  updatedAt: string;
 };

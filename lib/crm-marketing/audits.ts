@@ -8,6 +8,7 @@ export type MarketingAuditInput = {
   crmContactId?: string | null;
   crmOrganisationId?: string | null;
   marketingListId?: string | null;
+  marketingCampaignId?: string | null;
   previousValue?: unknown;
   newValue?: unknown;
   source?: string;
@@ -30,6 +31,7 @@ export async function writeMarketingAudit(
     crm_contact_id: input.crmContactId ?? null,
     crm_organisation_id: input.crmOrganisationId ?? null,
     marketing_list_id: input.marketingListId ?? null,
+    marketing_campaign_id: input.marketingCampaignId ?? null,
     previous_value: input.previousValue ?? null,
     new_value: newValue,
     source: input.source ?? null,

@@ -84,6 +84,16 @@ export async function fetchMarketingOverview(
     .from("crm_marketing_contacts")
     .select("id", { count: "exact", head: true });
 
+  const { count: allCrmContacts } = await adminClient
+    .from("crm_contacts")
+    .select("id", { count: "exact", head: true });
+
+  const { count: contactsWithEmail } = await adminClient
+    .from("crm_contacts")
+    .select("id", { count: "exact", head: true })
+    .not("email", "is", null)
+    .neq("email", "");
+
   const statuses = await Promise.all([
     adminClient
       .from("crm_marketing_contacts")
@@ -125,7 +135,7 @@ export async function fetchMarketingOverview(
     return count || 0;
   }
 
-  const [generalUpdates, goLive, closedNotNow, listed, signedUp, duplicateEmails, unknownBasis] =
+  const [generalUpdates, goLive, closedNotNow, listed, signedUp, duplicateEmails, unknownBasis, stageCounts, orgTypeCounts] =
     await Promise.all([
     listMemberCount(SYSTEM_LIST_SLUGS.generalUpdates),
     listMemberCount(SYSTEM_LIST_SLUGS.goLive),
@@ -137,10 +147,30 @@ export async function fetchMarketingOverview(
       .from("crm_marketing_contacts")
       .select("id", { count: "exact", head: true })
       .eq("lawful_basis", "review_required"),
+    adminClient
+      .from("crm_organisations")
+      .select("pipeline_stage")
+      .not("pipeline_stage", "is", null),
+    adminClient
+      .from("crm_organisations")
+      .select("type")
+      .not("type", "is", null),
   ]);
+
+  const pipelineCount = (stage: string) =>
+    ((stageCounts.data || []) as { pipeline_stage: string }[]).filter(
+      (row) => row.pipeline_stage === stage
+    ).length;
+
+  const orgTypeCount = (type: string) =>
+    ((orgTypeCounts.data || []) as { type: string }[]).filter(
+      (row) => row.type === type
+    ).length;
 
   return {
     total: total || 0,
+    allCrmContacts: allCrmContacts || 0,
+    contactsWithEmail: contactsWithEmail || 0,
     sendable: statuses[4].count || 0,
     pendingConsent: statuses[0].count || 0,
     unsubscribed: statuses[1].count || 0,
@@ -154,6 +184,13 @@ export async function fetchMarketingOverview(
     signedUp,
     listed,
     recentlyAdded: statuses[5].count || 0,
+    prospect: pipelineCount("prospect"),
+    firstContact: pipelineCount("first_contact"),
+    followUp: pipelineCount("follow_up"),
+    inProgress: pipelineCount("in_progress"),
+    municipalities: orgTypeCount("municipality"),
+    schools: orgTypeCount("school"),
+    venues: orgTypeCount("venue"),
   };
 }
 

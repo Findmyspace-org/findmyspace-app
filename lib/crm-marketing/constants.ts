@@ -119,6 +119,17 @@ export const MARKETING_AUDIT_ACTIONS = [
   "csv_export",
   "recipient_preview",
   "unsubscribe_link",
+  "template_created",
+  "template_edited",
+  "template_duplicated",
+  "template_archived",
+  "default_template_changed",
+  "campaign_created",
+  "campaign_draft_saved",
+  "template_selected",
+  "audience_definition_changed",
+  "campaign_content_edited",
+  "campaign_test_email_sent",
 ] as const;
 
 export type MarketingAuditAction = (typeof MARKETING_AUDIT_ACTIONS)[number];

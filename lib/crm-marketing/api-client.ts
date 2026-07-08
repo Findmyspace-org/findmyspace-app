@@ -120,6 +120,68 @@ export async function saveMarketingCampaignDraft(body: Record<string, unknown>) 
   });
 }
 
+export async function fetchMarketingCampaigns() {
+  const json = await adminApiFetch("/api/admin/crm/marketing/campaigns");
+  return json.campaigns as Array<{
+    id: string;
+    name: string;
+    subject: string | null;
+    status: string;
+    campaign_type: string;
+    eligible_recipients: number | null;
+    created_at: string;
+    updated_at: string;
+  }>;
+}
+
+export async function fetchMarketingCampaign(id: string) {
+  const json = await adminApiFetch(`/api/admin/crm/marketing/campaigns/${id}`);
+  return json.campaign as import("./types").CrmMarketingCampaignRow;
+}
+
+export async function updateMarketingCampaign(id: string, body: Record<string, unknown>) {
+  return adminApiFetch(`/api/admin/crm/marketing/campaigns/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function fetchMarketingTemplates() {
+  const json = await adminApiFetch("/api/admin/crm/marketing/templates");
+  return json.templates as import("./types").CrmMarketingTemplateRow[];
+}
+
+export async function fetchMarketingTemplate(id: string) {
+  const json = await adminApiFetch(`/api/admin/crm/marketing/templates/${id}`);
+  return json.template as import("./types").CrmMarketingTemplateRow;
+}
+
+export async function createMarketingTemplateApi(body: Record<string, unknown>) {
+  const json = await adminApiFetch("/api/admin/crm/marketing/templates", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+  return json.template as import("./types").CrmMarketingTemplateRow;
+}
+
+export async function updateMarketingTemplateApi(id: string, body: Record<string, unknown>) {
+  const json = await adminApiFetch(`/api/admin/crm/marketing/templates/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
+  return json.template as import("./types").CrmMarketingTemplateRow;
+}
+
+export async function sendMarketingCampaignTestEmail(
+  campaignId: string,
+  testEmails: string[]
+) {
+  return adminApiFetch(`/api/admin/crm/marketing/campaigns/${campaignId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ action: "test_send", testEmails }),
+  });
+}
+
 export function marketingContactsExportUrl(
   params: Record<string, string | undefined>
 ) {

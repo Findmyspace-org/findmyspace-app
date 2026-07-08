@@ -12,12 +12,15 @@ export async function POST(req: NextRequest) {
       listIds?: string[];
       marketingContactIds?: string[];
       filters?: Record<string, string | undefined>;
+      audienceDefinition?: unknown;
     };
 
     const preview = await buildRecipientPreview(auth.adminClient, {
       listIds: body.listIds,
       marketingContactIds: body.marketingContactIds,
       filters: body.filters,
+      audienceDefinition: body.audienceDefinition,
+      actorId: auth.userId,
     });
 
     await writeMarketingAudit(auth.adminClient, {

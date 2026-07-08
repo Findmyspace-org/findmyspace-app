@@ -36,39 +36,13 @@ import { ORGANISATION_TYPES } from "@/lib/space-place/organisation-types";
 import { PIPELINE_STAGES, PIPELINE_STAGE_LABELS } from "@/lib/space-place/constants";
 import { formatActivityDate, formatDueDate } from "@/lib/space-place/format";
 import { isCrmTaskOverdue } from "@/lib/space-place/next-task";
+import { FilterX } from "lucide-react";
 import { useCrmRefresh } from "@/lib/crm-desktop/crm-refresh";
-
-function buildFilterParams(
-  searchParams: URLSearchParams,
-  extra: Record<string, string | number | undefined> = {}
-) {
-  const keys = [
-    "q",
-    "stage",
-    "assigned",
-    "type",
-    "overdue",
-    "no_next",
-    "no_contact",
-    "primary_required",
-    "no_spaces",
-    "no_follow_up",
-    "no_email",
-    "no_phone",
-    "stale",
-    "preset",
-    "sort",
-    "dir",
-    "page",
-    "pageSize",
-  ];
-  const params: Record<string, string | number | undefined> = { ...extra };
-  for (const key of keys) {
-    const value = searchParams.get(key);
-    if (value) params[key] = value;
-  }
-  return params;
-}
+import {
+  buildPipelineFilterParams,
+  clearAllPipelineFilterSearchParams,
+  hasActivePipelineFilters,
+} from "@/lib/crm-desktop/pipeline-filters";
 
 function PipelinePageInner() {
   const router = useRouter();
@@ -90,10 +64,16 @@ function PipelinePageInner() {
   const [profiles, setProfiles] = useState<{ id: string; full_name: string | null }[]>([]);
   const [searchInput, setSearchInput] = useState(searchParams.get("q") || "");
 
+  useEffect(() => {
+    setSearchInput(searchParams.get("q") || "");
+  }, [searchParams]);
+
   const filterParams = useMemo(
-    () => buildFilterParams(searchParams),
+    () => buildPipelineFilterParams(searchParams),
     [searchParams]
   );
+
+  const filtersActive = hasActivePipelineFilters(searchParams);
 
   const loadTable = useCallback(async () => {
     setLoading(true);
@@ -171,6 +151,12 @@ function PipelinePageInner() {
     router.push(`/admin/crm/pipeline?${next.toString()}`);
   }
 
+  function clearAllFilters() {
+    const next = clearAllPipelineFilterSearchParams(searchParams);
+    const qs = next.toString();
+    router.push(qs ? `/admin/crm/pipeline?${qs}` : "/admin/crm/pipeline");
+  }
+
   const hasMoreBoard = boardRows.length < total;
 
   return (
@@ -182,7 +168,8 @@ function PipelinePageInner() {
         {view === "board" ? <CrmPipelineSortToggle /> : null}
       </div>
 
-      <div className="flex flex-wrap items-end gap-3 rounded-lg border border-gray-200 bg-white p-4">
+      <div className="flex flex-wrap items-end justify-between gap-3 rounded-lg border border-gray-200 bg-white p-4">
+        <div className="flex flex-wrap items-end gap-3">
         <label className="text-sm">
           <span className="mb-1 block text-gray-600">Search</span>
           <input
@@ -241,9 +228,21 @@ function PipelinePageInner() {
             ))}
           </select>
         </label>
+        </div>
+        {filtersActive ? (
+          <button
+            type="button"
+            onClick={clearAllFilters}
+            aria-label="Remove all filters"
+            className="inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:border-[#c1121f]/30 hover:text-[#c1121f]"
+          >
+            <FilterX className="h-4 w-4" aria-hidden />
+            Remove filters
+          </button>
+        ) : null}
       </div>
 
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         {[
           ["overdue", "Overdue"],
           ["no_next", "No next task"],

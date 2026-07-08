@@ -27,6 +27,9 @@ const ROUTES = [
   "/api/admin/crm/marketing/overview",
   "/api/admin/crm/marketing/contacts",
   "/api/admin/crm/marketing/lists",
+  "/api/admin/crm/marketing/templates",
+  "/api/admin/crm/marketing/campaigns",
+  "/api/admin/crm/marketing/preview",
   "/api/admin/crm/desktop/pipeline/close-lost",
 ];
 
