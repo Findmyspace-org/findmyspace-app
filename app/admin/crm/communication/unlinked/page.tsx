@@ -9,6 +9,7 @@ import {
   Search,
   Sparkles,
   Unlink,
+  X,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { canManageCrmEmail } from "@/lib/space-place/access";
@@ -44,20 +45,18 @@ async function crmEmailApiFetch(path: string, init?: RequestInit) {
   return json;
 }
 
-type LinkMode = "contact" | "organisation";
-
 type ContactHit = {
   id: string;
-  full_name: string;
+  name: string;
   email: string | null;
-  role: string | null;
   organisation_id: string;
   organisation_name: string;
 };
 
-type Suggestion = {
-  recipientEmail: string;
-  contact: ContactHit | null;
+type OrgHit = {
+  id: string;
+  name: string;
+  type: string | null;
 };
 
 export default function CrmUnlinkedEmailsPage() {
@@ -73,21 +72,18 @@ export default function CrmUnlinkedEmailsPage() {
   const [dateFrom, setDateFrom] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
   const [linkingId, setLinkingId] = useState<string | null>(null);
-  const [linkMode, setLinkMode] = useState<LinkMode>("contact");
+
   const [contactQ, setContactQ] = useState("");
   const [orgQ, setOrgQ] = useState("");
   const [contactResults, setContactResults] = useState<ContactHit[]>([]);
-  const [orgResults, setOrgResults] = useState<{ id: string; name: string }[]>(
-    []
-  );
-  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  const [orgResults, setOrgResults] = useState<OrgHit[]>([]);
   const [contactSearching, setContactSearching] = useState(false);
   const [orgSearching, setOrgSearching] = useState(false);
   const [selectedContact, setSelectedContact] = useState<ContactHit | null>(
     null
   );
-  const [selectedOrgId, setSelectedOrgId] = useState("");
-  const [selectedOrgName, setSelectedOrgName] = useState("");
+  const [selectedOrg, setSelectedOrg] = useState<OrgHit | null>(null);
+  const [orgInferred, setOrgInferred] = useState(false);
   const [saving, setSaving] = useState(false);
   const [rematchingId, setRematchingId] = useState<string | null>(null);
 
@@ -130,12 +126,21 @@ export default function CrmUnlinkedEmailsPage() {
       return;
     }
     setContactSearching(true);
-    setLinkError(null);
     try {
       const json = await crmEmailApiFetch(
         `/api/space-place/email-link-search?type=contacts&q=${encodeURIComponent(query.trim())}&limit=20`
       );
-      setContactResults((json.rows as ContactHit[]) || []);
+      setContactResults(
+        ((json.rows as Array<ContactHit & { full_name?: string }>) || []).map(
+          (r) => ({
+            id: r.id,
+            name: r.name || r.full_name || "Unnamed contact",
+            email: r.email,
+            organisation_id: r.organisation_id,
+            organisation_name: r.organisation_name,
+          })
+        )
+      );
     } catch (e) {
       setContactResults([]);
       setLinkError(
@@ -154,17 +159,11 @@ export default function CrmUnlinkedEmailsPage() {
       return;
     }
     setOrgSearching(true);
-    setLinkError(null);
     try {
       const json = await crmEmailApiFetch(
         `/api/space-place/email-link-search?type=organisations&q=${encodeURIComponent(query.trim())}&limit=20`
       );
-      setOrgResults(
-        ((json.rows as { id: string; name: string }[]) || []).map((r) => ({
-          id: r.id,
-          name: r.name,
-        }))
-      );
+      setOrgResults((json.rows as OrgHit[]) || []);
     } catch (e) {
       setOrgResults([]);
       setLinkError(
@@ -175,58 +174,56 @@ export default function CrmUnlinkedEmailsPage() {
     }
   }
 
-  async function loadSuggestions(emailId: string) {
-    try {
-      const json = await crmEmailApiFetch(
-        `/api/space-place/email-link-search?type=suggestions&emailId=${encodeURIComponent(emailId)}`
-      );
-      const list = (json.suggestions as Suggestion[]) || [];
-      setSuggestions(list);
-      const firstHit = list.find((s) => s.contact)?.contact ?? null;
-      if (firstHit) {
-        setSelectedContact(firstHit);
-        setSelectedOrgId(firstHit.organisation_id);
-        setSelectedOrgName(firstHit.organisation_name);
-      }
-      const firstRecipient = list[0]?.recipientEmail;
-      if (firstRecipient) {
-        setContactQ(firstRecipient);
-        void searchContacts(firstRecipient);
-      }
-    } catch {
-      setSuggestions([]);
-    }
-  }
-
   function openLinkPanel(emailId: string) {
     setLinkingId(emailId);
     setOpenId(emailId);
     setSelectedContact(null);
-    setSelectedOrgId("");
-    setSelectedOrgName("");
+    setSelectedOrg(null);
+    setOrgInferred(false);
     setContactQ("");
     setOrgQ("");
     setContactResults([]);
     setOrgResults([]);
-    setSuggestions([]);
-    setLinkMode("contact");
     setMessage(null);
     setLinkError(null);
-    void loadSuggestions(emailId);
   }
 
   function selectContact(c: ContactHit) {
     setSelectedContact(c);
-    setSelectedOrgId(c.organisation_id);
-    setSelectedOrgName(c.organisation_name);
+    setContactResults([]);
+    setContactQ("");
+    setLinkError(null);
+    // Infer organisation from contact (every CRM contact has one organisation_id).
+    setSelectedOrg({
+      id: c.organisation_id,
+      name: c.organisation_name,
+      type: null,
+    });
+    setOrgInferred(true);
+  }
+
+  function selectOrg(o: OrgHit) {
+    setSelectedOrg(o);
+    setOrgResults([]);
+    setOrgQ("");
+    setOrgInferred(false);
     setLinkError(null);
   }
 
-  function clearContactSelection() {
+  function clearContact() {
     setSelectedContact(null);
-    setSelectedOrgId("");
-    setSelectedOrgName("");
+    if (orgInferred) {
+      setSelectedOrg(null);
+      setOrgInferred(false);
+    }
   }
+
+  function clearOrg() {
+    setSelectedOrg(null);
+    setOrgInferred(false);
+  }
+
+  const canSave = Boolean(selectedContact || selectedOrg);
 
   async function saveLink(action: "link" | "unlink" = "link") {
     const emailId = linkingId || openId;
@@ -240,11 +237,8 @@ export default function CrmUnlinkedEmailsPage() {
       ) {
         return;
       }
-    } else if (linkMode === "contact" && !selectedContact) {
-      setLinkError("Select a contact before saving, or switch to organisation-only.");
-      return;
-    } else if (linkMode === "organisation" && !selectedOrgId) {
-      setLinkError("Select an organisation before saving.");
+    } else if (!canSave) {
+      setLinkError("Select a contact and/or organisation before saving.");
       return;
     }
 
@@ -259,12 +253,8 @@ export default function CrmUnlinkedEmailsPage() {
             ? { action: "unlink" }
             : {
                 action: "link",
-                contactId:
-                  linkMode === "contact" ? selectedContact?.id || null : null,
-                organisationId:
-                  linkMode === "contact"
-                    ? selectedContact?.organisation_id || selectedOrgId || null
-                    : selectedOrgId || null,
+                contactId: selectedContact?.id || null,
+                organisationId: selectedOrg?.id || null,
               }
         ),
       });
@@ -305,12 +295,6 @@ export default function CrmUnlinkedEmailsPage() {
     }
   }
 
-  const canSaveContact = Boolean(selectedContact);
-  const canSaveOrg = Boolean(selectedOrgId);
-  const saveDisabled =
-    saving ||
-    (linkMode === "contact" ? !canSaveContact : !canSaveOrg);
-
   if (!canManage) {
     return (
       <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
@@ -336,8 +320,8 @@ export default function CrmUnlinkedEmailsPage() {
             Unlinked emails
           </h1>
           <p className="mt-1 text-sm text-gray-600">
-            Manually match imported emails to CRM contacts and organisations, or
-            retry automatic matching when contacts were added after import.
+            Manually select a contact and/or organisation, then save. Automatic
+            matching is optional and separate.
           </p>
         </div>
         <button
@@ -449,231 +433,173 @@ export default function CrmUnlinkedEmailsPage() {
                 </div>
 
                 {linkingId === email.id ? (
-                  <div className="mt-4 rounded-lg border border-gray-100 bg-gray-50 p-3">
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setLinkMode("contact");
-                          setLinkError(null);
-                        }}
-                        className={`rounded-lg px-3 py-1.5 text-xs ${
-                          linkMode === "contact"
-                            ? "bg-[#192a3a] text-white"
-                            : "bg-white ring-1 ring-gray-200"
-                        }`}
-                      >
-                        Link to contact
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setLinkMode("organisation");
-                          setLinkError(null);
-                        }}
-                        className={`rounded-lg px-3 py-1.5 text-xs ${
-                          linkMode === "organisation"
-                            ? "bg-[#192a3a] text-white"
-                            : "bg-white ring-1 ring-gray-200"
-                        }`}
-                      >
-                        Link to organisation only
-                      </button>
+                  <div className="mt-4 space-y-4 rounded-lg border border-gray-100 bg-gray-50 p-4">
+                    <div>
+                      <label className="text-xs font-medium uppercase tracking-wide text-gray-500">
+                        Contact
+                      </label>
+                      {selectedContact ? (
+                        <div className="mt-1 flex items-start justify-between gap-2 rounded-lg border bg-white px-3 py-2 text-sm">
+                          <div>
+                            <p className="font-medium text-[#192a3a]">
+                              {selectedContact.name}
+                            </p>
+                            <p className="text-xs text-gray-500">
+                              {selectedContact.email || "no email"} ·{" "}
+                              {selectedContact.organisation_name}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            aria-label="Clear contact"
+                            onClick={clearContact}
+                            className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="mt-1">
+                          <input
+                            value={contactQ}
+                            onChange={(e) => void searchContacts(e.target.value)}
+                            placeholder="Search by name or email…"
+                            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                          />
+                          {contactQ.trim().length >= 2 ? (
+                            <ul className="mt-1 max-h-40 overflow-auto rounded-lg border bg-white text-sm">
+                              {contactSearching ? (
+                                <li className="px-3 py-2 text-gray-500">
+                                  Searching…
+                                </li>
+                              ) : contactResults.length ? (
+                                contactResults.map((c) => (
+                                  <li key={c.id}>
+                                    <button
+                                      type="button"
+                                      className="block w-full px-3 py-2 text-left hover:bg-gray-50"
+                                      onClick={() => selectContact(c)}
+                                    >
+                                      <span className="font-medium">
+                                        {c.name}
+                                      </span>
+                                      <span className="text-gray-500">
+                                        {" "}
+                                        · {c.email || "no email"} ·{" "}
+                                        {c.organisation_name}
+                                      </span>
+                                    </button>
+                                  </li>
+                                ))
+                              ) : (
+                                <li className="px-3 py-2 text-gray-500">
+                                  No contacts found.
+                                </li>
+                              )}
+                            </ul>
+                          ) : (
+                            <p className="mt-1 text-xs text-gray-500">
+                              Optional. Search and select a contact.
+                            </p>
+                          )}
+                        </div>
+                      )}
                     </div>
 
-                    {suggestions.length ? (
-                      <div className="mt-3 space-y-2">
-                        <p className="text-xs font-medium text-gray-700">
-                          Recipient suggestions
-                        </p>
-                        <ul className="space-y-1">
-                          {suggestions.map((s) => (
-                            <li
-                              key={s.recipientEmail}
-                              className="rounded-lg border bg-white px-3 py-2 text-sm"
-                            >
-                              <p className="font-mono text-xs text-gray-500">
-                                {s.recipientEmail}
-                              </p>
-                              {s.contact ? (
-                                <button
-                                  type="button"
-                                  className="mt-1 block w-full text-left hover:text-[#c1121f]"
-                                  onClick={() => {
-                                    setLinkMode("contact");
-                                    selectContact(s.contact!);
-                                  }}
-                                >
-                                  <span className="font-medium">
-                                    {s.contact.full_name}
-                                  </span>
-                                  <span className="text-gray-500">
-                                    {" "}
-                                    · {s.contact.organisation_name}
-                                    {s.contact.role
-                                      ? ` · ${s.contact.role}`
-                                      : ""}
-                                  </span>
-                                  <span className="ml-2 text-xs font-medium text-emerald-700">
-                                    Select
-                                  </span>
-                                </button>
-                              ) : (
-                                <p className="mt-1 text-xs text-amber-800">
-                                  No exact CRM contact for this address.
-                                </p>
-                              )}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    ) : null}
-
-                    {linkMode === "contact" ? (
-                      <div className="mt-3 space-y-2">
-                        <input
-                          value={contactQ}
-                          onChange={(e) => void searchContacts(e.target.value)}
-                          placeholder="Search contacts by name or email…"
-                          className="w-full rounded-lg border px-3 py-2 text-sm"
-                        />
-                        <p className="text-xs text-gray-500">
-                          {contactQ.trim().length < 2
-                            ? "Start typing a name or email"
-                            : contactSearching
-                              ? "Searching…"
-                              : contactResults.length
-                                ? "Matching contacts shown"
-                                : "No matching CRM contact found"}
-                        </p>
-                        <ul className="max-h-40 overflow-auto rounded-lg border bg-white text-sm">
-                          {contactResults.map((c) => (
-                            <li key={c.id}>
-                              <button
-                                type="button"
-                                className={`block w-full px-3 py-2 text-left hover:bg-gray-50 ${
-                                  selectedContact?.id === c.id
-                                    ? "bg-emerald-50"
-                                    : ""
-                                }`}
-                                onClick={() => selectContact(c)}
-                              >
-                                <span className="font-medium">
-                                  {c.full_name}
-                                </span>
-                                <span className="text-gray-500">
-                                  {" "}
-                                  · {c.email || "no email"}
-                                  {c.role ? ` · ${c.role}` : ""}
-                                  {" · "}
-                                  {c.organisation_name}
-                                </span>
-                              </button>
-                            </li>
-                          ))}
-                        </ul>
-                        {selectedContact ? (
-                          <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-950">
-                            <p>
-                              Selected:{" "}
-                              <span className="font-medium">
-                                {selectedContact.full_name}
-                              </span>
-                            </p>
-                            <p className="text-xs">
-                              {selectedContact.email || "no email"} ·{" "}
-                              {selectedOrgName ||
-                                selectedContact.organisation_name}
-                              {selectedContact.role
-                                ? ` · ${selectedContact.role}`
-                                : ""}
-                            </p>
-                            <button
-                              type="button"
-                              className="mt-1 text-xs font-medium underline"
-                              onClick={clearContactSelection}
-                            >
-                              Clear selection
-                            </button>
-                          </div>
+                    <div>
+                      <label className="text-xs font-medium uppercase tracking-wide text-gray-500">
+                        Organisation
+                        {orgInferred ? (
+                          <span className="ml-2 normal-case tracking-normal text-gray-400">
+                            (from contact)
+                          </span>
                         ) : null}
-                        {contactQ.trim().length >= 2 &&
-                        !contactSearching &&
-                        !contactResults.length ? (
+                      </label>
+                      {selectedOrg ? (
+                        <div className="mt-1 flex items-start justify-between gap-2 rounded-lg border bg-white px-3 py-2 text-sm">
                           <div>
-                            <Link
-                              href="/admin/crm/contacts"
-                              className="text-xs font-medium text-[#c1121f] hover:underline"
-                            >
-                              Add contact
-                            </Link>
-                            <p className="text-xs text-gray-500">
-                              Create the contact first, then return here to
-                              link.
+                            <p className="font-medium text-[#192a3a]">
+                              {selectedOrg.name}
                             </p>
+                            {selectedOrg.type ? (
+                              <p className="text-xs text-gray-500">
+                                {selectedOrg.type}
+                              </p>
+                            ) : null}
                           </div>
-                        ) : null}
-                      </div>
-                    ) : (
-                      <div className="mt-3 space-y-2">
-                        <input
-                          value={orgQ}
-                          onChange={(e) => void searchOrgs(e.target.value)}
-                          placeholder="Search organisations…"
-                          className="w-full rounded-lg border px-3 py-2 text-sm"
-                        />
-                        <p className="text-xs text-gray-500">
-                          {orgQ.trim().length < 2
-                            ? "Start typing an organisation name"
-                            : orgSearching
-                              ? "Searching…"
-                              : orgResults.length
-                                ? "Matching organisations shown"
-                                : "No matching organisation found"}
-                        </p>
-                        <ul className="max-h-40 overflow-auto rounded-lg border bg-white text-sm">
-                          {orgResults.map((o) => (
-                            <li key={o.id}>
-                              <button
-                                type="button"
-                                className={`block w-full px-3 py-2 text-left hover:bg-gray-50 ${
-                                  selectedOrgId === o.id ? "bg-emerald-50" : ""
-                                }`}
-                                onClick={() => {
-                                  setSelectedOrgId(o.id);
-                                  setSelectedOrgName(o.name);
-                                  setLinkError(null);
-                                }}
-                              >
-                                {o.name}
-                              </button>
-                            </li>
-                          ))}
-                        </ul>
-                        {selectedOrgId ? (
-                          <p className="text-xs text-emerald-800">
-                            Selected organisation:{" "}
-                            {selectedOrgName || selectedOrgId}
-                          </p>
-                        ) : null}
-                      </div>
-                    )}
+                          <button
+                            type="button"
+                            aria-label="Clear organisation"
+                            onClick={clearOrg}
+                            className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="mt-1">
+                          <input
+                            value={orgQ}
+                            onChange={(e) => void searchOrgs(e.target.value)}
+                            placeholder="Search organisations…"
+                            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                          />
+                          {orgQ.trim().length >= 2 ? (
+                            <ul className="mt-1 max-h-40 overflow-auto rounded-lg border bg-white text-sm">
+                              {orgSearching ? (
+                                <li className="px-3 py-2 text-gray-500">
+                                  Searching…
+                                </li>
+                              ) : orgResults.length ? (
+                                orgResults.map((o) => (
+                                  <li key={o.id}>
+                                    <button
+                                      type="button"
+                                      className="block w-full px-3 py-2 text-left hover:bg-gray-50"
+                                      onClick={() => selectOrg(o)}
+                                    >
+                                      <span className="font-medium">
+                                        {o.name}
+                                      </span>
+                                      {o.type ? (
+                                        <span className="text-gray-500">
+                                          {" "}
+                                          · {o.type}
+                                        </span>
+                                      ) : null}
+                                    </button>
+                                  </li>
+                                ))
+                              ) : (
+                                <li className="px-3 py-2 text-gray-500">
+                                  No organisations found.
+                                </li>
+                              )}
+                            </ul>
+                          ) : (
+                            <p className="mt-1 text-xs text-gray-500">
+                              Optional if a contact is selected. Required for
+                              organisation-only linking.
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
 
                     {linkError ? (
-                      <p className="mt-2 text-sm text-red-600">{linkError}</p>
+                      <p className="text-sm text-red-600">{linkError}</p>
                     ) : null}
-                    {saveDisabled && !saving && !linkError ? (
-                      <p className="mt-2 text-xs text-amber-800">
-                        {linkMode === "contact"
-                          ? "Select a contact to enable Save link."
-                          : "Select an organisation to enable Save link."}
+                    {!canSave && !linkError ? (
+                      <p className="text-xs text-amber-800">
+                        Select a contact and/or organisation to enable Save
+                        link.
                       </p>
                     ) : null}
 
-                    <div className="mt-3 flex flex-wrap gap-2">
+                    <div className="flex flex-wrap gap-2">
                       <button
                         type="button"
-                        disabled={saveDisabled}
+                        disabled={saving || !canSave}
                         onClick={() => void saveLink("link")}
                         className="rounded-lg bg-[#c1121f] px-3 py-2 text-sm text-white disabled:opacity-50"
                       >

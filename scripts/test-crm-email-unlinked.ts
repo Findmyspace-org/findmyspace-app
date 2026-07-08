@@ -339,9 +339,14 @@ async function main() {
   assert.match(unlinkedPage, /Link email/);
   assert.match(unlinkedPage, /email-link-search/);
   assert.match(unlinkedPage, /Retry automatic match/);
-  assert.match(unlinkedPage, /Recipient suggestions/);
-  assert.match(unlinkedPage, /Start typing a name or email/);
-  assert.match(unlinkedPage, /Select a contact to enable Save link/);
+  assert.match(unlinkedPage, /Search by name or email/);
+  assert.match(unlinkedPage, /Search organisations/);
+  assert.match(unlinkedPage, /Save link/);
+  assert.match(unlinkedPage, /Clear contact/);
+  assert.match(unlinkedPage, /Clear organisation/);
+  assert.doesNotMatch(unlinkedPage, /Recipient suggestions/);
+  assert.doesNotMatch(unlinkedPage, /No exact CRM contact/);
+  assert.doesNotMatch(unlinkedPage, /type=suggestions/);
   assert.doesNotMatch(unlinkedPage, /fetchCrmDesktopContacts/);
   assert.doesNotMatch(unlinkedPage, /\/space-place\/email-inbox/);
 
@@ -377,8 +382,32 @@ async function main() {
   );
   assert.match(searchRoute, /requireCrmEmailManagerApi/);
   assert.match(searchRoute, /organisations/);
-  assert.match(searchRoute, /suggestions/);
   assert.doesNotMatch(searchRoute, /requireCrmDesktopApi/);
+  assert.doesNotMatch(searchRoute, /suggestions/);
+  // Must not use ambiguous embed (two FKs: organisation_id + primary_contact_id)
+  assert.doesNotMatch(
+    searchRoute,
+    /crm_organisations\s*\(/
+  );
+  assert.match(searchRoute, /organisation_name/);
+  assert.match(searchRoute, /Select a contact and\/or organisation|flat|organisation_id/);
+
+  const rematchLib = readFileSync(
+    "lib/space-place/crm-email-rematch.ts",
+    "utf8"
+  );
+  assert.doesNotMatch(
+    rematchLib,
+    /crm_organisations\s*\(/
+  );
+
+  // Manual link does not require recipient email match
+  const linkLib = readFileSync("lib/space-place/crm-email-link.ts", "utf8");
+  assert.doesNotMatch(linkLib, /recipient.*must match|exact recipient/i);
+  assert.match(
+    linkLib,
+    /Selected contact does not belong to the selected organisation/
+  );
 
   const layout = readFileSync("app/admin/crm/layout.tsx", "utf8");
   assert.match(layout, /CrmDesktopShell/);

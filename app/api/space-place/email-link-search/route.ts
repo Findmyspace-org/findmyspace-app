@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireCrmEmailManagerApi } from "@/lib/require-crm-email-manager-api";
-import { normalizeEmailAddress } from "@/lib/space-place/crm-email";
-import { suggestContactsForEmail } from "@/lib/space-place/crm-email-rematch";
 
 export const runtime = "nodejs";
 
@@ -11,8 +9,12 @@ function quoteIlike(pattern: string): string {
 }
 
 /**
- * Lightweight contact / organisation search for email linking.
- * Uses requireCrmEmailManagerApi (admin + office_manager), not desktop-admin-only gate.
+ * Lightweight contact / organisation search for manual email linking.
+ * Flat results only — no ambiguous nested embeds.
+ *
+ * Contacts ↔ organisations have two FKs (organisation_id and
+ * primary_contact_id), so embeds must name
+ * `crm_contacts_organisation_id_fkey` explicitly.
  */
 export async function GET(req: NextRequest) {
   const auth = await requireCrmEmailManagerApi(req);
@@ -21,27 +23,14 @@ export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;
   const type = (sp.get("type") || "contacts").trim();
   const q = (sp.get("q") || "").trim();
-  const emailId = (sp.get("emailId") || "").trim();
   const limit = Math.min(30, Math.max(1, Number(sp.get("limit") || "20") || 20));
-
-  if (type === "suggestions" && emailId) {
-    const result = await suggestContactsForEmail(auth.adminClient, emailId);
-    if (!result.ok) {
-      return NextResponse.json({ error: result.error }, { status: 404 });
-    }
-    return NextResponse.json({
-      ok: true,
-      recipients: result.recipients,
-      suggestions: result.suggestions,
-    });
-  }
 
   if (q.length < 2) {
     return NextResponse.json({
       ok: true,
       rows: [],
       total: 0,
-      hint: "Start typing a name or email (at least 2 characters).",
+      hint: "Type at least 2 characters to search.",
     });
   }
 
@@ -50,7 +39,7 @@ export async function GET(req: NextRequest) {
   if (type === "organisations") {
     const { data, error, count } = await auth.adminClient
       .from("crm_organisations")
-      .select("id, name, type, pipeline_stage", { count: "exact" })
+      .select("id, name, type", { count: "exact" })
       .neq("status", "archived")
       .or(
         `name.ilike.${quoteIlike(pattern)},type.ilike.${quoteIlike(pattern)},address.ilike.${quoteIlike(pattern)}`
@@ -64,23 +53,21 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       ok: true,
-      rows: (data || []).map((o) => ({
-        id: (o as { id: string }).id,
-        name: (o as { name: string }).name,
-        type: (o as { type: string | null }).type,
-        pipeline_stage: (o as { pipeline_stage: string }).pipeline_stage,
-      })),
+      rows: ((data || []) as { id: string; name: string; type: string | null }[]).map(
+        (o) => ({
+          id: o.id,
+          name: o.name,
+          type: o.type,
+        })
+      ),
       total: count ?? (data || []).length,
     });
   }
 
+  // Load contacts without ambiguous embed, then resolve org names in a second query.
   const { data, error, count } = await auth.adminClient
     .from("crm_contacts")
-    .select(
-      `id, full_name, email, role, organisation_id,
-       crm_organisations ( id, name )`,
-      { count: "exact" }
-    )
+    .select("id, full_name, email, role, organisation_id", { count: "exact" })
     .or(
       [
         `full_name.ilike.${quoteIlike(pattern)}`,
@@ -98,39 +85,38 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  const needle = normalizeEmailAddress(q);
-  type ContactSearchRow = {
+  const contacts = (data || []) as {
     id: string;
     full_name: string | null;
     email: string | null;
     role: string | null;
     organisation_id: string;
-    crm_organisations?:
-      | { id: string; name: string }
-      | { id: string; name: string }[]
-      | null;
-  };
+  }[];
 
-  const rows = ((data || []) as unknown as ContactSearchRow[]).map((c) => {
-    const org = Array.isArray(c.crm_organisations)
-      ? c.crm_organisations[0]
-      : c.crm_organisations;
-    return {
-      id: c.id,
-      full_name: c.full_name || "Unnamed contact",
-      email: c.email,
-      role: c.role,
-      organisation_id: c.organisation_id,
-      organisation_name: org?.name || "Organisation",
-    };
-  });
+  const orgIds = [...new Set(contacts.map((c) => c.organisation_id).filter(Boolean))];
+  const orgNameById = new Map<string, string>();
+  if (orgIds.length) {
+    const { data: orgs, error: orgErr } = await auth.adminClient
+      .from("crm_organisations")
+      .select("id, name")
+      .in("id", orgIds);
+    if (orgErr) {
+      return NextResponse.json({ error: orgErr.message }, { status: 500 });
+    }
+    for (const o of (orgs || []) as { id: string; name: string }[]) {
+      orgNameById.set(o.id, o.name);
+    }
+  }
 
-  rows.sort((a, b) => {
-    const aExact = needle && normalizeEmailAddress(a.email) === needle ? 0 : 1;
-    const bExact = needle && normalizeEmailAddress(b.email) === needle ? 0 : 1;
-    if (aExact !== bExact) return aExact - bExact;
-    return a.full_name.localeCompare(b.full_name);
-  });
+  const rows = contacts.map((c) => ({
+    id: c.id,
+    name: c.full_name || "Unnamed contact",
+    full_name: c.full_name || "Unnamed contact",
+    email: c.email,
+    role: c.role,
+    organisation_id: c.organisation_id,
+    organisation_name: orgNameById.get(c.organisation_id) || "Organisation",
+  }));
 
   return NextResponse.json({
     ok: true,

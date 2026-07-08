@@ -224,10 +224,29 @@ export async function suggestContactsForEmail(
 
   const { data: contacts } = await db
     .from("crm_contacts")
-    .select(
-      "id, full_name, email, role, organisation_id, crm_organisations ( id, name )"
-    )
+    .select("id, full_name, email, role, organisation_id")
     .not("email", "is", null);
+
+  const contactRows = (contacts || []) as {
+    id: string;
+    full_name: string | null;
+    email: string | null;
+    role: string | null;
+    organisation_id: string;
+  }[];
+  const orgIds = [
+    ...new Set(contactRows.map((c) => c.organisation_id).filter(Boolean)),
+  ];
+  const orgNameById = new Map<string, string>();
+  if (orgIds.length) {
+    const { data: orgs } = await db
+      .from("crm_organisations")
+      .select("id, name")
+      .in("id", orgIds);
+    for (const o of (orgs || []) as { id: string; name: string }[]) {
+      orgNameById.set(o.id, o.name);
+    }
+  }
 
   const byEmail = new Map<
     string,
@@ -241,30 +260,16 @@ export async function suggestContactsForEmail(
     }
   >();
 
-  for (const row of contacts || []) {
-    const c = row as unknown as {
-      id: string;
-      full_name: string | null;
-      email: string | null;
-      role: string | null;
-      organisation_id: string;
-      crm_organisations?:
-        | { id: string; name: string }
-        | { id: string; name: string }[]
-        | null;
-    };
+  for (const c of contactRows) {
     const norm = normalizeEmailAddress(c.email);
     if (!norm || byEmail.has(norm)) continue;
-    const org = Array.isArray(c.crm_organisations)
-      ? c.crm_organisations[0]
-      : c.crm_organisations;
     byEmail.set(norm, {
       id: c.id,
       full_name: c.full_name || "Unnamed contact",
       email: c.email,
       role: c.role,
       organisation_id: c.organisation_id,
-      organisation_name: org?.name || "Organisation",
+      organisation_name: orgNameById.get(c.organisation_id) || "Organisation",
     });
   }
 

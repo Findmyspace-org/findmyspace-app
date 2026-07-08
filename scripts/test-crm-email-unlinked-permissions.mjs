@@ -41,7 +41,10 @@ async function main() {
   await expectDenied(`/api/space-place/email-messages/${FAKE_ID}/rematch`, {
     method: "POST",
   });
-  await expectDenied(`/api/space-place/email-link-search?q=seon`);
+  await expectDenied(`/api/space-place/email-link-search?type=contacts&q=seon`);
+  await expectDenied(
+    `/api/space-place/email-link-search?type=organisations&q=Witzenberg`
+  );
   console.log("test-crm-email-unlinked-permissions: all passed");
 }
 
