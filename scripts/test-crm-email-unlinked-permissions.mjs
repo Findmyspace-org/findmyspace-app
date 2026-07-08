@@ -38,6 +38,10 @@ async function main() {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ contactId: FAKE_ID }),
   });
+  await expectDenied(`/api/space-place/email-messages/${FAKE_ID}/rematch`, {
+    method: "POST",
+  });
+  await expectDenied(`/api/space-place/email-link-search?q=seon`);
   console.log("test-crm-email-unlinked-permissions: all passed");
 }
 

@@ -2,17 +2,20 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { ArrowLeft, Link2, RefreshCw, Search, Unlink } from "lucide-react";
+import {
+  ArrowLeft,
+  Link2,
+  RefreshCw,
+  Search,
+  Sparkles,
+  Unlink,
+} from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { canManageCrmEmail } from "@/lib/space-place/access";
 import { emailPreview } from "@/lib/space-place/crm-email";
 import { formatDateTime } from "@/lib/space-place/format";
 import { useSpacePlace } from "@/app/space-place/SpacePlaceContext";
 import { CrmEmailDetailDrawer } from "@/app/components/crm-desktop/CrmEmailDetailDrawer";
-import {
-  fetchCrmDesktopContacts,
-  fetchCrmDesktopOrganisations,
-} from "@/lib/crm-desktop/api-client";
 import type { CrmEmailMessageWithRelations } from "@/lib/space-place/types";
 
 async function crmEmailApiFetch(path: string, init?: RequestInit) {
@@ -32,12 +35,30 @@ async function crmEmailApiFetch(path: string, init?: RequestInit) {
   });
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new Error(json.error || res.statusText || "Request failed.");
+    throw new Error(
+      (typeof json.error === "string" && json.error) ||
+        res.statusText ||
+        "Request failed."
+    );
   }
   return json;
 }
 
 type LinkMode = "contact" | "organisation";
+
+type ContactHit = {
+  id: string;
+  full_name: string;
+  email: string | null;
+  role: string | null;
+  organisation_id: string;
+  organisation_name: string;
+};
+
+type Suggestion = {
+  recipientEmail: string;
+  contact: ContactHit | null;
+};
 
 export default function CrmUnlinkedEmailsPage() {
   const { profile } = useSpacePlace();
@@ -47,6 +68,7 @@ export default function CrmUnlinkedEmailsPage() {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [linkError, setLinkError] = useState<string | null>(null);
   const [q, setQ] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
@@ -54,22 +76,20 @@ export default function CrmUnlinkedEmailsPage() {
   const [linkMode, setLinkMode] = useState<LinkMode>("contact");
   const [contactQ, setContactQ] = useState("");
   const [orgQ, setOrgQ] = useState("");
-  const [contactResults, setContactResults] = useState<
-    {
-      id: string;
-      full_name: string;
-      email: string | null;
-      role: string | null;
-      organisation_id: string;
-      organisation_name: string;
-    }[]
-  >([]);
+  const [contactResults, setContactResults] = useState<ContactHit[]>([]);
   const [orgResults, setOrgResults] = useState<{ id: string; name: string }[]>(
     []
   );
-  const [selectedContactId, setSelectedContactId] = useState<string>("");
-  const [selectedOrgId, setSelectedOrgId] = useState<string>("");
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  const [contactSearching, setContactSearching] = useState(false);
+  const [orgSearching, setOrgSearching] = useState(false);
+  const [selectedContact, setSelectedContact] = useState<ContactHit | null>(
+    null
+  );
+  const [selectedOrgId, setSelectedOrgId] = useState("");
+  const [selectedOrgName, setSelectedOrgName] = useState("");
   const [saving, setSaving] = useState(false);
+  const [rematchingId, setRematchingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -106,25 +126,23 @@ export default function CrmUnlinkedEmailsPage() {
     setContactQ(query);
     if (query.trim().length < 2) {
       setContactResults([]);
+      setContactSearching(false);
       return;
     }
+    setContactSearching(true);
+    setLinkError(null);
     try {
-      const result = await fetchCrmDesktopContacts({
-        q: query.trim(),
-        pageSize: 20,
-      });
-      setContactResults(
-        result.rows.map((r) => ({
-          id: r.id,
-          full_name: r.full_name,
-          email: r.email,
-          role: r.role,
-          organisation_id: r.organisation_id,
-          organisation_name: r.organisation_name,
-        }))
+      const json = await crmEmailApiFetch(
+        `/api/space-place/email-link-search?type=contacts&q=${encodeURIComponent(query.trim())}&limit=20`
       );
-    } catch {
+      setContactResults((json.rows as ContactHit[]) || []);
+    } catch (e) {
       setContactResults([]);
+      setLinkError(
+        e instanceof Error ? e.message : "Contact search failed."
+      );
+    } finally {
+      setContactSearching(false);
     }
   }
 
@@ -132,50 +150,107 @@ export default function CrmUnlinkedEmailsPage() {
     setOrgQ(query);
     if (query.trim().length < 2) {
       setOrgResults([]);
+      setOrgSearching(false);
       return;
     }
+    setOrgSearching(true);
+    setLinkError(null);
     try {
-      const result = await fetchCrmDesktopOrganisations({
-        q: query.trim(),
-        pageSize: 20,
-      });
+      const json = await crmEmailApiFetch(
+        `/api/space-place/email-link-search?type=organisations&q=${encodeURIComponent(query.trim())}&limit=20`
+      );
       setOrgResults(
-        result.rows.map((r) => ({
+        ((json.rows as { id: string; name: string }[]) || []).map((r) => ({
           id: r.id,
           name: r.name,
         }))
       );
-    } catch {
+    } catch (e) {
       setOrgResults([]);
+      setLinkError(
+        e instanceof Error ? e.message : "Organisation search failed."
+      );
+    } finally {
+      setOrgSearching(false);
+    }
+  }
+
+  async function loadSuggestions(emailId: string) {
+    try {
+      const json = await crmEmailApiFetch(
+        `/api/space-place/email-link-search?type=suggestions&emailId=${encodeURIComponent(emailId)}`
+      );
+      const list = (json.suggestions as Suggestion[]) || [];
+      setSuggestions(list);
+      const firstHit = list.find((s) => s.contact)?.contact ?? null;
+      if (firstHit) {
+        setSelectedContact(firstHit);
+        setSelectedOrgId(firstHit.organisation_id);
+        setSelectedOrgName(firstHit.organisation_name);
+      }
+      const firstRecipient = list[0]?.recipientEmail;
+      if (firstRecipient) {
+        setContactQ(firstRecipient);
+        void searchContacts(firstRecipient);
+      }
+    } catch {
+      setSuggestions([]);
     }
   }
 
   function openLinkPanel(emailId: string) {
     setLinkingId(emailId);
     setOpenId(emailId);
-    setSelectedContactId("");
+    setSelectedContact(null);
     setSelectedOrgId("");
+    setSelectedOrgName("");
     setContactQ("");
     setOrgQ("");
     setContactResults([]);
     setOrgResults([]);
+    setSuggestions([]);
     setLinkMode("contact");
     setMessage(null);
+    setLinkError(null);
+    void loadSuggestions(emailId);
+  }
+
+  function selectContact(c: ContactHit) {
+    setSelectedContact(c);
+    setSelectedOrgId(c.organisation_id);
+    setSelectedOrgName(c.organisation_name);
+    setLinkError(null);
+  }
+
+  function clearContactSelection() {
+    setSelectedContact(null);
+    setSelectedOrgId("");
+    setSelectedOrgName("");
   }
 
   async function saveLink(action: "link" | "unlink" = "link") {
-    if (!linkingId && action !== "unlink") return;
     const emailId = linkingId || openId;
     if (!emailId) return;
 
     if (action === "unlink") {
-      if (!window.confirm("Unlink this email from its contact and organisation?")) {
+      if (
+        !window.confirm(
+          "Unlink this email from its contact and organisation?"
+        )
+      ) {
         return;
       }
+    } else if (linkMode === "contact" && !selectedContact) {
+      setLinkError("Select a contact before saving, or switch to organisation-only.");
+      return;
+    } else if (linkMode === "organisation" && !selectedOrgId) {
+      setLinkError("Select an organisation before saving.");
+      return;
     }
 
     setSaving(true);
     setError(null);
+    setLinkError(null);
     try {
       await crmEmailApiFetch(`/api/space-place/email-messages/${emailId}`, {
         method: "PATCH",
@@ -185,8 +260,11 @@ export default function CrmUnlinkedEmailsPage() {
             : {
                 action: "link",
                 contactId:
-                  linkMode === "contact" ? selectedContactId || null : null,
-                organisationId: selectedOrgId || null,
+                  linkMode === "contact" ? selectedContact?.id || null : null,
+                organisationId:
+                  linkMode === "contact"
+                    ? selectedContact?.organisation_id || selectedOrgId || null
+                    : selectedOrgId || null,
               }
         ),
       });
@@ -197,11 +275,41 @@ export default function CrmUnlinkedEmailsPage() {
       setOpenId(null);
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Link failed.");
+      const msg = e instanceof Error ? e.message : "Link failed.";
+      setLinkError(msg);
+      setError(msg);
     } finally {
       setSaving(false);
     }
   }
+
+  async function retryAutomaticMatch(emailId: string) {
+    setRematchingId(emailId);
+    setError(null);
+    setMessage(null);
+    try {
+      const json = await crmEmailApiFetch(
+        `/api/space-place/email-messages/${emailId}/rematch`,
+        { method: "POST" }
+      );
+      setMessage(json.explanation || "Rematch finished.");
+      if (json.changed) {
+        setLinkingId(null);
+        setOpenId(null);
+        await load();
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Rematch failed.");
+    } finally {
+      setRematchingId(null);
+    }
+  }
+
+  const canSaveContact = Boolean(selectedContact);
+  const canSaveOrg = Boolean(selectedOrgId);
+  const saveDisabled =
+    saving ||
+    (linkMode === "contact" ? !canSaveContact : !canSaveOrg);
 
   if (!canManage) {
     return (
@@ -228,8 +336,8 @@ export default function CrmUnlinkedEmailsPage() {
             Unlinked emails
           </h1>
           <p className="mt-1 text-sm text-gray-600">
-            Manually match imported emails to CRM contacts and organisations.
-            Desktop CRM only — not the Space Place mobile inbox.
+            Manually match imported emails to CRM contacts and organisations, or
+            retry automatic matching when contacts were added after import.
           </p>
         </div>
         <button
@@ -273,7 +381,9 @@ export default function CrmUnlinkedEmailsPage() {
         <ul className="space-y-2">
           {rows.map((email) => {
             const subject = email.subject?.trim() || "(No subject)";
-            const preview = emailPreview(email.body_text || email.body_html);
+            const preview = emailPreview(
+              email.body_text || email.body_html || ""
+            );
             const toPreview = (email.to_emails || []).slice(0, 2).join(", ");
             return (
               <li
@@ -319,6 +429,17 @@ export default function CrmUnlinkedEmailsPage() {
                     </button>
                     <button
                       type="button"
+                      disabled={rematchingId === email.id}
+                      onClick={() => void retryAutomaticMatch(email.id)}
+                      className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium disabled:opacity-50"
+                    >
+                      <Sparkles className="h-3.5 w-3.5" />
+                      {rematchingId === email.id
+                        ? "Matching…"
+                        : "Retry automatic match"}
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => openLinkPanel(email.id)}
                       className="inline-flex items-center gap-1 rounded-lg bg-[#192a3a] px-3 py-1.5 text-xs font-medium text-white"
                     >
@@ -332,7 +453,10 @@ export default function CrmUnlinkedEmailsPage() {
                     <div className="flex flex-wrap gap-2">
                       <button
                         type="button"
-                        onClick={() => setLinkMode("contact")}
+                        onClick={() => {
+                          setLinkMode("contact");
+                          setLinkError(null);
+                        }}
                         className={`rounded-lg px-3 py-1.5 text-xs ${
                           linkMode === "contact"
                             ? "bg-[#192a3a] text-white"
@@ -343,7 +467,10 @@ export default function CrmUnlinkedEmailsPage() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => setLinkMode("organisation")}
+                        onClick={() => {
+                          setLinkMode("organisation");
+                          setLinkError(null);
+                        }}
                         className={`rounded-lg px-3 py-1.5 text-xs ${
                           linkMode === "organisation"
                             ? "bg-[#192a3a] text-white"
@@ -354,6 +481,54 @@ export default function CrmUnlinkedEmailsPage() {
                       </button>
                     </div>
 
+                    {suggestions.length ? (
+                      <div className="mt-3 space-y-2">
+                        <p className="text-xs font-medium text-gray-700">
+                          Recipient suggestions
+                        </p>
+                        <ul className="space-y-1">
+                          {suggestions.map((s) => (
+                            <li
+                              key={s.recipientEmail}
+                              className="rounded-lg border bg-white px-3 py-2 text-sm"
+                            >
+                              <p className="font-mono text-xs text-gray-500">
+                                {s.recipientEmail}
+                              </p>
+                              {s.contact ? (
+                                <button
+                                  type="button"
+                                  className="mt-1 block w-full text-left hover:text-[#c1121f]"
+                                  onClick={() => {
+                                    setLinkMode("contact");
+                                    selectContact(s.contact!);
+                                  }}
+                                >
+                                  <span className="font-medium">
+                                    {s.contact.full_name}
+                                  </span>
+                                  <span className="text-gray-500">
+                                    {" "}
+                                    · {s.contact.organisation_name}
+                                    {s.contact.role
+                                      ? ` · ${s.contact.role}`
+                                      : ""}
+                                  </span>
+                                  <span className="ml-2 text-xs font-medium text-emerald-700">
+                                    Select
+                                  </span>
+                                </button>
+                              ) : (
+                                <p className="mt-1 text-xs text-amber-800">
+                                  No exact CRM contact for this address.
+                                </p>
+                              )}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
+
                     {linkMode === "contact" ? (
                       <div className="mt-3 space-y-2">
                         <input
@@ -362,20 +537,30 @@ export default function CrmUnlinkedEmailsPage() {
                           placeholder="Search contacts by name or email…"
                           className="w-full rounded-lg border px-3 py-2 text-sm"
                         />
+                        <p className="text-xs text-gray-500">
+                          {contactQ.trim().length < 2
+                            ? "Start typing a name or email"
+                            : contactSearching
+                              ? "Searching…"
+                              : contactResults.length
+                                ? "Matching contacts shown"
+                                : "No matching CRM contact found"}
+                        </p>
                         <ul className="max-h-40 overflow-auto rounded-lg border bg-white text-sm">
                           {contactResults.map((c) => (
                             <li key={c.id}>
                               <button
                                 type="button"
                                 className={`block w-full px-3 py-2 text-left hover:bg-gray-50 ${
-                                  selectedContactId === c.id ? "bg-emerald-50" : ""
+                                  selectedContact?.id === c.id
+                                    ? "bg-emerald-50"
+                                    : ""
                                 }`}
-                                onClick={() => {
-                                  setSelectedContactId(c.id);
-                                  setSelectedOrgId(c.organisation_id);
-                                }}
+                                onClick={() => selectContact(c)}
                               >
-                                <span className="font-medium">{c.full_name}</span>
+                                <span className="font-medium">
+                                  {c.full_name}
+                                </span>
                                 <span className="text-gray-500">
                                   {" "}
                                   · {c.email || "no email"}
@@ -386,32 +571,48 @@ export default function CrmUnlinkedEmailsPage() {
                               </button>
                             </li>
                           ))}
-                          {!contactResults.length && contactQ.trim().length >= 2 ? (
-                            <li className="px-3 py-2 text-gray-500">No contacts found.</li>
-                          ) : null}
                         </ul>
-                        {selectedContactId ? (
-                          <p className="text-xs text-gray-600">
-                            Organisation inferred from contact
-                            {selectedOrgId
-                              ? ` (${
-                                  contactResults.find(
-                                    (c) => c.id === selectedContactId
-                                  )?.organisation_name || selectedOrgId
-                                })`
-                              : ""}
-                            .
-                          </p>
+                        {selectedContact ? (
+                          <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-950">
+                            <p>
+                              Selected:{" "}
+                              <span className="font-medium">
+                                {selectedContact.full_name}
+                              </span>
+                            </p>
+                            <p className="text-xs">
+                              {selectedContact.email || "no email"} ·{" "}
+                              {selectedOrgName ||
+                                selectedContact.organisation_name}
+                              {selectedContact.role
+                                ? ` · ${selectedContact.role}`
+                                : ""}
+                            </p>
+                            <button
+                              type="button"
+                              className="mt-1 text-xs font-medium underline"
+                              onClick={clearContactSelection}
+                            >
+                              Clear selection
+                            </button>
+                          </div>
                         ) : null}
-                        <Link
-                          href="/admin/crm/contacts"
-                          className="text-xs font-medium text-[#c1121f] hover:underline"
-                        >
-                          Add contact
-                        </Link>
-                        <p className="text-xs text-gray-500">
-                          Create the contact first, then return here to link.
-                        </p>
+                        {contactQ.trim().length >= 2 &&
+                        !contactSearching &&
+                        !contactResults.length ? (
+                          <div>
+                            <Link
+                              href="/admin/crm/contacts"
+                              className="text-xs font-medium text-[#c1121f] hover:underline"
+                            >
+                              Add contact
+                            </Link>
+                            <p className="text-xs text-gray-500">
+                              Create the contact first, then return here to
+                              link.
+                            </p>
+                          </div>
+                        ) : null}
                       </div>
                     ) : (
                       <div className="mt-3 space-y-2">
@@ -421,6 +622,15 @@ export default function CrmUnlinkedEmailsPage() {
                           placeholder="Search organisations…"
                           className="w-full rounded-lg border px-3 py-2 text-sm"
                         />
+                        <p className="text-xs text-gray-500">
+                          {orgQ.trim().length < 2
+                            ? "Start typing an organisation name"
+                            : orgSearching
+                              ? "Searching…"
+                              : orgResults.length
+                                ? "Matching organisations shown"
+                                : "No matching organisation found"}
+                        </p>
                         <ul className="max-h-40 overflow-auto rounded-lg border bg-white text-sm">
                           {orgResults.map((o) => (
                             <li key={o.id}>
@@ -429,25 +639,41 @@ export default function CrmUnlinkedEmailsPage() {
                                 className={`block w-full px-3 py-2 text-left hover:bg-gray-50 ${
                                   selectedOrgId === o.id ? "bg-emerald-50" : ""
                                 }`}
-                                onClick={() => setSelectedOrgId(o.id)}
+                                onClick={() => {
+                                  setSelectedOrgId(o.id);
+                                  setSelectedOrgName(o.name);
+                                  setLinkError(null);
+                                }}
                               >
                                 {o.name}
                               </button>
                             </li>
                           ))}
                         </ul>
+                        {selectedOrgId ? (
+                          <p className="text-xs text-emerald-800">
+                            Selected organisation:{" "}
+                            {selectedOrgName || selectedOrgId}
+                          </p>
+                        ) : null}
                       </div>
                     )}
+
+                    {linkError ? (
+                      <p className="mt-2 text-sm text-red-600">{linkError}</p>
+                    ) : null}
+                    {saveDisabled && !saving && !linkError ? (
+                      <p className="mt-2 text-xs text-amber-800">
+                        {linkMode === "contact"
+                          ? "Select a contact to enable Save link."
+                          : "Select an organisation to enable Save link."}
+                      </p>
+                    ) : null}
 
                     <div className="mt-3 flex flex-wrap gap-2">
                       <button
                         type="button"
-                        disabled={
-                          saving ||
-                          (linkMode === "contact"
-                            ? !selectedContactId
-                            : !selectedOrgId)
-                        }
+                        disabled={saveDisabled}
                         onClick={() => void saveLink("link")}
                         className="rounded-lg bg-[#c1121f] px-3 py-2 text-sm text-white disabled:opacity-50"
                       >
@@ -455,7 +681,10 @@ export default function CrmUnlinkedEmailsPage() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => setLinkingId(null)}
+                        onClick={() => {
+                          setLinkingId(null);
+                          setLinkError(null);
+                        }}
                         className="rounded-lg border px-3 py-2 text-sm"
                       >
                         Cancel
@@ -484,7 +713,15 @@ export default function CrmUnlinkedEmailsPage() {
               >
                 <Link2 className="h-4 w-4" /> Link email
               </button>
-              {(selected.contact_id || selected.organisation_id) ? (
+              <button
+                type="button"
+                disabled={rematchingId === selected.id}
+                onClick={() => void retryAutomaticMatch(selected.id)}
+                className="inline-flex items-center gap-1 rounded-lg border px-3 py-2 text-sm"
+              >
+                <Sparkles className="h-4 w-4" /> Retry automatic match
+              </button>
+              {selected.contact_id || selected.organisation_id ? (
                 <button
                   type="button"
                   onClick={() => {

@@ -117,12 +117,22 @@ export type ContactEmailRow = {
 
 export type ContactMatchResult =
   | { status: "matched"; contact: ContactEmailRow }
+  | {
+      status: "matched_organisation";
+      organisationId: string;
+      contacts: ContactEmailRow[];
+    }
   | { status: "unmatched" }
   | { status: "review_required"; contacts: ContactEmailRow[] };
 
 /**
  * Exact normalised email match against contact rows.
- * Multiple contacts sharing one email → review_required (remain unlinked).
+ *
+ * - Exactly one contact → matched (contact + organisation)
+ * - Multiple contacts, all same organisation → matched_organisation
+ *   (link org only; contact review required)
+ * - Multiple contacts across organisations → review_required (remain unlinked)
+ * - Multiple contacts sharing one email across orgs → review_required
  */
 export function matchContactsByEmails(
   contacts: ContactEmailRow[],
@@ -143,7 +153,30 @@ export function matchContactsByEmails(
 
   if (hits.length === 0) return { status: "unmatched" };
   if (hits.length === 1) return { status: "matched", contact: hits[0]! };
+
+  const orgIds = new Set(hits.map((h) => h.organisation_id));
+  if (orgIds.size === 1) {
+    return {
+      status: "matched_organisation",
+      organisationId: hits[0]!.organisation_id,
+      contacts: hits,
+    };
+  }
   return { status: "review_required", contacts: hits };
+}
+
+/** Human-readable explanation for UI / rematch API. */
+export function describeContactMatch(result: ContactMatchResult): string {
+  switch (result.status) {
+    case "matched":
+      return "Matched exactly one CRM contact.";
+    case "matched_organisation":
+      return `Matched ${result.contacts.length} CRM contacts in one organisation. Organisation linked; contact review required.`;
+    case "review_required":
+      return "Matched contacts in more than one organisation. Left unlinked for manual review.";
+    case "unmatched":
+      return "No exact CRM contact email match.";
+  }
 }
 
 export function matchContactFromParsed(

@@ -167,6 +167,9 @@ async function importParsedMessage(
     getCrmCaptureEmail()
   );
   const contact = match.status === "matched" ? match.contact : null;
+  const organisationId =
+    contact?.organisation_id ??
+    (match.status === "matched_organisation" ? match.organisationId : null);
 
   const fromList = extractEmailsFromList(parsed.from);
   const fromEmail = fromList[0] ?? null;
@@ -177,7 +180,7 @@ async function importParsedMessage(
     db.from("crm_email_messages") as ReturnType<typeof db.from>
   )
     .insert({
-      organisation_id: contact?.organisation_id ?? null,
+      organisation_id: organisationId,
       contact_id: contact?.id ?? null,
       message_id: messageId,
       from_email: fromEmail,
@@ -229,7 +232,8 @@ async function importParsedMessage(
 
   return {
     status: "imported",
-    linked: Boolean(emailRow.contact_id && emailRow.organisation_id),
+    // Org-only multi-recipient matches count as linked (leave unlinked inbox).
+    linked: Boolean(emailRow.contact_id || emailRow.organisation_id),
   };
 }
 

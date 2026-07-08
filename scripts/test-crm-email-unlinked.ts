@@ -337,9 +337,48 @@ async function main() {
   assert.match(unlinkedPage, /unlinked:\s*"1"|unlinked=1/);
   assert.match(unlinkedPage, /CrmEmailDetailDrawer/);
   assert.match(unlinkedPage, /Link email/);
-  assert.match(unlinkedPage, /fetchCrmDesktopContacts/);
-  assert.match(unlinkedPage, /fetchCrmDesktopOrganisations/);
+  assert.match(unlinkedPage, /email-link-search/);
+  assert.match(unlinkedPage, /Retry automatic match/);
+  assert.match(unlinkedPage, /Recipient suggestions/);
+  assert.match(unlinkedPage, /Start typing a name or email/);
+  assert.match(unlinkedPage, /Select a contact to enable Save link/);
+  assert.doesNotMatch(unlinkedPage, /fetchCrmDesktopContacts/);
   assert.doesNotMatch(unlinkedPage, /\/space-place\/email-inbox/);
+
+  // HTML preview must not dump raw tags
+  const previewSrc = readFileSync("lib/space-place/crm-email.ts", "utf8");
+  assert.match(previewSrc, /replace\(\/<\[\^>\]\+>\/g/);
+  const { emailPreview } = await import("../lib/space-place/crm-email.js");
+  assert.equal(
+    emailPreview("<html><body><p style=\"color:red\">Hello Witzenberg</p></body></html>"),
+    "Hello Witzenberg"
+  );
+  assert.doesNotMatch(
+    emailPreview("<html><body><p>Hi</p></body></html>"),
+    /<html|<body|<p/
+  );
+
+  const helpers = readFileSync(
+    "lib/space-place/email-import-helpers.ts",
+    "utf8"
+  );
+  assert.match(helpers, /matched_organisation/);
+
+  const rematchRoute = readFileSync(
+    "app/api/space-place/email-messages/[id]/rematch/route.ts",
+    "utf8"
+  );
+  assert.match(rematchRoute, /rematchEmailMessage/);
+  assert.match(rematchRoute, /requireCrmEmailManagerApi/);
+
+  const searchRoute = readFileSync(
+    "app/api/space-place/email-link-search/route.ts",
+    "utf8"
+  );
+  assert.match(searchRoute, /requireCrmEmailManagerApi/);
+  assert.match(searchRoute, /organisations/);
+  assert.match(searchRoute, /suggestions/);
+  assert.doesNotMatch(searchRoute, /requireCrmDesktopApi/);
 
   const layout = readFileSync("app/admin/crm/layout.tsx", "utf8");
   assert.match(layout, /CrmDesktopShell/);

@@ -122,8 +122,27 @@ export function crmMailtoHref(
   return `mailto:${to.trim()}?${params.toString()}`;
 }
 
-export function emailPreview(text: string | null | undefined, max = 120): string {
+/** Plain-text list preview — strips HTML tags/entities; never shows raw markup. */
+export function emailPreview(
+  text: string | null | undefined,
+  max = 120
+): string {
   if (!text?.trim()) return "";
-  const oneLine = text.replace(/\s+/g, " ").trim();
+  const s = text
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/&#(\d+);/g, (_, n) => {
+      const code = Number(n);
+      return Number.isFinite(code) ? String.fromCharCode(code) : " ";
+    });
+  const oneLine = s.replace(/\s+/g, " ").trim();
+  if (!oneLine) return "";
   return oneLine.length <= max ? oneLine : `${oneLine.slice(0, max)}…`;
 }

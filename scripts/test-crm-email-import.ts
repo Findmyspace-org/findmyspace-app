@@ -141,6 +141,60 @@ const multi = matchContactsByEmails(
 );
 assert.equal(multi.status, "review_required");
 
+// Multiple exact contacts in the SAME organisation → org-only link
+const multiSameOrg = matchContactsByEmails(
+  [
+    {
+      id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      organisation_id: "witz-org",
+      email: "spoto@witzenberg.gov.za",
+    },
+    {
+      id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      organisation_id: "witz-org",
+      email: "seon@witzenberg.gov.za",
+    },
+  ],
+  ["spoto@witzenberg.gov.za", "seon@witzenberg.gov.za"]
+);
+assert.equal(multiSameOrg.status, "matched_organisation");
+if (multiSameOrg.status === "matched_organisation") {
+  assert.equal(multiSameOrg.organisationId, "witz-org");
+  assert.equal(multiSameOrg.contacts.length, 2);
+}
+
+// Multiple contacts across DIFFERENT organisations → review_required
+const multiDiffOrg = matchContactsByEmails(
+  [
+    {
+      id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+      organisation_id: "org-a",
+      email: "lapril@langeberg.gov.za",
+    },
+    {
+      id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+      organisation_id: "org-b",
+      email: "vflepu@langeberg.gov.za",
+    },
+  ],
+  ["lapril@langeberg.gov.za", "vflepu@langeberg.gov.za"]
+);
+assert.equal(multiDiffOrg.status, "review_required");
+
+// Case + display-name parsing for Langeberg casing variants
+assert.equal(
+  normalizeEmailAddress("Lapril@langeberg.gov.za"),
+  "lapril@langeberg.gov.za"
+);
+assert.equal(
+  normalizeEmailAddress("Seon Swartz <seon@witzenberg.gov.za>"),
+  "seon@witzenberg.gov.za"
+);
+assert.equal(
+  normalizeEmailAddress("  VFlepu@langeberg.gov.za  "),
+  "vflepu@langeberg.gov.za"
+);
+
 function addr(address: string) {
   return { value: [{ address }] };
 }
