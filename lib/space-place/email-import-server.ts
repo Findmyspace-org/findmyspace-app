@@ -5,8 +5,19 @@ import {
   extractEmailsFromList,
   getCrmCaptureEmail,
   normalizeEmailAddress,
-  parseCrmContactIdFromSubject,
 } from "@/lib/space-place/crm-email";
+import {
+  applyImportOutcome,
+  chunkUids,
+  emptyEmailImportCounts,
+  imapUidFallbackMessageId,
+  matchContactFromParsed,
+  resolveEmailImportSearch,
+  resolveMessageId,
+  type ContactEmailRow,
+  type EmailImportCounts,
+  type EmailImportSearchOptions,
+} from "@/lib/space-place/email-import-helpers";
 
 export type EmailImportEnv = {
   host: string;
@@ -32,83 +43,17 @@ export function readEmailImportEnv(): EmailImportEnv | null {
   return { host, port, user, password, secure };
 }
 
-type ContactMatch = {
-  id: string;
-  organisation_id: string;
-  email: string | null;
-};
-
-function recipientEmails(parsed: ParsedMail): string[] {
-  const logNorm = normalizeEmailAddress(getCrmCaptureEmail());
-  const all = [
-    ...extractEmailsFromList(parsed.to),
-    ...extractEmailsFromList(parsed.cc),
-  ];
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const email of all) {
-    if (logNorm && email === logNorm) continue;
-    if (seen.has(email)) continue;
-    seen.add(email);
-    out.push(email);
-  }
-  return out;
-}
-
-function resolveMessageId(parsed: ParsedMail, fallback: string): string {
-  const id = parsed.messageId?.trim();
-  if (id) return id;
-  return fallback;
-}
-
-async function findContactById(
-  db: SupabaseClient,
-  contactId: string
-): Promise<ContactMatch | null> {
-  const { data, error } = await (db.from("crm_contacts") as ReturnType<
-    typeof db.from
-  >)
-    .select("id, organisation_id, email")
-    .eq("id", contactId)
-    .maybeSingle();
-
-  if (error || !data) return null;
-  return data as ContactMatch;
-}
-
-async function findContactByEmails(
-  db: SupabaseClient,
-  emails: string[]
-): Promise<ContactMatch | null> {
-  if (emails.length === 0) return null;
-
+async function loadContactsWithEmail(
+  db: SupabaseClient
+): Promise<ContactEmailRow[]> {
   const { data, error } = await (db.from("crm_contacts") as ReturnType<
     typeof db.from
   >)
     .select("id, organisation_id, email")
     .not("email", "is", null);
 
-  if (error || !data?.length) return null;
-
-  const wanted = new Set(emails);
-  for (const row of data as ContactMatch[]) {
-    const norm = normalizeEmailAddress(row.email);
-    if (norm && wanted.has(norm)) return row;
-  }
-  return null;
-}
-
-/** Prefer subject tag, then To/CC recipient email match. */
-async function resolveContactMatch(
-  db: SupabaseClient,
-  parsed: ParsedMail
-): Promise<ContactMatch | null> {
-  const fromSubject = parseCrmContactIdFromSubject(parsed.subject);
-  if (fromSubject) {
-    const bySubject = await findContactById(db, fromSubject);
-    if (bySubject) return bySubject;
-  }
-  return findContactByEmails(db, recipientEmails(parsed));
+  if (error || !data?.length) return [];
+  return data as ContactEmailRow[];
 }
 
 async function findProfileByEmail(
@@ -159,27 +104,70 @@ async function createEngagementForEmail(
   return (data as { id: string }).id;
 }
 
+async function isDuplicateMessage(
+  db: SupabaseClient,
+  input: {
+    messageId: string;
+    imapUid: number;
+    mailboxHost: string;
+    mailboxFolder: string;
+  }
+): Promise<boolean> {
+  const { data: byMessageId } = await (
+    db.from("crm_email_messages") as ReturnType<typeof db.from>
+  )
+    .select("id")
+    .eq("message_id", input.messageId)
+    .maybeSingle();
+  if (byMessageId) return true;
+
+  const { data: byUid } = await (
+    db.from("crm_email_messages") as ReturnType<typeof db.from>
+  )
+    .select("id")
+    .eq("mailbox_host", input.mailboxHost)
+    .eq("mailbox_folder", input.mailboxFolder)
+    .eq("imap_uid", input.imapUid)
+    .maybeSingle();
+
+  return Boolean(byUid);
+}
+
 async function importParsedMessage(
   db: SupabaseClient,
   parsed: ParsedMail,
-  fallbackMessageId: string
+  meta: {
+    fallbackMessageId: string;
+    imapUid: number;
+    mailboxHost: string;
+    mailboxFolder: string;
+    contacts: ContactEmailRow[];
+  }
 ): Promise<
   | { status: "imported"; linked: boolean }
   | { status: "duplicate" }
   | { status: "skipped" }
 > {
-  const messageId = resolveMessageId(parsed, fallbackMessageId);
+  const messageId = resolveMessageId(parsed, meta.fallbackMessageId);
 
-  const { data: existing } = await (db.from("crm_email_messages") as ReturnType<
-    typeof db.from
-  >)
-    .select("id")
-    .eq("message_id", messageId)
-    .maybeSingle();
+  if (
+    await isDuplicateMessage(db, {
+      messageId,
+      imapUid: meta.imapUid,
+      mailboxHost: meta.mailboxHost,
+      mailboxFolder: meta.mailboxFolder,
+    })
+  ) {
+    return { status: "duplicate" };
+  }
 
-  if (existing) return { status: "duplicate" };
+  const match = matchContactFromParsed(
+    meta.contacts,
+    parsed,
+    getCrmCaptureEmail()
+  );
+  const contact = match.status === "matched" ? match.contact : null;
 
-  const contact = await resolveContactMatch(db, parsed);
   const fromList = extractEmailsFromList(parsed.from);
   const fromEmail = fromList[0] ?? null;
   const createdBy = await findProfileByEmail(db, fromEmail);
@@ -202,6 +190,9 @@ async function importParsedMessage(
       direction: "outbound",
       sent_at: sentAt,
       created_by: createdBy,
+      imap_uid: meta.imapUid,
+      mailbox_folder: meta.mailboxFolder,
+      mailbox_host: meta.mailboxHost,
     })
     .select("id, organisation_id, contact_id, subject, sent_at, created_by")
     .single();
@@ -242,44 +233,144 @@ async function importParsedMessage(
   };
 }
 
-export type EmailImportResult = {
-  imported: number;
-  matched: number;
-  unlinked: number;
+export type EmailImportResult = EmailImportCounts & {
+  /** Alias for UI / backwards compatibility */
   duplicates: number;
   skipped: number;
-  markedRead: number;
-  scanned: number;
+  unlinked: number;
   errors: string[];
+  folder: string;
+  daysBack: number;
+  unreadOnly: boolean;
+  lastSuccessfulImportAt: string | null;
+  lastError: string | null;
 };
 
-export type EmailImportOptions = {
-  /** Import messages since N days ago (default 30). */
-  daysBack?: number;
-  /** If true, only UNSEEN messages (default false — includes already-read BCC). */
-  unreadOnly?: boolean;
+export type EmailImportOptions = EmailImportSearchOptions & {
+  createdBy?: string | null;
 };
 
+function toPublicResult(
+  counts: EmailImportCounts,
+  extras: {
+    errors: string[];
+    folder: string;
+    daysBack: number;
+    unreadOnly: boolean;
+    lastSuccessfulImportAt: string | null;
+    lastError: string | null;
+  }
+): EmailImportResult {
+  return {
+    ...counts,
+    duplicates: counts.duplicatesSkipped,
+    skipped: 0,
+    unlinked: counts.unmatched,
+    errors: extras.errors,
+    folder: extras.folder,
+    daysBack: extras.daysBack,
+    unreadOnly: extras.unreadOnly,
+    lastSuccessfulImportAt: extras.lastSuccessfulImportAt,
+    lastError: extras.lastError,
+  };
+}
+
+async function recordImportRun(
+  db: SupabaseClient,
+  input: {
+    mailboxHost: string;
+    folder: string;
+    daysBack: number;
+    unreadOnly: boolean;
+    counts: EmailImportCounts;
+    success: boolean;
+    errorMessage: string | null;
+    createdBy: string | null;
+    startedAt: string;
+  }
+) {
+  try {
+    await (db.from("crm_email_import_runs") as ReturnType<typeof db.from>).insert({
+      mailbox_host: input.mailboxHost,
+      mailbox_folder: input.folder,
+      days_back: input.daysBack,
+      unread_only: input.unreadOnly,
+      scanned: input.counts.scanned,
+      imported: input.counts.imported,
+      matched: input.counts.matched,
+      unmatched: input.counts.unmatched,
+      duplicates_skipped: input.counts.duplicatesSkipped,
+      failed: input.counts.failed,
+      marked_read: input.counts.markedRead,
+      success: input.success,
+      error_message: input.errorMessage,
+      started_at: input.startedAt,
+      finished_at: new Date().toISOString(),
+      created_by: input.createdBy,
+    });
+  } catch (err) {
+    console.error(
+      "[email-import] failed to record import run",
+      err instanceof Error ? err.message : err
+    );
+  }
+}
+
+export async function getLastEmailImportRun(
+  db: SupabaseClient
+): Promise<{
+  lastSuccessfulImportAt: string | null;
+  lastError: string | null;
+  lastRun: Record<string, unknown> | null;
+}> {
+  const { data: success } = await (
+    db.from("crm_email_import_runs") as ReturnType<typeof db.from>
+  )
+    .select("*")
+    .eq("success", true)
+    .order("finished_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const { data: failed } = await (
+    db.from("crm_email_import_runs") as ReturnType<typeof db.from>
+  )
+    .select("*")
+    .eq("success", false)
+    .not("error_message", "is", null)
+    .order("finished_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  return {
+    lastSuccessfulImportAt:
+      (success as { finished_at?: string } | null)?.finished_at ?? null,
+    lastError:
+      (failed as { error_message?: string } | null)?.error_message ?? null,
+    lastRun: (success as Record<string, unknown> | null) ?? null,
+  };
+}
+
+/**
+ * Import CRM capture mailbox messages.
+ *
+ * Behaviour:
+ * - Default lookback 90 days (SINCE), includes read + unread
+ * - Explicit folder (default INBOX)
+ * - SEARCH then FETCH in UID batches (no nested IMAP STORE inside fetch)
+ * - Message-ID + IMAP UID deduplication
+ * - One malformed message does not abort the batch
+ */
 export async function runCrmEmailImport(
   db: SupabaseClient,
   env: EmailImportEnv,
   options: EmailImportOptions = {}
 ): Promise<EmailImportResult> {
-  const daysBack = options.daysBack ?? 30;
-  const unreadOnly = options.unreadOnly ?? false;
-  const since = new Date();
-  since.setDate(since.getDate() - daysBack);
-
-  const result: EmailImportResult = {
-    imported: 0,
-    matched: 0,
-    unlinked: 0,
-    duplicates: 0,
-    skipped: 0,
-    markedRead: 0,
-    scanned: 0,
-    errors: [],
-  };
+  const resolved = resolveEmailImportSearch(options);
+  const startedAt = new Date().toISOString();
+  let counts = emptyEmailImportCounts();
+  const errors: string[] = [];
+  let fatalError: string | null = null;
 
   const client = new ImapFlow({
     host: env.host,
@@ -289,41 +380,124 @@ export async function runCrmEmailImport(
     logger: false,
   });
 
-  await client.connect();
+  const contacts = await loadContactsWithEmail(db);
 
-  const lock = await client.getMailboxLock("INBOX");
   try {
-    const query = unreadOnly ? { seen: false } : { since };
-    for await (const msg of client.fetch(query, { source: true, uid: true })) {
-      if (!msg.uid || !msg.source) continue;
-      result.scanned += 1;
-      try {
-        const parsed = await simpleParser(msg.source);
-        const importResult = await importParsedMessage(
-          db,
-          parsed,
-          `imap-uid:${msg.uid}@${env.host}`
-        );
+    await client.connect();
+    const lock = await client.getMailboxLock(resolved.folder);
+    try {
+      // 1) SEARCH all matching UIDs first (read + unread within lookback).
+      const uids = await client.search(resolved.searchQuery, { uid: true });
+      const uidList = Array.isArray(uids)
+        ? uids.filter((u): u is number => typeof u === "number")
+        : [];
 
-        if (importResult.status === "imported") {
-          result.imported += 1;
-          if (importResult.linked) result.matched += 1;
-          else result.unlinked += 1;
-        } else if (importResult.status === "duplicate") result.duplicates += 1;
-        else result.skipped += 1;
+      // 2) Process in batches — never nest additional IMAP commands in fetch.
+      const batches = chunkUids(uidList, resolved.batchSize);
+      for (const batch of batches) {
+        if (!batch.length) continue;
+        const processedUids: number[] = [];
 
-        await client.messageFlagsAdd({ uid: msg.uid }, ["\\Seen"], { uid: true });
-        result.markedRead += 1;
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        result.errors.push(`UID ${msg.uid}: ${message}`);
+        for await (const msg of client.fetch(
+          batch,
+          { source: true, uid: true },
+          { uid: true }
+        )) {
+          if (!msg.uid) continue;
+          try {
+            if (!msg.source) {
+              counts = applyImportOutcome(counts, { status: "failed" });
+              errors.push(`UID ${msg.uid}: missing message source`);
+              continue;
+            }
+
+            const parsed = await simpleParser(msg.source);
+            const importResult = await importParsedMessage(db, parsed, {
+              fallbackMessageId: imapUidFallbackMessageId(
+                msg.uid,
+                env.host,
+                resolved.folder
+              ),
+              imapUid: msg.uid,
+              mailboxHost: env.host,
+              mailboxFolder: resolved.folder,
+              contacts,
+            });
+
+            if (importResult.status === "imported") {
+              counts = applyImportOutcome(counts, {
+                status: "imported",
+                linked: importResult.linked,
+              });
+            } else if (importResult.status === "duplicate") {
+              counts = applyImportOutcome(counts, { status: "duplicate" });
+            } else {
+              counts = applyImportOutcome(counts, { status: "failed" });
+              errors.push(`UID ${msg.uid}: insert skipped`);
+            }
+            processedUids.push(msg.uid);
+          } catch (err) {
+            counts = applyImportOutcome(counts, { status: "failed" });
+            const message = err instanceof Error ? err.message : String(err);
+            errors.push(`UID ${msg.uid}: ${message}`);
+          }
+        }
+
+        // 3) Mark read AFTER the fetch stream finishes (ImapFlow-safe).
+        if (processedUids.length) {
+          try {
+            await client.messageFlagsAdd(processedUids, ["\\Seen"], {
+              uid: true,
+            });
+            counts.markedRead += processedUids.length;
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            errors.push(`Mark-read failed for batch: ${message}`);
+          }
+        }
       }
+    } finally {
+      lock.release();
     }
-  } finally {
-    lock.release();
+    await client.logout();
+  } catch (err) {
+    fatalError = err instanceof Error ? err.message : String(err);
+    errors.push(fatalError);
+    try {
+      await client.logout();
+    } catch {
+      /* ignore logout errors after failure */
+    }
   }
 
-  await client.logout();
+  const success = !fatalError;
+  await recordImportRun(db, {
+    mailboxHost: env.host,
+    folder: resolved.folder,
+    daysBack: resolved.daysBack,
+    unreadOnly: resolved.unreadOnly,
+    counts,
+    success,
+    errorMessage: fatalError || (errors.length ? errors[0]! : null),
+    createdBy: options.createdBy ?? null,
+    startedAt,
+  });
+
+  const last = await getLastEmailImportRun(db);
+
+  const result = toPublicResult(counts, {
+    errors,
+    folder: resolved.folder,
+    daysBack: resolved.daysBack,
+    unreadOnly: resolved.unreadOnly,
+    lastSuccessfulImportAt: last.lastSuccessfulImportAt,
+    lastError: fatalError || last.lastError,
+  });
+
+  if (fatalError) {
+    throw new Error(fatalError);
+  }
+
   return result;
 }
 

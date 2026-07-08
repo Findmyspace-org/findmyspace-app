@@ -49,14 +49,26 @@ export default function CrmCommunicationPage() {
     user: string | null;
     secure?: boolean;
     port?: number | null;
+    folder?: string | null;
+    defaultDaysBack?: number | null;
+    lastSuccessfulImportAt?: string | null;
+    lastError?: string | null;
     hint?: string | null;
   } | null>(null);
   const [lastImport, setLastImport] = useState<{
+    scanned?: number;
     imported?: number;
     matched?: number;
+    unmatched?: number;
     unlinked?: number;
+    duplicatesSkipped?: number;
     duplicates?: number;
+    failed?: number;
+    folder?: string;
+    daysBack?: number;
     errors?: string[];
+    lastSuccessfulImportAt?: string | null;
+    lastError?: string | null;
   } | null>(null);
 
   const load = useCallback(async () => {
@@ -103,12 +115,20 @@ export default function CrmCommunicationPage() {
     try {
       const result = await crmEmailApiFetch("/api/space-place/email-import", {
         method: "POST",
-        body: JSON.stringify({ daysBack: 30, unreadOnly: false }),
+        body: JSON.stringify({
+          daysBack: importStatus?.defaultDaysBack ?? 90,
+          unreadOnly: false,
+          folder: importStatus?.folder || "INBOX",
+        }),
       });
       setLastImport(result);
+      const duplicates =
+        result.duplicatesSkipped ?? result.duplicates ?? 0;
       setMessage(
-        `Imported ${result.imported ?? 0} message(s). ${result.duplicates ?? 0} duplicate(s) skipped.`
+        `Scanned ${result.scanned ?? 0}. Imported ${result.imported ?? 0}. Matched ${result.matched ?? 0}. Unmatched ${result.unmatched ?? result.unlinked ?? 0}. Duplicates skipped ${duplicates}. Failed ${result.failed ?? 0}.`
       );
+      const status = await crmEmailApiFetch("/api/space-place/email-import");
+      setImportStatus(status);
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Import failed.");
@@ -166,10 +186,24 @@ export default function CrmCommunicationPage() {
           <div>
             <h2 className="text-sm font-semibold text-[#192a3a]">Mailbox import</h2>
             <p className="mt-1 text-sm text-gray-600">
-              Import is manual only — no scheduled cron is configured in this project.
+              Manual import only. Searches {importStatus?.folder || "INBOX"} for
+              messages from the last{" "}
+              {importStatus?.defaultDaysBack ?? 90} days (read and unread).
+              Re-runs skip duplicates by Message-ID and IMAP UID.
             </p>
             {importStatus?.user ? (
               <p className="mt-1 text-xs text-gray-500">Mailbox user: {importStatus.user}</p>
+            ) : null}
+            {importStatus?.lastSuccessfulImportAt ? (
+              <p className="mt-1 text-xs text-gray-500">
+                Last successful import:{" "}
+                {new Date(importStatus.lastSuccessfulImportAt).toLocaleString()}
+              </p>
+            ) : null}
+            {importStatus?.lastError ? (
+              <p className="mt-1 text-xs text-red-600">
+                Last error: {importStatus.lastError}
+              </p>
             ) : null}
           </div>
           <div className="flex flex-wrap gap-2">
@@ -215,7 +249,7 @@ export default function CrmCommunicationPage() {
       {loading ? (
         <p className="text-sm text-gray-500">Loading emails…</p>
       ) : (
-        <CrmEmailList emails={emails} />
+        <CrmEmailList emails={emails} adminLinks />
       )}
     </div>
   );

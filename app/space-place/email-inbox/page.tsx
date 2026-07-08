@@ -114,12 +114,14 @@ export default function EmailInboxPage() {
     try {
       const result = await crmApiFetch("/api/space-place/email-import", {
         method: "POST",
-        body: JSON.stringify({ daysBack: 30, unreadOnly: false }),
+        body: JSON.stringify({ daysBack: 90, unreadOnly: false, folder: "INBOX" }),
       });
       const errSnippet =
         result.errors?.length > 0 ? ` Errors: ${result.errors.slice(0, 2).join("; ")}` : "";
+      const duplicates =
+        result.duplicatesSkipped ?? result.duplicates ?? 0;
       setMessage(
-        `Scanned ${result.scanned ?? 0}, imported ${result.imported} (${result.matched ?? 0} linked, ${result.unlinked ?? 0} unlinked), ${result.duplicates} duplicates.${errSnippet}`
+        `Scanned ${result.scanned ?? 0}. Imported ${result.imported ?? 0}. Matched ${result.matched ?? 0}. Unmatched ${result.unmatched ?? result.unlinked ?? 0}. Duplicates skipped ${duplicates}. Failed ${result.failed ?? 0}.${errSnippet}`
       );
       await load();
     } catch (err) {

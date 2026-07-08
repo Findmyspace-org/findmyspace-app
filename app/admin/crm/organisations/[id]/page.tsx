@@ -61,6 +61,8 @@ function OrganisationDetailInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const tab = (searchParams.get("tab") as Tab) || "overview";
+  const completedPropertyId = searchParams.get("propertyId");
+  const completedSpaceId = searchParams.get("spaceId");
   const { isAdmin, canViewAllOrganisations, profile } = useSpacePlace();
   const { openQuickMenu } = useCrmQuickAction();
 
@@ -377,7 +379,11 @@ function OrganisationDetailInner() {
       ) : null}
 
       {tab === "completed" ? (
-        <CrmCompletedActionsPanel organisationId={org.id} />
+        <CrmCompletedActionsPanel
+          organisationId={org.id}
+          propertyId={completedPropertyId}
+          spaceId={completedSpaceId}
+        />
       ) : null}
 
       {tab === "contacts" ? (
@@ -487,7 +493,7 @@ function OrganisationDetailInner() {
           <p className="mb-3 text-sm text-gray-600">
             Emails logged via BCC to {getCrmCaptureEmail()}.
           </p>
-          <CrmEmailList emails={emails} />
+          <CrmEmailList emails={emails} adminLinks />
         </div>
       ) : null}
 

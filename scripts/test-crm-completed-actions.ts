@@ -102,6 +102,18 @@ assert.match(orgPage, /"completed"/);
 assert.match(orgPage, /Completed actions/);
 assert.match(orgPage, /CrmCompletedActionsPanel/);
 assert.match(orgPage, /CrmCompletedActionsSummaryCard/);
+assert.match(orgPage, /completedPropertyId/);
+assert.match(orgPage, /completedSpaceId/);
+assert.match(orgPage, /propertyId=\{completedPropertyId\}/);
+assert.match(orgPage, /spaceId=\{completedSpaceId\}/);
+
+const hrefHelper = readFileSync(
+  "app/components/crm-desktop/CrmCompletedActionsPanel.tsx",
+  "utf8"
+);
+assert.match(hrefHelper, /function completedActionHref/);
+assert.match(hrefHelper, /params\.set\("propertyId"/);
+assert.match(hrefHelper, /params\.set\("spaceId"/);
 
 const drawer = readFileSync(
   "app/components/crm-desktop/CrmPipelineCardDrawer.tsx",

@@ -20,6 +20,7 @@ import { ContactActionBar } from "@/app/space-place/components/ContactActionBar"
 import { ContactEmailActions } from "@/app/space-place/components/ContactEmailActions";
 import { TaskCard } from "@/app/space-place/components/TaskCard";
 import { CrmTimeline } from "@/app/components/crm-desktop/CrmTimeline";
+import { CrmEmailList } from "@/app/space-place/components/CrmEmailList";
 import { CrmPipelineBadge } from "@/app/components/crm-desktop/CrmStatusBadge";
 import { useCrmQuickAction } from "@/app/components/crm-desktop/CrmQuickActionProvider";
 import { CrmMarketplaceListingsSection } from "@/app/space-place/components/CrmMarketplaceListingsSection";
@@ -169,6 +170,13 @@ function ContactDetailInner() {
           </div>
         </div>
       </div>
+
+      <section className="rounded-lg border border-gray-200 bg-white p-4">
+        <h3 className="font-semibold">Emails</h3>
+        <div className="mt-3">
+          <CrmEmailList emails={emails} adminLinks />
+        </div>
+      </section>
 
       <section className="rounded-lg border border-gray-200 bg-white p-4">
         <h3 className="font-semibold">Activity timeline</h3>
