@@ -211,6 +211,18 @@ function SpacesPageInner() {
                       onClick: () => openQuickMenu(ctx, load),
                     },
                     { label: "Listing admin", href: `/admin/spaces/${r.id}/manage` },
+                    ...(r.organisation_id
+                      ? [
+                          {
+                            label: "View completed actions",
+                            href: `/admin/crm/organisations/${r.organisation_id}?tab=completed`,
+                          },
+                          {
+                            label: "Add completed action",
+                            href: `/admin/crm/organisations/${r.organisation_id}?tab=completed`,
+                          },
+                        ]
+                      : []),
                     ...(r.property_id
                       ? [
                           {

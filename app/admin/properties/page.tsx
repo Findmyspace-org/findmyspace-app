@@ -9,6 +9,8 @@ import { AdminNav } from "@/app/components/AdminNav";
 import { adminApiFetch } from "@/lib/admin-api-client";
 import { AdminRowActionsMenu } from "@/app/components/admin/AdminRowActionsMenu";
 import { ArchivePropertyModal } from "@/app/components/admin/ArchivePropertyModal";
+import { CrmCompletedActionsQuickMenu } from "@/app/components/crm-desktop/CrmCompletedActionsQuickMenu";
+import { completedActionHref } from "@/app/components/crm-desktop/CrmCompletedActionsPanel";
 
 type PropertyRow = {
   id: string;
@@ -19,6 +21,7 @@ type PropertyRow = {
   owner_status: string;
   space_count: number;
   cover_image_url: string | null;
+  crm_organisation_id: string | null;
   crm_organisation_name: string | null;
   created_at: string;
 };
@@ -185,21 +188,41 @@ function AdminPropertiesPageContent() {
                       {row.crm_organisation_name || "—"}
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <AdminRowActionsMenu
-                        actions={[
-                          {
-                            key: "view",
-                            label: "View property",
-                            href: `/admin/properties/${row.id}`,
-                          },
-                          {
-                            key: "archive",
-                            label: "Archive property",
-                            destructive: true,
-                            onClick: () => setArchiveTarget(row),
-                          },
-                        ]}
-                      />
+                      <div className="flex flex-wrap items-center justify-end gap-2">
+                        {row.crm_organisation_id ? (
+                          <CrmCompletedActionsQuickMenu
+                            organisationId={row.crm_organisation_id}
+                            propertyId={row.id}
+                          />
+                        ) : null}
+                        <AdminRowActionsMenu
+                          actions={[
+                            {
+                              key: "view",
+                              label: "View property",
+                              href: `/admin/properties/${row.id}`,
+                            },
+                            ...(row.crm_organisation_id
+                              ? [
+                                  {
+                                    key: "completed",
+                                    label: "View completed actions",
+                                    href: completedActionHref({
+                                      organisationId: row.crm_organisation_id,
+                                      propertyId: row.id,
+                                    }),
+                                  },
+                                ]
+                              : []),
+                            {
+                              key: "archive",
+                              label: "Archive property",
+                              destructive: true,
+                              onClick: () => setArchiveTarget(row),
+                            },
+                          ]}
+                        />
+                      </div>
                     </td>
                   </tr>
                   );

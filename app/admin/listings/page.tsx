@@ -106,7 +106,7 @@ function AdminListingsPageContent() {
     const { data: rawSpaces, error: spacesError } = await (supabase
       .from("spaces") as any)
       .select(
-        "id, owner_id, title, description, city, suburb, address_line_1, space_type, booking_unit, price_per_hour, price_per_day, price_per_month, price_unit, price_amount, min_booking_hours, min_booking_days, min_booking_months, min_group_size, max_group_size, status, public_listing_mode, is_bookable, ownership_proof_status, platform_fee_percent, deposit_type, deposit_months, monthly_payment_day, property_id, created_at"
+        "id, owner_id, title, description, city, suburb, address_line_1, space_type, booking_unit, price_per_hour, price_per_day, price_per_month, price_unit, price_amount, min_booking_hours, min_booking_days, min_booking_months, min_group_size, max_group_size, status, public_listing_mode, is_bookable, ownership_proof_status, platform_fee_percent, deposit_type, deposit_months, monthly_payment_day, property_id, crm_organisation_id, created_at"
       )
       .order("created_at", { ascending: false });
 

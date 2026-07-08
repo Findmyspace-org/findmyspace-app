@@ -27,6 +27,7 @@ import {
 } from "@/app/space-place/components/CrmMarketplaceListingsSection";
 import { CrmDesktopDrawer } from "./CrmDesktopDrawer";
 import { CrmTimeline, type CrmTimelineItem } from "./CrmTimeline";
+import { CrmCompletedActionsPanel } from "./CrmCompletedActionsPanel";
 import { CrmOverdueBadge, CrmPipelineBadge } from "./CrmStatusBadge";
 import { organisationRowToActionContext } from "./crm-action-context";
 import { useCrmQuickAction } from "./CrmQuickActionProvider";
@@ -590,6 +591,30 @@ export function CrmPipelineCardDrawer({
                 loading={refreshing}
                 onTaskOpen={handleTaskOpen}
               />
+            </section>
+
+            <section>
+              <CrmCompletedActionsPanel
+                organisationId={row.id}
+                organisationName={row.name}
+                properties={marketplace.properties.map((p) => ({
+                  id: p.id,
+                  name: p.name,
+                }))}
+                spaces={marketplace.listings.map((s) => ({
+                  id: s.id,
+                  title: s.title,
+                  propertyId: s.property_id,
+                }))}
+                compact
+                onChanged={() => void handleRefresh()}
+              />
+              <Link
+                href={`/admin/crm/organisations/${row.id}?tab=completed`}
+                className="mt-2 inline-block text-sm font-medium text-[#c1121f] hover:underline"
+              >
+                View all
+              </Link>
             </section>
 
             <section>

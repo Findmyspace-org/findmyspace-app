@@ -32,6 +32,8 @@ import {
   MarketplaceSpaceQuickEditPanel,
   type SpaceContentDraft,
 } from "@/app/components/admin/MarketplaceSpaceQuickEditPanel";
+import { CrmCompletedActionsQuickMenu } from "@/app/components/crm-desktop/CrmCompletedActionsQuickMenu";
+import { completedActionHref } from "@/app/components/crm-desktop/CrmCompletedActionsPanel";
 
 type DepositType = "none" | "one_month" | "two_months" | null;
 
@@ -67,6 +69,7 @@ export type MarketplaceSpaceRow = {
   price_amount?: number | null;
   cover_image_url?: string | null;
   property_name?: string | null;
+  crm_organisation_id?: string | null;
   enquiry_count?: number;
 };
 
@@ -323,6 +326,28 @@ export function MarketplaceSpacesTable({
                   label: "Edit space",
                   href: editHref,
                 },
+                ...(space.crm_organisation_id
+                  ? [
+                      {
+                        key: "completed-view",
+                        label: "View completed actions",
+                        href: completedActionHref({
+                          organisationId: space.crm_organisation_id,
+                          propertyId: space.property_id || undefined,
+                          spaceId: space.id,
+                        }),
+                      },
+                      {
+                        key: "completed-add",
+                        label: "Add completed action",
+                        href: completedActionHref({
+                          organisationId: space.crm_organisation_id,
+                          propertyId: space.property_id || undefined,
+                          spaceId: space.id,
+                        }),
+                      },
+                    ]
+                  : []),
                 {
                   key: "quick",
                   label:
@@ -502,10 +527,19 @@ export function MarketplaceSpacesTable({
                     ) : null}
                   </td>
                   <td className="px-2 py-3 text-right align-middle">
-                    <AdminRowActionsMenu
-                      loading={updatingId === space.id || statusLoadingId === space.id}
-                      actions={menuActions}
-                    />
+                    <div className="inline-flex flex-wrap items-center justify-end gap-2">
+                      {space.crm_organisation_id ? (
+                        <CrmCompletedActionsQuickMenu
+                          organisationId={space.crm_organisation_id}
+                          propertyId={space.property_id}
+                          spaceId={space.id}
+                        />
+                      ) : null}
+                      <AdminRowActionsMenu
+                        loading={updatingId === space.id || statusLoadingId === space.id}
+                        actions={menuActions}
+                      />
+                    </div>
                   </td>
                 </tr>,
               ];

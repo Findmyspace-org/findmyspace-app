@@ -37,6 +37,10 @@ import {
   resolveNextCrmTaskForOrganisation,
 } from "@/lib/space-place/next-task";
 import { CrmOrganisationPipelineTab } from "@/app/components/crm-desktop/CrmOrganisationPipelineTab";
+import {
+  CrmCompletedActionsPanel,
+  CrmCompletedActionsSummaryCard,
+} from "@/app/components/crm-desktop/CrmCompletedActionsPanel";
 
 const TABS = [
   "overview",
@@ -44,6 +48,7 @@ const TABS = [
   "spaces",
   "pipeline",
   "activities",
+  "completed",
   "notes",
   "communication",
 ] as const;
@@ -334,7 +339,7 @@ function OrganisationDetailInner() {
                 : "text-gray-600 hover:bg-gray-100"
             }`}
           >
-            {t}
+            {t === "completed" ? "Completed actions" : t}
           </button>
         ))}
         <Link
@@ -364,7 +369,15 @@ function OrganisationDetailInner() {
               <p className="mt-2 text-sm text-gray-500">No open tasks.</p>
             ) : null}
           </section>
+          <CrmCompletedActionsSummaryCard
+            organisationId={org.id}
+            onViewAll={() => setTab("completed")}
+          />
         </div>
+      ) : null}
+
+      {tab === "completed" ? (
+        <CrmCompletedActionsPanel organisationId={org.id} />
       ) : null}
 
       {tab === "contacts" ? (
