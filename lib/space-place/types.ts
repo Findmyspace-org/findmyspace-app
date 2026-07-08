@@ -122,6 +122,8 @@ export type CrmEmailMessage = {
   imported_at: string;
   created_by: string | null;
   created_at: string;
+  linked_at?: string | null;
+  linked_by?: string | null;
 };
 
 export type CrmEmailMessageWithRelations = CrmEmailMessage & {

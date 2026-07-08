@@ -1,11 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
-import { linkEmailToContact } from "@/lib/space-place/email-import-server";
 import { requireCrmEmailManagerApi } from "@/lib/require-crm-email-manager-api";
+import { applyEmailLinkAction } from "@/lib/space-place/crm-email-link";
 
 export const runtime = "nodejs";
 
-type LinkBody = { contactId?: string };
+type LinkBody = {
+  contactId?: string;
+  organisationId?: string;
+  action?: "link" | "relink";
+};
 
+/**
+ * Legacy POST link endpoint (contact-required).
+ * Prefer PATCH /api/space-place/email-messages/[id] for desktop flows.
+ */
 export async function POST(
   req: NextRequest,
   context: { params: Promise<{ id: string }> }
@@ -22,20 +30,25 @@ export async function POST(
   }
 
   const contactId = body.contactId?.trim();
-  if (!contactId) {
-    return NextResponse.json({ error: "contactId is required." }, { status: 400 });
+  if (!contactId && !body.organisationId?.trim()) {
+    return NextResponse.json(
+      { error: "contactId or organisationId is required." },
+      { status: 400 }
+    );
   }
 
-  const result = await linkEmailToContact(
-    auth.adminClient,
-    id,
-    contactId,
-    auth.userId
-  );
+  const result = await applyEmailLinkAction(auth.adminClient, {
+    emailId: id,
+    action: body.action === "relink" ? "relink" : "link",
+    contactId: contactId || null,
+    organisationId: body.organisationId?.trim() || null,
+    actorId: auth.userId,
+    source: "legacy_link_endpoint",
+  });
 
   if (!result.ok) {
     return NextResponse.json({ error: result.error }, { status: 400 });
   }
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, email: result.email });
 }

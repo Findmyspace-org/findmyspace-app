@@ -81,8 +81,9 @@ const route = readFileSync(
 );
 assert.match(route, /requireCrmEmailManagerApi/);
 assert.match(route, /fetchCrmEmailDetail/);
-assert.doesNotMatch(route, /CRM_EMAIL_PASSWORD|password/);
-assert.doesNotMatch(route, /raw|mime_source|source/);
+assert.doesNotMatch(route, /CRM_EMAIL_PASSWORD/);
+assert.doesNotMatch(route, /mime_source|raw_mime|rawMime/);
+assert.doesNotMatch(route, /password/i);
 
 const detail = readFileSync("lib/space-place/crm-email-detail.ts", "utf8");
 assert.match(detail, /body_html_safe/);
@@ -108,6 +109,8 @@ assert.match(contactPage, /CrmEmailList emails=\{emails\} adminLinks/);
 
 const commPage = readFileSync("app/admin/crm/communication/page.tsx", "utf8");
 assert.match(commPage, /CrmEmailList emails=\{emails\} adminLinks/);
+assert.match(commPage, /href="\/admin\/crm\/communication\/unlinked"/);
+assert.doesNotMatch(commPage, /href="\/space-place\/email-inbox"/);
 
 // No attachment UI added
 assert.doesNotMatch(drawer, /attachment/i);

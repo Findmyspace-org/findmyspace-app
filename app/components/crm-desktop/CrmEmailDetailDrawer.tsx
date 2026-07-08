@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect } from "react";
+import { useEffect, type ReactNode } from "react";
 import { X } from "lucide-react";
 import { formatDateTime } from "@/lib/space-place/format";
 import {
@@ -22,6 +22,8 @@ type Props = {
   onClose: () => void;
   /** Prefer admin CRM links when true */
   adminLinks?: boolean;
+  /** Optional link/unlink controls for desktop unlinked workflow */
+  linkControls?: ReactNode;
 };
 
 function contactHref(id: string, adminLinks?: boolean) {
@@ -41,6 +43,7 @@ export function CrmEmailDetailDrawer({
   open,
   onClose,
   adminLinks = false,
+  linkControls,
 }: Props) {
   useEffect(() => {
     if (!open) return;
@@ -162,7 +165,8 @@ export function CrmEmailDetailDrawer({
           )}
         </div>
 
-        <footer className="border-t border-gray-200 px-4 py-3">
+        <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-200 px-4 py-3">
+          <div className="flex flex-wrap gap-2">{linkControls}</div>
           <button
             type="button"
             onClick={onClose}

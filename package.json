@@ -49,9 +49,12 @@
     "apply:migration-057": "node --env-file=.env.local scripts/apply-migration-057.mjs",
     "apply:migration-058": "node --env-file=.env.local scripts/apply-migration-058.mjs",
     "apply:migration-059": "node --env-file=.env.local scripts/apply-migration-059.mjs",
+    "apply:migration-060": "node --env-file=.env.local scripts/apply-migration-060.mjs",
     "test:crm-email-import": "tsx scripts/test-crm-email-import.ts",
     "test:crm-email-detail": "tsx scripts/test-crm-email-detail.ts",
     "test:crm-email-detail-permissions": "node --env-file=.env.local scripts/test-crm-email-detail-permissions.mjs",
+    "test:crm-email-unlinked": "tsx scripts/test-crm-email-unlinked.ts",
+    "test:crm-email-unlinked-permissions": "node --env-file=.env.local scripts/test-crm-email-unlinked-permissions.mjs",
     "repair:crm-migration-history": "node --env-file=.env.local scripts/repair-crm-migration-history.mjs",
     "audit:supabase-migration-push": "node --env-file=.env.local scripts/audit-supabase-migration-push.mjs",
     "db:push-crm": "node --env-file=.env.local scripts/apply-crm-migrations.mjs"

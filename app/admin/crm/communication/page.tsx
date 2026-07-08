@@ -104,7 +104,9 @@ export default function CrmCommunicationPage() {
   }, [canManage]);
 
   const counts = useMemo(() => {
-    const unlinked = emails.filter((e) => !e.contact_id).length;
+    const unlinked = emails.filter(
+      (e) => !e.contact_id && !e.organisation_id
+    ).length;
     return { total: emails.length, unlinked };
   }, [emails]);
 
@@ -140,12 +142,7 @@ export default function CrmCommunicationPage() {
   if (!canManage) {
     return (
       <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
-        Email import is available to CRM admins and office managers. Desktop CRM
-        admins can use the{" "}
-        <Link href="/space-place/email-inbox" className="font-medium text-[#c1121f] hover:underline">
-          mobile email inbox
-        </Link>{" "}
-        when signed in with an eligible role.
+        Email import is available to CRM admins and office managers.
       </div>
     );
   }
@@ -217,7 +214,7 @@ export default function CrmCommunicationPage() {
               {importing ? "Importing…" : "Import from mailbox"}
             </button>
             <Link
-              href="/space-place/email-inbox"
+              href="/admin/crm/communication/unlinked"
               className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium hover:bg-gray-50"
             >
               Unlinked emails
