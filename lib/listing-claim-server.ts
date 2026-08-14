@@ -13,13 +13,13 @@ import {
   generateClaimToken,
   hashClaimToken,
   isSpaceClaimable,
-  OWNER_CLAIMED_STATUS,
   resolveClaimTokenStatus,
   type ClaimableSpaceRow,
   type ClaimTokenRow,
   type ListingClaimTokenStatus,
 } from "@/lib/listing-claim-token";
 import { adminCanonicalSpaceEditHref } from "@/lib/admin-listing-routing";
+import { ownerClaimedSpaceUpdate } from "@/lib/listing-lifecycle";
 
 export type CreateListingClaimLinkResult =
   | {
@@ -238,11 +238,12 @@ export async function acceptListingClaim(
 
   const { data: updatedSpace, error: spaceErr } = await admin
     .from("spaces")
-    .update({
-      owner_id: userId,
-      claimed_at: nowIso,
-      status: OWNER_CLAIMED_STATUS,
-    })
+    .update(
+      ownerClaimedSpaceUpdate({
+        ownerId: userId,
+        claimedAt: nowIso,
+      })
+    )
     .eq("id", space.id)
     .is("owner_id", null)
     .select("id")
