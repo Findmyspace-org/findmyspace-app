@@ -388,6 +388,8 @@ export type PaymentNeededInput = {
   spaceTitle: string;
   periodLabel?: string | null;
   totalPrice?: number | null;
+  originalPrice?: number | null;
+  discountAmount?: number | null;
   ownerMessage?: string | null;
 };
 
@@ -401,6 +403,10 @@ export function buildPaymentNeededCopy(
   const amount = Number.isFinite(Number(input.totalPrice))
     ? `R${Number(input.totalPrice).toFixed(2)}`
     : null;
+  const discount = Number(input.discountAmount || 0);
+  const original = Number(input.originalPrice);
+  const showDiscount =
+    discount > 0 && Number.isFinite(original) && original > 0;
 
   const bodyLines: RenderEmailLayoutInput["bodyLines"] = [
     `Hi ${renterName},`,
@@ -410,6 +416,8 @@ export function buildPaymentNeededCopy(
   ];
   const summaryLines = [
     period ? `Period: ${period}` : "",
+    showDiscount ? `Original amount: R${original.toFixed(2)}` : "",
+    showDiscount ? `Discount: R${discount.toFixed(2)}` : "",
     amount ? `Amount due: ${amount}` : "",
   ].filter(Boolean);
   if (summaryLines.length > 0) {
@@ -439,6 +447,125 @@ export function buildPaymentNeededCopy(
     emailBodyLines: bodyLines,
     ctaLabel: "Pay now",
     emailFooterRole: "renter",
+  };
+}
+
+// -----------------------------------------------------------------------------
+// booking_approved_complimentary — 100% discount, confirmed with no payment.
+// -----------------------------------------------------------------------------
+
+export type ComplimentaryBookingInput = {
+  renterFirstName?: string | null;
+  spaceTitle: string;
+  periodLabel?: string | null;
+  originalPrice?: number | null;
+  discountAmount?: number | null;
+  ownerMessage?: string | null;
+};
+
+export function buildComplimentaryBookingRenterCopy(
+  input: ComplimentaryBookingInput
+): CommunicationCopy {
+  const renterName = safeName(input.renterFirstName);
+  const space = input.spaceTitle || "the space";
+  const period = (input.periodLabel || "").trim();
+  const note = (input.ownerMessage || "").trim();
+  const original = Number(input.originalPrice);
+  const discount = Number(input.discountAmount || 0);
+  const showDiscount =
+    discount > 0 && Number.isFinite(original) && original > 0;
+
+  const bodyLines: RenderEmailLayoutInput["bodyLines"] = [
+    `Hi ${renterName},`,
+    {
+      html: `Your booking for ${emailStrong(space).html} has been approved at no charge and is now confirmed.`,
+    },
+  ];
+  const summaryLines = [
+    period ? `Period: ${period}` : "",
+    showDiscount ? `Original amount: R${original.toFixed(2)}` : "",
+    showDiscount ? `Discount: R${discount.toFixed(2)}` : "",
+    "Amount payable: R0.00",
+  ].filter(Boolean);
+  if (summaryLines.length > 0) {
+    bodyLines.push(
+      emailCallout({
+        label: "Booking summary",
+        body: summaryLines.join("\n"),
+        tone: "success",
+      })
+    );
+  }
+  if (note.length > 0) {
+    bodyLines.push(
+      emailCallout({ label: "Message from host", body: note, tone: "neutral" })
+    );
+  }
+
+  return {
+    notificationTitle: "Booking confirmed",
+    notificationMessage: `${space}${period ? ` (${period})` : ""} is confirmed — no payment is due.`,
+    emailSubject: "Your booking is confirmed - FindMySpace",
+    emailPreheader: `Your booking for ${space} is confirmed at no charge.`,
+    emailTitle: "Your booking is confirmed",
+    emailBodyLines: bodyLines,
+    ctaLabel: "View my bookings",
+    emailFooterRole: "renter",
+  };
+}
+
+export type ComplimentaryBookingOwnerInput = {
+  ownerFirstName?: string | null;
+  renterFirstName?: string | null;
+  spaceTitle: string;
+  periodLabel?: string | null;
+  originalPrice?: number | null;
+  discountAmount?: number | null;
+};
+
+export function buildComplimentaryBookingOwnerCopy(
+  input: ComplimentaryBookingOwnerInput
+): CommunicationCopy {
+  const ownerName = safeName(input.ownerFirstName);
+  const renter = safeName(input.renterFirstName, "The renter");
+  const space = input.spaceTitle || "your space";
+  const period = (input.periodLabel || "").trim();
+  const original = Number(input.originalPrice);
+  const discount = Number(input.discountAmount || 0);
+  const showDiscount =
+    discount > 0 && Number.isFinite(original) && original > 0;
+
+  const bodyLines: RenderEmailLayoutInput["bodyLines"] = [
+    `Hi ${ownerName},`,
+    {
+      html: `You approved ${renter}'s booking for ${emailStrong(space).html} with a full discount. It is confirmed — no payment is due.`,
+    },
+  ];
+  const summary = [
+    period ? `Period: ${period}` : "",
+    showDiscount ? `Original amount: R${original.toFixed(2)}` : "",
+    showDiscount ? `Discount: R${discount.toFixed(2)}` : "",
+    "Amount payable: R0.00",
+  ].filter(Boolean);
+  if (summary.length > 0) {
+    bodyLines.push(
+      emailCallout({
+        label: "Booking summary",
+        body: summary.join("\n"),
+        tone: "success",
+      })
+    );
+  }
+
+  return {
+    notificationTitle: "Booking confirmed — complimentary",
+    notificationMessage: `${space}${period ? ` (${period})` : ""} is confirmed at no charge.`,
+    emailSubject: "Booking confirmed at no charge - FindMySpace",
+    emailPreheader: `The booking for ${space} is confirmed with a full discount.`,
+    emailTitle: "Booking confirmed",
+    emailBodyLines: bodyLines,
+    ctaLabel: "View booking requests",
+    emailFooterRole: "host",
   };
 }
 

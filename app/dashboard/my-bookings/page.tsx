@@ -51,6 +51,8 @@ import {
   FOCUS_HIGHLIGHT_CLASS,
   useFocusHighlight,
 } from "@/lib/use-focus-highlight";
+import BookingPriceBreakdown from "@/app/components/BookingPriceBreakdown";
+import { bookingHasVisibleDiscount } from "@/lib/booking-discount";
 
 type Booking = {
   id: string;
@@ -65,6 +67,8 @@ type Booking = {
   status: string | null;
   payment_status: string | null;
   total_price: number | null;
+  original_total_price?: number | null;
+  discount_amount?: number | null;
   created_at: string | null;
   monthly_rent?: number | null;
   months_total?: number | null;
@@ -419,7 +423,7 @@ function MyBookingsPageContent({
       const { data, error } = await supabase
         .from("bookings")
         .select(
-          "id, space_id, renter_id, owner_id, booking_unit, start_at, end_at, notes, owner_response_message, status, payment_status, total_price, created_at, monthly_rent, months_total, months_paid, deposit_amount, initial_payment_amount, next_payment_date, terms_accepted, terms_accepted_at, accepted_terms_updated_at, accepted_terms_title, accepted_terms_label"
+          "id, space_id, renter_id, owner_id, booking_unit, start_at, end_at, notes, owner_response_message, status, payment_status, total_price, original_total_price, discount_amount, created_at, monthly_rent, months_total, months_paid, deposit_amount, initial_payment_amount, next_payment_date, terms_accepted, terms_accepted_at, accepted_terms_updated_at, accepted_terms_title, accepted_terms_label"
         )
         .eq("renter_id", user.id)
         .order("created_at", { ascending: false });
@@ -1309,11 +1313,20 @@ function MyBookingsPageContent({
                                 </div>
                                 <div className="flex items-start gap-2">
                                   <Wallet className="mt-0.5 h-4 w-4 shrink-0 text-gray-500" />
-                                  <div>
+                                  <div className="min-w-0 flex-1">
                                     <p className="text-xs font-medium text-gray-500">Total amount</p>
-                                    <p className="font-semibold tabular-nums text-[#192a3a]">
-                                      R{Number(booking.total_price || 0).toLocaleString("en-ZA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                    </p>
+                                    {bookingHasVisibleDiscount(booking.discount_amount) ? (
+                                      <BookingPriceBreakdown
+                                        originalAmount={booking.original_total_price}
+                                        discountAmount={booking.discount_amount}
+                                        finalAmount={booking.total_price}
+                                        className="mt-1"
+                                      />
+                                    ) : (
+                                      <p className="font-semibold tabular-nums text-[#192a3a]">
+                                        R{Number(booking.total_price || 0).toLocaleString("en-ZA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                      </p>
+                                    )}
                                   </div>
                                 </div>
                               </div>
@@ -1649,10 +1662,19 @@ function MyBookingsPageContent({
                   <span className="font-medium text-[#192a3a]">Booking period:</span>{" "}
                   {formatBookingRange(paymentModalBooking)}
                 </p>
-                <p>
-                  <span className="font-medium text-[#192a3a]">Total:</span>{" "}
-                  R{Number(paymentModalBooking.total_price || 0).toFixed(2)}
-                </p>
+                {bookingHasVisibleDiscount(paymentModalBooking.discount_amount) ? (
+                  <BookingPriceBreakdown
+                    originalAmount={paymentModalBooking.original_total_price}
+                    discountAmount={paymentModalBooking.discount_amount}
+                    finalAmount={paymentModalBooking.total_price}
+                    size="md"
+                  />
+                ) : (
+                  <p>
+                    <span className="font-medium text-[#192a3a]">Total:</span>{" "}
+                    R{Number(paymentModalBooking.total_price || 0).toFixed(2)}
+                  </p>
+                )}
               </div>
 
               <div className="flex flex-col gap-2">

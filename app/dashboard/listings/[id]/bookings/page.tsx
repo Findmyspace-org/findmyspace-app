@@ -11,6 +11,11 @@ import {
   renterPaymentStatusLabel,
 } from "@/lib/booking-ui-labels";
 import { shouldShowBookingRequestNotes } from "@/lib/booking-notes-visibility";
+import BookingApprovalDiscountPanel from "@/app/components/BookingApprovalDiscountPanel";
+import type { BookingApproveDiscountPayload } from "@/lib/booking-discount";
+import BookingPriceBreakdown from "@/app/components/BookingPriceBreakdown";
+import { postBookingApprove } from "@/lib/booking-approve-client";
+import { bookingHasVisibleDiscount } from "@/lib/booking-discount";
 
 type Booking = {
   id: string;
@@ -19,6 +24,8 @@ type Booking = {
   end_at: string;
   booking_unit: string | null;
   total_price: number | null;
+  original_total_price?: number | null;
+  discount_amount?: number | null;
   status: string | null;
   payment_status: string | null;
   notes: string | null;
@@ -85,7 +92,7 @@ export default function OwnerBookingsPage({
     const { data: bookingsData, error } = await supabase
       .from("bookings")
       .select(
-        "id, renter_id, start_at, end_at, booking_unit, total_price, status, payment_status, notes"
+        "id, renter_id, start_at, end_at, booking_unit, total_price, original_total_price, discount_amount, status, payment_status, notes"
       )
       .eq("space_id", spaceId)
       .eq("owner_id", user.id)
@@ -207,7 +214,10 @@ export default function OwnerBookingsPage({
     [bookings]
   );
 
-  async function approveBooking(id: string) {
+  async function approveBooking(
+    id: string,
+    discount: BookingApproveDiscountPayload
+  ) {
     setProcessingId(id);
     setMessage("");
 
@@ -244,21 +254,34 @@ export default function OwnerBookingsPage({
       return;
     }
 
-    const { error } = await (supabase.from("bookings") as any)
-      .update({
-        status: "accepted_awaiting_payment",
-        payment_status: "awaiting_payment",
-        owner_response_at: new Date().toISOString(),
-      })
-      .eq("id", id);
-
-    if (error) {
-      setMessage(error.message);
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    if (!session?.access_token) {
+      setMessage("Please log in again to approve this booking.");
       setProcessingId(null);
       return;
     }
 
-    await loadBookings();
+    try {
+      const result = await postBookingApprove({
+        accessToken: session.access_token,
+        bookingId: id,
+        discount,
+      });
+      setMessage(
+        result.complimentary
+          ? "Booking approved at no charge and confirmed."
+          : result.discountAmount > 0
+            ? `Booking approved. Payment requested for R${result.finalAmount.toFixed(2)}.`
+            : "Booking approved. Payment requested."
+      );
+      await loadBookings();
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : "Could not approve booking."
+      );
+    }
     setProcessingId(null);
   }
 
@@ -365,10 +388,19 @@ export default function OwnerBookingsPage({
                           <span className="font-medium">Requested period:</span>{" "}
                           {formatRange(b)}
                         </p>
-                        <p>
-                          <span className="font-medium">Total:</span> R
-                          {Number(b.total_price || 0).toFixed(2)}
-                        </p>
+                        {bookingHasVisibleDiscount(b.discount_amount) ? (
+                          <BookingPriceBreakdown
+                            originalAmount={b.original_total_price}
+                            discountAmount={b.discount_amount}
+                            finalAmount={b.total_price}
+                            className="pt-1"
+                          />
+                        ) : (
+                          <p>
+                            <span className="font-medium">Total:</span> R
+                            {Number(b.total_price || 0).toFixed(2)}
+                          </p>
+                        )}
                         <p>
                           <span className="font-medium">Payment:</span>{" "}
                           {renterPaymentStatusLabel(b.payment_status)}
@@ -396,14 +428,15 @@ export default function OwnerBookingsPage({
                     </div>
 
                     {(b.status === "pending_owner" || b.status === "pending" || !b.status) && (
-                      <div className="mt-4 flex flex-wrap gap-2">
-                        <button
-                          onClick={() => approveBooking(b.id)}
-                          disabled={processingId === b.id}
-                          className="rounded-md bg-[#192a3a] px-3 py-1.5 text-xs text-white disabled:opacity-50"
-                        >
-                          {processingId === b.id ? "Processing..." : "Approve & request payment"}
-                        </button>
+                      <div className="mt-4 space-y-3">
+                        <BookingApprovalDiscountPanel
+                          originalAmount={Number(
+                            b.original_total_price ?? b.total_price ?? 0
+                          )}
+                          disabled={processingId !== null}
+                          busy={processingId === b.id}
+                          onApprove={(discount) => void approveBooking(b.id, discount)}
+                        />
 
                         <button
                           onClick={() => declineBooking(b.id)}

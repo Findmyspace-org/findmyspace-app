@@ -9,6 +9,8 @@ import {
   buildBookingExpiredRenterCopy,
   buildBookingMessageCopy,
   buildBookingRequestCopy,
+  buildComplimentaryBookingOwnerCopy,
+  buildComplimentaryBookingRenterCopy,
   buildPaymentConfirmedOwnerCopy,
   buildPaymentConfirmedRenterCopy,
   buildPaymentNeededCopy,
@@ -28,6 +30,7 @@ import { markNotificationsReadByBooking } from "@/lib/notification-lifecycle";
  *
  *   - booking_request_created          → buildBookingRequestCopy
  *   - booking_approved_payment_needed  → buildPaymentNeededCopy
+ *   - booking_approved_complimentary   → complimentary confirmed (R0)
  *   - booking_declined                 → buildBookingDeclinedCopy
  *   - payment_confirmed (renter)       → buildPaymentConfirmedRenterCopy
  *   - payment_confirmed (owner)        → buildPaymentConfirmedOwnerCopy
@@ -143,7 +146,7 @@ export async function POST(req: NextRequest) {
     const { data: booking, error: bookingError } = await (supabaseAdmin
       .from("bookings") as any)
       .select(
-        "id, booking_unit, start_at, end_at, renter_id, owner_id, total_price, space_id, notes, owner_response_message, payment_status, status"
+        "id, booking_unit, start_at, end_at, renter_id, owner_id, total_price, original_total_price, discount_amount, space_id, notes, owner_response_message, payment_status, status"
       )
       .eq("id", bookingId)
       .single();
@@ -241,6 +244,8 @@ export async function POST(req: NextRequest) {
         spaceTitle: space?.title || "the space",
         periodLabel,
         totalPrice: booking.total_price ?? null,
+        originalPrice: booking.original_total_price ?? null,
+        discountAmount: booking.discount_amount ?? null,
         ownerMessage: booking.owner_response_message || null,
       });
 
@@ -271,6 +276,95 @@ export async function POST(req: NextRequest) {
           title: copy.notificationTitle,
           message: copy.notificationMessage,
           href: "/dashboard/my-bookings",
+          related_entity_type: "booking",
+          related_entity_id: booking.id,
+        });
+      }
+    }
+
+    if (eventType === "booking_approved_complimentary") {
+      await markNotificationsReadByBooking(supabaseAdmin, {
+        bookingId,
+        types: ["booking_request", "payment_needed"],
+        userIds: booking.owner_id ? [booking.owner_id] : undefined,
+      });
+
+      const renterCopy = buildComplimentaryBookingRenterCopy({
+        renterFirstName: renter?.first_name ?? null,
+        spaceTitle: space?.title || "the space",
+        periodLabel,
+        originalPrice: booking.original_total_price ?? null,
+        discountAmount: booking.discount_amount ?? null,
+        ownerMessage: booking.owner_response_message || null,
+      });
+      const ownerCopy = buildComplimentaryBookingOwnerCopy({
+        ownerFirstName: owner?.first_name ?? null,
+        renterFirstName: renter?.first_name ?? null,
+        spaceTitle: space?.title || "your space",
+        periodLabel,
+        originalPrice: booking.original_total_price ?? null,
+        discountAmount: booking.discount_amount ?? null,
+      });
+
+      if (renter?.email) {
+        const rendered = renderEmailLayout({
+          preheader: renterCopy.emailPreheader,
+          title: renterCopy.emailTitle,
+          bodyLines: renterCopy.emailBodyLines,
+          primaryCTA: {
+            label: renterCopy.ctaLabel,
+            href: authNextUrl("/dashboard/my-bookings"),
+          },
+          footerRole: renterCopy.emailFooterRole,
+        });
+        await sendEmail({
+          to: renter.email,
+          subject: renterCopy.emailSubject,
+          html: rendered.html,
+          text: rendered.text,
+        });
+      }
+
+      if (owner?.email) {
+        const rendered = renderEmailLayout({
+          preheader: ownerCopy.emailPreheader,
+          title: ownerCopy.emailTitle,
+          bodyLines: ownerCopy.emailBodyLines,
+          primaryCTA: {
+            label: ownerCopy.ctaLabel,
+            href: authNextUrl("/dashboard/requests"),
+          },
+          footerRole: ownerCopy.emailFooterRole,
+        });
+        await sendEmail({
+          to: owner.email,
+          subject: ownerCopy.emailSubject,
+          html: rendered.html,
+          text: rendered.text,
+        });
+      }
+
+      if (renter?.id) {
+        await createNotification({
+          user_id: renter.id,
+          role: "renter",
+          type: "booking_confirmed",
+          title: renterCopy.notificationTitle,
+          message: renterCopy.notificationMessage,
+          href: "/dashboard/my-bookings",
+          related_entity_type: "booking",
+          related_entity_id: booking.id,
+        });
+      }
+
+      if (owner?.id) {
+        await createNotification({
+          user_id: owner.id,
+          role: "owner",
+          type: "booking_confirmed",
+          title: ownerCopy.notificationTitle,
+          message: ownerCopy.notificationMessage,
+          href: "/dashboard/requests",
           related_entity_type: "booking",
           related_entity_id: booking.id,
         });

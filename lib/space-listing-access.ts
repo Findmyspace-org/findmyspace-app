@@ -48,3 +48,45 @@ export async function assertSpaceListingManageAccess(
 
   throw new Error("Forbidden.");
 }
+
+/**
+ * Same listing-manage rules (space owner, property owner, platform admin),
+ * plus assigned space managers when `space_manager_assignments` exists.
+ */
+export async function assertCanApproveSpaceBooking(
+  admin: SupabaseClient,
+  userId: string,
+  spaceId: string
+): Promise<void> {
+  try {
+    await assertSpaceListingManageAccess(admin, userId, spaceId);
+    return;
+  } catch (err) {
+    if (!(err instanceof Error) || err.message !== "Forbidden.") {
+      throw err;
+    }
+  }
+
+  const assigned = await userIsAssignedSpaceManager(admin, userId, spaceId);
+  if (assigned) return;
+
+  throw new Error("Forbidden.");
+}
+
+async function userIsAssignedSpaceManager(
+  admin: SupabaseClient,
+  userId: string,
+  spaceId: string
+): Promise<boolean> {
+  const { data, error } = await admin
+    .from("space_manager_assignments")
+    .select("id")
+    .eq("space_id", spaceId)
+    .eq("user_id", userId)
+    .limit(1);
+
+  if (error || !data || data.length === 0) {
+    return false;
+  }
+  return true;
+}

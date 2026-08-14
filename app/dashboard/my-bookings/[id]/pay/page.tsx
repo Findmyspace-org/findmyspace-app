@@ -7,6 +7,8 @@ import { supabase } from "@/lib/supabase";
 import RequireAuth from "@/app/components/RequireAuth";
 import { shouldShowBookingRequestNotes } from "@/lib/booking-notes-visibility";
 import { isSpaceBookable } from "@/lib/listing-lifecycle";
+import BookingPriceBreakdown from "@/app/components/BookingPriceBreakdown";
+import { bookingHasVisibleDiscount } from "@/lib/booking-discount";
 
 type PageProps = {
   params: Promise<{ id: string }>;
@@ -25,6 +27,8 @@ type BookingRow = {
   status: string | null;
   payment_status: string | null;
   total_price: number | null;
+  original_total_price?: number | null;
+  discount_amount?: number | null;
   created_at: string | null;
 };
 
@@ -85,7 +89,7 @@ export default function BookingPaymentPage({ params }: PageProps) {
     const { data: rawBooking, error: bookingError } = await (supabase
       .from("bookings") as any)
       .select(
-        "id, space_id, renter_id, owner_id, booking_unit, start_at, end_at, notes, owner_response_message, status, payment_status, total_price, created_at"
+        "id, space_id, renter_id, owner_id, booking_unit, start_at, end_at, notes, owner_response_message, status, payment_status, total_price, original_total_price, discount_amount, created_at"
       )
       .eq("id", id)
       .eq("renter_id", user.id)
@@ -380,9 +384,20 @@ export default function BookingPaymentPage({ params }: PageProps) {
 
                   <div className="rounded-xl bg-gray-50 p-4">
                     <p className="text-sm text-gray-500">Amount due</p>
-                    <p className="mt-2 text-3xl font-semibold">
-                      R{Number(booking.total_price || 0).toFixed(2)}
-                    </p>
+                    {bookingHasVisibleDiscount(booking.discount_amount) ? (
+                      <div className="mt-2">
+                        <BookingPriceBreakdown
+                          originalAmount={booking.original_total_price}
+                          discountAmount={booking.discount_amount}
+                          finalAmount={booking.total_price}
+                          size="md"
+                        />
+                      </div>
+                    ) : (
+                      <p className="mt-2 text-3xl font-semibold">
+                        R{Number(booking.total_price || 0).toFixed(2)}
+                      </p>
+                    )}
                     <p className="mt-2 text-sm text-gray-600">
                       MVP payment test flow
                     </p>
