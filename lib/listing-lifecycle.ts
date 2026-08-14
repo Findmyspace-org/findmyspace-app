@@ -86,6 +86,24 @@ export function getOwnerListingClaimHref(spaceId: string): string {
   return `/dashboard/listings/${spaceId}/claim`;
 }
 
+/**
+ * Fields applied when an owner claims an admin-prepared listing.
+ * Live mode is only valid while status is `active`; claiming must hide the
+ * listing until verification and approval.
+ */
+export function ownerClaimedSpaceUpdate(params: {
+  ownerId: string;
+  claimedAt: string;
+}) {
+  return {
+    owner_id: params.ownerId,
+    claimed_at: params.claimedAt,
+    status: OWNER_CLAIMED_STATUS,
+    public_listing_mode: PUBLIC_LISTING_MODE_OFF,
+    is_bookable: false,
+  };
+}
+
 export type SpaceBookabilityInput =
   | string
   | null
