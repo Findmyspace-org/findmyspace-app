@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isPlatformAdminRole } from "@/lib/admin-roles";
+import { assertCanManageSpaceId } from "@/lib/space-manager-server";
 
 export type BookingRequirementAccess =
   | "renter"
@@ -59,7 +60,12 @@ export async function getBookingRequirementAccess(
     }
   }
 
-  return null;
+  try {
+    await assertCanManageSpaceId(admin, userId, row.space_id);
+    return "space_owner";
+  } catch {
+    return null;
+  }
 }
 
 export async function assertBookingRequirementAccess(

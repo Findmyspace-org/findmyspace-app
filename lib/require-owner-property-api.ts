@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { assertCanViewProperty } from "@/lib/space-manager-server";
 
 export type OwnerPropertyAuthOk = {
   userId: string;
@@ -11,7 +12,7 @@ export type OwnerPropertyAuthFail = { response: NextResponse };
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-export async function requireOwnerPropertyApi(
+async function authenticatePropertyRequest(
   req: NextRequest,
   propertyId: string
 ): Promise<OwnerPropertyAuthOk | OwnerPropertyAuthFail> {
@@ -66,7 +67,17 @@ export async function requireOwnerPropertyApi(
     },
   });
 
-  const { data: property, error: propertyErr } = await admin
+  return { userId: user.id, admin };
+}
+
+export async function requireOwnerPropertyApi(
+  req: NextRequest,
+  propertyId: string
+): Promise<OwnerPropertyAuthOk | OwnerPropertyAuthFail> {
+  const auth = await authenticatePropertyRequest(req, propertyId);
+  if ("response" in auth) return auth;
+
+  const { data: property, error: propertyErr } = await auth.admin
     .from("properties")
     .select("id, owner_id")
     .eq("id", propertyId)
@@ -78,11 +89,31 @@ export async function requireOwnerPropertyApi(
     };
   }
 
-  if ((property as { owner_id: string | null }).owner_id !== user.id) {
+  if ((property as { owner_id: string | null }).owner_id !== auth.userId) {
     return {
       response: NextResponse.json({ error: "Forbidden." }, { status: 403 }),
     };
   }
 
-  return { userId: user.id, admin };
+  return auth;
+}
+
+export async function requirePropertyViewApi(
+  req: NextRequest,
+  propertyId: string
+): Promise<OwnerPropertyAuthOk | OwnerPropertyAuthFail> {
+  const auth = await authenticatePropertyRequest(req, propertyId);
+  if ("response" in auth) return auth;
+
+  try {
+    await assertCanViewProperty(auth.admin, auth.userId, propertyId);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Forbidden.";
+    const status = message === "Property not found." ? 404 : 403;
+    return {
+      response: NextResponse.json({ error: message }, { status }),
+    };
+  }
+
+  return auth;
 }

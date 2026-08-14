@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "test:admin-patch": "node scripts/test-admin-user-patch.mjs",
-    "test:lifecycle-guards": "node scripts/test-lifecycle-guards.mjs",
+    "test:space-access": "tsx scripts/test-space-access.ts",
     "test:property-logo": "node scripts/test-property-logo-validation.mjs",
     "test:public-browse": "node scripts/test-public-browse-eligibility.mjs",
     "test:group-size-capacity": "node scripts/test-group-size-capacity.mjs",

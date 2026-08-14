@@ -4,10 +4,11 @@ import Link from "next/link";
 import Image from "next/image";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { fetchHostManagedSpaces } from "@/lib/host-managed-spaces";
 import { supabase } from "@/lib/supabase";
 import RequireAuth from "@/app/components/RequireAuth";
 import DashboardShell from "@/app/components/DashboardShell";
-import { HOST_NAV } from "@/lib/dashboard-nav";
+import { hostNavForAccess } from "@/lib/dashboard-nav";
 import OwnerVerificationAlerts from "@/app/components/OwnerVerificationAlerts";
 import { OwnerSpacesTable } from "@/app/components/owner/OwnerSpacesTable";
 import {
@@ -136,6 +137,7 @@ function MyListingsPageContent({
   const [message, setMessage] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [isHost, setIsHost] = useState(false);
+  const [isPropertyAdmin, setIsPropertyAdmin] = useState(true);
   const [claimContext, setClaimContext] = useState<ClaimContext>({
     contactComplete: false,
     hasIdFront: false,
@@ -230,12 +232,16 @@ function MyListingsPageContent({
         return;
       }
 
-      if (!profileData?.is_host) {
+      const managed = await fetchHostManagedSpaces(supabase, user.id);
+      if (!profileData?.is_host && managed.allIds.length === 0) {
         window.location.href = "/dashboard/become-host";
         return;
       }
 
       setIsHost(true);
+      setIsPropertyAdmin(
+        managed.ownedSpaceIds.length > 0 || managed.propertySpaceIds.length > 0
+      );
 
       const { data: idDocRows } = await supabase
         .from("owner_verification_documents")
@@ -247,19 +253,25 @@ function MyListingsPageContent({
         );
       setClaimContext({
         contactComplete: Boolean(
-          profileData.first_name?.trim() && profileData.phone?.trim()
+          profileData?.first_name?.trim() && profileData?.phone?.trim()
         ),
         hasIdFront: idTypes.includes("id_front"),
         hasIdBack: idTypes.includes("id_back"),
       });
 
-      const { data, error } = await supabase
-        .from("spaces")
-        .select(
-          "id, owner_id, title, description, city, suburb, address_line_1, space_type, booking_unit, price_amount, price_unit, price_per_hour, price_per_day, price_per_month, min_group_size, max_group_size, status, public_listing_mode, created_at, ownership_proof_status, deposit_type, deposit_months, monthly_payment_day, property_id"
-        )
-        .eq("owner_id", user.id)
-        .order("created_at", { ascending: false });
+      let data: unknown[] | null = [];
+      let error = null;
+      if (managed.allIds.length > 0) {
+        const result = await supabase
+          .from("spaces")
+          .select(
+            "id, owner_id, title, description, city, suburb, address_line_1, space_type, booking_unit, price_amount, price_unit, price_per_hour, price_per_day, price_per_month, min_group_size, max_group_size, status, public_listing_mode, created_at, ownership_proof_status, deposit_type, deposit_months, monthly_payment_day, property_id"
+          )
+          .in("id", managed.allIds)
+          .order("created_at", { ascending: false });
+        data = result.data;
+        error = result.error;
+      }
 
       if (error) {
         setMessage(error.message);
@@ -546,7 +558,7 @@ function MyListingsPageContent({
         workspaceLabel="Hosting"
         pageTitle="My spaces"
         pageSubtitle="Manage individual spaces people can book."
-        navItems={HOST_NAV}
+        navItems={hostNavForAccess({ isPropertyAdmin })}
         activeHref="/dashboard/listings"
       >
         <>

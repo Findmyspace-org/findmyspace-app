@@ -18,6 +18,7 @@ import { isCommunicationAllowed } from "@/lib/booking-communication";
 import { getCanonicalPublicSiteUrl } from "@/lib/site-url";
 import { buildModalLoginUrl } from "@/lib/auth-redirect";
 import { markNotificationsReadByBooking } from "@/lib/notification-lifecycle";
+import { listSpaceManagerNotificationRecipients } from "@/lib/space-manager-server";
 
 /**
  * Phase 2C complete:
@@ -226,6 +227,54 @@ export async function POST(req: NextRequest) {
           related_entity_type: "booking",
           related_entity_id: booking.id,
         });
+      }
+
+      try {
+        const managers = await listSpaceManagerNotificationRecipients(
+          supabaseAdmin,
+          booking.space_id
+        );
+        for (const manager of managers) {
+          if (manager.user_id === owner?.id) continue;
+          if (manager.email) {
+            const managerCopy = buildBookingRequestCopy({
+              ownerFirstName: manager.first_name ?? null,
+              renterFirstName: renter?.first_name ?? null,
+              spaceTitle: space?.title || "your space",
+              bookingType: booking.booking_unit,
+              periodLabel,
+              renterMessage: booking.notes || null,
+            });
+            const rendered = renderEmailLayout({
+              preheader: managerCopy.emailPreheader,
+              title: managerCopy.emailTitle,
+              bodyLines: managerCopy.emailBodyLines,
+              primaryCTA: {
+                label: managerCopy.ctaLabel,
+                href: authNextUrl("/dashboard/requests"),
+              },
+              footerRole: managerCopy.emailFooterRole,
+            });
+            await sendEmail({
+              to: manager.email,
+              subject: managerCopy.emailSubject,
+              html: rendered.html,
+              text: rendered.text,
+            });
+          }
+          await createNotification({
+            user_id: manager.user_id,
+            role: "owner",
+            type: "booking_request",
+            title: copy.notificationTitle,
+            message: copy.notificationMessage,
+            href: "/dashboard/requests",
+            related_entity_type: "booking",
+            related_entity_id: booking.id,
+          });
+        }
+      } catch (managerErr) {
+        console.error("[booking-event] space manager notify failed", managerErr);
       }
     }
 

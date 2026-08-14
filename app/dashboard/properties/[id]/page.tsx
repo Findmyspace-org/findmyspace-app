@@ -8,7 +8,7 @@ import RequireAuth from "@/app/components/RequireAuth";
 import DashboardShell from "@/app/components/DashboardShell";
 import { PropertyReadinessDashboard } from "@/app/components/PropertyReadinessDashboard";
 import { OwnerPropertySpaceSteps } from "@/app/components/OwnerPropertySpaceSteps";
-import { HOST_NAV } from "@/lib/dashboard-nav";
+import { hostNavForAccess } from "@/lib/dashboard-nav";
 import { ownerApiFetch } from "@/lib/owner-api-client";
 import {
   getOwnerListingStatusBadgeClass,
@@ -23,6 +23,7 @@ import type {
 } from "@/lib/property-space-ops";
 import { matchesPropertySpaceHealthFilter } from "@/lib/property-space-ops";
 import { PropertyTermsSection } from "@/app/components/PropertyTermsSection";
+import { PropertyTeamPanel } from "@/app/components/PropertyTeamPanel";
 import { normalizePropertyTermsRow } from "@/lib/property-booking-terms";
 import type { OwnerSpaceStep } from "@/lib/owner-property-space-steps";
 
@@ -46,6 +47,7 @@ type SpaceRow = {
   status_label: string;
   can_submit?: boolean;
   inherited_ownership?: boolean;
+  can_manage?: boolean;
   steps?: OwnerSpaceStep[];
   space_type: string | null;
   has_photos: boolean;
@@ -81,6 +83,8 @@ function PropertyDetailContent() {
   const [healthFilter, setHealthFilter] = useState<PropertySpaceHealthFilter>(null);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
+  const [canManageUsers, setCanManageUsers] = useState(false);
+  const [accessRole, setAccessRole] = useState<"owner" | "manager">("owner");
 
   const load = useCallback(async () => {
     if (!propertyId) return;
@@ -110,6 +114,8 @@ function PropertyDetailContent() {
       );
       setProgress((result.progress as PropertyOnboardingProgress) || null);
       setAttentionHrefs((result.attention_hrefs as Record<string, string>) || {});
+      setCanManageUsers(Boolean(result.can_manage_users));
+      setAccessRole(result.access_role === "manager" ? "manager" : "owner");
       setMessage("");
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Failed to load property.");
@@ -121,6 +127,7 @@ function PropertyDetailContent() {
   }, [propertyId]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- data fetch on mount
     void load();
   }, [load]);
 
@@ -133,8 +140,12 @@ function PropertyDetailContent() {
     <DashboardShell
       workspaceLabel="Hosting"
       pageTitle={property?.name || "Property"}
-      pageSubtitle="Spaces under this venue."
-      navItems={HOST_NAV}
+      pageSubtitle={
+        accessRole === "manager"
+          ? "You can manage the spaces assigned to you at this venue."
+          : "Spaces under this venue."
+      }
+      navItems={hostNavForAccess({ isPropertyAdmin: canManageUsers || accessRole === "owner" })}
       activeHref="/dashboard/properties"
     >
       <div className="mx-auto max-w-4xl">
@@ -176,14 +187,22 @@ function PropertyDetailContent() {
               </div>
             ) : null}
 
-            <div className="mt-6">
-              <PropertyTermsSection
-                propertyId={propertyId}
-                mode="owner"
-                initial={normalizePropertyTermsRow(property as Record<string, unknown>)}
-                onMessage={(msg) => setMessage(msg ?? "")}
-              />
-            </div>
+            {canManageUsers ? (
+              <div className="mt-6">
+                <PropertyTermsSection
+                  propertyId={propertyId}
+                  mode="owner"
+                  initial={normalizePropertyTermsRow(property as Record<string, unknown>)}
+                  onMessage={(msg) => setMessage(msg ?? "")}
+                />
+              </div>
+            ) : null}
+
+            {canManageUsers ? (
+              <div className="mt-6">
+                <PropertyTeamPanel propertyId={propertyId} mode="owner" />
+              </div>
+            ) : null}
 
             <section className="mt-6">
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -234,18 +253,31 @@ function PropertyDetailContent() {
                               </p>
                             ) : null}
                           </div>
+                          <div className="flex flex-col items-end gap-1">
                           <span
                             className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${getOwnerListingStatusBadgeClass(space.status)}`}
                           >
                             {space.status_label}
                           </span>
+                          {accessRole === "manager" ? (
+                            <span
+                              className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                                space.can_manage
+                                  ? "bg-green-100 text-green-800"
+                                  : "bg-gray-100 text-gray-600"
+                              }`}
+                            >
+                              {space.can_manage ? "You can manage" : "View only"}
+                            </span>
+                          ) : null}
+                          </div>
                         </div>
 
-                        {space.steps && space.steps.length > 0 ? (
+                        {space.can_manage !== false && space.steps && space.steps.length > 0 ? (
                           <OwnerPropertySpaceSteps steps={space.steps} />
                         ) : null}
 
-                        {nextAction ? (
+                        {space.can_manage !== false && nextAction ? (
                           <Link
                             href={nextAction.href}
                             className={`mt-3 inline-flex items-center gap-1 text-sm font-semibold ${

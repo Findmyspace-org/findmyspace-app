@@ -104,3 +104,14 @@ export const HOST_NAV: DashboardNavItem[] = [
     matchPrefix: true,
   },
 ];
+
+const PROPERTY_ADMIN_ONLY_HREFS = new Set([
+  "/dashboard/finance",
+  "/dashboard/verification",
+]);
+
+/** Space managers keep host tools except billing/payouts/ownership verification. */
+export function hostNavForAccess(options: { isPropertyAdmin: boolean }): DashboardNavItem[] {
+  if (options.isPropertyAdmin) return HOST_NAV;
+  return HOST_NAV.filter((item) => !PROPERTY_ADMIN_ONLY_HREFS.has(item.href));
+}
