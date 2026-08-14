@@ -42,6 +42,7 @@ export function validateBookingForPayFastInitiate(
       status: 400,
     };
   }
+  // Complimentary (100% discount) bookings are confirmed without PayFast.
   if (!booking.total_price || booking.total_price <= 0) {
     return {
       ok: false,

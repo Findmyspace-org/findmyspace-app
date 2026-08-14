@@ -35,7 +35,11 @@ import { isCommunicationAllowed } from "@/lib/booking-communication";
 import { OWNER_BOOKING_STAGE_LABELS } from "@/lib/booking-ui-labels";
 import { shouldShowBookingRequestNotes } from "@/lib/booking-notes-visibility";
 import { broadcastInboxRefresh } from "@/lib/inbox-refresh";
-
+import BookingApprovalDiscountPanel from "@/app/components/BookingApprovalDiscountPanel";
+import type { BookingApproveDiscountPayload } from "@/lib/booking-discount";
+import BookingPriceBreakdown from "@/app/components/BookingPriceBreakdown";
+import { postBookingApprove } from "@/lib/booking-approve-client";
+import { bookingHasVisibleDiscount } from "@/lib/booking-discount";
 
 import OwnerCalendarLegend from "@/app/dashboard/_components/calendar/OwnerCalendarLegend";
 import OwnerBookingRequestTimeline, {
@@ -84,6 +88,8 @@ type Booking = {
   status: string | null;
   payment_status: string | null;
   total_price: number | null;
+  original_total_price?: number | null;
+  discount_amount?: number | null;
   created_at: string | null;
   terms_accepted?: boolean | null;
   terms_accepted_at?: string | null;
@@ -178,7 +184,7 @@ type ExpandedBookingPanelProps = {
   overlappingPendingRequests: EnrichedBooking[];
   onToggleCommunication: (booking: EnrichedBooking) => void | Promise<void>;
   competingPendingRequests: EnrichedBooking[];
-  onApprove: () => void | Promise<void>;
+  onApprove: (discount: BookingApproveDiscountPayload) => void | Promise<void>;
   onDecline: (reason: string) => void | Promise<void>;
   /** When set, all decision controls are disabled; spinner on matching `booking.id`. */
   busyBookingId: string | null;
@@ -914,9 +920,20 @@ function ExpandedBookingPanel({
                   <span className="text-gray-500">Hidden until payment is confirmed</span>
                 )}
               </div>
-              <div>
-                <span className="font-medium text-[#192a3a]">Total:</span> R{Number(booking.total_price || 0).toFixed(2)}
-              </div>
+              {bookingHasVisibleDiscount(booking.discount_amount) ? (
+                <div className="min-w-[220px]">
+                  <BookingPriceBreakdown
+                    originalAmount={booking.original_total_price}
+                    discountAmount={booking.discount_amount}
+                    finalAmount={booking.total_price}
+                  />
+                </div>
+              ) : (
+                <div>
+                  <span className="font-medium text-[#192a3a]">Total:</span>{" "}
+                  R{Number(booking.total_price || 0).toFixed(2)}
+                </div>
+              )}
             </div>
 
             <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
@@ -961,18 +978,15 @@ function ExpandedBookingPanel({
               <p className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-gray-600">
                 Your decision
               </p>
-              <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-                <button
-                  type="button"
-                  onClick={() => void onApprove()}
+              <div className="flex flex-col gap-3">
+                <BookingApprovalDiscountPanel
+                  originalAmount={Number(
+                    booking.original_total_price ?? booking.total_price ?? 0
+                  )}
                   disabled={decisionInFlight || hasBlockingConflict}
-                  className="inline-flex items-center justify-center gap-2 rounded-md bg-[#192a3a] px-4 py-2 text-sm font-medium text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {thisBookingBusy ? (
-                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-                  ) : null}
-                  Approve &amp; request payment
-                </button>
+                  busy={thisBookingBusy}
+                  onApprove={(payload) => void onApprove(payload)}
+                />
 
                 {!declineOpen ? (
                   <button
@@ -982,7 +996,7 @@ function ExpandedBookingPanel({
                       setDeclineReason("");
                     }}
                     disabled={decisionInFlight}
-                    className="rounded-md border border-red-300 bg-white px-4 py-2 text-sm font-medium text-red-800 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="w-fit rounded-md border border-red-300 bg-white px-4 py-2 text-sm font-medium text-red-800 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     Decline
                   </button>
@@ -1299,7 +1313,7 @@ function OwnerBookingRequestsPageContent({
       const { data: bookingsData, error: bookingsError } = await supabase
         .from("bookings")
         .select(
-          "id, space_id, renter_id, owner_id, booking_unit, start_at, end_at, notes, owner_response_message, status, payment_status, total_price, created_at, terms_accepted, terms_accepted_at, accepted_terms_updated_at, accepted_terms_title, accepted_terms_label"
+          "id, space_id, renter_id, owner_id, booking_unit, start_at, end_at, notes, owner_response_message, status, payment_status, total_price, original_total_price, discount_amount, created_at, terms_accepted, terms_accepted_at, accepted_terms_updated_at, accepted_terms_title, accepted_terms_label"
         )
         .eq("owner_id", user.id)
         .order("created_at", { ascending: false });
@@ -1673,7 +1687,8 @@ function OwnerBookingRequestsPageContent({
   async function updateBookingStatus(
     bookingId: string,
     nextStatus: "approved" | "declined" | "pending",
-    ownerMessageOverride?: string
+    ownerMessageOverride?: string,
+    discount?: BookingApproveDiscountPayload
   ) {
     setMessage("");
     setBusyBookingId(bookingId);
@@ -1808,22 +1823,134 @@ function OwnerBookingRequestsPageContent({
       // --- END: Find and store competing overlapping pending bookings for this space ---
     }
 
-    const updatePayload =
-      nextStatus === "approved"
-        ? {
-          status: "accepted_awaiting_payment",
-          payment_status: "awaiting_payment",
-          owner_response_at: new Date().toISOString(),
-          owner_response_message: ownerResponseMessage || null,
+    if (nextStatus === "approved") {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        setMessage("Please log in again to approve this booking.");
+        setBusyBookingId(null);
+        return;
+      }
+
+      let approveResult: Awaited<ReturnType<typeof postBookingApprove>>;
+      try {
+        approveResult = await postBookingApprove({
+          accessToken: session.access_token,
+          bookingId,
+          discount: discount ?? {
+            discountType: null,
+            discountValue: null,
+            discountReason: null,
+          },
+          ownerResponseMessage,
+        });
+      } catch (error) {
+        setMessage(
+          error instanceof Error ? error.message : "Could not approve booking."
+        );
+        setBusyBookingId(null);
+        return;
+      }
+
+      const competingIds = approveResult.declinedCompetingIds;
+      const competingRecipientIds = new Map(
+        competingPendingBookings.map((item) => [item.id, item.renter_id])
+      );
+      const autoDeclineMessage =
+        "Your booking request was declined because another overlapping booking was approved for this space. Thank you for your interest. Please try another date.";
+
+      if (competingIds.length > 0 && sessionUserId) {
+        const autoDeclineMessages = competingIds
+          .map((competingId) => {
+            const recipientId = competingRecipientIds.get(competingId);
+            if (!recipientId) return null;
+            return {
+              booking_id: competingId,
+              sender_id: sessionUserId,
+              recipient_id: recipientId,
+              message: autoDeclineMessage,
+            };
+          })
+          .filter(Boolean);
+
+        if (autoDeclineMessages.length > 0) {
+          const { data: insertedMessages, error: autoDeclineMessageError } = await (
+            supabase.from("booking_messages") as any
+          )
+            .insert(autoDeclineMessages)
+            .select("id, booking_id, sender_id, recipient_id, message, created_at");
+
+          if (autoDeclineMessageError) {
+            console.error(
+              "Could not save auto-decline booking messages:",
+              autoDeclineMessageError
+            );
+          } else if (insertedMessages) {
+            const typedInsertedMessages = insertedMessages as BookingMessage[];
+            setMessagesByBooking((current) => {
+              const updated = { ...current };
+              for (const item of typedInsertedMessages) {
+                updated[item.booking_id] = [
+                  ...(updated[item.booking_id] || []),
+                  item,
+                ];
+              }
+              return updated;
+            });
+          }
         }
-        : nextStatus === "declined"
-          ? {
+      }
+
+      const competingIdSet = new Set(competingIds);
+      setBookings((current) =>
+        current.map((booking) => {
+          if (booking.id === bookingId) {
+            return {
+              ...booking,
+              status: approveResult.status,
+              payment_status: approveResult.paymentStatus,
+              total_price: approveResult.finalAmount,
+              original_total_price: approveResult.originalAmount,
+              discount_amount:
+                approveResult.discountAmount > 0
+                  ? approveResult.discountAmount
+                  : null,
+              owner_response_message: ownerResponseMessage || null,
+            };
+          }
+          if (competingIdSet.has(booking.id)) {
+            return {
+              ...booking,
+              status: "declined",
+              payment_status: "unpaid",
+              owner_response_message: autoDeclineMessage,
+            };
+          }
+          return booking;
+        })
+      );
+
+      setMessage(
+        approveResult.complimentary
+          ? "Booking approved at no charge and confirmed."
+          : approveResult.discountAmount > 0
+            ? `Booking approved. Payment requested for R${approveResult.finalAmount.toFixed(2)}.`
+            : "Booking approved. Overlapping pending requests were automatically declined."
+      );
+      setBusyBookingId(null);
+      return;
+    }
+
+    const updatePayload =
+      nextStatus === "declined"
+        ? {
             status: "declined",
             payment_status: "unpaid",
             owner_response_at: new Date().toISOString(),
             owner_response_message: ownerResponseMessage || null,
           }
-          : {
+        : {
             status: "pending_owner",
             payment_status: bookingToUpdate.payment_status || "unpaid",
             owner_response_at: new Date().toISOString(),
@@ -1840,22 +1967,6 @@ function OwnerBookingRequestsPageContent({
       return;
     }
 
-    if (nextStatus === "approved") {
-      try {
-        await fetch("/api/notifications/booking-event", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            bookingId,
-            eventType: "booking_approved_payment_needed",
-          }),
-        });
-      } catch (error) {
-        console.error("Could not send approval email:", error);
-      }
-    }
     if (nextStatus === "declined") {
       try {
         await fetch("/api/notifications/booking-event", {
@@ -1873,142 +1984,27 @@ function OwnerBookingRequestsPageContent({
       }
     }
 
-    // --- BEGIN: Auto-decline competing overlapping pending bookings if approved ---
-    if (nextStatus === "approved") {
-      const competingIds = competingPendingBookings.map((item) => item.id);
-
-      if (competingIds.length > 0) {
-        const autoDeclineMessage =
-          "Your booking request was declined because another overlapping booking was approved for this space. Thank you for your interest. Please try another date.";
-        const competingRecipientIds = new Map(competingPendingBookings.map((item) => [item.id, item.renter_id]));
-
-        const { error: competingDeclineError } = await (supabase.from("bookings") as any)
-          .update({
-            status: "declined",
-            payment_status: "unpaid",
-            owner_response_at: new Date().toISOString(),
-            owner_response_message: autoDeclineMessage,
-          })
-          .in("id", competingIds);
-
-        if (competingDeclineError) {
-          setMessage(competingDeclineError.message);
-          setBusyBookingId(null);
-          return;
-        }
-
-        await Promise.all(
-          competingIds.map(async (competingId) => {
-            try {
-              await fetch("/api/notifications/booking-event", {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                  bookingId: competingId,
-                  eventType: "booking_declined",
-                }),
-              });
-            } catch (notificationError) {
-              console.error(
-                `Could not send auto-decline email for booking ${competingId}:`,
-                notificationError
-              );
-            }
-          })
-        );
-
-        if (sessionUserId) {
-          const autoDeclineMessages = competingIds
-            .map((competingId) => {
-              const recipientId = competingRecipientIds.get(competingId);
-              if (!recipientId) return null;
-
-              return {
-                booking_id: competingId,
-                sender_id: sessionUserId,
-                recipient_id: recipientId,
-                message: autoDeclineMessage,
-              };
-            })
-            .filter(Boolean);
-
-          if (autoDeclineMessages.length > 0) {
-            const { data: insertedMessages, error: autoDeclineMessageError } = await (supabase
-              .from("booking_messages") as any)
-              .insert(autoDeclineMessages)
-              .select("id, booking_id, sender_id, recipient_id, message, created_at");
-
-            if (autoDeclineMessageError) {
-              console.error("Could not save auto-decline booking messages:", autoDeclineMessageError);
-            } else if (insertedMessages) {
-              const typedInsertedMessages = insertedMessages as BookingMessage[];
-
-              setMessagesByBooking((current) => {
-                const updated = { ...current };
-
-                for (const item of typedInsertedMessages) {
-                  updated[item.booking_id] = [...(updated[item.booking_id] || []), item];
-                }
-
-                return updated;
-              });
-            }
-          }
-        }
-      }
-    }
-    // --- END: Auto-decline block ---
-
-    setBookings((current) => {
-      const competingIds = nextStatus === "approved" && typeof competingPendingBookings !== "undefined"
-        ? new Set(competingPendingBookings.map((item) => item.id))
-        : new Set<string>();
-
-      return current.map((booking) => {
-        if (booking.id === bookingId) {
-          return {
-            ...booking,
-            status:
-              nextStatus === "approved"
-                ? "accepted_awaiting_payment"
-                : nextStatus === "declined"
-                  ? "declined"
-                  : "pending_owner",
-            payment_status:
-              nextStatus === "approved"
-                ? "awaiting_payment"
-                : nextStatus === "declined"
-                  ? "unpaid"
-                  : booking.payment_status,
-            owner_response_message: ownerResponseMessage || null,
-          };
-        }
-
-        if (nextStatus === "approved" && competingIds.has(booking.id)) {
-          return {
-            ...booking,
-            status: "declined",
-            payment_status: "unpaid",
-            owner_response_message:
-              "Your booking request was declined because another overlapping booking was approved for this space. Thank you for your interest. Please try another date.",
-          };
-        }
-
-        return booking;
-      });
-    });
+    setBookings((current) =>
+      current.map((booking) => {
+        if (booking.id !== bookingId) return booking;
+        return {
+          ...booking,
+          status: nextStatus === "declined" ? "declined" : "pending_owner",
+          payment_status:
+            nextStatus === "declined" ? "unpaid" : booking.payment_status,
+          owner_response_message: ownerResponseMessage || null,
+        };
+      })
+    );
 
     setMessage(
-      nextStatus === "approved"
-        ? "Booking approved. Overlapping pending requests were automatically declined."
-        : nextStatus === "declined"
-          ? "Booking declined."
-          : "Reply saved. Booking kept pending."
+      nextStatus === "declined"
+        ? "Booking declined."
+        : "Reply saved. Booking kept pending."
     );
 
     setBusyBookingId(null);
+    return;
   }
 
 
@@ -2256,7 +2252,9 @@ function OwnerBookingRequestsPageContent({
                         overlappingPendingRequests={overlappingPendingRequests}
                         onToggleCommunication={toggleCommunicationPanel}
                         competingPendingRequests={overlappingPendingRequests}
-                        onApprove={() => void updateBookingStatus(booking.id, "approved")}
+                        onApprove={(discount) =>
+                          void updateBookingStatus(booking.id, "approved", undefined, discount)
+                        }
                         onDecline={(reason) =>
                           void updateBookingStatus(booking.id, "declined", reason)
                         }

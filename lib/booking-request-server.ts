@@ -245,6 +245,7 @@ export async function createBookingRequestServer(
     start_at: startAt,
     end_at: endAt,
     total_price: totalPrice,
+    original_total_price: totalPrice,
     platform_fee: platformFee,
     owner_earnings: ownerAmount,
     status: "pending_owner",
