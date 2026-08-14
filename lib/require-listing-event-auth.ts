@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { isPlatformAdminRole } from "@/lib/admin-roles";
+import { assertCanManageSpaceId } from "@/lib/space-manager-server";
 
 export type ListingEventAuthOk = { userId: string; role: "admin" | "owner" | "internal" };
 export type ListingEventAuthFail = { response: NextResponse };
@@ -75,17 +76,12 @@ export async function requireListingEventAuth(
     return { userId: user.id, role: "admin" };
   }
 
-  const { data: space } = await admin
-    .from("spaces")
-    .select("owner_id")
-    .eq("id", spaceId)
-    .maybeSingle();
-
-  if ((space as { owner_id: string | null } | null)?.owner_id === user.id) {
+  try {
+    await assertCanManageSpaceId(admin, user.id, spaceId);
     return { userId: user.id, role: "owner" };
+  } catch {
+    return {
+      response: NextResponse.json({ error: "Forbidden." }, { status: 403 }),
+    };
   }
-
-  return {
-    response: NextResponse.json({ error: "Forbidden." }, { status: 403 }),
-  };
 }

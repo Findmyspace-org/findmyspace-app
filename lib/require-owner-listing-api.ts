@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { assertCanManageSpaceId } from "@/lib/space-manager-server";
 
 export type OwnerListingAuthOk = {
   userId: string;
@@ -66,21 +67,16 @@ export async function requireOwnerListingApi(
     },
   });
 
-  const { data: space, error: spaceErr } = await admin
-    .from("spaces")
-    .select("id, owner_id")
-    .eq("id", spaceId)
-    .maybeSingle();
-
-  if (spaceErr || !space) {
+  try {
+    await assertCanManageSpaceId(admin, user.id, spaceId);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Forbidden.";
+    const status = message === "Space not found." ? 404 : 403;
     return {
-      response: NextResponse.json({ error: "Listing not found." }, { status: 404 }),
-    };
-  }
-
-  if ((space as { owner_id: string | null }).owner_id !== user.id) {
-    return {
-      response: NextResponse.json({ error: "Forbidden." }, { status: 403 }),
+      response: NextResponse.json(
+        { error: status === 404 ? "Listing not found." : "Forbidden." },
+        { status }
+      ),
     };
   }
 

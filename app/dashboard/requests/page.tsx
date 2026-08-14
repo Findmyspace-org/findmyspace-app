@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { isSpaceBookable } from "@/lib/listing-lifecycle";
 import { supabase } from "@/lib/supabase";
+import { fetchHostManagedSpaces } from "@/lib/host-managed-spaces";
 import RequireAuth from "@/app/components/RequireAuth";
 import DashboardShell from "@/app/components/DashboardShell";
 import { HOST_NAV } from "@/lib/dashboard-nav";
@@ -1291,18 +1292,25 @@ function OwnerBookingRequestsPageContent({
 
       const profile = rawProfile as { is_host: boolean | null } | null;
 
-      if (!profile?.is_host) {
+      const managed = await fetchHostManagedSpaces(supabase, user.id);
+      if (!profile?.is_host && managed.allIds.length === 0) {
         window.location.href = "/dashboard/become-host";
         return;
       }
 
-      const { data: bookingsData, error: bookingsError } = await supabase
-        .from("bookings")
-        .select(
-          "id, space_id, renter_id, owner_id, booking_unit, start_at, end_at, notes, owner_response_message, status, payment_status, total_price, created_at, terms_accepted, terms_accepted_at, accepted_terms_updated_at, accepted_terms_title, accepted_terms_label"
-        )
-        .eq("owner_id", user.id)
-        .order("created_at", { ascending: false });
+      let bookingsData = null;
+      let bookingsError = null;
+      if (managed.allIds.length > 0) {
+        const result = await supabase
+          .from("bookings")
+          .select(
+            "id, space_id, renter_id, owner_id, booking_unit, start_at, end_at, notes, owner_response_message, status, payment_status, total_price, created_at, terms_accepted, terms_accepted_at, accepted_terms_updated_at, accepted_terms_title, accepted_terms_label"
+          )
+          .in("space_id", managed.allIds)
+          .order("created_at", { ascending: false });
+        bookingsData = result.data;
+        bookingsError = result.error;
+      }
 
       if (bookingsError) {
         setMessage(bookingsError.message);

@@ -27,6 +27,7 @@ import { HOST_NAV } from "@/lib/dashboard-nav";
 import { downloadInvoicePdf } from "@/lib/invoice-download-client";
 import OwnerCalendarLegend from "@/app/dashboard/_components/calendar/OwnerCalendarLegend";
 import { supabase } from "@/lib/supabase";
+import { fetchHostManagedSpaces } from "@/lib/host-managed-spaces";
 import {
     ownerListingBookingStatusLabel,
     renterPaymentStatusLabel,
@@ -1577,10 +1578,17 @@ export default function CalendarPage() {
                 return;
             }
 
-            const { data, error } = await (supabase.from("spaces") as any)
-                .select("id, title, city, suburb, status, booking_unit")
-                .eq("owner_id", user.id)
-                .order("title", { ascending: true });
+            const managed = await fetchHostManagedSpaces(supabase, user.id);
+            let data = null;
+            let error = null;
+            if (managed.allIds.length > 0) {
+                const result = await (supabase.from("spaces") as any)
+                    .select("id, title, city, suburb, status, booking_unit")
+                    .in("id", managed.allIds)
+                    .order("title", { ascending: true });
+                data = result.data;
+                error = result.error;
+            }
 
             if (error) {
                 setMessage(error.message || "Could not load spaces.");

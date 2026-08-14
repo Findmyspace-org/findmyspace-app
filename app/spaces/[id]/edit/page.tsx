@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { fetchHostManagedSpaces } from "@/lib/host-managed-spaces";
 import SpaceCategoryFields from "@/app/components/SpaceCategoryFields";
 import { LISTING_SPACE_TYPE_OPTIONS } from "@/app/data/spaceFeatureConfig";
 import RequireAuth from "@/app/components/RequireAuth";
@@ -317,12 +318,18 @@ export default function EditListingPage(_props: PageProps) {
       return;
     }
 
+    const managed = await fetchHostManagedSpaces(supabase, user.id);
+    if (!managed.allIds.includes(id)) {
+      setMessage("Listing not found.");
+      setLoading(false);
+      return;
+    }
+
     const { data: rawData, error } = await (supabase.from("spaces") as any)
       .select(
         "id, owner_id, title, description, city, suburb, street_address, province, postal_code, country, address_line_1, latitude, longitude, space_type, booking_unit, price_amount, price_unit, deposit_required, deposit_amount, price_per_hour, price_per_day, price_per_month, min_booking_hours, min_booking_days, min_booking_months, min_group_size, max_group_size, status, ownership_proof_status, deposit_type, deposit_months, monthly_payment_day"
       )
       .eq("id", id)
-      .eq("owner_id", user.id)
       .single();
 
     const data = rawData as SpaceEditRow | null;

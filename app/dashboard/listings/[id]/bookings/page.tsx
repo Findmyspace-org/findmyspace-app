@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { isSpaceBookable } from "@/lib/listing-lifecycle";
 import { supabase } from "@/lib/supabase";
+import { fetchHostManagedSpaces } from "@/lib/host-managed-spaces";
 import RequireAuth from "@/app/components/RequireAuth";
 import { getDisplayName } from "@/lib/utils";
 import BookingAvailabilityPreview from "@/app/components/BookingAvailabilityPreview";
@@ -73,11 +74,17 @@ export default function OwnerBookingsPage({
       return;
     }
 
+    const managed = await fetchHostManagedSpaces(supabase, user.id);
+    if (!managed.allIds.includes(spaceId)) {
+      setMessage("Listing not found.");
+      setLoading(false);
+      return;
+    }
+
     const { data: spaceRow } = await supabase
       .from("spaces")
       .select("status")
       .eq("id", spaceId)
-      .eq("owner_id", user.id)
       .maybeSingle();
 
     setSpaceStatus((spaceRow as { status: string | null } | null)?.status ?? null);
@@ -88,7 +95,6 @@ export default function OwnerBookingsPage({
         "id, renter_id, start_at, end_at, booking_unit, total_price, status, payment_status, notes"
       )
       .eq("space_id", spaceId)
-      .eq("owner_id", user.id)
       .order("created_at", { ascending: false });
 
     if (error) {

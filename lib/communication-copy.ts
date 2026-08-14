@@ -1151,6 +1151,41 @@ export function buildPropertyInviteCopy(
   };
 }
 
+export type SpaceManagerInviteInput = {
+  propertyName: string;
+  spaceTitles: string[];
+  inviteUrl: string;
+};
+
+export function buildSpaceManagerInviteCopy(
+  input: SpaceManagerInviteInput
+): CommunicationCopy {
+  const name = input.propertyName.trim() || "a property";
+  const titles = input.spaceTitles.map((title) => title.trim()).filter(Boolean);
+  const spaceLabel =
+    titles.length === 0
+      ? "selected spaces"
+      : titles.length === 1
+        ? titles[0]
+        : titles.slice(0, 3).join(", ") + (titles.length > 3 ? "…" : "");
+
+  return {
+    notificationTitle: "You've been invited to manage spaces",
+    notificationMessage: `You've been invited to manage ${spaceLabel} at ${name}.`,
+    emailSubject: `Manage spaces at ${name}`,
+    emailPreheader: "Accept your invitation to manage assigned spaces.",
+    emailTitle: "You've been invited to manage spaces",
+    emailBodyLines: [
+      `${name} has invited you to manage specific spaces on FindMySpace.`,
+      { html: `Spaces: ${emailStrong(spaceLabel).html}` },
+      "You will be able to update those listings, calendars, and booking activity. You will not administer the whole property or other unassigned spaces.",
+      "Use the button below to sign in and accept this invitation.",
+    ],
+    ctaLabel: "Accept invitation",
+    emailFooterRole: "host",
+  };
+}
+
 export type ListingClaimInviteInput = {
   listingTitle: string;
   claimUrl: string;

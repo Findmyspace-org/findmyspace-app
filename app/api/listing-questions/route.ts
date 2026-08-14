@@ -11,6 +11,8 @@ import {
   buildListingQuestionsBatchCopy,
 } from "@/lib/communication-copy";
 import { getCanonicalPublicSiteUrl } from "@/lib/site-url";
+import { fetchHostManagedSpaces } from "@/lib/host-managed-spaces";
+import { listSpaceManagerNotificationRecipients } from "@/lib/space-manager-server";
 
 /**
  * Listing yes/no questions — collection endpoints.
@@ -262,6 +264,45 @@ export async function POST(req: NextRequest) {
       console.error("listing-question notify owner failed:", notifyErr);
     }
 
+    try {
+      const managers = await listSpaceManagerNotificationRecipients(admin, spaceId);
+      for (const manager of managers) {
+        if (manager.user_id === spaceRow.owner_id) continue;
+        await (admin.from("notifications") as any).insert({
+          user_id: manager.user_id,
+          role: "owner",
+          type: "listing_question",
+          title: copy.notificationTitle,
+          message: copy.notificationMessage,
+          href: focusHref,
+          related_entity_type: "space",
+          related_entity_id: spaceId,
+          is_read: false,
+        });
+        if (manager.email) {
+          const siteUrl = getCanonicalPublicSiteUrl();
+          const rendered = renderEmailLayout({
+            preheader: copy.emailPreheader,
+            title: copy.emailTitle,
+            bodyLines: copy.emailBodyLines,
+            primaryCTA: {
+              label: copy.ctaLabel,
+              href: `${siteUrl}${focusHref}`,
+            },
+            footerRole: copy.emailFooterRole,
+          });
+          await sendEmail({
+            to: manager.email,
+            subject: copy.emailSubject,
+            html: rendered.html,
+            text: rendered.text,
+          });
+        }
+      }
+    } catch (managerErr) {
+      console.error("listing-question notify managers failed:", managerErr);
+    }
+
     // ONE owner email per submit, listing all questions for batch flows.
     try {
       if (ownerProfile?.email) {
@@ -331,7 +372,11 @@ export async function GET(req: NextRequest) {
       .limit(100);
 
     if (isRenter) query = query.eq("renter_id", user.id);
-    else query = query.eq("owner_id", user.id);
+    else {
+      const managed = await fetchHostManagedSpaces(admin, user.id);
+      if (managed.allIds.length === 0) query = query.eq("owner_id", user.id);
+      else query = query.in("space_id", managed.allIds);
+    }
 
     if (spaceIdFilter) query = query.eq("space_id", spaceIdFilter);
 

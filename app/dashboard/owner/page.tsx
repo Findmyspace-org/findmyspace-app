@@ -37,6 +37,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { fetchHostManagedSpaces } from "@/lib/host-managed-spaces";
 import DashboardShell from "@/app/components/DashboardShell";
 import { HOST_NAV } from "@/lib/dashboard-nav";
 import OwnerVerificationAlerts from "@/app/components/OwnerVerificationAlerts";
@@ -113,15 +114,18 @@ export default function HostDashboardPage() {
 
         setProfile((profileData || null) as OwnerProfile | null);
 
-        const { data: listingData, error: listingError } = await (supabase
-          .from("spaces") as any)
-          .select(
-            "id, title, suburb, city, status, verification_status, created_at"
-          )
-          .eq("owner_id", user.id)
-          .order("created_at", { ascending: false });
-
-        if (listingError) throw listingError;
+        const managed = await fetchHostManagedSpaces(supabase, user.id);
+        let listingData = null;
+        if (managed.allIds.length > 0) {
+          const result = await (supabase.from("spaces") as any)
+            .select(
+              "id, title, suburb, city, status, verification_status, created_at"
+            )
+            .in("id", managed.allIds)
+            .order("created_at", { ascending: false });
+          if (result.error) throw result.error;
+          listingData = result.data;
+        }
 
         const nextListings = (listingData || []) as OwnerDashboardListing[];
         setListings(nextListings);

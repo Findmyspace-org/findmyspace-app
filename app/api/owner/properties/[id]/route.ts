@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireOwnerPropertyApi } from "@/lib/require-owner-property-api";
+import { requirePropertyViewApi } from "@/lib/require-owner-property-api";
 import { formatPropertyAddress } from "@/lib/admin-property";
 import { computeListingCompletion } from "@/lib/listing-completion";
 import { getOwnerListingStatusLabel } from "@/lib/listing-lifecycle";
@@ -19,14 +19,19 @@ import {
 } from "@/lib/property-space-ops";
 import { fetchOwnerPropertyById } from "@/lib/owner-properties-query";
 import { isArchivedSpace } from "@/lib/space-archive";
+import { assertCanViewProperty } from "@/lib/space-manager-server";
 
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const auth = await requireOwnerPropertyApi(req, id);
+  const auth = await requirePropertyViewApi(req, id);
   if ("response" in auth) return auth.response;
+
+  const access = await assertCanViewProperty(auth.admin, auth.userId, id);
+  const canManageUsers = access.propertyOwnerId === auth.userId || access.isPlatformAdmin;
+  const managedSet = new Set(access.assignedSpaceIdsOnProperty);
 
   const propertyResult = await fetchOwnerPropertyById(auth.admin, id);
   if (!propertyResult.ok) {
@@ -125,7 +130,6 @@ export async function GET(
   const spaceRows = await Promise.all(
     rawSpaces.map(async (space) => {
       const spaceId = space.id as string;
-      const input = healthInputs.find((item) => item.id === spaceId)!;
       const readinessInput = readinessSpaceInputs.find((item) => item.id === spaceId)!;
       const completion = await computeListingCompletion(auth.admin, spaceId);
       const canSubmit = completion?.canSubmit ?? false;
@@ -151,6 +155,7 @@ export async function GET(
         has_location: readinessInput.has_location,
         has_ai_information: Boolean(aiInfoBySpace[spaceId]),
         is_archived: readinessInput.is_archived,
+        can_manage: canManageUsers || managedSet.has(spaceId),
         steps: buildOwnerPropertySpaceSteps({
           spaceId,
           status: space.status as string | null,
@@ -211,6 +216,11 @@ export async function GET(
         province: row.province as string | null,
       }),
     },
+    access_role: canManageUsers ? "owner" : "manager",
+    can_manage_users: canManageUsers,
+    managed_space_ids: canManageUsers
+      ? spaceRows.map((space) => space.id)
+      : access.assignedSpaceIdsOnProperty,
     summary,
     health,
     progress,

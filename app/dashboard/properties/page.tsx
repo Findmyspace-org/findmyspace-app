@@ -5,7 +5,7 @@ import { Suspense, useCallback, useEffect, useState } from "react";
 import { Building2, MapPin } from "lucide-react";
 import RequireAuth from "@/app/components/RequireAuth";
 import DashboardShell from "@/app/components/DashboardShell";
-import { HOST_NAV } from "@/lib/dashboard-nav";
+import { hostNavForAccess } from "@/lib/dashboard-nav";
 import { ownerApiFetch } from "@/lib/owner-api-client";
 
 type PropertyRow = {
@@ -14,6 +14,7 @@ type PropertyRow = {
   formatted_address: string;
   space_count: number;
   owner_accepted_at: string | null;
+  access_role?: "owner" | "manager";
 };
 
 function PropertiesPageContent() {
@@ -40,6 +41,7 @@ function PropertiesPageContent() {
   }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- data fetch on mount
     void load();
   }, [load]);
 
@@ -48,7 +50,9 @@ function PropertiesPageContent() {
       workspaceLabel="Hosting"
       pageTitle="My properties"
       pageSubtitle="Manage venues or locations that contain one or more spaces."
-      navItems={HOST_NAV}
+      navItems={hostNavForAccess({
+        isPropertyAdmin: properties.some((property) => property.access_role !== "manager"),
+      })}
       activeHref="/dashboard/properties"
     >
       <div className="mx-auto max-w-4xl">
@@ -117,11 +121,18 @@ function PropertiesPageContent() {
                         </p>
                       ) : null}
                     </div>
-                    <span className="shrink-0 rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-semibold text-gray-700">
+                    <div className="flex shrink-0 flex-col items-end gap-1">
+                    <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-semibold text-gray-700">
                       {property.space_count === 1
                         ? "1 space"
                         : `${property.space_count} spaces`}
                     </span>
+                    {property.access_role === "manager" ? (
+                      <span className="rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-semibold text-blue-800">
+                        Space manager
+                      </span>
+                    ) : null}
+                    </div>
                   </div>
                 </Link>
               </li>

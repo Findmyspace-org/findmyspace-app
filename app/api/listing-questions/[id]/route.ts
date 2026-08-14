@@ -4,6 +4,7 @@ import { sendEmail } from "@/lib/email";
 import { renderEmailLayout } from "@/lib/email-templates/EmailLayout";
 import { buildListingQuestionAnsweredCopy } from "@/lib/communication-copy";
 import { getCanonicalPublicSiteUrl } from "@/lib/site-url";
+import { assertCanManageSpaceId } from "@/lib/space-manager-server";
 
 const ANSWER_LABEL: Record<"yes" | "no" | "not_applicable", string> = {
   yes: "Yes",
@@ -89,7 +90,9 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     if (fetchErr || !row) {
       return NextResponse.json({ error: "Question not found." }, { status: 404 });
     }
-    if (row.owner_id !== user.id) {
+    try {
+      await assertCanManageSpaceId(admin, user.id, row.space_id as string);
+    } catch {
       return NextResponse.json({ error: "Forbidden." }, { status: 403 });
     }
     if (row.status !== "pending") {
@@ -117,7 +120,6 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     ) as any)
       .update(update)
       .eq("id", id)
-      .eq("owner_id", user.id)
       .select(
         "id, space_id, booking_id, renter_id, owner_id, question, answer, status, created_at, answered_at"
       )

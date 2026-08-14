@@ -70,6 +70,7 @@ export async function GET(req: NextRequest) {
     space_count: spaceCountByProperty.get(row.id) || 0,
     owner_accepted_at: row.owner_accepted_at,
     created_at: row.created_at,
+    access_role: row.access_role || "owner",
   }));
 
   return NextResponse.json({

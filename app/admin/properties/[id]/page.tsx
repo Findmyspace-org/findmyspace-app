@@ -8,6 +8,7 @@ import { ExternalLink, Pencil } from "lucide-react";
 import { AdminNav } from "@/app/components/AdminNav";
 import { adminApiFetch } from "@/lib/admin-api-client";
 import { AdminPropertyInvitePanel } from "@/app/components/AdminPropertyInvitePanel";
+import { PropertyTeamPanel } from "@/app/components/PropertyTeamPanel";
 import { AdminPropertySpaceBreadcrumb } from "@/app/components/AdminPropertySpaceBreadcrumb";
 import { AdminPropertyForm } from "@/app/components/AdminPropertyForm";
 import {
@@ -432,6 +433,9 @@ function AdminPropertyDetailContent({
                 ownerEmailDefault={property.owner_email}
                 hasOwner={hasOwner}
               />
+              <div className="mt-4">
+                <PropertyTeamPanel propertyId={propertyId} mode="admin" />
+              </div>
             </div>
 
             <div className="mt-6">
