@@ -1,0 +1,36 @@
+---
+description: FindMySpace production Vercel project identity and deploy safety
+alwaysApply: true
+---
+
+# FindMySpace Vercel deployment
+
+Verified production (do not guess, do not use another project):
+
+- Account: `connectschalk` (`connect.schalk@gmail.com`)
+- Project name: **`findmyspace`**
+- Project ID: **`prj_QpFsNp41MHcaxGgoXb9NvXTZKIyb`**
+- Domain: **`https://findmyspace.co.za`**
+- GitHub: `Findmyspace-org/findmyspace-app`
+- Production branch: **`main`**
+
+`findmyspace_web` (`prj_lscFuOtixZtAVlR0MoApxx3e8siu`) is **not** production. Never modify it, deploy to it, attach domains to it, or change its env/Git settings when doing FindMySpace work.
+
+## Rules
+
+- Before any Vercel configuration change, verify the project ID is `prj_QpFsNp41MHcaxGgoXb9NvXTZKIyb`. Abort on any other ID.
+- Never modify another Vercel project for FindMySpace changes.
+- Never reveal environment variable values, tokens, passwords, or secrets. Names only.
+- Vercel deploys **application code/configuration only**. Supabase migrations stay a separate guarded process (`npm run db:guard`, then `npm run apply:migration -- NNN`).
+- Preview `*.vercel.app` URLs must not be used as PayFast `notify_url` / `return_url` / `cancel_url`, or as production email-link origins. Use `https://findmyspace.co.za`.
+- Production cron `GET /api/cron/expire-bookings` requires env name `CRON_SECRET` (`Authorization: Bearer`). Never print the value. Hobby schedule is once daily (`0 0 * * *` UTC) until the plan allows hourly.
+
+```
+# ❌ BAD — wrong project or preview origin
+project: findmyspace_web
+PayFast notify_url: https://findmyspace-….vercel.app/api/payfast/notify
+
+# ✅ GOOD
+project: findmyspace (prj_QpFsNp41MHcaxGgoXb9NvXTZKIyb)
+PayFast notify_url: https://findmyspace.co.za/api/payfast/notify
+```

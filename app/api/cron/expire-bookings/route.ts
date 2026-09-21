@@ -1,5 +1,9 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+// Hobby Vercel Cron is once daily. vercel.json uses 0 0 * * * (00:00 UTC / ~02:00 SAST).
+// Desired future cadence is hourly. Daily runs can leave a 24h payment hold active
+// for up to ~24 additional hours after the payment window.
 import { createClient } from "@supabase/supabase-js";
+import { isVercelCronAuthorized, unauthorizedCronResponse } from "@/lib/cron-auth";
 import { getPublicSiteUrlFromEnv } from "@/lib/site-url";
 
 const RENTER_EXPIRY_MESSAGE =
@@ -26,7 +30,11 @@ function bookingIdsFromExpireRpcResult(data: unknown): string[] {
   return ids;
 }
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
+  if (!isVercelCronAuthorized(request)) {
+    return unauthorizedCronResponse();
+  }
+
   try {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;

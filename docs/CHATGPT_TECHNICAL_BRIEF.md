@@ -343,7 +343,9 @@ Geocoding: `/api/geocode` → Nominatim, `countrycodes=za`. Maps: Leaflet.
 - In-app notifications + booking messages; listing events via `/api/notifications/listing-event` (JWT or `X-Internal-Api-Secret`).
 - PayFast MD5 signature field order is in `lib/payfast-initiate-fields.ts`. Do not reorder casually.
 - Invoice HTML `/api/invoice/[bookingId]`; PDF `/api/invoice/[bookingId]/pdf` (Chromium on Vercel).
-- Booking expiry cron route exists, but **`vercel.json` has no `crons` key**. If expiry is not running in production, the schedule may be missing in the Vercel dashboard. The route also does not show a `CRON_SECRET` check in code — treat that as a hardening gap.
+- Booking expiry: `GET /api/cron/expire-bookings` calls RPC `expire_unpaid_bookings` (service_role only after migration `062`). The route requires `Authorization: Bearer <CRON_SECRET>` and fails closed if `CRON_SECRET` is unset. Vercel Cron sends that header when the Production env var is set on project `findmyspace` (`prj_QpFsNp41MHcaxGgoXb9NvXTZKIyb`).
+- `vercel.json` schedules `/api/cron/expire-bookings` at `0 0 * * *` (00:00 UTC / ~02:00 SAST). **Hobby currently allows once-daily cron only.** Desired future cadence is hourly. Daily execution can leave an expired payment hold (`accepted_awaiting_payment`) blocking the calendar for up to ~24 additional hours after the 24-hour payment window.
+- Known follow-up (not changed here): if the RPC succeeds and a later `booking_messages` insert or `/api/notifications/booking-event` call fails, the booking stays expired and that run will not retry notifications (RPC is idempotent and returns no IDs on repeat).
 
 ---
 
