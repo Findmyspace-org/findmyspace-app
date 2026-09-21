@@ -23,6 +23,7 @@ import {
   Landmark,
   LayoutDashboard,
   Settings,
+  Users,
 } from "lucide-react";
 
 import type { DashboardNavItem } from "@/app/components/DashboardShell";
@@ -95,6 +96,12 @@ export const HOST_NAV: DashboardNavItem[] = [
     label: "Finance",
     href: "/dashboard/finance",
     icon: Landmark,
+    matchPrefix: true,
+  },
+  {
+    label: "People",
+    href: "/dashboard/people",
+    icon: Users,
     matchPrefix: true,
   },
   {

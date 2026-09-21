@@ -5,7 +5,9 @@
  * fallback recipients. Property Managers and Global Admins may still act
  * via the access resolver, but are not routine notification recipients.
  *
- * Temporary 066 notification bridge uses recipientUserIds. Full fan-out is 067.
+ * recipientUserIds = operational handlers.
+ * notifyUserIds = operational handlers plus Organisation Admins who opted
+ * into notify_all_bookings (only added when Space Managers are handling).
  */
 
 export type OperationalManagerKind =
@@ -20,6 +22,7 @@ export type OperationalBookingManagers = {
   propertyOwnerId: string | null;
   kind: OperationalManagerKind;
   recipientUserIds: string[];
+  notifyUserIds: string[];
   canAcceptPublicBooking: boolean;
 };
 
@@ -29,69 +32,50 @@ export function computeOperationalBookingManagers(input: {
   propertyOwnerId: string | null;
   activeSpaceManagerUserIds: string[];
   activeOrgAdminUserIds: string[];
+  notifyAllOrgAdminUserIds?: string[];
 }): OperationalBookingManagers {
   const spaceManagers = uniqueIds(input.activeSpaceManagerUserIds);
   const orgAdmins = uniqueIds(input.activeOrgAdminUserIds);
+  const notifyAllOrgAdmins = uniqueIds(input.notifyAllOrgAdminUserIds ?? []);
   const organisationId = input.organisationId;
   const spaceOwnerId = input.spaceOwnerId;
   const propertyOwnerId = input.propertyOwnerId;
 
-  if (spaceManagers.length > 0) {
-    return {
-      organisationId,
-      spaceOwnerId,
-      propertyOwnerId,
-      kind: "space_managers",
-      recipientUserIds: spaceManagers,
-      canAcceptPublicBooking: true,
-    };
-  }
-
-  if (organisationId && orgAdmins.length > 0) {
-    return {
-      organisationId,
-      spaceOwnerId,
-      propertyOwnerId,
-      kind: "org_admins",
-      recipientUserIds: orgAdmins,
-      canAcceptPublicBooking: true,
-    };
-  }
-
-  if (spaceOwnerId) {
-    return {
-      organisationId,
-      spaceOwnerId,
-      propertyOwnerId,
-      kind: "legacy_owner",
-      recipientUserIds: [spaceOwnerId],
-      canAcceptPublicBooking: true,
-    };
-  }
-
-  if (!organisationId && propertyOwnerId) {
-    return {
-      organisationId,
-      spaceOwnerId,
-      propertyOwnerId,
-      kind: "legacy_owner",
-      recipientUserIds: [propertyOwnerId],
-      canAcceptPublicBooking: true,
-    };
-  }
-
-  return {
+  const withNotify = (
+    kind: OperationalManagerKind,
+    recipientUserIds: string[],
+    extraNotifyIds: string[]
+  ): OperationalBookingManagers => ({
     organisationId,
     spaceOwnerId,
     propertyOwnerId,
-    kind: "none",
-    recipientUserIds: [],
-    canAcceptPublicBooking: false,
-  };
+    kind,
+    recipientUserIds,
+    notifyUserIds: uniqueIds([...recipientUserIds, ...extraNotifyIds]),
+    canAcceptPublicBooking: kind !== "none",
+  });
+
+  if (spaceManagers.length > 0) {
+    return withNotify("space_managers", spaceManagers, notifyAllOrgAdmins);
+  }
+
+  if (organisationId && orgAdmins.length > 0) {
+    return withNotify("org_admins", orgAdmins, []);
+  }
+
+  if (spaceOwnerId) {
+    return withNotify("legacy_owner", [spaceOwnerId], []);
+  }
+
+  if (!organisationId && propertyOwnerId) {
+    return withNotify("legacy_owner", [propertyOwnerId], []);
+  }
+
+  return withNotify("none", [], []);
 }
 
-function uniqueIds(ids: Array<string | null | undefined>): string[] {
-  return Array.from(new Set(ids.filter((id): id is string => Boolean(id))));
+function uniqueIds(ids: Array<string | null | undefined> | undefined): string[] {
+  return Array.from(new Set((ids || []).filter((id): id is string => Boolean(id))));
 }
 
 export function snapshotBookingOwnership(input: {

@@ -32,6 +32,7 @@ type ActivityEntry = {
   meta: unknown;
   adminEmail: string | null;
   adminLabel: string;
+  actorKindLabel: string | null;
 };
 
 export default function AdminActivityPage() {
@@ -286,6 +287,9 @@ export default function AdminActivityPage() {
                       </td>
                       <td className="max-w-[180px] px-3 py-2 text-xs">
                         <div className="font-medium text-[#192a3a]">{e.adminLabel}</div>
+                        {e.actorKindLabel ? (
+                          <div className="text-gray-600">{e.actorKindLabel}</div>
+                        ) : null}
                         {e.adminEmail && (
                           <div className="truncate text-gray-500">{e.adminEmail}</div>
                         )}

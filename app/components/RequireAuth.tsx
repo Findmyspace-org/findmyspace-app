@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { schedulePendingOrganisationAccessActivation } from "@/lib/access/organisation-access-client";
 
 type RequireAuthProps = {
   children: React.ReactNode;
@@ -50,6 +51,7 @@ export default function RequireAuth({ children }: RequireAuthProps) {
         }
 
         setAllowed(true);
+        schedulePendingOrganisationAccessActivation(session.access_token);
       } catch (error) {
         console.error("RequireAuth check failed:", error);
         if (!mounted) return;
@@ -73,6 +75,7 @@ export default function RequireAuth({ children }: RequireAuthProps) {
         if (session?.user) {
           setAllowed(true);
           setChecking(false);
+          schedulePendingOrganisationAccessActivation(session.access_token);
         }
         return;
       }
@@ -80,6 +83,7 @@ export default function RequireAuth({ children }: RequireAuthProps) {
       if (session?.user) {
         setAllowed(true);
         setChecking(false);
+        schedulePendingOrganisationAccessActivation(session.access_token);
       } else {
         setAllowed(false);
         setChecking(false);

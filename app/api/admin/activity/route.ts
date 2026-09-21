@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdminApi } from "@/lib/require-admin-api";
+import { auditActorKindLabel } from "@/lib/access/organisation-access-audit";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -113,10 +114,15 @@ export async function GET(req: NextRequest) {
       const joined = `${prof?.first_name || ""} ${prof?.last_name || ""}`.trim();
       const adminLabel =
         joined || prof?.email || r.admin_user_id.slice(0, 8) + "…";
+      const meta =
+        r.meta && typeof r.meta === "object"
+          ? (r.meta as Record<string, unknown>)
+          : null;
       return {
         ...r,
         adminEmail: prof?.email ?? null,
         adminLabel,
+        actorKindLabel: auditActorKindLabel(meta?.actor_kind),
       };
     });
 

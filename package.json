@@ -45,6 +45,7 @@
     "test:crm-organisation-property-link": "tsx scripts/test-crm-organisation-property-link.ts",
     "test:access-resolver": "tsx scripts/test-access-resolver.ts",
     "test:booking-authority": "tsx scripts/test-booking-authority.ts",
+    "test:people-access": "tsx scripts/test-people-access.ts",
     "test:crm-org-contact-filters": "tsx scripts/test-crm-org-contact-filters.ts",
     "test:crm-primary-contact": "tsx scripts/test-crm-primary-contact.ts",
     "apply:migration-053": "node --env-file=.env.local scripts/apply-migration-053.mjs",

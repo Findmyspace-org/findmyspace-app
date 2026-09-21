@@ -175,11 +175,13 @@ export async function notifyBookingEvent(
       ? await resolveOperationalBookingManagers(supabaseAdmin, booking.space_id)
       : null;
     const hostRecipientIds =
-      operational?.recipientUserIds?.length
-        ? operational.recipientUserIds
-        : booking.owner_id
-          ? [booking.owner_id]
-          : [];
+      operational?.notifyUserIds?.length
+        ? operational.notifyUserIds
+        : operational?.recipientUserIds?.length
+          ? operational.recipientUserIds
+          : booking.owner_id
+            ? [booking.owner_id]
+            : [];
 
     let hostProfiles: Array<{
       id: string;

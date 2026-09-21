@@ -45,11 +45,12 @@ export async function resolveOperationalBookingManagers(
 
   let spaceManagerIds: string[] = [];
   let orgAdminIds: string[] = [];
+  let notifyAllOrgAdminIds: string[] = [];
 
   if (organisationId) {
     const { data: grants } = await admin
       .from("organisation_access")
-      .select("user_id, role, property_id, space_id, status")
+      .select("user_id, role, property_id, space_id, status, notify_all_bookings")
       .eq("organisation_id", organisationId)
       .eq("status", "active")
       .in("role", ["space_manager", "org_admin"]);
@@ -59,6 +60,7 @@ export async function resolveOperationalBookingManagers(
       role: string;
       property_id: string | null;
       space_id: string | null;
+      notify_all_bookings?: boolean | null;
     }>) {
       if (!row.user_id) continue;
       if (
@@ -74,6 +76,9 @@ export async function resolveOperationalBookingManagers(
         row.space_id == null
       ) {
         orgAdminIds.push(row.user_id);
+        if (row.notify_all_bookings) {
+          notifyAllOrgAdminIds.push(row.user_id);
+        }
       }
     }
   }
@@ -84,6 +89,7 @@ export async function resolveOperationalBookingManagers(
     propertyOwnerId,
     activeSpaceManagerUserIds: spaceManagerIds,
     activeOrgAdminUserIds: orgAdminIds,
+    notifyAllOrgAdminUserIds: notifyAllOrgAdminIds,
   });
 }
 

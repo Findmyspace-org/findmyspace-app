@@ -9,6 +9,7 @@ import { getPendingAdvisorCode, setPendingAdvisorCode } from "@/lib/advisor-code
 import { sanitizeNextPath } from "@/lib/auth-redirect";
 import { logAuthDiagnostic } from "@/lib/supabase-diagnostics";
 import PasswordField from "@/app/components/PasswordField";
+import { schedulePendingOrganisationAccessActivation } from "@/lib/access/organisation-access-client";
 
 type AuthFormProps = {
   mode: "login" | "signup";
@@ -187,6 +188,7 @@ export default function AuthForm({
           const signupSession = signUpData.session;
           if (signupSession?.access_token) {
             await claimPendingAdvisor(signupSession.access_token);
+            schedulePendingOrganisationAccessActivation(signupSession.access_token);
           }
         }
 
@@ -236,6 +238,7 @@ export default function AuthForm({
       }
       if (session?.access_token) {
         await claimPendingAdvisor(session.access_token);
+        schedulePendingOrganisationAccessActivation(session.access_token);
       }
 
       window.location.replace(nextPath);
