@@ -38,6 +38,11 @@ import {
   selectableOrganisations,
   shouldShowOrganisationSelector,
 } from "../lib/access/organisation-workspace";
+import {
+  filterPeopleAccessGrants,
+  isHistoricalPeopleAccess,
+  peopleAccessAllowsManagement,
+} from "../lib/access/people-access-view";
 
 const USER = "user-jane";
 const OA = "oa-1";
@@ -1033,6 +1038,141 @@ function wsOrg(
   );
   assert.match(peoplePage, /grant\.displayName \|\| grant\.email/);
   assert.match(dashboardShell, /pageContext/);
+}
+
+const peopleGrants = [
+  { id: "active-oa", status: "active", email: "ada@example.com" },
+  { id: "pending-sm", status: "pending", email: "bev@example.com" },
+  { id: "revoked-oa", status: "revoked", email: "cara@example.com" },
+];
+
+// People view A All contains active rows
+{
+  const all = filterPeopleAccessGrants(peopleGrants, "all");
+  assert.equal(all.some((grant) => grant.id === "active-oa"), true);
+}
+
+// People view B All contains pending rows
+{
+  const all = filterPeopleAccessGrants(peopleGrants, "all");
+  assert.equal(all.some((grant) => grant.id === "pending-sm"), true);
+}
+
+// People view C All does not contain revoked rows
+{
+  const all = filterPeopleAccessGrants(peopleGrants, "all");
+  assert.equal(all.some((grant) => grant.status === "revoked"), false);
+  assert.match(peoplePage, /filterPeopleAccessGrants\(grants, filter\)/);
+  assert.doesNotMatch(peoplePage, /if \(filter === "all"\) return grants/);
+}
+
+// People view D Active contains only active rows
+{
+  const active = filterPeopleAccessGrants(peopleGrants, "active");
+  assert.deepEqual(
+    active.map((grant) => grant.status),
+    ["active"]
+  );
+}
+
+// People view E Pending contains only pending rows
+{
+  const pending = filterPeopleAccessGrants(peopleGrants, "pending");
+  assert.deepEqual(
+    pending.map((grant) => grant.status),
+    ["pending"]
+  );
+}
+
+// People view F Removed contains only revoked rows
+{
+  const removed = filterPeopleAccessGrants(peopleGrants, "revoked");
+  assert.deepEqual(
+    removed.map((grant) => grant.status),
+    ["revoked"]
+  );
+}
+
+// People view G Successful revoke drops the row from All after refresh
+{
+  const before = filterPeopleAccessGrants(peopleGrants, "all").map(
+    (grant) => grant.id
+  );
+  assert.deepEqual(before, ["active-oa", "pending-sm"]);
+  const refreshed = peopleGrants.map((grant) =>
+    grant.id === "active-oa" ? { ...grant, status: "revoked" } : grant
+  );
+  assert.deepEqual(
+    filterPeopleAccessGrants(refreshed, "all").map((grant) => grant.id),
+    ["pending-sm"]
+  );
+  assert.match(peoplePage, /await revokeOrganisationAccessRequest/);
+  assert.match(peoplePage, /await loadAccess\(organisationId\)/);
+  assert.doesNotMatch(peoplePage, /DELETE/);
+}
+
+// People view H Revoked row remains available in Removed
+{
+  const refreshed = peopleGrants.map((grant) =>
+    grant.id === "active-oa" ? { ...grant, status: "revoked" } : grant
+  );
+  assert.deepEqual(
+    filterPeopleAccessGrants(refreshed, "revoked").map((grant) => grant.id),
+    ["active-oa", "revoked-oa"]
+  );
+}
+
+// People view I Removed rows do not expose active management controls
+{
+  assert.equal(peopleAccessAllowsManagement("revoked"), false);
+  assert.equal(peopleAccessAllowsManagement("active"), true);
+  assert.equal(peopleAccessAllowsManagement("pending"), true);
+  assert.equal(isHistoricalPeopleAccess("revoked"), true);
+  assert.match(peoplePage, /peopleAccessAllowsManagement\(grant\.status\)/);
+  assert.match(peoplePage, /canManage \?/);
+}
+
+// People view J Revoked historical grant + new current grant stay independent
+{
+  const sameEmail = [
+    { id: "old-oa", status: "revoked", email: "ada@example.com" },
+    { id: "new-sm", status: "pending", email: "ada@example.com" },
+  ];
+  assert.deepEqual(
+    filterPeopleAccessGrants(sameEmail, "all").map((grant) => grant.id),
+    ["new-sm"]
+  );
+  assert.deepEqual(
+    filterPeopleAccessGrants(sameEmail, "revoked").map((grant) => grant.id),
+    ["old-oa"]
+  );
+  assert.equal(findDuplicateGrant(
+    [
+      existing({
+        id: "old-oa",
+        role: "org_admin",
+        status: "revoked",
+        emailNormalized: "ada@example.com",
+      }),
+    ],
+    {
+      organisationId: ORG_A,
+      role: "org_admin",
+      propertyId: null,
+      spaceId: null,
+      emailNormalized: "ada@example.com",
+      userId: null,
+      status: "pending",
+    }
+  ), null);
+  assert.match(peoplePage, /filteredGrants\.map\(\(grant\) => \{/);
+  assert.match(peoplePage, /key=\{grant\.id\}/);
+}
+
+// People view K no cross-organisation leakage
+{
+  assert.match(peoplePage, /fetchOrganisationAccess\(selectedOrganisationId\)/);
+  assert.match(peoplePage, /if \(!organisationId\) return/);
 }
 
 console.log("test-people-access: all assertions passed");

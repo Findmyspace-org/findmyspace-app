@@ -30,8 +30,13 @@ import {
   resolveOrganisationWorkspaceSelection,
   type ManageableOrganisation,
 } from "@/lib/access/organisation-workspace";
-
-type StatusFilter = "all" | "active" | "pending" | "revoked";
+import {
+  PEOPLE_STATUS_FILTERS,
+  filterPeopleAccessGrants,
+  isHistoricalPeopleAccess,
+  peopleAccessAllowsManagement,
+  type PeopleStatusFilter,
+} from "@/lib/access/people-access-view";
 
 function roleLabel(role: string) {
   if (role === "org_admin") return "Organisation Admin";
@@ -65,7 +70,7 @@ function PeoplePageContent() {
   const [accessLoading, setAccessLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
-  const [filter, setFilter] = useState<StatusFilter>("all");
+  const [filter, setFilter] = useState<PeopleStatusFilter>("all");
   const [email, setEmail] = useState("");
   const [role, setRole] = useState("org_admin");
   const [propertyId, setPropertyId] = useState("");
@@ -168,10 +173,10 @@ function PeoplePageContent() {
     router.push(organisationWorkspaceHref("/dashboard/people", nextId));
   }
 
-  const filteredGrants = useMemo(() => {
-    if (filter === "all") return grants;
-    return grants.filter((grant) => grant.status === filter);
-  }, [filter, grants]);
+  const filteredGrants = useMemo(
+    () => filterPeopleAccessGrants(grants, filter),
+    [filter, grants]
+  );
 
   const spacesForProperty = useMemo(
     () => spaces.filter((space) => space.propertyId === propertyId),
@@ -386,7 +391,7 @@ function PeoplePageContent() {
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <h2 className="text-base font-semibold text-[#0c1d2f]">People</h2>
                 <div className="flex gap-2">
-                  {(["all", "active", "pending", "revoked"] as StatusFilter[]).map(
+                  {PEOPLE_STATUS_FILTERS.map(
                     (value) => (
                       <button
                         key={value}
@@ -411,7 +416,10 @@ function PeoplePageContent() {
                 <p className="mt-6 text-sm text-gray-500">No people in this view yet.</p>
               ) : (
                 <ul className="mt-4 divide-y divide-gray-100">
-                  {filteredGrants.map((grant) => (
+                  {filteredGrants.map((grant) => {
+                    const historical = isHistoricalPeopleAccess(grant.status);
+                    const canManage = peopleAccessAllowsManagement(grant.status);
+                    return (
                     <li key={grant.id} className="py-4">
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>
@@ -426,12 +434,15 @@ function PeoplePageContent() {
                           </p>
                           <p className="mt-1 text-xs uppercase tracking-wide text-gray-500">
                             {statusLabel(grant.status)}
-                            {grant.isPrimary ? " · Primary Space Manager" : ""}
-                            {grant.notifyAllBookings
+                            {!historical && grant.isPrimary
+                              ? " · Primary Space Manager"
+                              : ""}
+                            {!historical && grant.notifyAllBookings
                               ? " · Booking emails on"
                               : ""}
                           </p>
                         </div>
+                        {canManage ? (
                         <div className="flex flex-wrap gap-2">
                           {grant.role === "space_manager" &&
                           grant.status === "active" ? (
@@ -458,8 +469,7 @@ function PeoplePageContent() {
                               {grant.isPrimary ? "Remove primary" : "Make primary"}
                             </button>
                           ) : null}
-                          {grant.role === "org_admin" &&
-                          grant.status !== "revoked" ? (
+                          {grant.role === "org_admin" ? (
                             <button
                               type="button"
                               disabled={saving}
@@ -486,7 +496,6 @@ function PeoplePageContent() {
                             </button>
                           ) : null}
                           {grant.role === "space_manager" &&
-                          grant.status !== "revoked" &&
                           spaces.length > 0 ? (
                             <select
                               className="rounded-full border border-gray-300 px-3 py-1.5 text-xs"
@@ -521,20 +530,20 @@ function PeoplePageContent() {
                               ))}
                             </select>
                           ) : null}
-                          {grant.status !== "revoked" ? (
-                            <button
-                              type="button"
-                              disabled={saving}
-                              onClick={() => void handleRevoke(grant)}
-                              className="rounded-full border border-red-200 px-3 py-1.5 text-xs text-red-700"
-                            >
-                              Remove
-                            </button>
-                          ) : null}
+                          <button
+                            type="button"
+                            disabled={saving}
+                            onClick={() => void handleRevoke(grant)}
+                            className="rounded-full border border-red-200 px-3 py-1.5 text-xs text-red-700"
+                          >
+                            Remove
+                          </button>
                         </div>
+                        ) : null}
                       </div>
                     </li>
-                  ))}
+                    );
+                  })}
                 </ul>
               )}
             </div>
