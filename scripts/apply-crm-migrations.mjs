@@ -6,6 +6,10 @@
 
 import { readFileSync, existsSync } from "node:fs";
 import { execSync } from "node:child_process";
+import {
+  assertFindmyspaceSupabaseTarget,
+  linkFindmyspaceSupabaseCli,
+} from "./lib/assert-findmyspace-supabase-target.mjs";
 
 function loadEnvLocal() {
   if (!existsSync(".env.local")) {
@@ -23,13 +27,7 @@ function loadEnvLocal() {
 }
 
 const env = { ...process.env, ...loadEnvLocal() };
-const supabaseUrl = env.NEXT_PUBLIC_SUPABASE_URL;
-if (!supabaseUrl) {
-  console.error("NEXT_PUBLIC_SUPABASE_URL is not configured.");
-  process.exit(1);
-}
-
-const projectRef = new URL(supabaseUrl).hostname.split(".")[0];
+const { projectRef } = assertFindmyspaceSupabaseTarget(env);
 const accessToken = env.SUPABASE_ACCESS_TOKEN || process.env.SUPABASE_ACCESS_TOKEN;
 if (!accessToken) {
   console.error("SUPABASE_ACCESS_TOKEN is required for supabase db push.");
@@ -37,17 +35,10 @@ if (!accessToken) {
 }
 
 console.log(`Repository: ${process.cwd()}`);
-console.log(`Target project ref: ${projectRef}`);
+console.log(`Verified project ref: ${projectRef}`);
 console.log("Applying migrations with: npx supabase@latest db push");
 
-try {
-  execSync(`npx supabase@latest link --project-ref ${projectRef}`, {
-    env: { ...env, SUPABASE_ACCESS_TOKEN: accessToken },
-    stdio: "inherit",
-  });
-} catch {
-  console.warn("supabase link reported a non-fatal issue (project may already be linked).");
-}
+linkFindmyspaceSupabaseCli(env, accessToken);
 
 execSync("npx supabase@latest db push", {
   env: { ...env, SUPABASE_ACCESS_TOKEN: accessToken },

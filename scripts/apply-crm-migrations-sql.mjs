@@ -6,6 +6,7 @@
 
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
+import { assertFindmyspaceSupabaseTarget } from "./lib/assert-findmyspace-supabase-target.mjs";
 
 function loadEnvLocal() {
   if (!existsSync(".env.local")) throw new Error(".env.local not found");
@@ -21,14 +22,12 @@ function loadEnvLocal() {
 }
 
 const env = { ...process.env, ...loadEnvLocal() };
-const supabaseUrl = env.NEXT_PUBLIC_SUPABASE_URL;
+const { projectRef } = assertFindmyspaceSupabaseTarget(env);
 const accessToken = env.SUPABASE_ACCESS_TOKEN;
-if (!supabaseUrl || !accessToken) {
-  console.error("NEXT_PUBLIC_SUPABASE_URL and SUPABASE_ACCESS_TOKEN are required.");
+if (!accessToken) {
+  console.error("SUPABASE_ACCESS_TOKEN is required.");
   process.exit(1);
 }
-
-const projectRef = new URL(supabaseUrl).hostname.split(".")[0];
 const migrationFiles = [
   "051_20260707_crm_marketing.sql",
   "052_20260707_crm_close_pipeline_rpc.sql",
@@ -59,7 +58,7 @@ async function runSql(query) {
 }
 
 console.log(`Repository: ${process.cwd()}`);
-console.log(`Target project ref: ${projectRef}`);
+console.log(`Verified project ref: ${projectRef}`);
 console.log("Applying migrations via Supabase Management API");
 
 for (const file of migrationFiles) {

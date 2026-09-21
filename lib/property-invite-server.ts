@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { sendEmail } from "@/lib/email";
 import { renderEmailLayout } from "@/lib/email-templates/EmailLayout";
 import { buildPropertyInviteCopy } from "@/lib/communication-copy";
+import { ownerClaimedSpaceUpdate } from "@/lib/listing-lifecycle";
 import {
   buildPropertyInviteUrl,
   generatePropertyInviteToken,
@@ -266,13 +267,6 @@ export async function acceptPropertyInvite(
   }
 
   const status = await expirePropertyInviteIfNeeded(admin, token);
-  if (status !== "pending") {
-    return {
-      ok: false,
-      error: `This invite link is ${status}.`,
-      status: 400,
-    };
-  }
 
   const { data: property, error: propertyErr } = await admin
     .from("properties")
@@ -285,7 +279,9 @@ export async function acceptPropertyInvite(
   }
 
   const propertyRow = property as { id: string; name: string; owner_id: string | null };
-  if (propertyRow.owner_id) {
+  const alreadyOwnedByUser = propertyRow.owner_id === userId;
+
+  if (propertyRow.owner_id && !alreadyOwnedByUser) {
     return {
       ok: false,
       error: "This property was already accepted by an owner.",
@@ -293,29 +289,41 @@ export async function acceptPropertyInvite(
     };
   }
 
-  const nowIso = new Date().toISOString();
-
-  const { data: updatedProperty, error: propertyUpdateErr } = await admin
-    .from("properties")
-    .update({
-      owner_id: userId,
-      owner_accepted_at: nowIso,
-    })
-    .eq("id", token.property_id)
-    .is("owner_id", null)
-    .select("id, name")
-    .maybeSingle();
-
-  if (propertyUpdateErr) {
-    return { ok: false, error: propertyUpdateErr.message, status: 500 };
-  }
-
-  if (!updatedProperty) {
+  // Retry a partial accept (property linked, spaces not yet claimed) even if
+  // the invite later expired. Do not let a fresh expired/revoked invite claim.
+  if (status !== "pending" && !alreadyOwnedByUser) {
     return {
       ok: false,
-      error: "This property was already accepted.",
-      status: 409,
+      error: `This invite link is ${status}.`,
+      status: 400,
     };
+  }
+
+  const nowIso = new Date().toISOString();
+
+  if (!alreadyOwnedByUser) {
+    const { data: updatedProperty, error: propertyUpdateErr } = await admin
+      .from("properties")
+      .update({
+        owner_id: userId,
+        owner_accepted_at: nowIso,
+      })
+      .eq("id", token.property_id)
+      .is("owner_id", null)
+      .select("id, name")
+      .maybeSingle();
+
+    if (propertyUpdateErr) {
+      return { ok: false, error: propertyUpdateErr.message, status: 500 };
+    }
+
+    if (!updatedProperty) {
+      return {
+        ok: false,
+        error: "This property was already accepted.",
+        status: 409,
+      };
+    }
   }
 
   const { data: childSpaces, error: spacesErr } = await admin
@@ -336,20 +344,19 @@ export async function acceptPropertyInvite(
       status: string | null;
     }[]) || [];
 
+  const claimPatch = ownerClaimedSpaceUpdate({
+    ownerId: userId,
+    claimedAt: nowIso,
+  });
+
   for (const space of spaces) {
     if (space.owner_id != null || !space.created_by_admin) {
       continue;
     }
 
-    const patch: Record<string, unknown> = {
-      owner_id: userId,
-      status: "owner_claimed",
-      claimed_at: nowIso,
-    };
-
     const { error: spaceUpdateErr } = await admin
       .from("spaces")
-      .update(patch)
+      .update(claimPatch)
       .eq("id", space.id)
       .is("owner_id", null)
       .eq("created_by_admin", true);
@@ -360,40 +367,42 @@ export async function acceptPropertyInvite(
     }
   }
 
-  const { data: acceptedToken, error: tokenErr } = await admin
-    .from("property_owner_invites")
-    .update({
-      status: "accepted",
-      accepted_by: userId,
-      used_at: nowIso,
-    })
-    .eq("id", token.id)
-    .eq("status", "pending")
-    .select("id")
-    .maybeSingle();
+  if (status === "pending" || (alreadyOwnedByUser && status === "expired")) {
+    const { data: acceptedToken, error: tokenErr } = await admin
+      .from("property_owner_invites")
+      .update({
+        status: "accepted",
+        accepted_by: userId,
+        used_at: nowIso,
+      })
+      .eq("id", token.id)
+      .in("status", ["pending", "expired"])
+      .select("id")
+      .maybeSingle();
 
-  if (tokenErr) {
-    console.error("[property-invite] token update failed after accept", tokenErr);
-    return { ok: false, error: tokenErr.message, status: 500 };
+    if (tokenErr) {
+      console.error("[property-invite] token update failed after accept", tokenErr);
+      return { ok: false, error: tokenErr.message, status: 500 };
+    }
+
+    if (!acceptedToken && status === "pending") {
+      return {
+        ok: false,
+        error: "This invite link is no longer valid.",
+        status: 409,
+      };
+    }
+
+    await admin
+      .from("property_owner_invites")
+      .update({
+        status: "revoked",
+        revoked_at: nowIso,
+      })
+      .eq("property_id", token.property_id)
+      .eq("status", "pending")
+      .neq("id", token.id);
   }
-
-  if (!acceptedToken) {
-    return {
-      ok: false,
-      error: "This invite link is no longer valid.",
-      status: 409,
-    };
-  }
-
-  await admin
-    .from("property_owner_invites")
-    .update({
-      status: "revoked",
-      revoked_at: nowIso,
-    })
-    .eq("property_id", token.property_id)
-    .eq("status", "pending")
-    .neq("id", token.id);
 
   const { error: profileErr } = await admin
     .from("profiles")

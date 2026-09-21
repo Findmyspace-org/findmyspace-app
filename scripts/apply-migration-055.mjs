@@ -7,6 +7,10 @@
 
 import { readFileSync, existsSync } from "node:fs";
 import { execSync } from "node:child_process";
+import {
+  assertFindmyspaceSupabaseTarget,
+  linkFindmyspaceSupabaseCli,
+} from "./lib/assert-findmyspace-supabase-target.mjs";
 
 function loadEnvLocal() {
   if (!existsSync(".env.local")) throw new Error(".env.local not found");
@@ -22,9 +26,8 @@ function loadEnvLocal() {
 }
 
 const env = { ...process.env, ...loadEnvLocal() };
-const url = env.NEXT_PUBLIC_SUPABASE_URL;
 const accessToken = env.SUPABASE_ACCESS_TOKEN;
-const projectRef = new URL(url).hostname.split(".")[0];
+const { projectRef } = assertFindmyspaceSupabaseTarget(env);
 const VERSION = "055";
 
 async function querySql(query) {
@@ -95,6 +98,7 @@ async function main() {
 
   if (!recorded) {
     console.log("Recording migration 055 in schema_migrations...");
+    linkFindmyspaceSupabaseCli(env, accessToken);
     execSync(`npx supabase@latest migration repair --status applied ${VERSION}`, {
       env: { ...env, SUPABASE_ACCESS_TOKEN: accessToken },
       stdio: "inherit",

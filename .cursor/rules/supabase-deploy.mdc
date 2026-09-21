@@ -1,0 +1,14 @@
+---
+description: FindMySpace Supabase deploy safety — read-only MCP, guarded production SQL
+alwaysApply: true
+---
+
+# FindMySpace Supabase deployment
+
+- Cursor Supabase MCP stays **read-only**. Never execute production DDL/DML through MCP.
+- Schema changes must exist first as numbered files in `supabase/migrations/`.
+- Next migration after `061` is `062`. Never reuse a number. Never rename existing migrations.
+- Never run raw `supabase db push` or `supabase migration repair`.
+- Deploy only with guarded repo scripts: `npm run db:guard`, then `npm run apply:migration -- NNN`.
+- Expected project ref is **`ppdaubmxrmzgmxdnyxff`**. Abort on any other target.
+- Never print access tokens, passwords, service-role keys, or anon keys.

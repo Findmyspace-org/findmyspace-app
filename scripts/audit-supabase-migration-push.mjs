@@ -7,6 +7,11 @@
 import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { createClient } from "@supabase/supabase-js";
+import {
+  EXPECTED_PROJECT_REF,
+  assertFindmyspaceSupabaseTarget,
+  inspectCliLinkedProject,
+} from "./lib/assert-findmyspace-supabase-target.mjs";
 
 function loadEnvLocal() {
   if (!existsSync(".env.local")) throw new Error(".env.local not found");
@@ -25,7 +30,13 @@ const env = { ...process.env, ...loadEnvLocal() };
 const url = env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY;
 const accessToken = env.SUPABASE_ACCESS_TOKEN;
-const projectRef = new URL(url).hostname.split(".")[0];
+const cli = inspectCliLinkedProject();
+let environmentTarget = "missing";
+try {
+  if (url) environmentTarget = new URL(url).hostname.split(".")[0] || "missing";
+} catch {
+  environmentTarget = "invalid NEXT_PUBLIC_SUPABASE_URL";
+}
 
 const localMigrations = readdirSync("supabase/migrations")
   .filter((f) => f.endsWith(".sql"))
@@ -33,8 +44,16 @@ const localMigrations = readdirSync("supabase/migrations")
 
 console.log("=== AUDIT EVIDENCE ===");
 console.log("repository:", process.cwd());
-console.log("project_ref:", projectRef);
-console.log("linked_project:", existsSync("supabase/.temp/linked-project.json") ? projectRef : "missing");
+console.log("expected_project_ref:", EXPECTED_PROJECT_REF);
+console.log("environment_target:", environmentTarget);
+console.log("cli_project_ref_file:", cli.projectRefFile || "missing");
+console.log("cli_linked_project_json:", cli.linkedJsonRef || cli.linkedJsonError || "missing");
+console.log("cli_linked_target:", cli.display);
+
+const verified = assertFindmyspaceSupabaseTarget(env);
+const projectRef = verified.projectRef;
+console.log("verified_project_ref:", projectRef);
+console.log("target_guard: PASS");
 console.log("local_migration_count:", localMigrations.length);
 console.log("local_has_051:", localMigrations.some((f) => f.startsWith("051_")));
 console.log("local_has_052:", localMigrations.some((f) => f.startsWith("052_")));

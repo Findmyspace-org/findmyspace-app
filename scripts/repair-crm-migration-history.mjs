@@ -15,6 +15,10 @@
 import { readFileSync, existsSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { createClient } from "@supabase/supabase-js";
+import {
+  assertFindmyspaceSupabaseTarget,
+  linkFindmyspaceSupabaseCli,
+} from "./lib/assert-findmyspace-supabase-target.mjs";
 
 function loadEnvLocal() {
   if (!existsSync(".env.local")) throw new Error(".env.local not found");
@@ -30,10 +34,10 @@ function loadEnvLocal() {
 }
 
 const env = { ...process.env, ...loadEnvLocal() };
+const { projectRef } = assertFindmyspaceSupabaseTarget(env);
 const url = env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY;
 const accessToken = env.SUPABASE_ACCESS_TOKEN || process.env.SUPABASE_ACCESS_TOKEN;
-const projectRef = url ? new URL(url).hostname.split(".")[0] : "unknown";
 
 const MIGRATIONS = [
   { version: "051", table: "crm_marketing_contacts" },
@@ -41,7 +45,7 @@ const MIGRATIONS = [
 ];
 
 console.log(`Repository: ${process.cwd()}`);
-console.log(`Project ref: ${projectRef}`);
+console.log(`Verified project ref: ${projectRef}`);
 
 const admin = createClient(url, serviceKey);
 
@@ -102,14 +106,7 @@ if (!accessToken) {
   process.exit(0);
 }
 
-try {
-  execSync(`npx supabase@latest link --project-ref ${projectRef}`, {
-    env: { ...env, SUPABASE_ACCESS_TOKEN: accessToken },
-    stdio: "inherit",
-  });
-} catch {
-  console.warn("supabase link reported a non-fatal issue.");
-}
+linkFindmyspaceSupabaseCli(env, accessToken);
 
 for (const migration of MIGRATIONS) {
   const exists = await objectExists(migration);
