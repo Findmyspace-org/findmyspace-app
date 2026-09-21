@@ -1223,3 +1223,73 @@ export function buildListingClaimedOwnerCopy(
     notificationMessage: `You claimed ${listing}. Complete verification, pricing, and availability before submitting for review.`,
   };
 }
+
+export type OrganisationAccessInviteCopyInput = {
+  organisationName: string;
+  role: "org_admin" | "property_manager" | "space_manager" | string;
+  propertyName?: string | null;
+  spaceTitle?: string | null;
+};
+
+export function organisationAccessInviteHeadline(
+  input: OrganisationAccessInviteCopyInput
+): string {
+  const organisation = input.organisationName.trim() || "this organisation";
+  if (input.role === "property_manager") {
+    const property = input.propertyName?.trim() || "a property";
+    return `You've been invited to manage ${property} for ${organisation}.`;
+  }
+  if (input.role === "space_manager") {
+    const space = input.spaceTitle?.trim() || "a space";
+    return `You've been invited to manage ${space} for ${organisation}.`;
+  }
+  return `You've been invited to help manage ${organisation} on FindMySpace.`;
+}
+
+export function buildOrganisationAccessInviteCopy(
+  input: OrganisationAccessInviteCopyInput
+): CommunicationCopy {
+  const organisation = input.organisationName.trim() || "this organisation";
+  const headline = organisationAccessInviteHeadline(input);
+  const roleLabel =
+    input.role === "org_admin"
+      ? "Organisation Admin"
+      : input.role === "property_manager"
+      ? "Property Manager"
+      : input.role === "space_manager"
+      ? "Space Manager"
+      : "a team member";
+
+  const bodyLines: CommunicationCopy["emailBodyLines"] = [
+    headline,
+    { html: `Organisation: ${emailStrong(organisation).html}` },
+    { html: `Role: ${emailStrong(roleLabel).html}` },
+  ];
+
+  if (input.role === "property_manager") {
+    bodyLines.push({
+      html: `Property: ${emailStrong(input.propertyName?.trim() || "Assigned property").html}`,
+    });
+  }
+  if (input.role === "space_manager") {
+    bodyLines.push({
+      html: `Space: ${emailStrong(input.spaceTitle?.trim() || "Assigned space").html}`,
+    });
+  }
+
+  bodyLines.push(
+    "Use the button below to review this invitation. You will need to sign in or create an account with the invited email address, then accept the invitation.",
+    "This invitation expires in 14 days. If you were not expecting this email, you can ignore it."
+  );
+
+  return {
+    notificationTitle: `Invitation to ${organisation}`,
+    notificationMessage: headline,
+    emailSubject: `You've been invited to ${organisation} on FindMySpace`,
+    emailPreheader: headline,
+    emailTitle: "You've been invited",
+    emailBodyLines: bodyLines,
+    ctaLabel: "Accept invitation",
+    emailFooterRole: "host",
+  };
+}

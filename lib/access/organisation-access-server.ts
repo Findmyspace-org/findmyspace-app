@@ -1,6 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { adminAudit } from "@/lib/admin-audit";
-import { lookupAuthUserByEmail } from "@/lib/access/lookup-auth-user-by-email";
+import {
+  issueOrganisationAccessInvitation,
+  revokePendingOrganisationAccessInvitations,
+} from "@/lib/access/organisation-access-invite-server";
 import {
   ORGANISATION_ACCESS_AUDIT,
   organisationAccessAuditEvent,
@@ -26,16 +29,9 @@ import type {
   OrganisationAccessRole,
   OrganisationAccessStatus,
 } from "@/lib/access/roles";
+import { OrganisationAccessError } from "@/lib/access/organisation-access-error";
 
-export class OrganisationAccessError extends Error {
-  constructor(
-    public status: number,
-    message: string,
-    public code?: string
-  ) {
-    super(message);
-  }
-}
+export { OrganisationAccessError };
 
 type AccessRow = {
   id: string;
@@ -324,6 +320,12 @@ async function assertPropertyAndSpace(
   return { propertyId, spaceId };
 }
 
+export type GrantOrganisationAccessResult = {
+  grant: PublicAccessGrantView;
+  invitationCreated: boolean;
+  invitationSent: boolean;
+};
+
 export async function grantOrganisationAccess(
   admin: SupabaseClient,
   input: {
@@ -332,7 +334,7 @@ export async function grantOrganisationAccess(
     actorKind: OrganisationAccessActorKind;
     grant: OrganisationAccessGrantInput;
   }
-): Promise<PublicAccessGrantView> {
+): Promise<GrantOrganisationAccessResult> {
   const parsed = parseGrantInput(input.grant);
   if (!("ok" in parsed)) {
     throw new OrganisationAccessError(parsed.status, parsed.error, parsed.code);
@@ -346,11 +348,9 @@ export async function grantOrganisationAccess(
     parsed.spaceId
   );
 
-  const authUser = await lookupAuthUserByEmail(admin, parsed.emailNormalized);
-  const activation = decideGrantActivation(authUser);
+  const activation = decideGrantActivation(null);
   const status = activation.status;
   const userId = activation.userId;
-  const now = new Date().toISOString();
 
   const existing = await loadOrgAccessRows(admin, input.organisationId);
   const duplicate = findDuplicateGrant(existing.map(asAccessRow), {
@@ -384,7 +384,7 @@ export async function grantOrganisationAccess(
     is_primary: false,
     notify_all_bookings: parsed.role === "org_admin" ? parsed.notifyAllBookings : false,
     invited_by: input.actorUserId,
-    activated_at: status === "active" ? now : null,
+    activated_at: null,
     revoked_at: null,
     revoked_by: null,
     revoke_reason: null,
@@ -419,10 +419,7 @@ export async function grantOrganisationAccess(
 
   await adminAudit(
     organisationAccessAuditEvent({
-      action:
-        status === "active"
-          ? ORGANISATION_ACCESS_AUDIT.granted
-          : ORGANISATION_ACCESS_AUDIT.pendingCreated,
+      action: ORGANISATION_ACCESS_AUDIT.pendingCreated,
       actorUserId: input.actorUserId,
       actorKind: input.actorKind,
       organisationId: input.organisationId,
@@ -439,24 +436,126 @@ export async function grantOrganisationAccess(
     })
   );
 
-  return toPublicAccessGrantView({
-    id: row.id,
-    status: row.status,
-    role: row.role,
-    email: row.email,
-    userId: row.user_id,
-    propertyId: row.property_id,
-    propertyName: null,
-    spaceId: row.space_id,
-    spaceTitle: null,
-    isPrimary: row.is_primary,
-    notifyAllBookings: row.notify_all_bookings,
-    invitedBy: row.invited_by,
-    createdAt: row.created_at,
-    activatedAt: row.activated_at,
-    revokedAt: row.revoked_at,
-    revokeReason: row.revoke_reason,
+  let invitationCreated = false;
+  let invitationSent = false;
+  try {
+    const invitation = await issueOrganisationAccessInvitation(admin, {
+      access: {
+        id: row.id,
+        organisation_id: row.organisation_id,
+        role: row.role,
+        property_id: row.property_id,
+        space_id: row.space_id,
+        email: row.email,
+        email_normalized: row.email_normalized,
+        status: row.status,
+        user_id: row.user_id,
+      },
+      actorUserId: input.actorUserId,
+      actorKind: input.actorKind,
+      auditAction: ORGANISATION_ACCESS_AUDIT.invitationCreated,
+    });
+    invitationCreated = true;
+    invitationSent = invitation.emailSent;
+  } catch (error) {
+    console.error("[organisation-access] invitation issue failed after grant", error);
+  }
+
+  return {
+    grant: toPublicAccessGrantView({
+      id: row.id,
+      status: row.status,
+      role: row.role,
+      email: row.email,
+      userId: row.user_id,
+      propertyId: row.property_id,
+      propertyName: null,
+      spaceId: row.space_id,
+      spaceTitle: null,
+      isPrimary: row.is_primary,
+      notifyAllBookings: row.notify_all_bookings,
+      invitedBy: row.invited_by,
+      createdAt: row.created_at,
+      activatedAt: row.activated_at,
+      revokedAt: row.revoked_at,
+      revokeReason: row.revoke_reason,
+    }),
+    invitationCreated,
+    invitationSent,
+  };
+}
+
+export async function resendOrganisationAccessInvitation(
+  admin: SupabaseClient,
+  input: {
+    organisationId: string;
+    actorUserId: string;
+    actorKind: OrganisationAccessActorKind;
+    accessId: string;
+  }
+): Promise<{ grant: PublicAccessGrantView; invitationSent: boolean }> {
+  if (!isUuid(input.accessId)) {
+    throw new OrganisationAccessError(400, "Invalid access id.", "invalid_id");
+  }
+
+  const rows = await loadOrgAccessRows(admin, input.organisationId);
+  const row = rows.find((item) => item.id === input.accessId);
+  if (!row) {
+    throw new OrganisationAccessError(404, "Access record not found.", "not_found");
+  }
+  if (row.status === "revoked") {
+    throw new OrganisationAccessError(
+      409,
+      "Removed access cannot receive an invitation.",
+      "already_revoked"
+    );
+  }
+  if (row.status === "active") {
+    throw new OrganisationAccessError(
+      409,
+      "This person already has access.",
+      "already_active"
+    );
+  }
+
+  const invitation = await issueOrganisationAccessInvitation(admin, {
+    access: {
+      id: row.id,
+      organisation_id: row.organisation_id,
+      role: row.role,
+      property_id: row.property_id,
+      space_id: row.space_id,
+      email: row.email,
+      email_normalized: row.email_normalized,
+      status: row.status,
+      user_id: row.user_id,
+    },
+    actorUserId: input.actorUserId,
+    actorKind: input.actorKind,
+    auditAction: ORGANISATION_ACCESS_AUDIT.invitationResent,
   });
+
+  return {
+    grant: toPublicAccessGrantView({
+      id: row.id,
+      status: row.status,
+      role: row.role,
+      email: row.email,
+      userId: row.user_id,
+      propertyId: row.property_id,
+      propertyName: null,
+      spaceId: row.space_id,
+      spaceTitle: null,
+      isPrimary: row.is_primary,
+      notifyAllBookings: row.notify_all_bookings,
+      invitedBy: row.invited_by,
+      createdAt: row.created_at,
+      activatedAt: row.activated_at,
+      revokedAt: row.revoked_at,
+      revokeReason: row.revoke_reason,
+    }),
+    invitationSent: invitation.emailSent,
+  };
 }
 
 export async function revokeOrganisationAccess(
@@ -538,6 +637,12 @@ export async function revokeOrganisationAccess(
       previous: { status: row.status, user_id: row.user_id },
       next: { status: "revoked", revoked_by: input.actorUserId },
     })
+  );
+
+  await revokePendingOrganisationAccessInvitations(
+    admin,
+    updated.id,
+    input.actorUserId
   );
 
   return toPublicAccessGrantView({

@@ -20,6 +20,7 @@ import {
   fetchOrganisationAccess,
   grantOrganisationAccessRequest,
   reassignOrganisationAccessRequest,
+  resendOrganisationAccessInvitationRequest,
   revokeOrganisationAccessRequest,
   setNotifyAllBookingsRequest,
   setPrimarySpaceManagerRequest,
@@ -189,7 +190,7 @@ function PeoplePageContent() {
     setSaving(true);
     setMessage("");
     try {
-      await grantOrganisationAccessRequest(organisationId, {
+      const result = await grantOrganisationAccessRequest(organisationId, {
         email,
         role,
         propertyId: role === "org_admin" ? null : propertyId || null,
@@ -200,9 +201,40 @@ function PeoplePageContent() {
       setEmail("");
       setIsPrimary(false);
       setNotifyAllBookings(false);
+      setMessage(
+        result.invitationSent
+          ? "Invitation sent."
+          : result.invitationCreated
+          ? "Access was created, but the invitation email could not be sent."
+          : "Access was created, but the invitation could not be created. Try Resend invitation."
+      );
       await loadAccess(organisationId);
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Could not add access.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleResend(grant: PublicAccessGrantView) {
+    if (!organisationId) return;
+    setSaving(true);
+    setMessage("");
+    try {
+      const result = await resendOrganisationAccessInvitationRequest(
+        organisationId,
+        grant.id
+      );
+      setMessage(
+        result.invitationSent
+          ? "Invitation sent."
+          : "Access is pending, but the invitation email could not be sent."
+      );
+      await loadAccess(organisationId);
+    } catch (err) {
+      setMessage(
+        err instanceof Error ? err.message : "Could not resend invitation."
+      );
     } finally {
       setSaving(false);
     }
@@ -529,6 +561,16 @@ function PeoplePageContent() {
                                 </option>
                               ))}
                             </select>
+                          ) : null}
+                          {grant.status === "pending" ? (
+                            <button
+                              type="button"
+                              disabled={saving}
+                              onClick={() => void handleResend(grant)}
+                              className="rounded-full border border-gray-300 px-3 py-1.5 text-xs"
+                            >
+                              Resend invitation
+                            </button>
                           ) : null}
                           <button
                             type="button"

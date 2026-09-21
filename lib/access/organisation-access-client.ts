@@ -32,7 +32,11 @@ export async function grantOrganisationAccessRequest(
   return ownerApiFetch(`/api/organisations/${organisationId}/access`, {
     method: "POST",
     body: JSON.stringify(body),
-  }) as Promise<{ grant: PublicAccessGrantView }>;
+  }) as Promise<{
+    grant: PublicAccessGrantView;
+    invitationCreated: boolean;
+    invitationSent: boolean;
+  }>;
 }
 
 export async function revokeOrganisationAccessRequest(
@@ -94,18 +98,16 @@ export async function reassignOrganisationAccessRequest(
   ) as Promise<{ grant: PublicAccessGrantView }>;
 }
 
-export function schedulePendingOrganisationAccessActivation(
-  accessToken: string | null | undefined
+export async function resendOrganisationAccessInvitationRequest(
+  organisationId: string,
+  accessId: string
 ) {
-  if (!accessToken) return;
-  void fetch("/api/organisations/access/activate", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${accessToken}`,
-    },
-    body: "{}",
-  }).catch(() => {
-    /* non-fatal: login must succeed even if activation is delayed */
-  });
+  return ownerApiFetch(
+    `/api/organisations/${organisationId}/access/${accessId}/resend-invite`,
+    {
+      method: "POST",
+      body: "{}",
+    }
+  ) as Promise<{ grant: PublicAccessGrantView; invitationSent: boolean }>;
 }
+

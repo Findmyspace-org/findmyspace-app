@@ -326,13 +326,15 @@ export function resolveManagerReassignScope(input: {
   return { propertyId: input.property.id, spaceId: null };
 }
 
-export function decideGrantActivation(authUser: {
+/**
+ * New Organisation access granted by email always starts pending.
+ * Autoconfirm sets email_confirmed_at without mailbox proof, so a matching
+ * auth user is not trusted activation evidence. Invitation acceptance is required.
+ */
+export function decideGrantActivation(_authUser?: {
   id: string;
   emailConfirmed: boolean;
-} | null): { status: "pending" | "active"; userId: string | null } {
-  if (authUser?.emailConfirmed) {
-    return { status: "active", userId: authUser.id };
-  }
+} | null): { status: "pending"; userId: null } {
   return { status: "pending", userId: null };
 }
 

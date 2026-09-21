@@ -48,7 +48,7 @@ export async function POST(
   }
 
   try {
-    const grant = await grantOrganisationAccess(auth.admin, {
+    const result = await grantOrganisationAccess(auth.admin, {
       organisationId,
       actorUserId: auth.userId,
       actorKind: auth.access.isGlobalAdmin
@@ -63,7 +63,14 @@ export async function POST(
         notifyAllBookings: Boolean(body.notifyAllBookings),
       },
     });
-    return NextResponse.json({ grant }, { status: 201 });
+    return NextResponse.json(
+      {
+        grant: result.grant,
+        invitationCreated: result.invitationCreated,
+        invitationSent: result.invitationSent,
+      },
+      { status: 201 }
+    );
   } catch (error) {
     return organisationAccessErrorResponse(error);
   }

@@ -32,6 +32,23 @@ import {
 } from "../lib/access/organisation-access-audit";
 import type { AccessContext, OrganisationAccessGrant } from "../lib/access/roles";
 import {
+  ORGANISATION_INVITE_EMAIL_MISMATCH_MESSAGE,
+  evaluateOrganisationInviteAcceptance,
+  invitationEmailsMatch,
+  organisationAccessRoleLabel,
+} from "../lib/access/organisation-access-invite-policy";
+import {
+  generateOrganisationAccessInviteToken,
+  hashOrganisationAccessInviteToken,
+  invitationEmailSent,
+  isOrganisationAccessInviteExpired,
+  organisationAccessInviteExpiresAt,
+  resolveOrganisationAccessInviteStatus,
+} from "../lib/access/organisation-access-invite-token";
+import {
+  organisationAccessInviteHeadline,
+} from "../lib/communication-copy";
+import {
   ORGANISATION_QUERY_PARAM,
   organisationWorkspaceHref,
   resolveOrganisationWorkspaceSelection,
@@ -115,6 +132,38 @@ const activateLib = readFileSync(
   "lib/access/activate-pending-organisation-access.ts",
   "utf8"
 );
+const inviteSql = readFileSync(
+  "supabase/migrations/068_20260921_organisation_access_invitations.sql",
+  "utf8"
+);
+const inviteTokenLib = readFileSync(
+  "lib/access/organisation-access-invite-token.ts",
+  "utf8"
+);
+const invitePolicyLib = readFileSync(
+  "lib/access/organisation-access-invite-policy.ts",
+  "utf8"
+);
+const inviteServerLib = readFileSync(
+  "lib/access/organisation-access-invite-server.ts",
+  "utf8"
+);
+const inviteAcceptRoute = readFileSync(
+  "app/api/organisation-invites/accept/route.ts",
+  "utf8"
+);
+const inviteValidateRoute = readFileSync(
+  "app/api/organisation-invites/validate/route.ts",
+  "utf8"
+);
+const invitePage = readFileSync(
+  "app/organisation-invite/[token]/page.tsx",
+  "utf8"
+);
+const resendRoute = readFileSync(
+  "app/api/organisations/[organisationId]/access/[accessId]/resend-invite/route.ts",
+  "utf8"
+);
 const requirePeople = readFileSync("lib/access/require-org-people-api.ts", "utf8");
 const notifyLib = readFileSync("lib/booking-event-notify.ts", "utf8");
 const opsLib = readFileSync("lib/access/operational-booking-managers.ts", "utf8");
@@ -159,13 +208,13 @@ assert.match(sql, /FOR UPDATE/);
 
 assert.match(grantRoute, /actorUserId: auth\.userId/);
 assert.doesNotMatch(grantRoute, /body\.userId|body\.actorUserId/);
-assert.match(activateRoute, /auth\.userId/);
+assert.match(activateRoute, /invitationRequired: true/);
 assert.doesNotMatch(activateRoute, /body\.userId|body\.email/);
 assert.match(requirePeople, /canManagePeopleAccess/);
-assert.match(activateLib, /activate_pending_organisation_access/);
-assert.match(authForm, /schedulePendingOrganisationAccessActivation/);
-assert.match(requireAuth, /schedulePendingOrganisationAccessActivation/);
-assert.match(peopleClient, /\/api\/organisations\/access\/activate/);
+assert.match(activateLib, /Pending organisation_access is activated only by invitation acceptance/);
+assert.doesNotMatch(authForm, /schedulePendingOrganisationAccessActivation/);
+assert.doesNotMatch(requireAuth, /schedulePendingOrganisationAccessActivation/);
+assert.doesNotMatch(peopleClient, /\/api\/organisations\/access\/activate/);
 assert.match(peoplePage, /Add person/);
 assert.match(peoplePage, /My Spaces/);
 assert.match(peoplePage, /People & access/);
@@ -237,14 +286,14 @@ assert.doesNotMatch(peoplePage, /Paarl Girls/);
   assert.equal(activation.userId, null);
 }
 
-// G verified existing user
+// G existing confirmed user still requires invitation
 {
   const activation = decideGrantActivation({
     id: "user-verified",
     emailConfirmed: true,
   });
-  assert.equal(activation.status, "active");
-  assert.equal(activation.userId, "user-verified");
+  assert.equal(activation.status, "pending");
+  assert.equal(activation.userId, null);
 }
 
 // H unverified remains pending
@@ -257,15 +306,14 @@ assert.doesNotMatch(peoplePage, /Paarl Girls/);
   assert.equal(activation.userId, null);
 }
 
-// I / J / K activation email binding
+// I / J / K activation is invitation-only; email string match is not enough
 {
   assert.equal(
     normalizeOrganisationAccessEmail("  Ada@Example.com "),
     "ada@example.com"
   );
-  assert.match(sql, /email_normalized = v_email_normalized/);
-  assert.match(sql, /FROM auth\.users u\s+WHERE u\.id = p_user_id/);
-  assert.match(activateRoute, /activatePendingOrganisationAccess\(\s*auth\.admin,\s*auth\.userId/);
+  assert.match(activateRoute, /invitationRequired: true/);
+  assert.doesNotMatch(activateRoute, /activatePendingOrganisationAccess/);
   assert.doesNotMatch(activateLib, /p_email|body\.email/);
 }
 
@@ -550,8 +598,8 @@ assert.doesNotMatch(peoplePage, /Paarl Girls/);
     ORGANISATION_ACCESS_AUDIT.notifyPreferenceChanged,
     "organisation_access.notify_preference_changed"
   );
-  assert.match(accessSql, /ORGANISATION_ACCESS_AUDIT\.granted/);
-  assert.match(activateLib, /ORGANISATION_ACCESS_AUDIT\.activated/);
+  assert.match(accessSql, /ORGANISATION_ACCESS_AUDIT\.pendingCreated/);
+  assert.match(inviteServerLib, /ORGANISATION_ACCESS_AUDIT\.invitationAccepted/);
   assert.match(accessSql, /ORGANISATION_ACCESS_AUDIT\.revoked/);
   assert.match(accessSql, /ORGANISATION_ACCESS_AUDIT\.primaryChanged/);
   assert.match(accessSql, /ORGANISATION_ACCESS_AUDIT\.notifyPreferenceChanged/);
@@ -577,23 +625,22 @@ assert.doesNotMatch(peoplePage, /Paarl Girls/);
 // AP activation failure does not break login
 {
   assert.match(requireAuth, /setAllowed\(true\)/);
-  assert.match(requireAuth, /schedulePendingOrganisationAccessActivation/);
+  assert.doesNotMatch(requireAuth, /schedulePendingOrganisationAccessActivation/);
   assert.doesNotMatch(requireAuth, /sessionStorage/);
   assert.doesNotMatch(requireAuth, /await fetch\("\/api\/organisations\/access\/activate"/);
-  assert.match(authForm, /schedulePendingOrganisationAccessActivation/);
+  assert.doesNotMatch(authForm, /schedulePendingOrganisationAccessActivation/);
   assert.doesNotMatch(authForm, /await activatePendingOrganisationAccess/);
-  assert.match(peopleClient, /\.catch\(\(\) =>/);
 }
 
-// AQ newly-added pending grant can activate during an existing browser session
+// AQ login/signup no longer auto-activates pending grants
 {
   assert.match(requireAuth, /TOKEN_REFRESHED/);
-  assert.match(
+  assert.doesNotMatch(
     requireAuth,
     /schedulePendingOrganisationAccessActivation\(session\.access_token\)/
   );
   assert.doesNotMatch(requireAuth, /alreadyActivated|activateKey|sessionStorage/);
-  assert.match(peopleClient, /schedulePendingOrganisationAccessActivation/);
+  assert.doesNotMatch(peopleClient, /schedulePendingOrganisationAccessActivation/);
 }
 
 // AR revoked historical grant + new pending grant
@@ -728,7 +775,7 @@ assert.doesNotMatch(peoplePage, /Paarl Girls/);
   assert.equal(auditActorKindLabel("organisation_admin"), "Organisation Admin");
   assert.equal(auditActorKindLabel("global_admin"), "Global Admin");
   assert.match(accessSql, /actorKind: input\.actorKind/);
-  assert.match(activateLib, /actorKind: "access_holder"/);
+  assert.match(inviteServerLib, /actorKind: "access_holder"/);
   assert.match(activityApi, /actorKindLabel/);
   assert.match(activityPage, /actorKindLabel/);
 }
@@ -1173,6 +1220,369 @@ const peopleGrants = [
 {
   assert.match(peoplePage, /fetchOrganisationAccess\(selectedOrganisationId\)/);
   assert.match(peoplePage, /if \(!organisationId\) return/);
+}
+
+function inviteInput(
+  overrides: {
+    invitation?: Partial<Parameters<typeof evaluateOrganisationInviteAcceptance>[0]["invitation"]>;
+    access?: Partial<Parameters<typeof evaluateOrganisationInviteAcceptance>[0]["access"]>;
+    organisation?: Partial<Parameters<typeof evaluateOrganisationInviteAcceptance>[0]["organisation"]>;
+    session?: Partial<Parameters<typeof evaluateOrganisationInviteAcceptance>[0]["session"]>;
+    presentedTokenHash?: string;
+    now?: number;
+  } = {}
+) {
+  const tokenHash = "abc123hash";
+  return {
+    presentedTokenHash: overrides.presentedTokenHash ?? tokenHash,
+    invitation: {
+      organisationAccessId: "access-1",
+      organisationId: ORG_A,
+      emailNormalized: "ada@example.com",
+      tokenHash,
+      status: "pending",
+      expiresAt: organisationAccessInviteExpiresAt(14),
+      ...overrides.invitation,
+    },
+    access: {
+      id: "access-1",
+      organisationId: ORG_A,
+      status: "pending",
+      emailNormalized: "ada@example.com",
+      role: "space_manager" as const,
+      userId: null,
+      ...overrides.access,
+    },
+    organisation: {
+      id: ORG_A,
+      status: "active",
+      ...overrides.organisation,
+    },
+    session: {
+      userId: USER,
+      emailNormalized: "ada@example.com",
+      ...overrides.session,
+    },
+    now: overrides.now,
+  };
+}
+
+// 068 A pending grant creates invitation
+{
+  assert.match(accessSql, /issueOrganisationAccessInvitation/);
+  assert.match(accessSql, /ORGANISATION_ACCESS_AUDIT\.invitationCreated/);
+  assert.match(accessSql, /invitationCreated/);
+  assert.match(accessSql, /invitationSent/);
+  assert.match(grantRoute, /invitationSent/);
+  assert.doesNotMatch(grantRoute, /body\.userId/);
+}
+
+// 068 B/C token random, hashed, raw not stored
+{
+  const raw = generateOrganisationAccessInviteToken();
+  assert.equal(raw.length, 64);
+  assert.match(raw, /^[a-f0-9]+$/);
+  const hashed = hashOrganisationAccessInviteToken(raw);
+  assert.equal(hashed.length, 64);
+  assert.notEqual(hashed, raw);
+  assert.equal(hashOrganisationAccessInviteToken(raw), hashed);
+  assert.match(inviteTokenLib, /randomBytes\(32\)/);
+  assert.match(inviteTokenLib, /createHash\("sha256"\)/);
+  assert.match(inviteSql, /token_hash text NOT NULL/);
+  assert.doesNotMatch(inviteSql, /raw_token/);
+  assert.match(inviteServerLib, /token_hash: tokenHash/);
+  assert.doesNotMatch(inviteServerLib, /raw_token:/);
+}
+
+// 068 D expiry 14 days
+{
+  const expires = new Date(organisationAccessInviteExpiresAt(14)).getTime();
+  const expected = Date.now() + 14 * 24 * 60 * 60 * 1000;
+  assert.ok(Math.abs(expires - expected) < 5000);
+  assert.equal(isOrganisationAccessInviteExpired(new Date(Date.now() - 1000).toISOString()), true);
+  assert.equal(
+    resolveOrganisationAccessInviteStatus({
+      status: "pending",
+      expires_at: new Date(Date.now() - 1000).toISOString(),
+    }),
+    "expired"
+  );
+}
+
+// 068 E unauthenticated validation is a safe preview
+{
+  assert.match(inviteValidateRoute, /loadOrganisationInvitePreview/);
+  assert.doesNotMatch(inviteValidateRoute, /requireAuthenticatedApi/);
+  assert.match(inviteServerLib, /invitedEmail: accessRow\.email_normalized/);
+  assert.doesNotMatch(invitePage, /token_hash/);
+}
+
+// 068 F unauthenticated acceptance denied
+{
+  const denied = evaluateOrganisationInviteAcceptance(
+    inviteInput({ session: { userId: "", emailNormalized: "ada@example.com" } })
+  );
+  assert.equal(denied.ok, false);
+  if (!denied.ok) assert.equal(denied.status, 401);
+  assert.match(inviteAcceptRoute, /requireAuthenticatedApi/);
+}
+
+// 068 G wrong-email denied
+{
+  const denied = evaluateOrganisationInviteAcceptance(
+    inviteInput({ session: { userId: USER, emailNormalized: "other@example.com" } })
+  );
+  assert.equal(denied.ok, false);
+  if (!denied.ok) {
+    assert.equal(denied.status, 403);
+    assert.equal(denied.error, ORGANISATION_INVITE_EMAIL_MISMATCH_MESSAGE);
+  }
+  assert.equal(
+    invitationEmailsMatch({
+      sessionEmail: "other@example.com",
+      invitationEmail: "ada@example.com",
+      grantEmail: "ada@example.com",
+    }),
+    false
+  );
+}
+
+// 068 H/I/K correct-email acceptance allowed; scope from grant
+{
+  const allowed = evaluateOrganisationInviteAcceptance(inviteInput());
+  assert.equal(allowed.ok, true);
+  assert.match(inviteAcceptRoute, /auth\.userId/);
+  assert.match(inviteSql, /user_id = p_user_id/);
+  assert.match(inviteSql, /status = 'active'/);
+  assert.match(inviteSql, /status = 'accepted'/);
+}
+
+// 068 J user_id comes from session, not body
+{
+  assert.match(inviteAcceptRoute, /body\.userId \|\| body\.organisationId \|\| body\.role \|\| body\.email/);
+  assert.match(inviteAcceptRoute, /Invitation acceptance does not accept client identity fields/);
+  assert.match(inviteAcceptRoute, /getUserById/);
+  assert.doesNotMatch(inviteAcceptRoute, /p_user_id: body/);
+}
+
+// 068 L accepted token cannot be reused
+{
+  const denied = evaluateOrganisationInviteAcceptance(
+    inviteInput({ invitation: { status: "accepted" } })
+  );
+  assert.equal(denied.ok, false);
+  if (!denied.ok) assert.equal(denied.code, "invitation_accepted");
+}
+
+// 068 M expired token cannot activate
+{
+  const denied = evaluateOrganisationInviteAcceptance(
+    inviteInput({
+      invitation: { expiresAt: new Date(Date.now() - 60_000).toISOString() },
+    })
+  );
+  assert.equal(denied.ok, false);
+  if (!denied.ok) assert.equal(denied.code, "invitation_expired");
+}
+
+// 068 N revoked token cannot activate
+{
+  const denied = evaluateOrganisationInviteAcceptance(
+    inviteInput({ invitation: { status: "revoked" } })
+  );
+  assert.equal(denied.ok, false);
+  if (!denied.ok) assert.equal(denied.code, "invitation_revoked");
+}
+
+// 068 O revoked access cannot activate
+{
+  const denied = evaluateOrganisationInviteAcceptance(
+    inviteInput({ access: { status: "revoked" } })
+  );
+  assert.equal(denied.ok, false);
+  if (!denied.ok) assert.equal(denied.code, "access_revoked");
+}
+
+// 068 P access revoke invalidates pending invitation
+{
+  assert.match(accessSql, /revokePendingOrganisationAccessInvitations/);
+  assert.match(inviteServerLib, /status: "revoked"/);
+}
+
+// 068 Q/R resend revokes old token and issues a new one
+{
+  assert.match(inviteServerLib, /revokePendingOrganisationAccessInvitations/);
+  assert.match(inviteServerLib, /generateOrganisationAccessInviteToken/);
+  assert.match(resendRoute, /resendOrganisationAccessInvitation/);
+  assert.match(accessSql, /ORGANISATION_ACCESS_AUDIT\.invitationResent/);
+  assert.match(peoplePage, /Resend invitation/);
+}
+
+// 068 S active grant cannot receive another pending invitation
+{
+  assert.match(accessSql, /This person already has access/);
+  assert.match(accessSql, /already_active/);
+}
+
+// 068 T revoked historical grant is not resurrected
+{
+  const denied = evaluateOrganisationInviteAcceptance(
+    inviteInput({ access: { status: "revoked", userId: null } })
+  );
+  assert.equal(denied.ok, false);
+  assert.match(inviteSql, /v_access.status IS DISTINCT FROM 'pending'/);
+}
+
+// 068 U revoked historical + new pending grant
+{
+  assert.equal(
+    findDuplicateGrant(
+      [
+        existing({
+          role: "space_manager",
+          status: "revoked",
+          emailNormalized: "ada@example.com",
+          propertyId: PROP_A1,
+          spaceId: SPACE_A1,
+        }),
+      ],
+      {
+        organisationId: ORG_A,
+        role: "space_manager",
+        propertyId: PROP_A1,
+        spaceId: SPACE_A1,
+        emailNormalized: "ada@example.com",
+        userId: null,
+        status: "pending",
+      }
+    ),
+    null
+  );
+}
+
+// 068 V/W/X/Y role/scope from access grant
+{
+  assert.match(inviteSql, /'role', v_access.role/);
+  assert.match(inviteSql, /'property_id', v_access.property_id/);
+  assert.match(inviteSql, /'space_id', v_access.space_id/);
+  assert.equal(organisationAccessRoleLabel("space_manager"), "Space Manager");
+  assert.equal(organisationAccessRoleLabel("property_manager"), "Property Manager");
+  assert.equal(organisationAccessRoleLabel("org_admin"), "Organisation Admin");
+  assert.match(
+    organisationAccessInviteHeadline({
+      organisationName: "Paarl Girls' High",
+      role: "space_manager",
+      spaceTitle: "Classroom #1",
+    }),
+    /Classroom #1/
+  );
+  assert.match(
+    organisationAccessInviteHeadline({
+      organisationName: "Paarl Girls' High",
+      role: "property_manager",
+      propertyName: "Main campus",
+    }),
+    /Main campus/
+  );
+  assert.match(
+    organisationAccessInviteHeadline({
+      organisationName: "Paarl Girls' High",
+      role: "org_admin",
+    }),
+    /help manage Paarl Girls' High/
+  );
+}
+
+// 068 Z cross-organisation token manipulation fails
+{
+  const denied = evaluateOrganisationInviteAcceptance(
+    inviteInput({
+      access: { organisationId: ORG_B },
+    })
+  );
+  assert.equal(denied.ok, false);
+  if (!denied.ok) assert.equal(denied.code, "invitation_invalid");
+}
+
+// 068 AA no direct browser mutation of invitation/access tables
+{
+  assert.match(inviteSql, /REVOKE ALL ON TABLE public\.organisation_access_invitations FROM authenticated/);
+  assert.match(inviteSql, /GRANT ALL ON TABLE public\.organisation_access_invitations TO service_role/);
+  assert.doesNotMatch(
+    inviteSql,
+    /GRANT INSERT ON TABLE public\.organisation_access_invitations TO authenticated/
+  );
+  assert.match(
+    inviteSql,
+    /GRANT EXECUTE ON FUNCTION public\.accept_organisation_access_invitation\(uuid, text\) TO service_role/
+  );
+  assert.match(
+    inviteSql,
+    /REVOKE ALL ON FUNCTION public\.accept_organisation_access_invitation\(uuid, text\) FROM authenticated/
+  );
+}
+
+// 068 AB/AC unsafe automatic activation removed
+{
+  assert.doesNotMatch(authForm, /schedulePendingOrganisationAccessActivation/);
+  assert.doesNotMatch(requireAuth, /schedulePendingOrganisationAccessActivation/);
+  assert.match(inviteSql, /invitation_required/);
+  assert.match(activateLib, /return \[\]/);
+  const stillPending = decideGrantActivation({
+    id: USER,
+    emailConfirmed: true,
+  });
+  assert.equal(stillPending.status, "pending");
+}
+
+// 068 AD email failure leaves grant pending
+{
+  assert.equal(invitationEmailSent({ ok: false }), false);
+  assert.equal(invitationEmailSent({ ok: true }), true);
+  assert.match(inviteServerLib, /invitationEmailSent\(result\)/);
+  assert.match(accessSql, /invitation issue failed after grant/);
+  assert.match(peoplePage, /invitation email could not be sent/);
+}
+
+// 068 AE raw token never in audit
+{
+  assert.match(inviteServerLib, /invitation_id: \(inserted as \{ id: string \}\)\.id/);
+  const created = organisationAccessAuditEvent({
+    action: ORGANISATION_ACCESS_AUDIT.invitationCreated,
+    actorUserId: OA,
+    actorKind: "organisation_admin",
+    organisationId: ORG_A,
+    accessId: "access-1",
+    next: { invitation_id: "inv-1", email_sent: true },
+  });
+  assert.equal(created.action, "organisation_access.invitation_created");
+  assert.equal(JSON.stringify(created).includes("rawToken"), false);
+  assert.doesNotMatch(inviteServerLib, /meta: \{[^}]*rawToken/);
+}
+
+// 068 AF pre-068 pending grant can receive invitation through resend
+{
+  assert.match(accessSql, /resendOrganisationAccessInvitation/);
+  assert.match(inviteSql, /Pre-068 pending grants receive a token only when an admin resends/);
+  assert.doesNotMatch(inviteSql, /INSERT\s+INTO\s+public\.organisation_access/i);
+  assert.doesNotMatch(inviteSql, /INSERT\s+INTO\s+public\.organisation_access_invitations/i);
+}
+
+// 068 landing / next preservation
+{
+  assert.match(invitePage, /\/login\?next=/);
+  assert.match(invitePage, /\/signup\?next=/);
+  assert.match(invitePage, /Accept invitation/);
+  assert.match(invitePage, /Create account/);
+  assert.match(invitePage, /JSON\.stringify\(\{ token \}\)/);
+}
+
+// 068 RPC concurrency / locking
+{
+  assert.match(inviteSql, /FOR UPDATE/);
+  assert.match(inviteSql, /WHEN unique_violation THEN/);
+  assert.match(inviteSql, /auth\.role\(\).*service_role/);
+  assert.match(inviteSql, /SET search_path = pg_catalog, public/);
 }
 
 console.log("test-people-access: all assertions passed");

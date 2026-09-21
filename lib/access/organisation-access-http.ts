@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { OrganisationAccessError } from "@/lib/access/organisation-access-server";
+import { OrganisationAccessError } from "@/lib/access/organisation-access-error";
 
 export function organisationAccessErrorResponse(error: unknown): NextResponse {
   if (error instanceof OrganisationAccessError) {

@@ -6,6 +6,9 @@ export const ORGANISATION_ACCESS_AUDIT = {
   primaryChanged: "organisation_access.primary_changed",
   notifyPreferenceChanged: "organisation_access.notify_preference_changed",
   reassigned: "organisation_access.reassigned",
+  invitationCreated: "organisation_access.invitation_created",
+  invitationResent: "organisation_access.invitation_resent",
+  invitationAccepted: "organisation_access.invitation_accepted",
 } as const;
 
 export type OrganisationAccessAuditAction =
