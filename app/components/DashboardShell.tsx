@@ -9,8 +9,8 @@
  *   - below lg   → horizontal scrolling pill tabs above the content
  *
  * The shell stays route-agnostic: pages pass nav items and titles. The
- * secondary Booking ↔ Hosting switch is rendered here so it stays
- * consistent across every workspace page.
+ * Booking | Hosting segmented selector is rendered here, top-right of the
+ * heading band, so it stays consistent across every workspace page.
  *
  * IMPORTANT: this is contextual workspace navigation. It must NOT duplicate
  * the global burger menu's primary entries (Booking / Hosting /
@@ -98,44 +98,46 @@ export default function DashboardShell({
         {/* Heading band — calm, structured, premium. Tightened on mobile so
             the workspace nav sits closer to the top of the viewport. */}
         <header className="mb-3 sm:mb-6">
-          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-500 sm:text-[11px]">
-              {workspaceLabel}
-            </p>
-            {workspaceKind === "hosting" && chrome.organisationName ? (
-              <>
-                <span className="text-[10px] text-gray-300 sm:text-[11px]" aria-hidden>
-                  ·
-                </span>
-                <span className="min-w-0 truncate text-[11px] font-medium text-gray-600 sm:text-xs">
-                  {chrome.organisationName}
-                </span>
-              </>
-            ) : null}
-            {pageEyebrowPill ? (
-              <span className="inline-flex items-center">{pageEyebrowPill}</span>
-            ) : null}
-            {chrome.switchTarget ? (
-              <>
-                <span className="text-[10px] text-gray-300 sm:text-[11px]" aria-hidden>
-                  ·
-                </span>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
+            <div className="min-w-0">
+              <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-500 sm:text-[11px]">
+                  {workspaceLabel}
+                </p>
+                {workspaceKind === "hosting" && chrome.organisationName ? (
+                  <>
+                    <span className="text-[10px] text-gray-300 sm:text-[11px]" aria-hidden>
+                      ·
+                    </span>
+                    <span className="min-w-0 truncate text-[11px] font-medium text-gray-600 sm:text-xs">
+                      {chrome.organisationName}
+                    </span>
+                  </>
+                ) : null}
+                {pageEyebrowPill ? (
+                  <span className="inline-flex items-center">{pageEyebrowPill}</span>
+                ) : null}
+              </div>
+              <h1 className="mt-1 text-xl font-semibold tracking-tight text-[#0c1d2f] sm:mt-1.5 sm:text-3xl">
+                {pageTitle}
+              </h1>
+              {pageContext ? <div className="mt-1 sm:mt-1.5">{pageContext}</div> : null}
+              {pageSubtitle ? (
+                <p className="mt-1 max-w-2xl text-xs leading-relaxed text-gray-600 sm:mt-2 sm:text-sm">
+                  {pageSubtitle}
+                </p>
+              ) : null}
+            </div>
+            {chrome.selector ? (
+              <div className="self-end sm:self-auto">
                 <WorkspaceSwitch
-                  href={chrome.switchTarget.href}
-                  label={chrome.switchTarget.label}
+                  active={chrome.selector.active}
+                  bookingHref={chrome.selector.bookingHref}
+                  hostingHref={chrome.selector.hostingHref}
                 />
-              </>
+              </div>
             ) : null}
           </div>
-          <h1 className="mt-1 text-xl font-semibold tracking-tight text-[#0c1d2f] sm:mt-1.5 sm:text-3xl">
-            {pageTitle}
-          </h1>
-          {pageContext ? <div className="mt-1 sm:mt-1.5">{pageContext}</div> : null}
-          {pageSubtitle ? (
-            <p className="mt-1 max-w-2xl text-xs leading-relaxed text-gray-600 sm:mt-2 sm:text-sm">
-              {pageSubtitle}
-            </p>
-          ) : null}
         </header>
 
         <div className="flex flex-col gap-3 sm:gap-4 lg:flex-row lg:gap-6">

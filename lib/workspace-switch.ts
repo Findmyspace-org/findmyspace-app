@@ -21,6 +21,13 @@ export type HostingOrganisationName = {
   name: string;
 };
 
+export type WorkspaceSelectorModel = {
+  visible: boolean;
+  active: WorkspaceKind;
+  bookingHref: string;
+  hostingHref: string;
+};
+
 export function workspaceKindFromLabel(label: string): WorkspaceKind | null {
   const normalized = label.trim().toLowerCase();
   if (normalized === "hosting") return "hosting";
@@ -28,17 +35,31 @@ export function workspaceKindFromLabel(label: string): WorkspaceKind | null {
   return null;
 }
 
+export function workspaceSelector(input: {
+  kind: WorkspaceKind;
+  hasHostingAccess: boolean;
+  organisationId: string | null;
+}): WorkspaceSelectorModel {
+  return {
+    visible: input.hasHostingAccess,
+    active: input.kind,
+    bookingHref: BOOKING_HREF,
+    hostingHref: hostingHref(HOSTING_OVERVIEW_PATH, input.organisationId),
+  };
+}
+
 export function workspaceSwitch(input: {
   kind: WorkspaceKind;
   hasHostingAccess: boolean;
   organisationId: string | null;
 }): { href: string; label: string } | null {
+  const selector = workspaceSelector(input);
   if (input.kind === "hosting") {
-    return { href: BOOKING_HREF, label: SWITCH_TO_BOOKING_LABEL };
+    return { href: selector.bookingHref, label: SWITCH_TO_BOOKING_LABEL };
   }
-  if (!input.hasHostingAccess) return null;
+  if (!selector.visible) return null;
   return {
-    href: hostingHref(HOSTING_OVERVIEW_PATH, input.organisationId),
+    href: selector.hostingHref,
     label: SWITCH_TO_HOSTING_LABEL,
   };
 }

@@ -5,8 +5,9 @@ import { resolveHostingOrganisationId } from "@/lib/access/hosting-access";
 import { fetchHostingWorkspaceDisplay } from "@/lib/hosting-access-client";
 import {
   hostingOrganisationContextName,
-  workspaceSwitch,
+  workspaceSelector,
   type WorkspaceKind,
+  type WorkspaceSelectorModel,
 } from "@/lib/workspace-switch";
 
 function requestedOrganisationId(): string | null {
@@ -14,13 +15,14 @@ function requestedOrganisationId(): string | null {
   return new URLSearchParams(window.location.search).get("organisation");
 }
 
+function selectorOrNull(model: WorkspaceSelectorModel): WorkspaceSelectorModel | null {
+  return model.visible ? model : null;
+}
+
 export function useWorkspaceChrome(kind: WorkspaceKind | null) {
-  const [switchTarget, setSwitchTarget] = useState<{
-    href: string;
-    label: string;
-  } | null>(() =>
+  const [selector, setSelector] = useState<WorkspaceSelectorModel | null>(() =>
     kind === "hosting"
-      ? workspaceSwitch({
+      ? workspaceSelector({
           kind: "hosting",
           hasHostingAccess: true,
           organisationId: null,
@@ -31,22 +33,20 @@ export function useWorkspaceChrome(kind: WorkspaceKind | null) {
 
   useEffect(() => {
     if (!kind) {
-      setSwitchTarget(null);
+      setSelector(null);
       setOrganisationName(null);
       return;
     }
 
-    if (kind === "hosting") {
-      setSwitchTarget(
-        workspaceSwitch({
-          kind: "hosting",
-          hasHostingAccess: true,
+    setSelector(
+      selectorOrNull(
+        workspaceSelector({
+          kind,
+          hasHostingAccess: kind === "hosting",
           organisationId: null,
         })
-      );
-    } else {
-      setSwitchTarget(null);
-    }
+      )
+    );
     setOrganisationName(null);
 
     let mounted = true;
@@ -58,12 +58,14 @@ export function useWorkspaceChrome(kind: WorkspaceKind | null) {
           organisationIds: summary.organisationIds,
           primaryOrganisationId: summary.primaryOrganisationId,
         });
-        setSwitchTarget(
-          workspaceSwitch({
-            kind,
-            hasHostingAccess: summary.hasHostingAccess,
-            organisationId,
-          })
+        setSelector(
+          selectorOrNull(
+            workspaceSelector({
+              kind,
+              hasHostingAccess: summary.hasHostingAccess,
+              organisationId,
+            })
+          )
         );
         setOrganisationName(
           kind === "hosting"
@@ -76,9 +78,9 @@ export function useWorkspaceChrome(kind: WorkspaceKind | null) {
       })
       .catch(() => {
         if (!mounted) return;
-        setSwitchTarget(
+        setSelector(
           kind === "hosting"
-            ? workspaceSwitch({
+            ? workspaceSelector({
                 kind: "hosting",
                 hasHostingAccess: true,
                 organisationId: null,
@@ -93,5 +95,5 @@ export function useWorkspaceChrome(kind: WorkspaceKind | null) {
     };
   }, [kind]);
 
-  return { switchTarget, organisationName };
+  return { selector, organisationName };
 }

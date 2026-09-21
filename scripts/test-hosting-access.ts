@@ -24,6 +24,7 @@ import {
   SWITCH_TO_HOSTING_LABEL,
   hostingOrganisationContextName,
   workspaceKindFromLabel,
+  workspaceSelector,
   workspaceSwitch,
 } from "../lib/workspace-switch";
 import type { AccessContext, OrganisationAccessGrant } from "../lib/access/roles";
@@ -637,16 +638,93 @@ function navLabels(summary: ReturnType<typeof summarizeHostingAccess>) {
   assert.match(workspaceChrome, /resolveHostingOrganisationId/);
   assert.match(workspaceChrome, /hostingOrganisationContextName/);
   assert.doesNotMatch(workspaceChrome, /is_host/);
-  assert.match(workspaceSwitchUi, /Switch to Hosting|label/);
+  assert.match(workspaceSwitchUi, /aria-label="Workspace"/);
   assert.match(accessSummaryRoute, /loadHostingOrganisationNames/);
   assert.match(loadHosting, /loadHostingOrganisationNames/);
   assert.doesNotMatch(hostingHelper, /organisationNames/);
   assert.match(people, /shouldShowOrganisationSelector/);
   assert.doesNotMatch(dashboard, /Switch to Hosting/);
+  assert.doesNotMatch(dashboardShell, /Switch to Hosting/);
+  assert.doesNotMatch(dashboardShell, /Switch to Booking/);
+  assert.doesNotMatch(workspaceSwitchUi, /Switch to Hosting/);
   assert.match(owner, /pageTitle="Overview"/);
   assert.doesNotMatch(owner, /Host dashboard/);
   assert.equal(smSummary.isSpaceManager, true);
   assert.equal(navHrefs(smSummary).includes("/dashboard/people"), false);
+}
+
+// Segmented Booking | Hosting selector
+{
+  const smBookingSelector = workspaceSelector({
+    kind: "booking",
+    hasHostingAccess: smSummary.hasHostingAccess,
+    organisationId: ORG,
+  });
+  assert.equal(smBookingSelector.visible, true);
+  assert.equal(smBookingSelector.active, "booking");
+  assert.equal(smBookingSelector.bookingHref, BOOKING_HREF);
+  assert.equal(
+    smBookingSelector.hostingHref,
+    `${HOSTING_OVERVIEW_PATH}?organisation=${ORG}`
+  );
+
+  const smHostingSelector = workspaceSelector({
+    kind: "hosting",
+    hasHostingAccess: smSummary.hasHostingAccess,
+    organisationId: ORG,
+  });
+  assert.equal(smHostingSelector.visible, true);
+  assert.equal(smHostingSelector.active, "hosting");
+  assert.equal(smHostingSelector.bookingHref, BOOKING_HREF);
+
+  const renterSelector = workspaceSelector({
+    kind: "booking",
+    hasHostingAccess: renterSummary.hasHostingAccess,
+    organisationId: ORG,
+  });
+  assert.equal(renterSummary.hasHostingAccess, false);
+  assert.equal(renterSelector.visible, false);
+
+  const personalSelector = workspaceSelector({
+    kind: "booking",
+    hasHostingAccess: legacySummary.hasHostingAccess,
+    organisationId: null,
+  });
+  assert.equal(legacySummary.isLegacyHost, true);
+  assert.equal(personalSelector.visible, true);
+  assert.equal(personalSelector.hostingHref, HOSTING_OVERVIEW_PATH);
+
+  assert.equal(smSummary.isLegacyHost, false);
+  assert.equal(smSummary.hasHostingAccess, true);
+
+  const classroom1 = computeAccess(
+    accessCtx({
+      spaceId: CLASSROOM_1,
+      grants: [smGrant],
+    })
+  );
+  const classroom2 = computeAccess(
+    accessCtx({
+      spaceId: CLASSROOM_2,
+      spaceOwnerId: null,
+      grants: [smGrant],
+    })
+  );
+  assert.equal(classroom1.canEditSpace, true);
+  assert.equal(classroom2.canEditSpace, false);
+
+  assert.match(workspaceSwitchUi, /aria-label="Workspace"/);
+  assert.match(workspaceSwitchUi, /aria-current="true"/);
+  assert.match(workspaceSwitchUi, /BOOKING_WORKSPACE_LABEL/);
+  assert.match(workspaceSwitchUi, /HOSTING_WORKSPACE_LABEL/);
+  assert.doesNotMatch(workspaceSwitchUi, /→/);
+  assert.match(dashboardShell, /chrome\.selector/);
+  assert.match(dashboardShell, /sm:justify-between/);
+  assert.match(dashboardShell, /self-end sm:self-auto/);
+  assert.match(workspaceChrome, /workspaceSelector/);
+  assert.doesNotMatch(workspaceChrome, /is_host/);
+  assert.match(people, /We&apos;ll[\s\S]*send them an invitation/);
+  assert.match(people, /accept the[\s\S]*invitation/);
 }
 
 console.log("test-hosting-access: all assertions passed");
