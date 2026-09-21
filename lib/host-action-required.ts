@@ -42,6 +42,11 @@ export type HostActionInput = {
   bankProofExists: boolean;
   spaces: HostSpaceRow[];
   ownershipDocSpaceIds: Set<string>;
+  /**
+   * Personal-host commercial responsibility. Organisation-only managers
+   * must be false so identity/bank cards are not shown as their tasks.
+   */
+  includePersonalVerification: boolean;
 };
 
 const STATUS_LABEL: Record<HostActionStatus, string> = {
@@ -76,6 +81,7 @@ function hasOwnershipUploaded(
 }
 
 function identityCard(input: HostActionInput): HostActionCard | null {
+  if (!input.includePersonalVerification) return null;
   const profile = input.profile;
   if (!profile) return null;
 
@@ -123,6 +129,7 @@ function identityCard(input: HostActionInput): HostActionCard | null {
 }
 
 function bankCard(input: HostActionInput): HostActionCard | null {
+  if (!input.includePersonalVerification) return null;
   const profile = input.profile;
   if (!profile) return null;
 

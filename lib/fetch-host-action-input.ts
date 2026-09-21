@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { HostActionInput } from "@/lib/host-action-required";
+import { operatorHasPersonalVerificationResponsibility } from "@/lib/verification-display-context";
 
 /** Load host verification/listing signals for action cards (client or server). */
 export async function fetchHostActionInput(
@@ -15,18 +16,23 @@ export async function fetchHostActionInput(
   const [
     { data: rawProfile, error: profileError },
     { data: rawSpaces, error: spacesError },
+    { count: ownedPropertyCount },
     { data: docs },
     { data: rawBank },
     { data: ownershipDocs },
   ] = await Promise.all([
     client
       .from("profiles")
-      .select("owner_verification_status, bank_verification_status")
+      .select("owner_verification_status, bank_verification_status, is_host")
       .eq("id", userId)
       .maybeSingle(),
     client
       .from("spaces")
       .select("id, title, ownership_proof_status, status")
+      .eq("owner_id", userId),
+    client
+      .from("properties")
+      .select("id", { count: "exact", head: true })
       .eq("owner_id", userId),
     client
       .from("owner_verification_documents")
@@ -53,13 +59,27 @@ export async function fetchHostActionInput(
       .map((row) => row.space_id)
       .filter((id): id is string => Boolean(id))
   );
+  const spaces = ((rawSpaces || []) as HostActionInput["spaces"]) || [];
+  const profileRow = rawProfile as
+    | (NonNullable<HostActionInput["profile"]> & { is_host?: boolean | null })
+    | null;
 
   return {
-    profile: (rawProfile as HostActionInput["profile"]) || null,
+    profile: profileRow
+      ? {
+          owner_verification_status: profileRow.owner_verification_status,
+          bank_verification_status: profileRow.bank_verification_status,
+        }
+      : null,
     hasIdFront: docTypes.includes("id_front"),
     hasIdBack: docTypes.includes("id_back"),
     bankProofExists: Boolean(bank?.proof_of_bank_url),
-    spaces: ((rawSpaces || []) as HostActionInput["spaces"]) || [],
+    spaces,
     ownershipDocSpaceIds,
+    includePersonalVerification: operatorHasPersonalVerificationResponsibility({
+      isHostProfile: Boolean(profileRow?.is_host),
+      ownedSpaceCount: spaces.length,
+      ownedPropertyCount: ownedPropertyCount ?? 0,
+    }),
   };
 }

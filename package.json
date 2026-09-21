@@ -47,6 +47,7 @@
     "test:booking-authority": "tsx scripts/test-booking-authority.ts",
     "test:people-access": "tsx scripts/test-people-access.ts",
     "test:hosting-access": "tsx scripts/test-hosting-access.ts",
+    "test:verification-display": "tsx scripts/test-verification-display.ts",
     "test:crm-org-contact-filters": "tsx scripts/test-crm-org-contact-filters.ts",
     "test:crm-primary-contact": "tsx scripts/test-crm-primary-contact.ts",
     "apply:migration-053": "node --env-file=.env.local scripts/apply-migration-053.mjs",

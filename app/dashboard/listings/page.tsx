@@ -27,6 +27,12 @@ import {
 import { formatGroupSizeShort } from "@/lib/group-size";
 import { formatSpacePriceDisplay } from "@/lib/space-pricing";
 import {
+  ORGANISATION_MANAGED_VERIFICATION_LABEL,
+  showsPersonalVerificationUi,
+  verificationFieldsForManagedListing,
+  type VerificationDisplayContext,
+} from "@/lib/verification-display-context";
+import {
   ArrowRight,
   MapPin,
   Tag,
@@ -74,6 +80,8 @@ type Space = {
   monthly_payment_day?: number | null;
   property_id?: string | null;
   property_name?: string | null;
+  organisation_id?: string | null;
+  verification_display_context?: VerificationDisplayContext;
 };
 
 type SpaceRow = {
@@ -274,7 +282,17 @@ function MyListingsPageContent({
 
       const managed = await fetchManagedSpaces(session.access_token);
 
-      const mergedSpaces: Space[] = managed.map((space) => ({
+      const mergedSpaces: Space[] = managed.map((space) => {
+        const verification = verificationFieldsForManagedListing({
+          organisationId: space.organisation_id,
+          ownerId: space.owner_id,
+          currentUserId: user.id,
+          operatorOwnerVerificationStatus:
+            profileData?.owner_verification_status,
+          operatorBankVerificationStatus: profileData?.bank_verification_status,
+          listingOwnershipProofStatus: space.ownership_proof_status,
+        });
+        return {
         id: space.id,
         owner_id: space.owner_id || "",
         title: space.title || "Untitled space",
@@ -294,18 +312,16 @@ function MyListingsPageContent({
         status: space.status ?? null,
         public_listing_mode: space.public_listing_mode,
         created_at: space.created_at ?? null,
-        ownership_proof_status: space.ownership_proof_status || "pending",
-        owner_verification_status:
-          profileData?.owner_verification_status || "pending",
-        bank_verification_status:
-          profileData?.bank_verification_status || "pending",
         cover_image_url: space.cover_image_url || null,
         deposit_type: (space.deposit_type as DepositType) || "none",
         deposit_months: space.deposit_months ?? 0,
         monthly_payment_day: space.monthly_payment_day ?? 1,
         property_id: space.property_id,
         property_name: space.property_name || null,
-      }));
+        organisation_id: space.organisation_id ?? null,
+        ...verification,
+        };
+      });
 
       setSpaces(mergedSpaces);
       setLoading(false);
@@ -328,12 +344,17 @@ function MyListingsPageContent({
   }
 
   function getStatusLabel(space: Space) {
-    const canSubmit = ownerClaimCanSubmitForSpace({
-      contactComplete: claimContext.contactComplete,
-      hasIdFront: claimContext.hasIdFront,
-      hasIdBack: claimContext.hasIdBack,
-      ownershipProofStatus: space.ownership_proof_status,
-    });
+    const personal = showsPersonalVerificationUi(
+      space.verification_display_context || "none"
+    );
+    const canSubmit = personal
+      ? ownerClaimCanSubmitForSpace({
+          contactComplete: claimContext.contactComplete,
+          hasIdFront: claimContext.hasIdFront,
+          hasIdBack: claimContext.hasIdBack,
+          ownershipProofStatus: space.ownership_proof_status,
+        })
+      : false;
     return getOwnerListingStatusLabel(space.status, {
       canSubmit,
       publicListingMode: space.public_listing_mode,
@@ -341,12 +362,17 @@ function MyListingsPageContent({
   }
 
   function getNextAction(space: Space) {
-    const canSubmit = ownerClaimCanSubmitForSpace({
-      contactComplete: claimContext.contactComplete,
-      hasIdFront: claimContext.hasIdFront,
-      hasIdBack: claimContext.hasIdBack,
-      ownershipProofStatus: space.ownership_proof_status,
-    });
+    const personal = showsPersonalVerificationUi(
+      space.verification_display_context || "none"
+    );
+    const canSubmit = personal
+      ? ownerClaimCanSubmitForSpace({
+          contactComplete: claimContext.contactComplete,
+          hasIdFront: claimContext.hasIdFront,
+          hasIdBack: claimContext.hasIdBack,
+          ownershipProofStatus: space.ownership_proof_status,
+        })
+      : false;
     return getOwnerListingNextAction(space.id, space.status, { canSubmit });
   }
 
@@ -368,6 +394,10 @@ function MyListingsPageContent({
   }
 
   function getMissingChecks(space: Space) {
+    if (!showsPersonalVerificationUi(space.verification_display_context || "none")) {
+      return [];
+    }
+
     const missing: string[] = [];
 
     if ((space.owner_verification_status || "pending") !== "verified") {
@@ -505,6 +535,11 @@ function MyListingsPageContent({
     : null;
   const selectedPanelIsLive = selectedSpace
     ? selectedSpace.status === "active" || selectedSpace.status === "paused"
+    : false;
+  const selectedPanelShowsPersonal = selectedSpace
+    ? showsPersonalVerificationUi(
+        selectedSpace.verification_display_context || "none"
+      )
     : false;
 
   return (
@@ -754,6 +789,8 @@ function MyListingsPageContent({
                             Verification checks
                           </p>
 
+                          {selectedPanelShowsPersonal ? (
+                            <>
                           <div className="flex flex-wrap gap-2">
                             <span
                               className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${getVerificationBadgeClass(
@@ -784,6 +821,17 @@ function MyListingsPageContent({
                             <div className="mt-3 rounded-md border border-yellow-300 bg-yellow-50 p-2.5 text-sm text-yellow-900">
                               This listing cannot go live yet. Missing: {getMissingChecks(selectedSpace).join(", ")}.
                             </div>
+                          )}
+                            </>
+                          ) : selectedSpace.verification_display_context ===
+                            "organisation_managed" ? (
+                            <span className="inline-flex rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-700">
+                              {ORGANISATION_MANAGED_VERIFICATION_LABEL}
+                            </span>
+                          ) : (
+                            <p className="text-sm text-gray-600">
+                              Personal verification does not apply to this listing.
+                            </p>
                           )}
                         </div>
 
@@ -885,6 +933,7 @@ function MyListingsPageContent({
                             </Link>
                           ) : null}
 
+                          {selectedPanelShowsPersonal ? (
                           <Link
                             href="/dashboard/verification"
                             className="inline-flex items-center gap-2 rounded-md border px-2.5 py-0.5 text-sm text-[#192a3a] hover:bg-gray-50"
@@ -892,6 +941,7 @@ function MyListingsPageContent({
                             <BadgeCheck className="h-4 w-4" />
                             <span>Verification center</span>
                           </Link>
+                          ) : null}
 
                           {selectedPanelIsLive ? (
                             selectedSpace.status === "paused" ? (

@@ -280,8 +280,8 @@ export default function HostDashboardPage() {
               </div>
             ) : null}
 
-            {/* Verification & listing actions — stable cards, no flickering banners. */}
-            <OwnerVerificationAlerts />
+            {/* Verification & listing actions — personal-host context only. */}
+            {hosting.summary.isLegacyHost ? <OwnerVerificationAlerts /> : null}
 
             {/* TOP METRICS — what hosts most often act on. */}
             <section aria-labelledby="host-overview-metrics">
@@ -399,6 +399,7 @@ export default function HostDashboardPage() {
                   icon={<CheckCircle2 className="h-5 w-5" aria-hidden />}
                   href="/dashboard/calendar"
                 />
+                {hosting.summary.isLegacyHost ? (
                 <DetailCard
                   title="Profile & verification"
                   value={profileNeedsAttention ? "Action" : "OK"}
@@ -417,6 +418,7 @@ export default function HostDashboardPage() {
                   href="/dashboard/verification"
                   highlight={profileNeedsAttention}
                 />
+                ) : null}
               </div>
             </section>
 

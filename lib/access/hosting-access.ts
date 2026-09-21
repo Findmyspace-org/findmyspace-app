@@ -79,8 +79,7 @@ export function summarizeHostingAccess(
     isGlobalAdmin || isOrganisationAdmin || isPropertyManager || isLegacyHost;
   const showFinance =
     isGlobalAdmin || isOrganisationAdmin || isPropertyManager || isLegacyHost;
-  const showVerification =
-    isGlobalAdmin || isOrganisationAdmin || isPropertyManager || isLegacyHost;
+  const showVerification = isGlobalAdmin || isLegacyHost;
   const showCreateSpace =
     isGlobalAdmin || isOrganisationAdmin || isLegacyHost;
 

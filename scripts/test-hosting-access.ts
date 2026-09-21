@@ -436,4 +436,19 @@ function navLabels(summary: ReturnType<typeof summarizeHostingAccess>) {
   assert.doesNotMatch(hostingHelper, /CREATE TABLE/);
 }
 
+// Verification display is listing-context, not operator-profile stamping
+{
+  assert.equal(smSummary.showVerification, false);
+  assert.equal(pmSummary.showVerification, false);
+  assert.equal(oaSummary.showVerification, false);
+  assert.equal(legacySummary.showVerification, true);
+  assert.equal(gaSummary.showVerification, true);
+  assert.match(listings, /verificationFieldsForManagedListing/);
+  assert.doesNotMatch(
+    listings,
+    /owner_verification_status:\s*\n\s*profileData\?\.owner_verification_status/
+  );
+  assert.match(editor, /listingVerificationDisplayContext/);
+}
+
 console.log("test-hosting-access: all assertions passed");

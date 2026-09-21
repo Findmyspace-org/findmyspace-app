@@ -7,6 +7,11 @@ import { AdminRowActionsMenu } from "@/app/components/admin/AdminRowActionsMenu"
 import { FOCUS_HIGHLIGHT_CLASS } from "@/lib/use-focus-highlight";
 import { isBookableListingStatus } from "@/lib/listing-lifecycle";
 import type { OwnerListingNextAction } from "@/lib/listing-lifecycle";
+import {
+  ORGANISATION_MANAGED_VERIFICATION_LABEL,
+  showsPersonalVerificationUi,
+  type VerificationDisplayContext,
+} from "@/lib/verification-display-context";
 
 export type OwnerSpaceTableRow = {
   id: string;
@@ -32,6 +37,8 @@ export type OwnerSpaceTableRow = {
   cover_image_url?: string | null;
   property_id?: string | null;
   property_name?: string | null;
+  organisation_id?: string | null;
+  verification_display_context?: VerificationDisplayContext;
 };
 
 type OwnerSpacesTableProps = {
@@ -107,6 +114,10 @@ export function OwnerSpacesTable({
               ? `/spaces/${space.id}`
               : null;
 
+            const personalVerification = showsPersonalVerificationUi(
+              space.verification_display_context || "none"
+            );
+
             const menuActions = [
               {
                 key: "details",
@@ -128,11 +139,15 @@ export function OwnerSpacesTable({
                 label: "Edit space",
                 href: `/spaces/${space.id}/edit`,
               },
-              {
-                key: "verification",
-                label: "Verification center",
-                href: "/dashboard/verification",
-              },
+              ...(personalVerification
+                ? [
+                    {
+                      key: "verification",
+                      label: "Verification center",
+                      href: "/dashboard/verification",
+                    },
+                  ]
+                : []),
               ...(nextAction
                 ? [
                     {
@@ -283,6 +298,8 @@ export function OwnerSpacesTable({
                 </td>
                 <td className="hidden px-2 py-3 lg:table-cell">
                   <div className="flex flex-wrap gap-1">
+                    {personalVerification ? (
+                      <>
                     <span
                       className={`inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-medium ${getVerificationBadgeClass(
                         space.owner_verification_status
@@ -313,6 +330,16 @@ export function OwnerSpacesTable({
                         space.ownership_proof_status
                       )}
                     </span>
+                      </>
+                    ) : space.verification_display_context ===
+                      "organisation_managed" ? (
+                      <span
+                        className="inline-flex rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-700"
+                        title={ORGANISATION_MANAGED_VERIFICATION_LABEL}
+                      >
+                        {ORGANISATION_MANAGED_VERIFICATION_LABEL}
+                      </span>
+                    ) : null}
                   </div>
                 </td>
                 <td className="px-2 py-3 text-right align-middle">

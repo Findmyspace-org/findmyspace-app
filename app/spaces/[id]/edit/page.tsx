@@ -12,6 +12,10 @@ import { useHostingWorkspace } from "@/lib/use-hosting-workspace";
 import { ownerApiFetch } from "@/lib/owner-api-client";
 import OwnerVerificationAlerts from "@/app/components/OwnerVerificationAlerts";
 import {
+  listingVerificationDisplayContext,
+  showsPersonalVerificationUi,
+} from "@/lib/verification-display-context";
+import {
   GroupSizeFields,
   groupSizePayloadFromForm,
   validateGroupSizeFormValues,
@@ -121,6 +125,8 @@ type SpaceEditRow = {
   monthly_payment_day: number | null;
   latitude: number | null;
   longitude: number | null;
+  property_id?: string | null;
+  organisation_id?: string | null;
 };
 
 type SpaceUpdatePayload = {
@@ -197,6 +203,8 @@ export default function EditListingPage(_props: PageProps) {
 
   const [listingId, setListingId] = useState("");
   const [ownerId, setOwnerId] = useState("");
+  const [organisationId, setOrganisationId] = useState<string | null>(null);
+  const [sessionUserId, setSessionUserId] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
@@ -334,6 +342,13 @@ export default function EditListingPage(_props: PageProps) {
     }
 
     setOwnerId(data.owner_id ?? "");
+    setOrganisationId(data.organisation_id ?? null);
+    {
+      const {
+        data: { user: sessionUser },
+      } = await supabase.auth.getUser();
+      setSessionUserId(sessionUser?.id ?? "");
+    }
     setTitle(data.title ?? "");
     setDescription(data.description ?? "");
     setCity(data.city ?? "");
@@ -903,6 +918,14 @@ export default function EditListingPage(_props: PageProps) {
     title,
   ]);
 
+  const showPersonalVerificationUi = showsPersonalVerificationUi(
+    listingVerificationDisplayContext({
+      organisationId,
+      ownerId,
+      currentUserId: sessionUserId,
+    })
+  );
+
   return (
     <RequireAuth>
       <DashboardShell
@@ -963,9 +986,11 @@ export default function EditListingPage(_props: PageProps) {
               </div>
             ) : null}
 
+            {showPersonalVerificationUi ? (
             <div className="mb-6">
               <OwnerVerificationAlerts />
             </div>
+            ) : null}
 
             {listingId ? (
               <p className="mb-6 text-sm text-gray-600">
@@ -1225,6 +1250,7 @@ export default function EditListingPage(_props: PageProps) {
                 </details>
               </section>
 
+              {showPersonalVerificationUi ? (
               <div className="rounded-sm border border-gray-200 bg-gray-50 p-4">
                 <div className="mb-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                   <div>
@@ -1290,6 +1316,7 @@ export default function EditListingPage(_props: PageProps) {
                   </button>
                 </div>
               </div>
+              ) : null}
 
               <button
                 type="submit"

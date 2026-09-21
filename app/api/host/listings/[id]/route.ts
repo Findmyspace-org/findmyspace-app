@@ -81,8 +81,24 @@ export async function GET(
         .maybeSingle(),
     ]);
 
+  const propertyId = (space as { property_id?: string | null }).property_id;
+  let organisationId: string | null = null;
+  if (propertyId) {
+    const { data: property } = await auth.admin
+      .from("properties")
+      .select("organisation_id")
+      .eq("id", propertyId)
+      .maybeSingle();
+    organisationId =
+      (property as { organisation_id?: string | null } | null)?.organisation_id ??
+      null;
+  }
+
   return NextResponse.json({
-    space,
+    space: {
+      ...(space as Record<string, unknown>),
+      organisation_id: organisationId,
+    },
     attributes: attributes || [],
     images: images || [],
     questionnaire: questionnaire || null,
