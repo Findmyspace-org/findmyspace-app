@@ -16,12 +16,13 @@ import {
   summarizeHostingAccess,
   type HostingAccessInput,
 } from "../lib/access/hosting-access";
-import { hostingNavItems } from "../lib/dashboard-nav";
+import { hostingNavItems, RENTER_NAV, HOST_NAV } from "../lib/dashboard-nav";
 import {
+  BOOKING_HREF,
   HOSTING_OVERVIEW_PATH,
-  MY_ACCOUNT_HREF,
+  SWITCH_TO_BOOKING_LABEL,
   SWITCH_TO_HOSTING_LABEL,
-  SWITCH_TO_MY_ACCOUNT_LABEL,
+  hostingOrganisationContextName,
   workspaceKindFromLabel,
   workspaceSwitch,
 } from "../lib/workspace-switch";
@@ -82,6 +83,11 @@ const workspaceSwitchUi = readFileSync(
   "app/components/WorkspaceSwitch.tsx",
   "utf8"
 );
+const accessSummaryRoute = readFileSync(
+  "app/api/host/access-summary/route.ts",
+  "utf8"
+);
+const workspaceChrome = readFileSync("lib/use-workspace-chrome.ts", "utf8");
 const listings = readFileSync("app/dashboard/listings/page.tsx", "utf8");
 const owner = readFileSync("app/dashboard/owner/page.tsx", "utf8");
 const requests = readFileSync("app/dashboard/requests/page.tsx", "utf8");
@@ -189,18 +195,22 @@ function navLabels(summary: ReturnType<typeof summarizeHostingAccess>) {
   );
 }
 
-// D/E Header Hosting vs Become a host
+// D/E Header Booking / Hosting / Become a host
 {
   assert.match(header, /hasHostingAccess/);
-  assert.match(header, /title: "My account"/);
+  assert.match(header, /title: "Booking"/);
   assert.match(header, /title: "Hosting"/);
-  assert.match(header, /label: "Overview"/);
-  assert.match(header, /hostingOwnerHref/);
+  assert.match(header, /title: "Account"/);
+  assert.match(header, /hostingNavItems/);
+  assert.match(header, /RENTER_NAV/);
+  assert.match(header, /label: "Sign out"/);
+  assert.doesNotMatch(header, /Account settings/);
   assert.match(header, /Become a host/);
   assert.match(header, /\/dashboard\/become-host/);
   assert.match(header, /fetchHostingAccessSummary/);
   assert.doesNotMatch(header, /Host dashboard/);
   assert.doesNotMatch(header, /My dashboard/);
+  assert.doesNotMatch(header, /title: "My account"/);
   assert.doesNotMatch(header, /Switch to host/);
   assert.match(header, /setHasHostingAccess\(summary\.hasHostingAccess\)/);
   assert.doesNotMatch(header, /setHasHostingAccess\(data\?\.is_host === true\)/);
@@ -219,6 +229,26 @@ function navLabels(summary: ReturnType<typeof summarizeHostingAccess>) {
   assert.equal(hrefs.includes("/dashboard/listings"), true);
   assert.equal(hrefs.includes("/dashboard/requests"), true);
   assert.equal(hrefs.includes("/dashboard/calendar"), true);
+}
+
+// Booking nav is not personal-host verification
+{
+  assert.equal(
+    RENTER_NAV.map((item) => item.label).join(","),
+    "Overview,My bookings,Comms,Payments"
+  );
+  assert.equal(
+    RENTER_NAV.some((item) => item.href === "/dashboard/verification"),
+    false
+  );
+  assert.equal(
+    HOST_NAV.some((item) => item.label === "Verification & payouts"),
+    true
+  );
+  assert.equal(smSummary.showVerification, false);
+  assert.equal(legacySummary.showVerification, true);
+  assert.doesNotMatch(dashboard, /Account settings/);
+  assert.doesNotMatch(header, /Account settings/);
 }
 
 // G. Space Manager Hosting nav excludes People, properties, finance, create-space
@@ -384,7 +414,7 @@ function navLabels(summary: ReturnType<typeof summarizeHostingAccess>) {
   });
   assert.equal(renterOrg, null);
   const unauthorisedSwitch = workspaceSwitch({
-    kind: "account",
+    kind: "booking",
     hasHostingAccess: false,
     organisationId: ORG,
   });
@@ -493,39 +523,97 @@ function navLabels(summary: ReturnType<typeof summarizeHostingAccess>) {
 
 // Workspace switch uses hasHostingAccess, not profiles.is_host
 {
-  assert.equal(workspaceKindFromLabel("My account"), "account");
+  assert.equal(workspaceKindFromLabel("Booking"), "booking");
+  assert.equal(workspaceKindFromLabel("My account"), "booking");
   assert.equal(workspaceKindFromLabel("Hosting"), "hosting");
 
-  const smAccount = workspaceSwitch({
-    kind: "account",
+  const smBooking = workspaceSwitch({
+    kind: "booking",
     hasHostingAccess: smSummary.hasHostingAccess,
     organisationId: ORG,
   });
   assert.equal(smSummary.hasHostingAccess, true);
-  assert.equal(smAccount?.label, SWITCH_TO_HOSTING_LABEL);
-  assert.equal(smAccount?.href, `${HOSTING_OVERVIEW_PATH}?organisation=${ORG}`);
+  assert.equal(smSummary.isLegacyHost, false);
+  assert.equal(smBooking?.label, SWITCH_TO_HOSTING_LABEL);
+  assert.equal(smBooking?.href, `${HOSTING_OVERVIEW_PATH}?organisation=${ORG}`);
 
   const smHosting = workspaceSwitch({
     kind: "hosting",
     hasHostingAccess: smSummary.hasHostingAccess,
     organisationId: ORG,
   });
-  assert.equal(smHosting?.label, SWITCH_TO_MY_ACCOUNT_LABEL);
-  assert.equal(smHosting?.href, MY_ACCOUNT_HREF);
+  assert.equal(smHosting?.label, SWITCH_TO_BOOKING_LABEL);
+  assert.equal(smHosting?.href, BOOKING_HREF);
+  assert.equal(
+    hostingOrganisationContextName({
+      organisationId: ORG,
+      organisations: [{ id: ORG, name: "Paarl Girls' High" }],
+    }),
+    "Paarl Girls' High"
+  );
 
-  const renterAccount = workspaceSwitch({
-    kind: "account",
+  const renterBooking = workspaceSwitch({
+    kind: "booking",
     hasHostingAccess: renterSummary.hasHostingAccess,
     organisationId: null,
   });
   assert.equal(renterSummary.hasHostingAccess, false);
-  assert.equal(renterAccount, null);
+  assert.equal(renterBooking, null);
+
+  const personalHost = workspaceSwitch({
+    kind: "booking",
+    hasHostingAccess: legacySummary.hasHostingAccess,
+    organisationId: null,
+  });
+  assert.equal(legacySummary.hasHostingAccess, true);
+  assert.equal(personalHost?.href, HOSTING_OVERVIEW_PATH);
+  assert.equal(
+    hostingOrganisationContextName({
+      organisationId: null,
+      organisations: [{ id: ORG, name: "Paarl Girls' High" }],
+    }),
+    null
+  );
+
+  const dualSummary = summarizeHostingAccess(
+    hostingInput({
+      ownedSpaceCount: 1,
+      grants: [smGrant],
+    })
+  );
+  assert.equal(dualSummary.hasHostingAccess, true);
+  assert.equal(dualSummary.isLegacyHost, true);
+  assert.equal(dualSummary.isSpaceManager, true);
+  const dualPersonal = computeAccess(
+    accessCtx({
+      spaceId: "personal-space",
+      spaceOwnerId: USER,
+      grants: [smGrant],
+    })
+  );
+  const dualClassroom2 = computeAccess(
+    accessCtx({
+      spaceId: CLASSROOM_2,
+      spaceOwnerId: null,
+      grants: [smGrant],
+    })
+  );
+  assert.equal(dualPersonal.canEditSpace, true);
+  assert.equal(dualClassroom2.canEditSpace, false);
+  assert.equal(
+    workspaceSwitch({
+      kind: "hosting",
+      hasHostingAccess: dualSummary.hasHostingAccess,
+      organisationId: ORG,
+    })?.href,
+    BOOKING_HREF
+  );
 
   for (const summary of [oaSummary, pmSummary, legacySummary, gaSummary]) {
     assert.equal(summary.hasHostingAccess, true);
     assert.equal(
       workspaceSwitch({
-        kind: "account",
+        kind: "booking",
         hasHostingAccess: summary.hasHostingAccess,
         organisationId: summary.primaryOrganisationId,
       })?.label,
@@ -537,15 +625,23 @@ function navLabels(summary: ReturnType<typeof summarizeHostingAccess>) {
         hasHostingAccess: summary.hasHostingAccess,
         organisationId: summary.primaryOrganisationId,
       })?.href,
-      MY_ACCOUNT_HREF
+      BOOKING_HREF
     );
   }
 
+  assert.match(dashboard, /workspaceLabel="Booking"/);
+  assert.match(dashboard, /Manage your bookings, messages and payments/);
+  assert.match(dashboardShell, /useWorkspaceChrome/);
   assert.match(dashboardShell, /WorkspaceSwitch/);
-  assert.match(workspaceSwitchUi, /fetchHostingAccessSummary/);
-  assert.match(workspaceSwitchUi, /resolveHostingOrganisationId/);
-  assert.match(workspaceSwitchUi, /workspaceSwitch/);
-  assert.doesNotMatch(workspaceSwitchUi, /is_host/);
+  assert.match(workspaceChrome, /fetchHostingWorkspaceDisplay/);
+  assert.match(workspaceChrome, /resolveHostingOrganisationId/);
+  assert.match(workspaceChrome, /hostingOrganisationContextName/);
+  assert.doesNotMatch(workspaceChrome, /is_host/);
+  assert.match(workspaceSwitchUi, /Switch to Hosting|label/);
+  assert.match(accessSummaryRoute, /loadHostingOrganisationNames/);
+  assert.match(loadHosting, /loadHostingOrganisationNames/);
+  assert.doesNotMatch(hostingHelper, /organisationNames/);
+  assert.match(people, /shouldShowOrganisationSelector/);
   assert.doesNotMatch(dashboard, /Switch to Hosting/);
   assert.match(owner, /pageTitle="Overview"/);
   assert.doesNotMatch(owner, /Host dashboard/);

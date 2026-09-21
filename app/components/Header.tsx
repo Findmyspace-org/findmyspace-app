@@ -17,15 +17,14 @@ import { supabase } from "@/lib/supabase";
 import AuthModal from "@/app/components/AuthModal";
 import { sanitizeNextPath } from "@/lib/auth-redirect";
 import { isPlatformAdminRole } from "@/lib/admin-roles";
-import { hostingHref } from "@/lib/access/hosting-access";
+import type { HostingAccessSummary } from "@/lib/access/hosting-access";
 import { fetchHostingAccessSummary } from "@/lib/hosting-access-client";
+import { hostingNavItems, RENTER_NAV } from "@/lib/dashboard-nav";
 import {
   Home,
   Search,
-  LayoutDashboard,
   HousePlus,
   Building2,
-  CalendarCheck,
   ShieldCheck,
   Compass,
   LogIn,
@@ -87,8 +86,9 @@ export default function Header() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [isHost, setIsHost] = useState(false);
   const [hasHostingAccess, setHasHostingAccess] = useState(false);
-  const [hostingOwnerHref, setHostingOwnerHref] = useState("/dashboard/owner");
-  const [hostingListingsHref, setHostingListingsHref] = useState("/dashboard/listings");
+  const [hostingSummary, setHostingSummary] = useState<HostingAccessSummary | null>(
+    null
+  );
   const [loading, setLoading] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
   const [bellOpen, setBellOpen] = useState(false);
@@ -208,8 +208,7 @@ export default function Header() {
         setIsAdmin(false);
         setIsHost(false);
         setHasHostingAccess(false);
-        setHostingOwnerHref("/dashboard/owner");
-        setHostingListingsHref("/dashboard/listings");
+        setHostingSummary(null);
         return;
       }
 
@@ -232,6 +231,7 @@ export default function Header() {
           setIsAdmin(false);
           setIsHost(false);
           setHasHostingAccess(false);
+          setHostingSummary(null);
           return;
         }
 
@@ -248,15 +248,11 @@ export default function Header() {
           const summary = await fetchHostingAccessSummary();
           if (!mounted) return;
           setHasHostingAccess(summary.hasHostingAccess);
-          setHostingOwnerHref(
-            hostingHref("/dashboard/owner", summary.primaryOrganisationId)
-          );
-          setHostingListingsHref(
-            hostingHref("/dashboard/listings", summary.primaryOrganisationId)
-          );
+          setHostingSummary(summary);
         } catch {
           if (!mounted) return;
           setHasHostingAccess(false);
+          setHostingSummary(null);
         }
       } catch (error) {
         console.error("Profile load failed:", error);
@@ -264,6 +260,7 @@ export default function Header() {
         setIsAdmin(false);
         setIsHost(false);
         setHasHostingAccess(false);
+        setHostingSummary(null);
       }
     }
 
@@ -852,13 +849,9 @@ export default function Header() {
 
   // Workspace-based primary navigation.
   //
-  // Goal: the burger menu answers which workspace the user is entering
-  // (My account vs Hosting), not "what feature do I want?". Every workspace
-  // owns its own contextual nav once the user lands inside its dashboard, so
-  // we deliberately do NOT surface Messages, Notifications, Listing questions,
-  // Finance, My listings, Booking requests, or Host settings here — those
-  // routes still work and are reached from inside their respective workspace.
-  // Become a host stays only for users with no Hosting access.
+  // Booking / Hosting / Account. Hosting links stay role-filtered by the
+  // existing hosting access summary. Become a host stays only for users with
+  // no Hosting access.
   const menuSections: MenuSection[] = [
     {
       title: "Explore",
@@ -871,38 +864,44 @@ export default function Header() {
 
   if (!loading && isLoggedIn) {
     menuSections.push({
-      title: "My account",
-      items: [
-        {
-          label: "Overview",
-          href: "/dashboard",
-          icon: CalendarCheck,
-        },
-      ],
+      title: "Booking",
+      items: RENTER_NAV.map((item) => ({
+        label: item.label,
+        href: item.href,
+        icon: item.icon,
+      })),
     });
 
     menuSections.push({
       title: "Hosting",
-      items: hasHostingAccess
-        ? [
-            {
-              label: "Overview",
-              href: hostingOwnerHref,
-              icon: LayoutDashboard,
-            },
-            {
-              label: "My spaces",
-              href: hostingListingsHref,
-              icon: Building2,
-            },
-          ]
-        : [
-            {
-              label: "Become a host",
-              href: "/dashboard/become-host",
-              icon: HousePlus,
-            },
-          ],
+      items:
+        hasHostingAccess && hostingSummary
+          ? hostingNavItems(hostingSummary).map((item) => ({
+              label: item.label,
+              href: item.href,
+              icon: item.icon,
+            }))
+          : [
+              {
+                label: "Become a host",
+                href: "/dashboard/become-host",
+                icon: HousePlus,
+              },
+            ],
+    });
+
+    menuSections.push({
+      title: "Account",
+      items: [
+        {
+          label: "Sign out",
+          icon: LogOut,
+          onClick: () => {
+            setMenuOpen(false);
+            void handleLogout();
+          },
+        },
+      ],
     });
 
     if (isAdmin) {
@@ -1111,7 +1110,7 @@ export default function Header() {
               </button>
 
               {menuOpen && (
-                <div className="absolute right-0 top-14 z-[120] w-[320px] rounded-md border border-gray-200 bg-white p-2 shadow-[0_12px_28px_rgba(15,23,42,0.12)]">
+                <div className="absolute right-0 top-14 z-[120] max-h-[min(80vh,36rem)] w-[320px] overflow-y-auto rounded-md border border-gray-200 bg-white p-2 shadow-[0_12px_28px_rgba(15,23,42,0.12)]">
                   {!loading && isLoggedIn && sessionEmail && (
                     <div className="mb-2 rounded-md border border-gray-200 bg-[#f8fafb] px-4 py-3">
                       <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
@@ -1203,15 +1202,7 @@ export default function Header() {
                         <span>Contact us</span>
                       </Link>
 
-                      {!loading && isLoggedIn ? (
-                        <button
-                          onClick={handleLogout}
-                          className="mt-0.5 flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-left text-sm font-medium text-red-600 hover:bg-red-50"
-                        >
-                          <LogOut className="h-4 w-4 shrink-0 text-red-600" />
-                          <span>Log out</span>
-                        </button>
-                      ) : !loading ? (
+                      {!loading && !isLoggedIn ? (
                         <>
                           <button
                             type="button"

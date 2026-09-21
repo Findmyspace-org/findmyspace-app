@@ -52,11 +52,6 @@ export const RENTER_NAV: DashboardNavItem[] = [
     href: "/dashboard/my-bookings#payments",
     icon: CreditCard,
   },
-  {
-    label: "Account settings",
-    href: "/dashboard/verification",
-    icon: Settings,
-  },
 ];
 
 export const HOST_NAV: DashboardNavItem[] = [

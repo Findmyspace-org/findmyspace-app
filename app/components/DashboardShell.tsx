@@ -9,16 +9,17 @@
  *   - below lg   → horizontal scrolling pill tabs above the content
  *
  * The shell stays route-agnostic: pages pass nav items and titles. The
- * secondary My Account ↔ Hosting switch is rendered here so it stays
+ * secondary Booking ↔ Hosting switch is rendered here so it stays
  * consistent across every workspace page.
  *
  * IMPORTANT: this is contextual workspace navigation. It must NOT duplicate
- * the global burger menu's primary entries (My account / Hosting /
+ * the global burger menu's primary entries (Booking / Hosting /
  * Admin dashboard) — those still live in the header.
  */
 
 import { GuardedLink, UnsavedChangesProvider } from "@/app/components/UnsavedChangesProvider";
 import WorkspaceSwitch from "@/app/components/WorkspaceSwitch";
+import { useWorkspaceChrome } from "@/lib/use-workspace-chrome";
 import { workspaceKindFromLabel } from "@/lib/workspace-switch";
 import { usePathname } from "next/navigation";
 
@@ -40,7 +41,7 @@ export type DashboardNavItem = {
 };
 
 type DashboardShellProps = {
-  /** Eyebrow above the title — e.g. "My account", "Hosting", "Admin". */
+  /** Eyebrow above the title — e.g. "Booking", "Hosting", "Admin". */
   workspaceLabel: string;
   /** Main page title — e.g. "Welcome back", "Overview". */
   pageTitle: string;
@@ -78,6 +79,7 @@ export default function DashboardShell({
 }: DashboardShellProps) {
   const pathname = usePathname();
   const workspaceKind = workspaceKindFromLabel(workspaceLabel);
+  const chrome = useWorkspaceChrome(workspaceKind);
 
   function isActive(item: DashboardNavItem): boolean {
     const itemPath = item.href.split("?")[0];
@@ -96,16 +98,34 @@ export default function DashboardShell({
         {/* Heading band — calm, structured, premium. Tightened on mobile so
             the workspace nav sits closer to the top of the viewport. */}
         <header className="mb-3 sm:mb-6">
-          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-            <div className="flex min-w-0 flex-wrap items-center gap-2">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-500 sm:text-[11px]">
-                {workspaceLabel}
-              </p>
-              {pageEyebrowPill ? (
-                <span className="inline-flex items-center">{pageEyebrowPill}</span>
-              ) : null}
-            </div>
-            {workspaceKind ? <WorkspaceSwitch kind={workspaceKind} /> : null}
+          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-500 sm:text-[11px]">
+              {workspaceLabel}
+            </p>
+            {workspaceKind === "hosting" && chrome.organisationName ? (
+              <>
+                <span className="text-[10px] text-gray-300 sm:text-[11px]" aria-hidden>
+                  ·
+                </span>
+                <span className="min-w-0 truncate text-[11px] font-medium text-gray-600 sm:text-xs">
+                  {chrome.organisationName}
+                </span>
+              </>
+            ) : null}
+            {pageEyebrowPill ? (
+              <span className="inline-flex items-center">{pageEyebrowPill}</span>
+            ) : null}
+            {chrome.switchTarget ? (
+              <>
+                <span className="text-[10px] text-gray-300 sm:text-[11px]" aria-hidden>
+                  ·
+                </span>
+                <WorkspaceSwitch
+                  href={chrome.switchTarget.href}
+                  label={chrome.switchTarget.label}
+                />
+              </>
+            ) : null}
           </div>
           <h1 className="mt-1 text-xl font-semibold tracking-tight text-[#0c1d2f] sm:mt-1.5 sm:text-3xl">
             {pageTitle}

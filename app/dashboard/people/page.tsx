@@ -29,6 +29,7 @@ import {
   ORGANISATION_QUERY_PARAM,
   organisationWorkspaceHref,
   resolveOrganisationWorkspaceSelection,
+  shouldShowOrganisationSelector,
   type ManageableOrganisation,
 } from "@/lib/access/organisation-workspace";
 import {
@@ -276,7 +277,9 @@ function PeoplePageContent() {
       workspaceLabel="Hosting"
       pageTitle="People & access"
       pageContext={
-        contextOrganisation ? (
+        contextOrganisation &&
+        (shouldShowOrganisationSelector(selectable.length) ||
+          selection.kind === "archived") ? (
           <OrganisationWorkspaceContext
             name={contextOrganisation.name}
             selectedId={contextOrganisation.id}

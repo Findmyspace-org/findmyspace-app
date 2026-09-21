@@ -8,9 +8,9 @@
  *     related to bookings the user has made (or is about to make).
  *   - Workspace-level navigation lives in `DashboardShell`. This page renders
  *     the Overview tab.
- *   - Other workspace destinations (My bookings, Comms, Payments, Account
- *     settings) navigate to existing routes — those routes are intentionally
- *     left untouched so deep links and existing flows keep working.
+ *   - Other workspace destinations (My bookings, Comms, Payments) navigate to
+ *     existing routes — those routes are intentionally left untouched so deep
+ *     links and existing flows keep working.
  *
  * Data philosophy:
  *   - Lightweight summary fetches only. Detail pages own their own loading.
@@ -35,7 +35,6 @@ import {
   Inbox,
   Loader2,
   Search,
-  Settings,
   Sparkles,
 } from "lucide-react";
 
@@ -251,11 +250,13 @@ export default function RenterDashboardPage() {
   return (
     <RequireAuth>
       <DashboardShell
-        workspaceLabel="My account"
-        pageTitle={
-          welcomeName ? `Welcome back, ${welcomeName}` : "Welcome back"
+        workspaceLabel="Booking"
+        pageTitle="Overview"
+        pageSubtitle={
+          welcomeName
+            ? `Welcome back, ${welcomeName}. Manage your bookings, messages and payments.`
+            : "Manage your bookings, messages and payments."
         }
-        pageSubtitle="Bookings, comms and payments — all in one place."
         pageEyebrowPill={
           role === "admin" ? (
             <span className="inline-flex items-center rounded-full bg-[#0c1d2f] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
@@ -473,12 +474,6 @@ export default function RenterDashboardPage() {
                   icon={<CreditCard className="h-3.5 w-3.5" aria-hidden />}
                 >
                   Payments
-                </QuickLinkChip>
-                <QuickLinkChip
-                  href="/dashboard/verification"
-                  icon={<Settings className="h-3.5 w-3.5" aria-hidden />}
-                >
-                  Account settings
                 </QuickLinkChip>
                 <QuickLinkChip
                   href="/spaces"

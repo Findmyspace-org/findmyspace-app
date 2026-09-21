@@ -962,7 +962,7 @@ function MyBookingsPageContent({
   return (
     <RequireAuth>
       <DashboardShell
-        workspaceLabel="My account"
+        workspaceLabel="Booking"
         pageTitle="My bookings"
         pageSubtitle="Track the booking requests you have sent to space owners."
         navItems={RENTER_NAV}

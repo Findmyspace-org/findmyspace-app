@@ -83,3 +83,21 @@ export async function loadHostingAccessSummary(
     ),
   });
 }
+
+/** Display names only. Does not grant Hosting authority. */
+export async function loadHostingOrganisationNames(
+  admin: SupabaseClient,
+  organisationIds: string[]
+): Promise<Array<{ id: string; name: string }>> {
+  if (organisationIds.length === 0) return [];
+  const { data } = await admin
+    .from("organisations")
+    .select("id, name")
+    .in("id", organisationIds);
+  return ((data || []) as Array<{ id: string; name: string | null }>).flatMap(
+    (row) => {
+      const name = row.name?.trim() || "";
+      return name ? [{ id: row.id, name }] : [];
+    }
+  );
+}
