@@ -19,6 +19,7 @@ import {
   primaryFlagAfterSpaceReassign,
   resolveManagerReassignScope,
   toPublicAccessGrantView,
+  personDisplayName,
   validatePropertyBelongsToOrganisation,
   validateSpaceBelongsToProperty,
   type ExistingAccessGrant,
@@ -30,6 +31,13 @@ import {
   organisationAccessAuditEvent,
 } from "../lib/access/organisation-access-audit";
 import type { AccessContext, OrganisationAccessGrant } from "../lib/access/roles";
+import {
+  ORGANISATION_QUERY_PARAM,
+  organisationWorkspaceHref,
+  resolveOrganisationWorkspaceSelection,
+  selectableOrganisations,
+  shouldShowOrganisationSelector,
+} from "../lib/access/organisation-workspace";
 
 const USER = "user-jane";
 const OA = "oa-1";
@@ -115,6 +123,12 @@ const peopleClient = readFileSync("lib/access/organisation-access-client.ts", "u
 const activityApi = readFileSync("app/api/admin/activity/route.ts", "utf8");
 const activityPage = readFileSync("app/admin/activity/page.tsx", "utf8");
 const lookupLib = readFileSync("lib/access/lookup-auth-user-by-email.ts", "utf8");
+const orgsRoute = readFileSync("app/api/organisations/route.ts", "utf8");
+const dashboardShell = readFileSync("app/components/DashboardShell.tsx", "utf8");
+const orgWorkspaceContext = readFileSync(
+  "app/components/OrganisationWorkspaceContext.tsx",
+  "utf8"
+);
 const reassignRoute = readFileSync(
   "app/api/organisations/[organisationId]/access/[accessId]/reassign/route.ts",
   "utf8"
@@ -149,6 +163,8 @@ assert.match(requireAuth, /schedulePendingOrganisationAccessActivation/);
 assert.match(peopleClient, /\/api\/organisations\/access\/activate/);
 assert.match(peoplePage, /Add person/);
 assert.match(peoplePage, /My Spaces/);
+assert.match(peoplePage, /People & access/);
+assert.doesNotMatch(peoplePage, /Paarl Girls/);
 
 // A / B list authority
 {
@@ -840,6 +856,183 @@ assert.match(peoplePage, /My Spaces/);
   );
   assert.match(sql, /GRANT SELECT ON TABLE public\.organisation_access TO authenticated/);
   assert.match(lookupLib, /Never expose auth\.users to the browser/);
+}
+
+const ORG_WS_A = "11111111-1111-4111-8111-111111111111";
+const ORG_WS_B = "22222222-2222-4222-8222-222222222222";
+const ORG_WS_ARCHIVED = "33333333-3333-4333-8333-333333333333";
+const ORG_WS_OTHER = "44444444-4444-4444-8444-444444444444";
+
+function wsOrg(
+  id: string,
+  name: string,
+  status: string
+): { id: string; name: string; status: string } {
+  return { id, name, status };
+}
+
+// A one manageable Organisation — name shown, no selector
+{
+  const organisations = [wsOrg(ORG_WS_A, "Paarl Girls' High", "active")];
+  const selection = resolveOrganisationWorkspaceSelection({
+    organisations,
+    requestedId: null,
+  });
+  assert.equal(selection.kind, "ready");
+  if (selection.kind === "ready") {
+    assert.equal(selection.organisation.name, "Paarl Girls' High");
+    assert.equal(shouldShowOrganisationSelector(selection.selectable.length), false);
+  }
+  assert.match(orgWorkspaceContext, /shouldShowOrganisationSelector/);
+  assert.match(peoplePage, /OrganisationWorkspaceContext/);
+  assert.match(peoplePage, /contextOrganisation\.name/);
+}
+
+// B multiple manageable Organisations — selector and switching
+{
+  const organisations = [
+    wsOrg(ORG_WS_A, "Alpha School", "active"),
+    wsOrg(ORG_WS_B, "Beta School", "active"),
+  ];
+  const first = resolveOrganisationWorkspaceSelection({
+    organisations,
+    requestedId: null,
+  });
+  const second = resolveOrganisationWorkspaceSelection({
+    organisations,
+    requestedId: ORG_WS_B,
+  });
+  assert.equal(first.kind, "ready");
+  assert.equal(second.kind, "ready");
+  if (first.kind === "ready" && second.kind === "ready") {
+    assert.equal(shouldShowOrganisationSelector(first.selectable.length), true);
+    assert.equal(first.organisation.id, ORG_WS_A);
+    assert.equal(second.organisation.id, ORG_WS_B);
+    assert.notEqual(first.organisation.id, second.organisation.id);
+  }
+  assert.equal(
+    organisationWorkspaceHref("/dashboard/people", ORG_WS_B),
+    `/dashboard/people?${ORGANISATION_QUERY_PARAM}=${ORG_WS_B}`
+  );
+  assert.match(peoplePage, /router\.push\(\s*organisationWorkspaceHref/);
+  assert.match(orgWorkspaceContext, /aria-label="Organisation"/);
+}
+
+// C Global Admin receives organisations from existing authorised endpoint
+{
+  assert.match(orgsRoute, /listManageableOrganisations/);
+  assert.match(orgsRoute, /isGlobalAdmin/);
+  assert.match(accessSql, /if \(isGlobalAdmin\)/);
+  assert.match(peoplePage, /fetchManageableOrganisations/);
+  const activeOnly = selectableOrganisations([
+    wsOrg(ORG_WS_A, "Active Org", "active"),
+    wsOrg(ORG_WS_ARCHIVED, "Archived Org", "archived"),
+  ]);
+  assert.deepEqual(
+    activeOnly.map((organisation) => organisation.id),
+    [ORG_WS_A]
+  );
+}
+
+// D Organisation Admin receives only authorised Organisations
+{
+  assert.match(accessSql, /eq\("role", "org_admin"\)/);
+  assert.match(accessSql, /eq\("status", "active"\)/);
+  assert.match(accessSql, /\.in\("id", ids\)/);
+  const unauthorised = resolveOrganisationWorkspaceSelection({
+    organisations: [wsOrg(ORG_WS_A, "Authorised Org", "active")],
+    requestedId: ORG_WS_OTHER,
+  });
+  assert.equal(unauthorised.kind, "unavailable");
+}
+
+// E invalid organisation query parameter cannot expose unauthorised data
+{
+  const organisations = [wsOrg(ORG_WS_A, "Authorised Org", "active")];
+  const invalid = resolveOrganisationWorkspaceSelection({
+    organisations,
+    requestedId: "not-a-uuid",
+  });
+  const missing = resolveOrganisationWorkspaceSelection({
+    organisations,
+    requestedId: ORG_WS_OTHER,
+  });
+  assert.equal(invalid.kind, "unavailable");
+  assert.equal(missing.kind, "unavailable");
+  if (invalid.kind === "unavailable") {
+    assert.notEqual(invalid.requestedId, organisations[0].id);
+  }
+  assert.match(peoplePage, /selection\.kind === "unavailable"/);
+  assert.match(peoplePage, /not available in your workspace/);
+}
+
+// F archived / inaccessible Organisation fails closed
+{
+  const archived = resolveOrganisationWorkspaceSelection({
+    organisations: [
+      wsOrg(ORG_WS_A, "Active Org", "active"),
+      wsOrg(ORG_WS_ARCHIVED, "Archived Org", "archived"),
+    ],
+    requestedId: ORG_WS_ARCHIVED,
+  });
+  assert.equal(archived.kind, "archived");
+  if (archived.kind === "archived") {
+    assert.equal(archived.organisation.id, ORG_WS_ARCHIVED);
+    assert.equal(archived.selectable[0].id, ORG_WS_A);
+  }
+  const empty = resolveOrganisationWorkspaceSelection({
+    organisations: [],
+    requestedId: null,
+  });
+  assert.equal(empty.kind, "empty");
+  assert.match(peoplePage, /selection\.kind === "archived"/);
+  assert.match(peoplePage, /cannot be managed as an active/);
+}
+
+// G People API requests use selected organisation
+{
+  assert.match(peoplePage, /fetchOrganisationAccess\(selectedOrganisationId\)/);
+  assert.match(peoplePage, /selection\.kind === "ready" \? selection\.organisation\.id/);
+  assert.match(peopleClient, /\/api\/organisations\/\$\{organisationId\}\/access/);
+  assert.match(grantRoute, /requireOrgPeopleApi\(req, organisationId\)/);
+}
+
+// H no cross-organisation People data leakage
+{
+  assert.match(peoplePage, /setGrants\(\[\]\)/);
+  assert.match(peoplePage, /access\.organisation\.id !== selectedOrganisationId/);
+  assert.match(peoplePage, /if \(!organisationId\)/);
+  assert.match(requirePeople, /canManagePeopleAccess/);
+}
+
+// I person display fallback works safely
+{
+  assert.equal(
+    personDisplayName({
+      fullName: "FindMySpace Admin",
+      firstName: "Admin",
+      lastName: "of Admins",
+    }),
+    "FindMySpace Admin"
+  );
+  assert.equal(
+    personDisplayName({
+      fullName: "  ",
+      firstName: "Ada",
+      lastName: "Lovelace",
+    }),
+    "Ada Lovelace"
+  );
+  assert.equal(
+    personDisplayName({
+      fullName: null,
+      firstName: null,
+      lastName: null,
+    }),
+    null
+  );
+  assert.match(peoplePage, /grant\.displayName \|\| grant\.email/);
+  assert.match(dashboardShell, /pageContext/);
 }
 
 console.log("test-people-access: all assertions passed");

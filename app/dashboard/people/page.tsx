@@ -1,8 +1,18 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  FormEvent,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import RequireAuth from "@/app/components/RequireAuth";
 import DashboardShell from "@/app/components/DashboardShell";
+import OrganisationWorkspaceContext from "@/app/components/OrganisationWorkspaceContext";
 import { HOST_NAV } from "@/lib/dashboard-nav";
 import type { PublicAccessGrantView } from "@/lib/access/organisation-access-policy";
 import {
@@ -14,6 +24,12 @@ import {
   setNotifyAllBookingsRequest,
   setPrimarySpaceManagerRequest,
 } from "@/lib/access/organisation-access-client";
+import {
+  ORGANISATION_QUERY_PARAM,
+  organisationWorkspaceHref,
+  resolveOrganisationWorkspaceSelection,
+  type ManageableOrganisation,
+} from "@/lib/access/organisation-workspace";
 
 type StatusFilter = "all" | "active" | "pending" | "revoked";
 
@@ -32,10 +48,13 @@ function statusLabel(status: string) {
 }
 
 function PeoplePageContent() {
-  const [organisations, setOrganisations] = useState<
-    Array<{ id: string; name: string; status: string }>
-  >([]);
-  const [organisationId, setOrganisationId] = useState("");
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const requestedId = searchParams.get(ORGANISATION_QUERY_PARAM);
+  const [organisations, setOrganisations] = useState<ManageableOrganisation[]>(
+    []
+  );
+  const [organisationsLoading, setOrganisationsLoading] = useState(true);
   const [grants, setGrants] = useState<PublicAccessGrantView[]>([]);
   const [properties, setProperties] = useState<Array<{ id: string; name: string }>>(
     []
@@ -43,7 +62,7 @@ function PeoplePageContent() {
   const [spaces, setSpaces] = useState<
     Array<{ id: string; title: string | null; propertyId: string }>
   >([]);
-  const [loading, setLoading] = useState(true);
+  const [accessLoading, setAccessLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [filter, setFilter] = useState<StatusFilter>("all");
@@ -54,36 +73,100 @@ function PeoplePageContent() {
   const [isPrimary, setIsPrimary] = useState(false);
   const [notifyAllBookings, setNotifyAllBookings] = useState(false);
 
-  const load = useCallback(async (selectedId?: string) => {
-    setLoading(true);
+  const selection = useMemo(
+    () =>
+      resolveOrganisationWorkspaceSelection({
+        organisations,
+        requestedId,
+      }),
+    [organisations, requestedId]
+  );
+
+  const organisationId =
+    selection.kind === "ready" ? selection.organisation.id : "";
+  const accessRequestRef = useRef(0);
+
+  const loadOrganisations = useCallback(async () => {
+    setOrganisationsLoading(true);
     setMessage("");
     try {
       const orgResult = await fetchManageableOrganisations();
-      const nextOrgs = orgResult.organisations || [];
-      setOrganisations(nextOrgs);
-      const nextId = selectedId || nextOrgs[0]?.id || "";
-      setOrganisationId(nextId);
-      if (!nextId) {
+      setOrganisations(orgResult.organisations || []);
+    } catch (err) {
+      setMessage(
+        err instanceof Error ? err.message : "Could not load organisations."
+      );
+      setOrganisations([]);
+    } finally {
+      setOrganisationsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadOrganisations();
+  }, [loadOrganisations]);
+
+  useEffect(() => {
+    if (organisationsLoading) return;
+    if (requestedId) return;
+    if (!organisationId) return;
+    router.replace(
+      organisationWorkspaceHref("/dashboard/people", organisationId)
+    );
+  }, [organisationsLoading, requestedId, router, organisationId]);
+
+  const loadAccess = useCallback(async (selectedOrganisationId: string) => {
+    const requestId = ++accessRequestRef.current;
+    setAccessLoading(true);
+    setMessage("");
+    setGrants([]);
+    setProperties([]);
+    setSpaces([]);
+    try {
+      const access = await fetchOrganisationAccess(selectedOrganisationId);
+      if (requestId !== accessRequestRef.current) return;
+      if (access.organisation.id !== selectedOrganisationId) {
         setGrants([]);
         setProperties([]);
         setSpaces([]);
         return;
       }
-      const access = await fetchOrganisationAccess(nextId);
       setGrants(access.grants);
       setProperties(access.properties);
       setSpaces(access.spaces);
     } catch (err) {
+      if (requestId !== accessRequestRef.current) return;
       setMessage(err instanceof Error ? err.message : "Could not load people.");
       setGrants([]);
+      setProperties([]);
+      setSpaces([]);
     } finally {
-      setLoading(false);
+      if (requestId === accessRequestRef.current) {
+        setAccessLoading(false);
+      }
     }
   }, []);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (!organisationId) {
+      accessRequestRef.current += 1;
+      setGrants([]);
+      setProperties([]);
+      setSpaces([]);
+      setAccessLoading(false);
+      return;
+    }
+    void loadAccess(organisationId);
+  }, [loadAccess, organisationId]);
+
+  function selectOrganisation(nextId: string) {
+    accessRequestRef.current += 1;
+    setGrants([]);
+    setProperties([]);
+    setSpaces([]);
+    setFilter("all");
+    router.push(organisationWorkspaceHref("/dashboard/people", nextId));
+  }
 
   const filteredGrants = useMemo(() => {
     if (filter === "all") return grants;
@@ -112,7 +195,7 @@ function PeoplePageContent() {
       setEmail("");
       setIsPrimary(false);
       setNotifyAllBookings(false);
-      await load(organisationId);
+      await loadAccess(organisationId);
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Could not add access.");
     } finally {
@@ -127,7 +210,7 @@ function PeoplePageContent() {
     setMessage("");
     try {
       await revokeOrganisationAccessRequest(organisationId, grant.id);
-      await load(organisationId);
+      await loadAccess(organisationId);
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Could not remove access.");
     } finally {
@@ -135,43 +218,60 @@ function PeoplePageContent() {
     }
   }
 
+  const loading = organisationsLoading || accessLoading;
+  const contextOrganisation =
+    selection.kind === "ready" || selection.kind === "archived"
+      ? selection.organisation
+      : null;
+  const selectable =
+    selection.kind === "empty" ? [] : selection.selectable;
+
   return (
     <DashboardShell
       workspaceLabel="Hosting"
-      pageTitle="People"
-      pageSubtitle="Give people access to this organisation. Access is granted by email — they do not need to claim a listing."
+      pageTitle="People & access"
+      pageContext={
+        contextOrganisation ? (
+          <OrganisationWorkspaceContext
+            name={contextOrganisation.name}
+            selectedId={contextOrganisation.id}
+            organisations={selectable}
+            archived={selection.kind === "archived"}
+            onSelect={selectOrganisation}
+          />
+        ) : null
+      }
+      pageSubtitle="Manage who has access to this organisation, its properties and spaces."
       navItems={HOST_NAV}
       activeHref="/dashboard/people"
     >
       <div className="space-y-6">
-        {organisations.length > 1 ? (
-          <label className="block text-sm">
-            <span className="mb-1 block font-medium text-[#192a3a]">Organisation</span>
-            <select
-              className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
-              value={organisationId}
-              onChange={(event) => {
-                void load(event.target.value);
-              }}
-            >
-              {organisations.map((org) => (
-                <option key={org.id} value={org.id}>
-                  {org.name}
-                </option>
-              ))}
-            </select>
-          </label>
-        ) : null}
-
         {message ? (
           <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
             {message}
           </p>
         ) : null}
 
-        {!loading && organisations.length === 0 ? (
+        {organisationsLoading ? (
+          <p className="text-sm text-gray-500">Loading…</p>
+        ) : null}
+
+        {!organisationsLoading && selection.kind === "empty" ? (
           <div className="rounded-xl border border-dashed border-gray-300 bg-white p-8 text-sm text-gray-600">
             You do not currently manage people for an organisation.
+          </div>
+        ) : null}
+
+        {!organisationsLoading && selection.kind === "unavailable" ? (
+          <div className="rounded-xl border border-dashed border-gray-300 bg-white p-8 text-sm text-gray-600">
+            This organisation is not available in your workspace.
+          </div>
+        ) : null}
+
+        {!organisationsLoading && selection.kind === "archived" ? (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-8 text-sm text-amber-950">
+            This organisation is archived and cannot be managed as an active
+            workspace.
           </div>
         ) : null}
 
@@ -284,7 +384,7 @@ function PeoplePageContent() {
 
             <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <h2 className="text-base font-semibold text-[#0c1d2f]">People & access</h2>
+                <h2 className="text-base font-semibold text-[#0c1d2f]">People</h2>
                 <div className="flex gap-2">
                   {(["all", "active", "pending", "revoked"] as StatusFilter[]).map(
                     (value) => (
@@ -305,7 +405,7 @@ function PeoplePageContent() {
                 </div>
               </div>
 
-              {loading ? (
+              {accessLoading ? (
                 <p className="mt-6 text-sm text-gray-500">Loading…</p>
               ) : filteredGrants.length === 0 ? (
                 <p className="mt-6 text-sm text-gray-500">No people in this view yet.</p>
@@ -344,7 +444,7 @@ function PeoplePageContent() {
                                   grant.id,
                                   !grant.isPrimary
                                 )
-                                  .then(() => load(organisationId))
+                                  .then(() => loadAccess(organisationId))
                                   .catch((err) =>
                                     setMessage(
                                       err instanceof Error
@@ -369,7 +469,7 @@ function PeoplePageContent() {
                                   grant.id,
                                   !grant.notifyAllBookings
                                 )
-                                  .then(() => load(organisationId))
+                                  .then(() => loadAccess(organisationId))
                                   .catch((err) =>
                                     setMessage(
                                       err instanceof Error
@@ -404,7 +504,7 @@ function PeoplePageContent() {
                                     spaceId: nextSpace.id,
                                   }
                                 )
-                                  .then(() => load(organisationId))
+                                  .then(() => loadAccess(organisationId))
                                   .catch((err) =>
                                     setMessage(
                                       err instanceof Error
@@ -448,7 +548,9 @@ function PeoplePageContent() {
 export default function PeoplePage() {
   return (
     <RequireAuth>
-      <PeoplePageContent />
+      <Suspense fallback={<main className="p-8 text-sm text-gray-600">Loading…</main>}>
+        <PeoplePageContent />
+      </Suspense>
     </RequireAuth>
   );
 }

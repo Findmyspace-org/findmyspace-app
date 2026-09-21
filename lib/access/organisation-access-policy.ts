@@ -356,6 +356,20 @@ export type PublicAccessGrantView = {
   revokeReason: string | null;
 };
 
+export function personDisplayName(input: {
+  fullName?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
+}): string | null {
+  const fullName = input.fullName?.trim() || "";
+  if (fullName) return fullName;
+  const joined = [input.firstName, input.lastName]
+    .map((part) => part?.trim() || "")
+    .filter(Boolean)
+    .join(" ");
+  return joined || null;
+}
+
 export function toPublicAccessGrantView(input: {
   id: string;
   status: OrganisationAccessStatus;
@@ -377,10 +391,11 @@ export function toPublicAccessGrantView(input: {
   revokedAt: string | null;
   revokeReason: string | null;
 }): PublicAccessGrantView {
-  const name =
-    input.fullName?.trim() ||
-    [input.firstName, input.lastName].filter(Boolean).join(" ").trim() ||
-    null;
+  const name = personDisplayName({
+    fullName: input.fullName,
+    firstName: input.firstName,
+    lastName: input.lastName,
+  });
   return {
     id: input.id,
     status: input.status,

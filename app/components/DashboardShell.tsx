@@ -42,6 +42,12 @@ type DashboardShellProps = {
   workspaceLabel: string;
   /** Main page title — e.g. "Welcome back", "Host dashboard". */
   pageTitle: string;
+  /**
+   * Optional context under the title — e.g. the current Organisation name
+   * or organisation selector. Pages own the contents so the same workspace
+   * chrome can be reused without baking People-specific selection here.
+   */
+  pageContext?: React.ReactNode;
   /** Supporting line under the title. Optional. */
   pageSubtitle?: string;
   /** Optional inline pill / chip rendered next to the title. */
@@ -61,6 +67,7 @@ type DashboardShellProps = {
 export default function DashboardShell({
   workspaceLabel,
   pageTitle,
+  pageContext,
   pageSubtitle,
   pageEyebrowPill,
   navItems,
@@ -96,6 +103,7 @@ export default function DashboardShell({
           <h1 className="mt-1 text-xl font-semibold tracking-tight text-[#0c1d2f] sm:mt-1.5 sm:text-3xl">
             {pageTitle}
           </h1>
+          {pageContext ? <div className="mt-1 sm:mt-1.5">{pageContext}</div> : null}
           {pageSubtitle ? (
             <p className="mt-1 max-w-2xl text-xs leading-relaxed text-gray-600 sm:mt-2 sm:text-sm">
               {pageSubtitle}
