@@ -11,6 +11,7 @@ import {
   buildListingQuestionsBatchCopy,
 } from "@/lib/communication-copy";
 import { getCanonicalPublicSiteUrl } from "@/lib/site-url";
+import { listManagedSpaceIds } from "@/lib/access/list-managed-spaces";
 
 /**
  * Listing yes/no questions — collection endpoints.
@@ -331,7 +332,13 @@ export async function GET(req: NextRequest) {
       .limit(100);
 
     if (isRenter) query = query.eq("renter_id", user.id);
-    else query = query.eq("owner_id", user.id);
+    else {
+      const managedSpaceIds = await listManagedSpaceIds(admin, user.id);
+      if (managedSpaceIds.length === 0) {
+        return NextResponse.json({ questions: [] });
+      }
+      query = query.in("space_id", managedSpaceIds);
+    }
 
     if (spaceIdFilter) query = query.eq("space_id", spaceIdFilter);
 

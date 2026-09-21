@@ -77,12 +77,13 @@ export default function DashboardShell({
   const pathname = usePathname();
 
   function isActive(item: DashboardNavItem): boolean {
-    if (activeHref) return activeHref === item.href;
+    const itemPath = item.href.split("?")[0];
+    if (activeHref) return activeHref.split("?")[0] === itemPath;
     if (!pathname) return false;
     if (item.matchPrefix) {
-      return pathname === item.href || pathname.startsWith(`${item.href}/`);
+      return pathname === itemPath || pathname.startsWith(`${itemPath}/`);
     }
-    return pathname === item.href;
+    return pathname === itemPath;
   }
 
   return (

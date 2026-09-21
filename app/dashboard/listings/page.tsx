@@ -7,7 +7,10 @@ import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import RequireAuth from "@/app/components/RequireAuth";
 import DashboardShell from "@/app/components/DashboardShell";
-import { HOST_NAV } from "@/lib/dashboard-nav";
+import { useHostingWorkspace } from "@/lib/use-hosting-workspace";
+import { fetchManagedSpaces } from "@/lib/host-managed-spaces-client";
+import { ownerApiFetch } from "@/lib/owner-api-client";
+import { ORGANISATION_QUERY_PARAM } from "@/lib/access/organisation-workspace";
 import OwnerVerificationAlerts from "@/app/components/OwnerVerificationAlerts";
 import { OwnerSpacesTable } from "@/app/components/owner/OwnerSpacesTable";
 import {
@@ -125,10 +128,13 @@ type ClaimContext = {
 function MyListingsPageContent({
   focusSpaceId,
   createdStatus,
+  requestedOrganisationId,
 }: {
   focusSpaceId: string | null;
   createdStatus: string | null;
+  requestedOrganisationId: string | null;
 }) {
+  const hosting = useHostingWorkspace(requestedOrganisationId);
   const [sessionEmail, setSessionEmail] = useState<string | null>(null);
   const [spaces, setSpaces] = useState<Space[]>([]);
 
@@ -214,6 +220,15 @@ function MyListingsPageContent({
 
       setSessionEmail(user.email ?? null);
 
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        setMessage("Please log in first.");
+        setLoading(false);
+        return;
+      }
+
       const { data: rawProfileData, error: profileError } = await (supabase
         .from("profiles") as any)
         .select(
@@ -224,18 +239,22 @@ function MyListingsPageContent({
 
       const profileData = rawProfileData as ProfileVerificationRow | null;
 
-      if (profileError) {
-        setMessage(profileError.message);
+      if (profileError || !profileData) {
+        setMessage(profileError?.message || "Could not load your profile.");
         setLoading(false);
         return;
       }
 
-      if (!profileData?.is_host) {
+      const { fetchHostingAccessSummary } = await import(
+        "@/lib/hosting-access-client"
+      );
+      const summary = await fetchHostingAccessSummary();
+      if (!summary.hasHostingAccess) {
         window.location.href = "/dashboard/become-host";
         return;
       }
 
-      setIsHost(true);
+      setIsHost(summary.isLegacyHost || profileData?.is_host === true);
 
       const { data: idDocRows } = await supabase
         .from("owner_verification_documents")
@@ -253,100 +272,42 @@ function MyListingsPageContent({
         hasIdBack: idTypes.includes("id_back"),
       });
 
-      const { data, error } = await supabase
-        .from("spaces")
-        .select(
-          "id, owner_id, title, description, city, suburb, address_line_1, space_type, booking_unit, price_amount, price_unit, price_per_hour, price_per_day, price_per_month, min_group_size, max_group_size, status, public_listing_mode, created_at, ownership_proof_status, deposit_type, deposit_months, monthly_payment_day, property_id"
-        )
-        .eq("owner_id", user.id)
-        .order("created_at", { ascending: false });
+      const managed = await fetchManagedSpaces(session.access_token);
 
-      if (error) {
-        setMessage(error.message);
-        setLoading(false);
-        return;
-      }
-
-      const baseSpaces = (data || []) as unknown as SpaceRow[];
-      const spaceIds = baseSpaces.map((space) => space.id);
-      const propertyIds = [
-        ...new Set(
-          baseSpaces
-            .map((space) => space.property_id)
-            .filter((id): id is string => Boolean(id))
-        ),
-      ];
-
-      const imageMap = new Map<string, string>();
-      const propertyNameMap = new Map<string, string>();
-      const profileMap = new Map<
-        string,
-        {
-          owner_verification_status: string | null;
-          bank_verification_status: string | null;
-        }
-      >();
-
-      if (spaceIds.length > 0) {
-        const { data: imagesData, error: imagesError } = await supabase
-          .from("space_images")
-          .select("space_id, image_url, sort_order")
-          .in("space_id", spaceIds)
-          .order("sort_order", { ascending: true });
-
-        if (imagesError) {
-          setMessage(imagesError.message);
-          setLoading(false);
-          return;
-        }
-
-        for (const image of (imagesData || []) as SpaceImageRow[]) {
-          if (!imageMap.has(image.space_id)) {
-            imageMap.set(image.space_id, image.image_url);
-          }
-        }
-      }
-
-      if (propertyIds.length > 0) {
-        const { data: propertyRows } = await supabase
-          .from("properties")
-          .select("id, name")
-          .in("id", propertyIds);
-
-        for (const property of (propertyRows as { id: string; name: string }[]) || []) {
-          propertyNameMap.set(property.id, property.name);
-        }
-      }
-
-      if (profileData?.id) {
-        profileMap.set(profileData.id, {
-          owner_verification_status: profileData.owner_verification_status,
-          bank_verification_status: profileData.bank_verification_status,
-        });
-      }
-
-      const mergedSpaces: Space[] = baseSpaces.map((space) => ({
-        ...space,
-        cover_image_url: imageMap.get(space.id) || null,
+      const mergedSpaces: Space[] = managed.map((space) => ({
+        id: space.id,
+        owner_id: space.owner_id || "",
+        title: space.title || "Untitled space",
+        description: space.description ?? null,
+        city: space.city ?? null,
+        suburb: space.suburb ?? null,
+        address_line_1: space.address_line_1 ?? null,
+        space_type: space.space_type ?? null,
+        booking_unit: space.booking_unit ?? null,
+        price_amount: space.price_amount,
+        price_unit: space.price_unit,
+        price_per_hour: space.price_per_hour ?? null,
+        price_per_day: space.price_per_day ?? null,
+        price_per_month: space.price_per_month ?? null,
+        min_group_size: space.min_group_size,
+        max_group_size: space.max_group_size,
+        status: space.status ?? null,
+        public_listing_mode: space.public_listing_mode,
+        created_at: space.created_at ?? null,
         ownership_proof_status: space.ownership_proof_status || "pending",
         owner_verification_status:
-          profileMap.get(space.owner_id)?.owner_verification_status || "pending",
+          profileData?.owner_verification_status || "pending",
         bank_verification_status:
-          profileMap.get(space.owner_id)?.bank_verification_status || "pending",
-        deposit_type: space.deposit_type || "none",
+          profileData?.bank_verification_status || "pending",
+        cover_image_url: space.cover_image_url || null,
+        deposit_type: (space.deposit_type as DepositType) || "none",
         deposit_months: space.deposit_months ?? 0,
         monthly_payment_day: space.monthly_payment_day ?? 1,
         property_id: space.property_id,
-        property_name: space.property_id
-          ? propertyNameMap.get(space.property_id) || null
-          : null,
+        property_name: space.property_name || null,
       }));
 
-      const visibleSpaces = mergedSpaces.filter(
-        (space) => (space.status || "pending") !== "deleted"
-      );
-
-      setSpaces(visibleSpaces);
+      setSpaces(mergedSpaces);
       setLoading(false);
     } catch {
       setMessage("Something went wrong while loading your listings.");
@@ -459,12 +420,18 @@ function MyListingsPageContent({
       }
     }
 
-    const { error } = await (supabase.from("spaces") as any)
-      .update({ status: nextStatus })
-      .eq("id", spaceId);
+    const { error } = await ownerApiFetch(`/api/host/listings/${spaceId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ status: nextStatus }),
+    }).then(
+      () => ({ error: null as string | null }),
+      (err: unknown) => ({
+        error: err instanceof Error ? err.message : "Could not update listing.",
+      })
+    );
 
     if (error) {
-      setMessage(error.message);
+      setMessage(error);
       setPauseUpdatingId(null);
       return;
     }
@@ -546,7 +513,7 @@ function MyListingsPageContent({
         workspaceLabel="Hosting"
         pageTitle="My spaces"
         pageSubtitle="Manage individual spaces people can book."
-        navItems={HOST_NAV}
+        navItems={hosting.navItems}
         activeHref="/dashboard/listings"
       >
         <>
@@ -559,12 +526,14 @@ function MyListingsPageContent({
                 >
                   Open calendar
                 </Link>
+                {hosting.summary.showCreateSpace ? (
                 <Link
                   href="/dashboard/new-space"
                   className="rounded-md bg-[#192a3a] px-3 py-2 text-sm font-medium text-white hover:opacity-90 sm:px-4"
                 >
                   + Add space
                 </Link>
+                ) : null}
               </div>
             </div>
 
@@ -634,15 +603,19 @@ function MyListingsPageContent({
           ) : spaces.length === 0 ? (
             <div className="rounded-xl border border-dashed border-gray-300 bg-white p-10 text-center">
               <p className="text-sm text-gray-600">
-                You don&apos;t have any spaces yet. Add your first space to start receiving
-                booking requests.
+                You don&apos;t have any spaces yet.
+                {hosting.summary.showCreateSpace
+                  ? " Add your first space to start receiving booking requests."
+                  : " Spaces you are invited to manage will appear here."}
               </p>
+              {hosting.summary.showCreateSpace ? (
               <Link
                 href="/dashboard/new-space"
                 className="mt-6 inline-flex rounded-md bg-[#192a3a] px-4 py-2 text-sm font-medium text-white hover:opacity-90"
               >
                 + Add space
               </Link>
+              ) : null}
             </div>
           ) : filteredSpaces.length === 0 ? (
             <Box>No spaces match your search or filters.</Box>
@@ -987,10 +960,12 @@ function MyListingsSearchParamsClient() {
   const searchParams = useSearchParams();
   const focusSpaceId = searchParams.get("focus");
   const createdStatus = searchParams.get("created");
+  const requestedOrganisationId = searchParams.get(ORGANISATION_QUERY_PARAM);
   return (
     <MyListingsPageContent
       focusSpaceId={focusSpaceId}
       createdStatus={createdStatus}
+      requestedOrganisationId={requestedOrganisationId}
     />
   );
 }

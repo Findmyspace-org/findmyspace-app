@@ -1,4 +1,5 @@
 import { adminApiFetch } from "@/lib/admin-api-client";
+import { ownerApiFetch } from "@/lib/owner-api-client";
 import { supabase } from "@/lib/supabase";
 import { normalizeSpaceImages } from "@/lib/sort-space-images";
 
@@ -9,7 +10,7 @@ export type SpacePhotoImage = {
   file_path?: string | null;
 };
 
-export type SpacePhotosApiMode = "admin" | "owner";
+export type SpacePhotosApiMode = "admin" | "owner" | "host";
 
 export async function reorderSpacePhotos(
   apiMode: SpacePhotosApiMode,
@@ -20,6 +21,14 @@ export async function reorderSpacePhotos(
 
   if (apiMode === "admin") {
     await adminApiFetch(`/api/admin/spaces/${spaceId}/images/reorder`, {
+      method: "PATCH",
+      body: JSON.stringify({ imageIds }),
+    });
+    return;
+  }
+
+  if (apiMode === "host") {
+    await ownerApiFetch(`/api/host/listings/${spaceId}/images/reorder`, {
       method: "PATCH",
       body: JSON.stringify({ imageIds }),
     });
@@ -45,6 +54,14 @@ export async function deleteSpacePhoto(
 ): Promise<void> {
   if (apiMode === "admin") {
     await adminApiFetch(`/api/admin/spaces/${spaceId}/images`, {
+      method: "DELETE",
+      body: JSON.stringify({ imageId: image.id }),
+    });
+    return;
+  }
+
+  if (apiMode === "host") {
+    await ownerApiFetch(`/api/host/listings/${spaceId}/images`, {
       method: "DELETE",
       body: JSON.stringify({ imageId: image.id }),
     });
@@ -80,15 +97,20 @@ export async function uploadSpacePhotos(
 ): Promise<{ added: SpacePhotoImage[]; failed: string[] }> {
   const prepared = files;
 
-  if (apiMode === "admin") {
+  if (apiMode === "admin" || apiMode === "host") {
     const added: SpacePhotoImage[] = [];
     const failed: string[] = [];
+    const fetchJson = apiMode === "admin" ? adminApiFetch : ownerApiFetch;
+    const path =
+      apiMode === "admin"
+        ? `/api/admin/spaces/${spaceId}/images`
+        : `/api/host/listings/${spaceId}/images`;
 
     for (const file of prepared) {
       try {
         const form = new FormData();
         form.append("files", file);
-        const result = await adminApiFetch(`/api/admin/spaces/${spaceId}/images`, {
+        const result = await fetchJson(path, {
           method: "POST",
           body: form,
         });

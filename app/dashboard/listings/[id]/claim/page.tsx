@@ -6,7 +6,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, ArrowRight, Loader2, Send } from "lucide-react";
 import RequireAuth from "@/app/components/RequireAuth";
 import DashboardShell from "@/app/components/DashboardShell";
-import { HOST_NAV } from "@/lib/dashboard-nav";
+import { useHostingWorkspace } from "@/lib/use-hosting-workspace";
 import {
   ClaimOnboardingShell,
   type ClaimStepProgress,
@@ -47,6 +47,7 @@ function ClaimPageContent() {
   const params = useParams();
   const searchParams = useSearchParams();
   const router = useRouter();
+  const hosting = useHostingWorkspace();
   const spaceId = typeof params.id === "string" ? params.id : "";
 
   const stepParam = searchParams.get("step");
@@ -379,7 +380,7 @@ function ClaimPageContent() {
         <DashboardShell
           workspaceLabel="Hosting"
           pageTitle="Complete your claim"
-          navItems={HOST_NAV}
+          navItems={hosting.navItems}
           activeHref="/dashboard/listings"
         >
           <p className="flex items-center gap-2 text-gray-600">
@@ -397,7 +398,7 @@ function ClaimPageContent() {
         <DashboardShell
           workspaceLabel="Hosting"
           pageTitle="Complete your claim"
-          navItems={HOST_NAV}
+          navItems={hosting.navItems}
           activeHref="/dashboard/listings"
         >
           <p className="text-red-600">{message || "Listing not found."}</p>
@@ -412,7 +413,7 @@ function ClaimPageContent() {
         workspaceLabel="Hosting"
         pageTitle={showSubmittedConfirmation ? "Claim submitted" : "Complete your claim"}
         pageSubtitle={completion.listingTitle || undefined}
-        navItems={HOST_NAV}
+        navItems={hosting.navItems}
         activeHref="/dashboard/listings"
       >
         <ClaimOnboardingShell

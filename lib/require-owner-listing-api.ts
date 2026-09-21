@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { resolveAccessForSpace } from "@/lib/access/resolve-access";
 
 export type OwnerListingAuthOk = {
   userId: string;
@@ -66,19 +67,13 @@ export async function requireOwnerListingApi(
     },
   });
 
-  const { data: space, error: spaceErr } = await admin
-    .from("spaces")
-    .select("id, owner_id")
-    .eq("id", spaceId)
-    .maybeSingle();
-
-  if (spaceErr || !space) {
+  const access = await resolveAccessForSpace(admin, user.id, spaceId);
+  if (!access) {
     return {
       response: NextResponse.json({ error: "Listing not found." }, { status: 404 }),
     };
   }
-
-  if ((space as { owner_id: string | null }).owner_id !== user.id) {
+  if (!access.canEditSpace) {
     return {
       response: NextResponse.json({ error: "Forbidden." }, { status: 403 }),
     };

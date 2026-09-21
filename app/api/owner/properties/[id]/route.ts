@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireOwnerPropertyApi } from "@/lib/require-owner-property-api";
+import { requireManagedPropertyApi } from "@/lib/access/require-managed-api";
 import { formatPropertyAddress } from "@/lib/admin-property";
 import { computeListingCompletion } from "@/lib/listing-completion";
 import { getOwnerListingStatusLabel } from "@/lib/listing-lifecycle";
@@ -25,7 +25,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const auth = await requireOwnerPropertyApi(req, id);
+  const auth = await requireManagedPropertyApi(req, id);
   if ("response" in auth) return auth.response;
 
   const propertyResult = await fetchOwnerPropertyById(auth.admin, id);

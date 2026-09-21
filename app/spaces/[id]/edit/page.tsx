@@ -8,7 +8,8 @@ import SpaceCategoryFields from "@/app/components/SpaceCategoryFields";
 import { LISTING_SPACE_TYPE_OPTIONS } from "@/app/data/spaceFeatureConfig";
 import RequireAuth from "@/app/components/RequireAuth";
 import DashboardShell from "@/app/components/DashboardShell";
-import { HOST_NAV } from "@/lib/dashboard-nav";
+import { useHostingWorkspace } from "@/lib/use-hosting-workspace";
+import { ownerApiFetch } from "@/lib/owner-api-client";
 import OwnerVerificationAlerts from "@/app/components/OwnerVerificationAlerts";
 import {
   GroupSizeFields,
@@ -40,7 +41,6 @@ import {
   ListingBookingRequirements,
   mapSpaceTypeToIntelCategory,
   mergeQuestionnaireData,
-  upsertListingBookingIntelTables,
 } from "@/lib/booking-intelligence";
 import {
   ListingBookingQualityFormFields,
@@ -193,6 +193,7 @@ export default function EditListingPage(_props: PageProps) {
   const router = useRouter();
   const routeParams = useParams();
   const routeSpaceId = typeof routeParams.id === "string" ? routeParams.id : "";
+  const hosting = useHostingWorkspace();
 
   const [listingId, setListingId] = useState("");
   const [ownerId, setOwnerId] = useState("");
@@ -307,28 +308,27 @@ export default function EditListingPage(_props: PageProps) {
     setLoading(true);
     setMessage("");
 
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      setMessage("Please log in first.");
+    let payload: {
+      space?: SpaceEditRow;
+      attributes?: SpaceAttributeRow[];
+      images?: SpacePhotoImage[];
+      questionnaire?: { data?: Record<string, unknown>; category?: string | null } | null;
+      requirements?: Record<string, unknown> | null;
+    };
+    try {
+      payload = (await ownerApiFetch(`/api/host/listings/${id}`)) as typeof payload;
+    } catch (err) {
+      setMessage(
+        err instanceof Error ? err.message : "You do not have access to this listing."
+      );
       setLoading(false);
       return;
     }
 
-    const { data: rawData, error } = await (supabase.from("spaces") as any)
-      .select(
-        "id, owner_id, title, description, city, suburb, street_address, province, postal_code, country, address_line_1, latitude, longitude, space_type, booking_unit, price_amount, price_unit, deposit_required, deposit_amount, price_per_hour, price_per_day, price_per_month, min_booking_hours, min_booking_days, min_booking_months, min_group_size, max_group_size, status, ownership_proof_status, deposit_type, deposit_months, monthly_payment_day"
-      )
-      .eq("id", id)
-      .eq("owner_id", user.id)
-      .single();
+    const data = payload.space || null;
 
-    const data = rawData as SpaceEditRow | null;
-
-    if (error || !data) {
-      setMessage(error?.message || "Listing not found.");
+    if (!data) {
+      setMessage("Listing not found.");
       setLoading(false);
       return;
     }
@@ -373,50 +373,22 @@ export default function EditListingPage(_props: PageProps) {
     setStatus(loadedStatus);
     setOwnershipProofStatus(data.ownership_proof_status ?? "pending");
 
+    const grouped: Record<string, string[]> = {};
+    (payload.attributes || []).forEach((row) => {
+      if (!row.attribute_value) return;
+      if (!grouped[row.attribute_key]) grouped[row.attribute_key] = [];
+      grouped[row.attribute_key].push(row.attribute_value);
+    });
+    setAttributes(grouped);
+    setImages(sortSpaceImages(payload.images || []));
+
     if (isOwnerClaimOnboardingStatus(loadedStatus)) {
       setLoading(false);
       router.replace(getOwnerListingClaimHref(id));
       return;
     }
 
-    const { data: attributesData, error: attributesError } = await supabase
-      .from("space_attributes")
-      .select("attribute_key, attribute_value")
-      .eq("space_id", id);
-
-    if (attributesError) {
-      setMessage(attributesError.message);
-      setLoading(false);
-      return;
-    }
-
-    const grouped: Record<string, string[]> = {};
-
-    ((attributesData || []) as SpaceAttributeRow[]).forEach((row) => {
-      if (!row.attribute_value) return;
-      if (!grouped[row.attribute_key]) {
-        grouped[row.attribute_key] = [];
-      }
-      grouped[row.attribute_key].push(row.attribute_value);
-    });
-
-    setAttributes(grouped);
-
-    const { data: imageData, error: imageError } = await supabase
-      .from("space_images")
-      .select("id, image_url, file_path, sort_order")
-      .eq("space_id", id)
-      .order("sort_order", { ascending: true });
-
-    if (imageError) {
-      setMessage(imageError.message);
-      setLoading(false);
-      return;
-    }
-
-    setImages(sortSpaceImages((imageData || []) as SpacePhotoImage[]));
-
-    const { data: ownershipData, error: ownershipError } = await supabase
+    const { data: ownershipData } = await supabase
       .from("listing_ownership_documents")
       .select("id, file_url, file_path, status")
       .eq("space_id", id)
@@ -424,32 +396,16 @@ export default function EditListingPage(_props: PageProps) {
       .limit(1)
       .maybeSingle();
 
-    if (ownershipError) {
-      setMessage(ownershipError.message);
-      setLoading(false);
-      return;
-    }
-
     setOwnershipProof((ownershipData as OwnershipDocumentRow | null) || null);
 
     const intelCat = mapSpaceTypeToIntelCategory(data.space_type);
-    const [{ data: qRow }, { data: reqRow }] = await Promise.all([
-      (supabase.from("listing_questionnaires" as never) as any)
-        .select("data, category")
-        .eq("space_id", id)
-        .maybeSingle(),
-      (supabase.from("listing_booking_requirements" as never) as any)
-        .select("*")
-        .eq("space_id", id)
-        .maybeSingle(),
-    ]);
-
     const loadedIntelData = mergeQuestionnaireData(
       intelCat,
-      (qRow?.data as Record<string, unknown>) || {}
+      (payload.questionnaire?.data as Record<string, unknown>) || {}
     );
     setBookingIntelData(loadedIntelData);
 
+    const reqRow = payload.requirements;
     const loadedRequirements = reqRow
       ? {
           require_item_type: Boolean(reqRow.require_item_type),
@@ -767,64 +723,34 @@ export default function EditListingPage(_props: PageProps) {
       ...groupSizePayloadFromForm(spaceType, minGroupSize, maxGroupSize),
     };
 
-    const { error } = await (supabase.from("spaces") as any)
-      .update(payload)
-      .eq("id", listingId);
+    const { error } = await ownerApiFetch(`/api/host/listings/${listingId}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        ...payload,
+        attributes: Object.entries(attributes).flatMap(([attributeKey, values]) =>
+          values.map((value) => ({
+            attribute_key: attributeKey,
+            attribute_value: value,
+          }))
+        ),
+        questionnaireData: bookingIntelData,
+        requirements: bookingRequirements,
+        space_type: spaceType,
+      }),
+    }).then(
+      () => ({ error: null as string | null }),
+      (err: unknown) => ({
+        error: err instanceof Error ? err.message : "Could not save changes.",
+      })
+    );
 
     if (error) {
       console.error("Listing save failed:", error);
-      setSaveFailure("Could not save changes. Please try again.");
+      setSaveFailure(error);
       setSaving(false);
       return false;
     }
 
-    const { error: deleteAttributesError } = await supabase
-      .from("space_attributes")
-      .delete()
-      .eq("space_id", listingId);
-
-    if (deleteAttributesError) {
-      console.error("Listing save failed:", deleteAttributesError);
-      setSaveFailure("Could not save changes. Please try again.");
-      setSaving(false);
-      return false;
-    }
-
-    const attributeRows: SpaceAttributeInsertRow[] = Object.entries(
-      attributes
-    ).flatMap(([attributeKey, values]) =>
-      values.map((value) => ({
-        space_id: listingId,
-        attribute_key: attributeKey,
-        attribute_value: value,
-      }))
-    );
-
-    if (attributeRows.length > 0) {
-      const { error: insertAttributesError } = await (supabase
-        .from("space_attributes") as any)
-        .insert(attributeRows);
-
-      if (insertAttributesError) {
-        console.error("Listing save failed:", insertAttributesError);
-        setSaveFailure("Could not save changes. Please try again.");
-        setSaving(false);
-        return false;
-      }
-    }
-
-    const intelSave = await upsertListingBookingIntelTables(supabase as any, {
-      spaceId: listingId,
-      spaceType,
-      questionnaireData: bookingIntelData,
-      requirements: bookingRequirements,
-    });
-    if (intelSave.questionnaireError || intelSave.requirementsError) {
-      console.error("Booking quality save failed:", intelSave);
-      setSaveFailure("Could not save booking quality details. Please try again.");
-      setSaving(false);
-      return false;
-    }
     setRenterRequirementsCommitted(true);
 
     savedListingBaselineRef.current = buildOwnerListingSnapshot({
@@ -983,7 +909,7 @@ export default function EditListingPage(_props: PageProps) {
         workspaceLabel="Hosting"
         pageTitle="Edit listing"
         pageSubtitle="Update the details of your space."
-        navItems={HOST_NAV}
+        navItems={hosting.navItems}
         activeHref="/dashboard/listings"
       >
         <OwnerListingDirtyRegistration
@@ -1249,7 +1175,7 @@ export default function EditListingPage(_props: PageProps) {
               >
                 <h2 className="text-lg font-semibold text-gray-900">Photos</h2>
                 <SpacePhotosPanel
-                  apiMode="owner"
+                  apiMode="host"
                   spaceId={listingId || undefined}
                   images={images}
                   onImagesChange={setImages}

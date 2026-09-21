@@ -27,6 +27,8 @@ import {
 } from "lucide-react";
 
 import type { DashboardNavItem } from "@/app/components/DashboardShell";
+import type { HostingAccessSummary } from "@/lib/access/hosting-access";
+import { hostingHref } from "@/lib/access/hosting-access";
 
 export const RENTER_NAV: DashboardNavItem[] = [
   {
@@ -111,3 +113,24 @@ export const HOST_NAV: DashboardNavItem[] = [
     matchPrefix: true,
   },
 ];
+
+/**
+ * Role-aware Hosting nav. Space Managers do not receive People, My properties,
+ * or organisation-wide finance. Organisation Admins and legacy hosts keep the
+ * full Hosting set.
+ */
+export function hostingNavItems(
+  summary: HostingAccessSummary,
+  organisationId: string | null = summary.primaryOrganisationId
+): DashboardNavItem[] {
+  return HOST_NAV.filter((item) => {
+    if (item.href === "/dashboard/properties") return summary.showProperties;
+    if (item.href === "/dashboard/finance") return summary.showFinance;
+    if (item.href === "/dashboard/people") return summary.showPeople;
+    if (item.href === "/dashboard/verification") return summary.showVerification;
+    return true;
+  }).map((item) => ({
+    ...item,
+    href: hostingHref(item.href, organisationId),
+  }));
+}

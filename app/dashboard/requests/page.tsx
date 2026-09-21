@@ -28,7 +28,7 @@ import { isSpaceBookable } from "@/lib/listing-lifecycle";
 import { supabase } from "@/lib/supabase";
 import RequireAuth from "@/app/components/RequireAuth";
 import DashboardShell from "@/app/components/DashboardShell";
-import { HOST_NAV } from "@/lib/dashboard-nav";
+import { useHostingWorkspace } from "@/lib/use-hosting-workspace";
 import DecisionSuggestion from "@/app/components/DecisionSuggestion";
 import { getDisplayName } from "@/lib/utils";
 import { isCommunicationAllowed } from "@/lib/booking-communication";
@@ -1161,6 +1161,7 @@ function OwnerBookingRequestsPageContent({
 }: {
   focusBookingId: string | null;
 }) {
+  const hosting = useHostingWorkspace();
   const [sessionEmail, setSessionEmail] = useState<string | null>(null);
   const [sessionUserId, setSessionUserId] = useState<string | null>(null);
   const [bookings, setBookings] = useState<EnrichedBooking[]>([]);
@@ -1325,10 +1326,24 @@ function OwnerBookingRequestsPageContent({
       }
 
       const rawBookings = (bookingsData || []) as Booking[];
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      let scopedBookings = rawBookings;
+      if (session?.access_token) {
+        const { fetchManagedSpaces } = await import(
+          "@/lib/host-managed-spaces-client"
+        );
+        const managed = await fetchManagedSpaces(session.access_token);
+        const managedIds = new Set(managed.map((space) => space.id));
+        scopedBookings = rawBookings.filter((booking) =>
+          managedIds.has(booking.space_id)
+        );
+      }
 
       const detailByBookingId = new Map<string, Record<string, unknown>>();
-      if (rawBookings.length > 0) {
-        const allBookingIds = rawBookings.map((b) => b.id);
+      if (scopedBookings.length > 0) {
+        const allBookingIds = scopedBookings.map((b) => b.id);
         const { data: detailRows, error: detailsError } = await (
           supabase.from("booking_request_details" as never) as any
         )
@@ -1353,8 +1368,8 @@ function OwnerBookingRequestsPageContent({
         }
       }
 
-      const spaceIds = Array.from(new Set(rawBookings.map((b) => b.space_id)));
-      const renterIds = Array.from(new Set(rawBookings.map((b) => b.renter_id)));
+      const spaceIds = Array.from(new Set(scopedBookings.map((b) => b.space_id)));
+      const renterIds = Array.from(new Set(scopedBookings.map((b) => b.renter_id)));
 
       let spacesMap = new Map<string, Space>();
       let rentersMap = new Map<string, Profile>();
@@ -1427,7 +1442,7 @@ function OwnerBookingRequestsPageContent({
         );
       }
 
-      const enriched: EnrichedBooking[] = rawBookings.map((booking) => {
+      const enriched: EnrichedBooking[] = scopedBookings.map((booking) => {
         const relatedSpace = spacesMap.get(booking.space_id);
 
         return {
@@ -1849,7 +1864,7 @@ function OwnerBookingRequestsPageContent({
         workspaceLabel="Hosting"
         pageTitle="Booking requests"
         pageSubtitle="Review incoming requests and track each booking through the payment and confirmation journey."
-        navItems={HOST_NAV}
+        navItems={hosting.navItems}
         activeHref="/dashboard/requests"
       >
         <>

@@ -1577,6 +1577,14 @@ function inviteInput(
   assert.match(invitePage, /JSON\.stringify\(\{ token \}\)/);
 }
 
+// Hosting invitation redirect (application navigation only)
+{
+  const hostingAccess = readFileSync("lib/access/hosting-access.ts", "utf8");
+  assert.match(inviteServerLib, /organisationInvitationRedirect/);
+  assert.match(hostingAccess, /\/dashboard\/people/);
+  assert.match(hostingAccess, /\/dashboard\/owner/);
+}
+
 // 068 RPC concurrency / locking
 {
   assert.match(inviteSql, /FOR UPDATE/);

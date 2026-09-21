@@ -49,7 +49,6 @@ export async function POST(
       submitted_for_review_at: now,
     })
     .eq("id", id)
-    .eq("owner_id", auth.userId)
     .select("property_id")
     .maybeSingle();
 

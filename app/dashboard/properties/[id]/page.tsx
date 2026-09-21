@@ -8,7 +8,7 @@ import RequireAuth from "@/app/components/RequireAuth";
 import DashboardShell from "@/app/components/DashboardShell";
 import { PropertyReadinessDashboard } from "@/app/components/PropertyReadinessDashboard";
 import { OwnerPropertySpaceSteps } from "@/app/components/OwnerPropertySpaceSteps";
-import { HOST_NAV } from "@/lib/dashboard-nav";
+import { useHostingWorkspace } from "@/lib/use-hosting-workspace";
 import { ownerApiFetch } from "@/lib/owner-api-client";
 import {
   getOwnerListingStatusBadgeClass,
@@ -56,6 +56,7 @@ type SpaceRow = {
 };
 
 function PropertyDetailContent() {
+  const hosting = useHostingWorkspace();
   const params = useParams();
   const propertyId = typeof params.id === "string" ? params.id : "";
 
@@ -79,6 +80,13 @@ function PropertyDetailContent() {
   const [progress, setProgress] = useState<PropertyOnboardingProgress | null>(null);
   const [attentionHrefs, setAttentionHrefs] = useState<Record<string, string>>({});
   const [healthFilter, setHealthFilter] = useState<PropertySpaceHealthFilter>(null);
+
+  useEffect(() => {
+    if (hosting.loading) return;
+    if (!hosting.summary.showProperties) {
+      window.location.replace(hosting.listingsHref);
+    }
+  }, [hosting.loading, hosting.listingsHref, hosting.summary.showProperties]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
 
@@ -134,7 +142,7 @@ function PropertyDetailContent() {
       workspaceLabel="Hosting"
       pageTitle={property?.name || "Property"}
       pageSubtitle="Spaces under this venue."
-      navItems={HOST_NAV}
+      navItems={hosting.navItems}
       activeHref="/dashboard/properties"
     >
       <div className="mx-auto max-w-4xl">

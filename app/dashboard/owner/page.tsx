@@ -38,7 +38,7 @@ import {
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import DashboardShell from "@/app/components/DashboardShell";
-import { HOST_NAV } from "@/lib/dashboard-nav";
+import { useHostingWorkspace } from "@/lib/use-hosting-workspace";
 import OwnerVerificationAlerts from "@/app/components/OwnerVerificationAlerts";
 import RequireAuth from "@/app/components/RequireAuth";
 
@@ -82,12 +82,20 @@ function formatCompactMoney(amount: number) {
 }
 
 export default function HostDashboardPage() {
+  const hosting = useHostingWorkspace();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [listings, setListings] = useState<OwnerDashboardListing[]>([]);
   const [bookings, setBookings] = useState<OwnerDashboardBooking[]>([]);
   const [profile, setProfile] = useState<OwnerProfile | null>(null);
   const [pendingQuestionsCount, setPendingQuestionsCount] = useState(0);
+
+  useEffect(() => {
+    if (hosting.loading) return;
+    if (!hosting.summary.hasHostingAccess) {
+      window.location.replace("/dashboard/become-host");
+    }
+  }, [hosting.loading, hosting.summary.hasHostingAccess]);
 
   useEffect(() => {
     async function loadDashboard() {
@@ -256,7 +264,7 @@ export default function HostDashboardPage() {
         workspaceLabel="Hosting"
         pageTitle="Host dashboard"
         pageSubtitle="Respond to requests, keep listings up to date, and track earnings — all in one workspace."
-        navItems={HOST_NAV}
+        navItems={hosting.navItems}
         activeHref="/dashboard/owner"
       >
         {loading ? (
@@ -429,24 +437,30 @@ export default function HostDashboardPage() {
                 >
                   Calendar
                 </ToolChip>
+                {hosting.summary.showVerification ? (
                 <ToolChip
                   href="/dashboard/verification"
                   icon={<Settings className="h-3.5 w-3.5" aria-hidden />}
                 >
                   Verification &amp; settings
                 </ToolChip>
+                ) : null}
+                {hosting.summary.showFinance ? (
                 <ToolChip
                   href="/dashboard/finance"
                   icon={<Landmark className="h-3.5 w-3.5" aria-hidden />}
                 >
                   Finance
                 </ToolChip>
+                ) : null}
+                {hosting.summary.showCreateSpace ? (
                 <ToolChip
                   href="/dashboard/new-space"
                   icon={<HousePlus className="h-3.5 w-3.5" aria-hidden />}
                 >
                   List a new space
                 </ToolChip>
+                ) : null}
                 <ToolChip
                   href="/dashboard"
                   icon={<LayoutDashboard className="h-3.5 w-3.5" aria-hidden />}

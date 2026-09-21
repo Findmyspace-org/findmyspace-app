@@ -24,7 +24,7 @@ import {
   resolveOrganisationAccessInviteStatus,
   type OrganisationAccessInviteRow,
 } from "@/lib/access/organisation-access-invite-token";
-import { organisationWorkspaceHref } from "@/lib/access/organisation-workspace";
+import { organisationInvitationRedirect } from "@/lib/access/hosting-access";
 import type { OrganisationAccessRole } from "@/lib/access/roles";
 
 type AccessInviteContext = {
@@ -516,10 +516,7 @@ export async function acceptOrganisationAccessInvitation(
 
   const organisationId = payload.organisation_id || accessRow.organisation_id;
   const role = payload.role || accessRow.role;
-  const redirectTo =
-    role === "org_admin"
-      ? organisationWorkspaceHref("/dashboard/people", organisationId)
-      : organisationWorkspaceHref("/dashboard", organisationId);
+  const redirectTo = organisationInvitationRedirect(role, organisationId);
 
   return { organisationId, role, redirectTo };
 }

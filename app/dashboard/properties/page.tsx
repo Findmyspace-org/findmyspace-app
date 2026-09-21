@@ -5,7 +5,7 @@ import { Suspense, useCallback, useEffect, useState } from "react";
 import { Building2, MapPin } from "lucide-react";
 import RequireAuth from "@/app/components/RequireAuth";
 import DashboardShell from "@/app/components/DashboardShell";
-import { HOST_NAV } from "@/lib/dashboard-nav";
+import { useHostingWorkspace } from "@/lib/use-hosting-workspace";
 import { ownerApiFetch } from "@/lib/owner-api-client";
 
 type PropertyRow = {
@@ -17,10 +17,18 @@ type PropertyRow = {
 };
 
 function PropertiesPageContent() {
+  const hosting = useHostingWorkspace();
   const [properties, setProperties] = useState<PropertyRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [migrationWarning, setMigrationWarning] = useState("");
+
+  useEffect(() => {
+    if (hosting.loading) return;
+    if (!hosting.summary.showProperties) {
+      window.location.replace(hosting.listingsHref);
+    }
+  }, [hosting.loading, hosting.listingsHref, hosting.summary.showProperties]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -48,7 +56,7 @@ function PropertiesPageContent() {
       workspaceLabel="Hosting"
       pageTitle="My properties"
       pageSubtitle="Manage venues or locations that contain one or more spaces."
-      navItems={HOST_NAV}
+      navItems={hosting.navItems}
       activeHref="/dashboard/properties"
     >
       <div className="mx-auto max-w-4xl">

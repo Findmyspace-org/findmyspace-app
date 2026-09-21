@@ -17,6 +17,8 @@ import { supabase } from "@/lib/supabase";
 import AuthModal from "@/app/components/AuthModal";
 import { sanitizeNextPath } from "@/lib/auth-redirect";
 import { isPlatformAdminRole } from "@/lib/admin-roles";
+import { hostingHref } from "@/lib/access/hosting-access";
+import { fetchHostingAccessSummary } from "@/lib/hosting-access-client";
 import {
   Home,
   Search,
@@ -84,6 +86,9 @@ export default function Header() {
   const [userId, setUserId] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isHost, setIsHost] = useState(false);
+  const [hasHostingAccess, setHasHostingAccess] = useState(false);
+  const [hostingOwnerHref, setHostingOwnerHref] = useState("/dashboard/owner");
+  const [hostingListingsHref, setHostingListingsHref] = useState("/dashboard/listings");
   const [loading, setLoading] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
   const [bellOpen, setBellOpen] = useState(false);
@@ -202,6 +207,9 @@ export default function Header() {
       if (!userId) {
         setIsAdmin(false);
         setIsHost(false);
+        setHasHostingAccess(false);
+        setHostingOwnerHref("/dashboard/owner");
+        setHostingListingsHref("/dashboard/listings");
         return;
       }
 
@@ -223,6 +231,7 @@ export default function Header() {
           });
           setIsAdmin(false);
           setIsHost(false);
+          setHasHostingAccess(false);
           return;
         }
 
@@ -234,11 +243,27 @@ export default function Header() {
 
         setIsAdmin(isPlatformAdminRole(data?.role));
         setIsHost(data?.is_host === true);
+
+        try {
+          const summary = await fetchHostingAccessSummary();
+          if (!mounted) return;
+          setHasHostingAccess(summary.hasHostingAccess);
+          setHostingOwnerHref(
+            hostingHref("/dashboard/owner", summary.primaryOrganisationId)
+          );
+          setHostingListingsHref(
+            hostingHref("/dashboard/listings", summary.primaryOrganisationId)
+          );
+        } catch {
+          if (!mounted) return;
+          setHasHostingAccess(data?.is_host === true);
+        }
       } catch (error) {
         console.error("Profile load failed:", error);
         if (!mounted) return;
         setIsAdmin(false);
         setIsHost(false);
+        setHasHostingAccess(false);
       }
     }
 
@@ -846,17 +871,17 @@ export default function Header() {
   if (!loading && isLoggedIn) {
     menuSections.push({
       title: "My account",
-      items: isHost
+      items: hasHostingAccess
         ? [
             {
               label: "My dashboard",
-              href: "/dashboard/owner",
-              icon: LayoutDashboard,
-            },
-            {
-              label: "My bookings",
               href: "/dashboard",
               icon: CalendarCheck,
+            },
+            {
+              label: "Hosting",
+              href: hostingOwnerHref,
+              icon: LayoutDashboard,
             },
           ]
         : [
@@ -870,22 +895,17 @@ export default function Header() {
 
     menuSections.push({
       title: "Hosting",
-      items: isHost
+      items: hasHostingAccess
         ? [
             {
-              label: "My properties",
-              href: "/dashboard/properties",
-              icon: Building2,
+              label: "Host dashboard",
+              href: hostingOwnerHref,
+              icon: LayoutDashboard,
             },
             {
               label: "My spaces",
-              href: "/dashboard/listings",
+              href: hostingListingsHref,
               icon: Building2,
-            },
-            {
-              label: "Verification & payouts",
-              href: "/dashboard/verification",
-              icon: ShieldCheck,
             },
           ]
         : [

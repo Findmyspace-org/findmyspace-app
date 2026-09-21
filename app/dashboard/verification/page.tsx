@@ -8,7 +8,7 @@ import { Check, ClipboardList, Home, Landmark, User, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import RequireAuth from "@/app/components/RequireAuth";
 import DashboardShell from "@/app/components/DashboardShell";
-import { HOST_NAV } from "@/lib/dashboard-nav";
+import { useHostingWorkspace } from "@/lib/use-hosting-workspace";
 import DecisionSuggestion from "@/app/components/DecisionSuggestion";
 import FileUploadField from "@/app/dashboard/verification/_components/FileUploadField";
 import {
@@ -202,6 +202,7 @@ function VerificationPageContent({
   step: string;
   returnUrl: string | null;
 }) {
+  const hosting = useHostingWorkspace();
   const currentStep: VerificationStepKey =
     step === "bank" ? "bank" : step === "overview" ? "overview" : "identity";
 
@@ -1126,7 +1127,7 @@ function VerificationPageContent({
         workspaceLabel="Hosting"
         pageTitle={header.title}
         pageSubtitle={header.subtitle}
-        navItems={HOST_NAV}
+        navItems={hosting.navItems}
         activeHref="/dashboard/verification"
       >
         <>

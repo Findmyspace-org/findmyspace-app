@@ -23,7 +23,7 @@ import {
 } from "lucide-react";
 import RequireAuth from "@/app/components/RequireAuth";
 import DashboardShell from "@/app/components/DashboardShell";
-import { HOST_NAV } from "@/lib/dashboard-nav";
+import { useHostingWorkspace } from "@/lib/use-hosting-workspace";
 import { downloadInvoicePdf } from "@/lib/invoice-download-client";
 import OwnerCalendarLegend from "@/app/dashboard/_components/calendar/OwnerCalendarLegend";
 import { supabase } from "@/lib/supabase";
@@ -1548,6 +1548,7 @@ function SideDrawer({ open, title, subtitle, onClose, children }: SideDrawerProp
 }
 
 export default function CalendarPage() {
+    const hosting = useHostingWorkspace();
     const [bookingType, setBookingType] = useState<CalendarBookingType>("day");
     const [searchText, setSearchText] = useState("");
     const [areaFilter, setAreaFilter] = useState("all");
@@ -2065,7 +2066,7 @@ export default function CalendarPage() {
                 workspaceLabel="Hosting"
                 pageTitle="Calendar"
                 pageSubtitle="Visualise bookings and block availability across your spaces."
-                navItems={HOST_NAV}
+                navItems={hosting.navItems}
                 activeHref="/dashboard/calendar"
             >
                 <>

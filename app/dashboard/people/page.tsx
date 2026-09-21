@@ -13,7 +13,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import RequireAuth from "@/app/components/RequireAuth";
 import DashboardShell from "@/app/components/DashboardShell";
 import OrganisationWorkspaceContext from "@/app/components/OrganisationWorkspaceContext";
-import { HOST_NAV } from "@/lib/dashboard-nav";
+import { useHostingWorkspace } from "@/lib/use-hosting-workspace";
 import type { PublicAccessGrantView } from "@/lib/access/organisation-access-policy";
 import {
   fetchManageableOrganisations,
@@ -57,6 +57,14 @@ function PeoplePageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const requestedId = searchParams.get(ORGANISATION_QUERY_PARAM);
+  const hosting = useHostingWorkspace(requestedId);
+
+  useEffect(() => {
+    if (hosting.loading) return;
+    if (!hosting.summary.showPeople) {
+      window.location.replace(hosting.ownerHref);
+    }
+  }, [hosting.loading, hosting.ownerHref, hosting.summary.showPeople]);
   const [organisations, setOrganisations] = useState<ManageableOrganisation[]>(
     []
   );
@@ -279,7 +287,7 @@ function PeoplePageContent() {
         ) : null
       }
       pageSubtitle="Manage who has access to this organisation, its properties and spaces."
-      navItems={HOST_NAV}
+      navItems={hosting.navItems}
       activeHref="/dashboard/people"
     >
       <div className="space-y-6">

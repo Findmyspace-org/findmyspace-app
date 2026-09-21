@@ -11,7 +11,7 @@ import {
 import { supabase } from "@/lib/supabase";
 import RequireAuth from "@/app/components/RequireAuth";
 import DashboardShell from "@/app/components/DashboardShell";
-import { HOST_NAV } from "@/lib/dashboard-nav";
+import { useHostingWorkspace } from "@/lib/use-hosting-workspace";
 import {
   buildFinanceLineItems,
   type FinanceBookingInput,
@@ -35,6 +35,7 @@ function formatMoney(n: number) {
 }
 
 export default function OwnerFinancePage() {
+  const hosting = useHostingWorkspace();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [sessionEmail, setSessionEmail] = useState<string | null>(null);
@@ -46,6 +47,13 @@ export default function OwnerFinancePage() {
   const [dateTo, setDateTo] = useState<string>("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [chargeTypeFilter, setChargeTypeFilter] = useState<string>("all");
+
+  useEffect(() => {
+    if (hosting.loading) return;
+    if (!hosting.summary.showFinance) {
+      window.location.replace(hosting.ownerHref);
+    }
+  }, [hosting.loading, hosting.ownerHref, hosting.summary.showFinance]);
 
   const loadOwnerFinance = useCallback(async () => {
     setLoading(true);
@@ -207,7 +215,7 @@ export default function OwnerFinancePage() {
         workspaceLabel="Hosting"
         pageTitle="Finance"
         pageSubtitle="Payments, deposits, fees, and net earnings across your listings."
-        navItems={HOST_NAV}
+        navItems={hosting.navItems}
         activeHref="/dashboard/finance"
       >
         <>

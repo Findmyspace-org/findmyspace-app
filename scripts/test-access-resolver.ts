@@ -454,10 +454,11 @@ function assertOrgAdminCaps(access: ResolvedAccess, allowed: boolean) {
   const propertyApi = readFileSync("lib/require-owner-property-api.ts", "utf8");
   const listingAccess = readFileSync("lib/space-listing-access.ts", "utf8");
   const bookingRequest = readFileSync("app/api/bookings/request/route.ts", "utf8");
-  assert.match(listingApi, /owner_id !== user\.id/);
+  assert.match(listingApi, /resolveAccessForSpace/);
+  assert.match(listingApi, /canEditSpace/);
+  assert.doesNotMatch(listingApi, /owner_id !== user\.id/);
   assert.match(propertyApi, /owner_id !== user\.id/);
   assert.match(listingAccess, /row\.owner_id === userId/);
-  assert.doesNotMatch(listingApi, /resolveAccessForSpace/);
   assert.doesNotMatch(propertyApi, /resolveAccessForProperty/);
   assert.doesNotMatch(
     bookingRequest,

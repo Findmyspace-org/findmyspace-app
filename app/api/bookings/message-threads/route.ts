@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { isCommunicationAllowed } from "@/lib/booking-communication";
+import { listManagedSpaceIds } from "@/lib/access/list-managed-spaces";
 import { getDisplayName } from "@/lib/utils";
 
 export async function GET(req: NextRequest) {
@@ -37,12 +38,18 @@ export async function GET(req: NextRequest) {
       auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
     });
 
+    const managedSpaceIds = await listManagedSpaceIds(admin, user.id);
+    const bookingFilters = [`renter_id.eq.${user.id}`, `owner_id.eq.${user.id}`];
+    if (managedSpaceIds.length > 0) {
+      bookingFilters.push(`space_id.in.(${managedSpaceIds.join(",")})`);
+    }
+
     const { data: bookings, error: bookingsError } = await admin
       .from("bookings")
       .select(
         "id, space_id, renter_id, owner_id, status, payment_status, start_at, end_at, booking_unit, created_at"
       )
-      .or(`renter_id.eq.${user.id},owner_id.eq.${user.id}`);
+      .or(bookingFilters.join(","));
 
     if (bookingsError) {
       return NextResponse.json(

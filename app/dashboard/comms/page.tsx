@@ -63,7 +63,8 @@ import {
 import { supabase } from "@/lib/supabase";
 import RequireAuth from "@/app/components/RequireAuth";
 import DashboardShell from "@/app/components/DashboardShell";
-import { HOST_NAV, RENTER_NAV } from "@/lib/dashboard-nav";
+import { RENTER_NAV } from "@/lib/dashboard-nav";
+import { useHostingWorkspace } from "@/lib/use-hosting-workspace";
 import {
   LISTING_QUESTION_BLOCKED_REPLY,
   LISTING_QUESTION_MAX_LENGTH,
@@ -967,6 +968,7 @@ export function CommsCenterContent({
 }: {
   adminMode?: boolean;
 } = {}) {
+  const hosting = useHostingWorkspace();
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -1426,7 +1428,7 @@ export function CommsCenterContent({
   // are renters and the renter nav covers the common path; hosts entering
   // through the host overview always carry `view=hosting`.
   const isHostWorkspace = viewParam === "hosting";
-  const navItems = isHostWorkspace ? HOST_NAV : RENTER_NAV;
+  const navItems = isHostWorkspace ? hosting.navItems : RENTER_NAV;
   const navActiveHref = isHostWorkspace
     ? "/dashboard/comms?view=hosting"
     : "/dashboard/comms?view=bookings";
