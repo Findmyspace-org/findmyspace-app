@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { markBookingChargesPaid } from "@/lib/invoice-payments";
-import { getPublicSiteUrlFromEnv } from "@/lib/site-url";
 import { isAwaitingGatewayPayment } from "@/lib/finance-status";
+import { notifyBookingEvent } from "@/lib/booking-event-notify";
 
 /** Revert booking to payable state if charge lines could not be marked paid (keeps row + charges in sync). */
 async function revertBookingToAwaitingPayment(
@@ -117,8 +117,6 @@ export async function POST(req: Request) {
         },
       }
     );
-
-    const appBaseUrl = getPublicSiteUrlFromEnv();
 
     const { data: bookingRows, error: bookingError } = await (supabaseAdmin
       .from("bookings") as any)
@@ -244,45 +242,17 @@ export async function POST(req: Request) {
         });
       }
 
-      if (appBaseUrl) {
-        try {
-          const emailResponse = await fetch(
-            `${appBaseUrl}/api/notifications/booking-event`,
-            {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                bookingId,
-                eventType: "payment_confirmed",
-              }),
-            }
-          );
-
-          console.log("Payment confirmed email trigger status:", {
-            status: emailResponse.status,
-            baseUrl: appBaseUrl,
-          });
-
-          if (!emailResponse.ok) {
-            const emailText = await emailResponse.text();
-            console.error("Payment confirmed email trigger failed:", {
-              status: emailResponse.status,
-              baseUrl: appBaseUrl,
-              body: emailText,
-            });
-          }
-        } catch (error) {
-          console.error("Could not send payment confirmed emails:", {
-            baseUrl: appBaseUrl,
-            error,
-          });
+      try {
+        const notifyResult = await notifyBookingEvent({
+          admin: supabaseAdmin,
+          bookingId,
+          eventType: "payment_confirmed",
+        });
+        if (!notifyResult.ok) {
+          console.error("Payment confirmed email trigger failed:", notifyResult);
         }
-      } else {
-        console.error(
-          "Could not send payment confirmed emails: no base URL available"
-        );
+      } catch (error) {
+        console.error("Could not send payment confirmed emails:", error);
       }
     } else {
       console.log("Notify received non-complete payment status:", paymentStatus);

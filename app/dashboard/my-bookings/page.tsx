@@ -56,7 +56,7 @@ type Booking = {
   id: string;
   space_id: string;
   renter_id: string;
-  owner_id: string;
+  owner_id: string | null;
   booking_unit: string | null;
   start_at: string;
   end_at: string;
@@ -460,7 +460,9 @@ function MyBookingsPageContent({
       }
 
       const spaceIds = Array.from(new Set(rawBookings.map((b) => b.space_id)));
-      const ownerIds = Array.from(new Set(rawBookings.map((b) => b.owner_id)));
+      const ownerIds = Array.from(
+        new Set(rawBookings.map((b) => b.owner_id).filter((id): id is string => Boolean(id)))
+      );
 
       let spacesMap = new Map<string, Space>();
       let ownersMap = new Map<string, Profile>();
@@ -511,7 +513,7 @@ function MyBookingsPageContent({
       const enriched = rawBookings.map((b) => ({
         ...b,
         space: spacesMap.get(b.space_id),
-        owner: ownersMap.get(b.owner_id),
+        owner: b.owner_id ? ownersMap.get(b.owner_id) : undefined,
         requestDetails: detailByBookingId.get(b.id) ?? null,
       }));
 
@@ -728,72 +730,59 @@ function MyBookingsPageContent({
     setMessage("");
     setCancellingBookingId(booking.id);
 
-    const cancelMessage =
-      "The renter has cancelled this booking request. Thank you for your interest and understanding.";
-
-    const { error: bookingError } = await (supabase.from("bookings") as any)
-      .update({
-        status: "declined",
-        payment_status: "unpaid",
-      })
-      .eq("id", booking.id);
-
-    if (bookingError) {
-      setMessage(bookingError.message || "Could not cancel booking.");
-      setCancellingBookingId(null);
-      return;
-    }
-
-    const { data: insertedMessage, error: messageError } = await (supabase.from("booking_messages") as any)
-      .insert({
-        booking_id: booking.id,
-        sender_id: sessionUserId,
-        recipient_id: booking.owner_id,
-        message: cancelMessage,
-      })
-      .select("id, booking_id, sender_id, recipient_id, message, created_at")
-      .single();
-
-    if (!messageError && insertedMessage) {
-      const typedMessage = insertedMessage as BookingMessage;
-      setMessagesByBooking((current) => ({
-        ...current,
-        [booking.id]: [...(current[booking.id] || []), typedMessage],
-      }));
-    }
-
     try {
-      await fetch("/api/notifications/booking-event", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          bookingId: booking.id,
-          eventType: "booking_message",
-          senderId: sessionUserId,
-          recipientId: booking.owner_id,
-          message: cancelMessage,
-        }),
-      });
-    } catch (notificationError) {
-      console.error("Failed to send cancellation notification:", notificationError);
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session?.access_token) {
+        setMessage("Please log in first.");
+        setCancellingBookingId(null);
+        return;
+      }
+
+      const response = await fetch(
+        `/api/bookings/${booking.id}/renter-cancel`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+          },
+        }
+      );
+
+      const raw = await response.text();
+      let result: { error?: string } = {};
+      try {
+        result = JSON.parse(raw);
+      } catch {
+        result = { error: raw };
+      }
+
+      if (!response.ok) {
+        setMessage(result.error || "Could not cancel booking.");
+        setCancellingBookingId(null);
+        return;
+      }
+
+      setBookings((current) =>
+        current.map((item) =>
+          item.id === booking.id
+            ? {
+                ...item,
+                status: "declined",
+                payment_status: "unpaid",
+              }
+            : item
+        )
+      );
+
+      setMessage("Booking cancelled. The owner has been notified.");
+    } catch {
+      setMessage("Could not cancel booking.");
+    } finally {
+      setCancellingBookingId(null);
     }
-
-    setBookings((current) =>
-      current.map((item) =>
-        item.id === booking.id
-          ? {
-              ...item,
-              status: "declined",
-              payment_status: "unpaid",
-            }
-          : item
-      )
-    );
-
-    setMessage("Booking cancelled. The owner has been notified.");
-    setCancellingBookingId(null);
   }
 
   async function handlePayFastRedirect(booking: EnrichedBooking) {

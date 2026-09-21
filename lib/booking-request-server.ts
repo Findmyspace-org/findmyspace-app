@@ -5,6 +5,10 @@ import {
   resolveBookingUnitPrice,
 } from "@/lib/booking-pricing";
 import { isSpaceBookable } from "@/lib/listing-lifecycle";
+import { snapshotBookingOwnership } from "@/lib/access/operational-booking-managers";
+import { resolveOperationalBookingManagers } from "@/lib/access/resolve-operational-booking-managers";
+import { isLegacyOwnerSelfBooking } from "@/lib/booking-self-booking";
+import { isArchivedProperty } from "@/lib/property-archive";
 import {
   buildBookingTermsAcceptancePayload,
   normalizePropertyTermsRow,
@@ -26,13 +30,16 @@ import {
 
 export type BookingRequestPayload = {
   spaceId: string;
-  ownerId: string;
+  /** Ignored for authority. Snapshot owner comes from the space. */
+  ownerId?: string | null;
   bookingUnit: string;
   startAt: string;
   endAt: string;
   notes?: string | null;
   acceptedPropertyTerms: boolean;
   requirementAnswers?: Record<string, CustomFieldAnswerValue>;
+  /** Ignored. Snapshot organisation comes from the property. */
+  organisationId?: string | null;
 };
 
 type SpacePricingRow = {
@@ -147,7 +154,6 @@ export async function createBookingRequestServer(
 ): Promise<{ bookingId: string }> {
   const {
     spaceId,
-    ownerId,
     bookingUnit,
     startAt,
     endAt,
@@ -156,12 +162,8 @@ export async function createBookingRequestServer(
     requirementAnswers = {},
   } = payload;
 
-  if (!spaceId || !ownerId || !startAt || !endAt) {
+  if (!spaceId || !startAt || !endAt) {
     throw new Error("Missing required booking fields.");
-  }
-
-  if (renterId === ownerId) {
-    throw new Error("You cannot book your own listing.");
   }
 
   const { data: spaceRow, error: spaceErr } = await admin
@@ -182,9 +184,62 @@ export async function createBookingRequestServer(
     throw new Error("This listing is not available for booking.");
   }
 
-  if (space.owner_id !== ownerId) {
-    throw new Error("Listing owner mismatch.");
+  if (isLegacyOwnerSelfBooking(space.owner_id, renterId)) {
+    throw new Error("You cannot book your own listing.");
   }
+
+  let organisationId: string | null = null;
+  if (space.property_id) {
+    const { data: property } = await admin
+      .from("properties")
+      .select("organisation_id, archived_at")
+      .eq("id", space.property_id)
+      .maybeSingle();
+    const propertyRow = property as {
+      organisation_id: string | null;
+      archived_at: string | null;
+    } | null;
+
+    if (isArchivedProperty(propertyRow)) {
+      throw new Error("This property is no longer available for booking.");
+    }
+
+    organisationId = propertyRow?.organisation_id ?? null;
+
+    if (organisationId) {
+      const { data: organisation } = await admin
+        .from("organisations")
+        .select("id, status, archived_at")
+        .eq("id", organisationId)
+        .maybeSingle();
+      const orgRow = organisation as {
+        id: string;
+        status: string | null;
+        archived_at: string | null;
+      } | null;
+      if (
+        !orgRow ||
+        orgRow.status === "archived" ||
+        Boolean(orgRow.archived_at)
+      ) {
+        throw new Error(
+          "This organisation is no longer available for booking."
+        );
+      }
+    }
+  }
+
+  const operational = await resolveOperationalBookingManagers(admin, spaceId);
+  if (!operational?.canAcceptPublicBooking) {
+    throw new Error(
+      "This listing cannot accept bookings because no host is assigned to manage requests."
+    );
+  }
+
+  const snapshot = snapshotBookingOwnership({
+    spaceOwnerId: space.owner_id,
+    organisationId,
+  });
 
   const unit = bookingUnit || space.booking_unit || "day";
   const quantity = calculateBookingQuantity(unit, startAt, endAt);
@@ -240,7 +295,8 @@ export async function createBookingRequestServer(
   const insertRow = {
     space_id: spaceId,
     renter_id: renterId,
-    owner_id: ownerId,
+    owner_id: snapshot.ownerId,
+    organisation_id: snapshot.organisationId,
     booking_unit: unit,
     start_at: startAt,
     end_at: endAt,

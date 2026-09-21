@@ -2,11 +2,10 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import RequireAuth from "@/app/components/RequireAuth";
 import { shouldShowBookingRequestNotes } from "@/lib/booking-notes-visibility";
-import { isSpaceBookable } from "@/lib/listing-lifecycle";
+import { bookingAllowsManualMvpPayment } from "@/lib/manual-mvp-payment";
 
 type PageProps = {
   params: Promise<{ id: string }>;
@@ -16,7 +15,8 @@ type BookingRow = {
   id: string;
   space_id: string;
   renter_id: string;
-  owner_id: string;
+  owner_id: string | null;
+  organisation_id?: string | null;
   booking_unit: string | null;
   start_at: string;
   end_at: string;
@@ -37,20 +37,7 @@ type SpaceRow = {
   status: string | null;
 };
 
-type PaymentInsertRow = {
-  booking_id: string;
-  payer_id: string;
-  owner_id: string;
-  amount: number;
-  currency: string;
-  provider: string;
-  status: string;
-  payment_method: string;
-  paid_at: string;
-};
-
 export default function BookingPaymentPage({ params }: PageProps) {
-  const router = useRouter();
   const [bookingId, setBookingId] = useState("");
   const [booking, setBooking] = useState<BookingRow | null>(null);
   const [space, setSpace] = useState<SpaceRow | null>(null);
@@ -85,7 +72,7 @@ export default function BookingPaymentPage({ params }: PageProps) {
     const { data: rawBooking, error: bookingError } = await (supabase
       .from("bookings") as any)
       .select(
-        "id, space_id, renter_id, owner_id, booking_unit, start_at, end_at, notes, owner_response_message, status, payment_status, total_price, created_at"
+        "id, space_id, renter_id, owner_id, organisation_id, booking_unit, start_at, end_at, notes, owner_response_message, status, payment_status, total_price, created_at"
       )
       .eq("id", id)
       .eq("renter_id", user.id)
@@ -161,24 +148,29 @@ export default function BookingPaymentPage({ params }: PageProps) {
     );
   }, [booking]);
 
-  async function handleMockPayment() {
+  async function handlePayFastRedirect() {
     if (!booking) return;
 
     setPaying(true);
     setMessage("");
 
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      // Manual MVP is never used on this page. PayFast is required for
+      // organisation / NULL-owner bookings (payments.owner_id is NOT NULL)
+      // and is also the supported production checkout for legacy bookings.
+      void bookingAllowsManualMvpPayment(booking);
 
-      if (!user) {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session?.access_token) {
         setMessage("Please log in first.");
         setPaying(false);
         return;
       }
 
-      if (booking.renter_id !== user.id) {
+      if (booking.renter_id !== session.user.id) {
         setMessage("You can only pay for your own booking.");
         setPaying(false);
         return;
@@ -190,116 +182,43 @@ export default function BookingPaymentPage({ params }: PageProps) {
         return;
       }
 
-      const { data: liveSpace } = await supabase
-        .from("spaces")
-        .select("status, public_listing_mode")
-        .eq("id", booking.space_id)
-        .maybeSingle();
-
-      if (
-        !isSpaceBookable(
-          (liveSpace as {
-            status: string | null;
-            public_listing_mode: string | null;
-          } | null) ?? null
-        )
-      ) {
-        setMessage("Payment is not available because this listing is no longer active.");
-        setPaying(false);
-        return;
-      }
-
-      const paymentRow: PaymentInsertRow = {
-        booking_id: booking.id,
-        payer_id: user.id,
-        owner_id: booking.owner_id,
-        amount: Number(booking.total_price || 0),
-        currency: "ZAR",
-        provider: "manual_mvp",
-        status: "paid",
-        payment_method: "manual_test",
-        paid_at: new Date().toISOString(),
-      };
-
-      const { error: paymentError } = await (supabase.from("payments") as any).insert(
-        paymentRow
-      );
-
-      if (paymentError) {
-        setMessage(paymentError.message);
-        setPaying(false);
-        return;
-      }
-
-      const { error: bookingUpdateError } = await (supabase
-        .from("bookings") as any)
-        .update({
-          status: "paid_confirmed",
-          payment_status: "paid",
-          paid_at: new Date().toISOString(),
-        })
-        .eq("id", booking.id);
-
-      if (bookingUpdateError) {
-        setMessage(bookingUpdateError.message);
-        setPaying(false);
-        return;
-      }
-
-      const {
-        data: { session: syncSession },
-      } = await supabase.auth.getSession();
-      if (syncSession?.access_token) {
-        try {
-          await fetch("/api/booking-charges/sync-paid", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${syncSession.access_token}`,
-            },
-            body: JSON.stringify({ bookingId: booking.id }),
-          });
-        } catch (syncErr) {
-          console.error("sync-paid failed:", syncErr);
-        }
-      }
-
-      const notificationResponse = await fetch("/api/notifications/booking-event", {
+      const response = await fetch("/api/payfast/initiate", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
         },
-        body: JSON.stringify({
-          bookingId: booking.id,
-          eventType: "payment_confirmed",
-        }),
+        body: JSON.stringify({ bookingId: booking.id }),
       });
 
-      if (!notificationResponse.ok) {
-        const errorPayload = await notificationResponse.json().catch(() => null);
-        setMessage(
-          errorPayload?.error ||
-            "Payment was recorded, but confirmation notifications could not be sent."
-        );
+      const raw = await response.text();
+      let result: { error?: string; processUrl?: string; fields?: Record<string, string> } = {};
+      try {
+        result = JSON.parse(raw);
+      } catch {
+        result = { error: raw };
       }
 
-      setBooking((current) =>
-        current
-          ? {
-              ...current,
-              status: "paid_confirmed",
-              payment_status: "paid",
-            }
-          : current
-      );
+      if (!response.ok || !result.processUrl || !result.fields) {
+        setMessage(result.error || "Could not start payment.");
+        setPaying(false);
+        return;
+      }
 
-      setMessage("Payment recorded successfully. Your booking is now confirmed.");
-      setPaying(false);
-      router.push("/dashboard/my-bookings?payment=success");
-      router.refresh();
-      return;
+      const form = document.createElement("form");
+      form.method = "POST";
+      form.action = result.processUrl;
+      Object.entries(result.fields).forEach(([key, value]) => {
+        const input = document.createElement("input");
+        input.type = "hidden";
+        input.name = key;
+        input.value = String(value);
+        form.appendChild(input);
+      });
+      document.body.appendChild(form);
+      form.submit();
     } catch {
-      setMessage("Something went wrong while processing payment.");
+      setMessage("Something went wrong while starting payment.");
       setPaying(false);
     }
   }
@@ -384,7 +303,7 @@ export default function BookingPaymentPage({ params }: PageProps) {
                       R{Number(booking.total_price || 0).toFixed(2)}
                     </p>
                     <p className="mt-2 text-sm text-gray-600">
-                      MVP payment test flow
+                      Pay securely with PayFast
                     </p>
                   </div>
                 </div>
@@ -431,7 +350,7 @@ export default function BookingPaymentPage({ params }: PageProps) {
 
                   <button
                     type="button"
-                    onClick={handleMockPayment}
+                    onClick={handlePayFastRedirect}
                     disabled={!canPay || paying}
                     className={`rounded-lg px-4 py-2 text-sm ${
                       canPay

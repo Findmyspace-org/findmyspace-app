@@ -1,11 +1,12 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { isPlatformAdminRole } from "@/lib/admin-roles";
+import { resolveAccessForSpace } from "@/lib/access/resolve-access";
 
 export type BookingRequirementAccess =
   | "renter"
   | "space_owner"
   | "property_owner"
-  | "platform_admin";
+  | "platform_admin"
+  | "organisation_manager";
 
 export async function getBookingRequirementAccess(
   admin: SupabaseClient,
@@ -23,43 +24,19 @@ export async function getBookingRequirementAccess(
   const row = booking as {
     id: string;
     renter_id: string;
-    owner_id: string;
+    owner_id: string | null;
     space_id: string;
   };
 
   if (row.renter_id === userId) return "renter";
   if (row.owner_id === userId) return "space_owner";
 
-  const { data: profile } = await admin
-    .from("profiles")
-    .select("role")
-    .eq("id", userId)
-    .maybeSingle();
-
-  if (isPlatformAdminRole((profile as { role?: string | null } | null)?.role)) {
-    return "platform_admin";
-  }
-
-  const { data: space } = await admin
-    .from("spaces")
-    .select("property_id")
-    .eq("id", row.space_id)
-    .maybeSingle();
-
-  const propertyId = (space as { property_id: string | null } | null)?.property_id;
-  if (propertyId) {
-    const { data: property } = await admin
-      .from("properties")
-      .select("owner_id")
-      .eq("id", propertyId)
-      .maybeSingle();
-
-    if ((property as { owner_id: string | null } | null)?.owner_id === userId) {
-      return "property_owner";
-    }
-  }
-
-  return null;
+  const access = await resolveAccessForSpace(admin, userId, row.space_id);
+  if (!access?.canManageBooking) return null;
+  if (access.isGlobalAdmin) return "platform_admin";
+  if (access.isLegacyPropertyOwner) return "property_owner";
+  if (access.isLegacySpaceOwner) return "space_owner";
+  return "organisation_manager";
 }
 
 export async function assertBookingRequirementAccess(

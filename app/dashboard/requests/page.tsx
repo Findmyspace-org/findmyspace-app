@@ -35,6 +35,7 @@ import { isCommunicationAllowed } from "@/lib/booking-communication";
 import { OWNER_BOOKING_STAGE_LABELS } from "@/lib/booking-ui-labels";
 import { shouldShowBookingRequestNotes } from "@/lib/booking-notes-visibility";
 import { broadcastInboxRefresh } from "@/lib/inbox-refresh";
+import { postHostBookingResponse } from "@/lib/booking-host-response-client";
 
 
 import OwnerCalendarLegend from "@/app/dashboard/_components/calendar/OwnerCalendarLegend";
@@ -75,7 +76,7 @@ type Booking = {
   id: string;
   space_id: string;
   renter_id: string;
-  owner_id: string;
+  owner_id: string | null;
   booking_unit: string | null;
   start_at: string;
   end_at: string;
@@ -1292,8 +1293,21 @@ function OwnerBookingRequestsPageContent({
       const profile = rawProfile as { is_host: boolean | null } | null;
 
       if (!profile?.is_host) {
-        window.location.href = "/dashboard/become-host";
-        return;
+        const [{ count: grantCount }, { count: ownedCount }] = await Promise.all([
+          supabase
+            .from("organisation_access")
+            .select("id", { count: "exact", head: true })
+            .eq("user_id", user.id)
+            .eq("status", "active"),
+          supabase
+            .from("spaces")
+            .select("id", { count: "exact", head: true })
+            .eq("owner_id", user.id),
+        ]);
+        if (!grantCount && !ownedCount) {
+          window.location.href = "/dashboard/become-host";
+          return;
+        }
       }
 
       const { data: bookingsData, error: bookingsError } = await supabase
@@ -1301,7 +1315,7 @@ function OwnerBookingRequestsPageContent({
         .select(
           "id, space_id, renter_id, owner_id, booking_unit, start_at, end_at, notes, owner_response_message, status, payment_status, total_price, created_at, terms_accepted, terms_accepted_at, accepted_terms_updated_at, accepted_terms_title, accepted_terms_label"
         )
-        .eq("owner_id", user.id)
+        .neq("renter_id", user.id)
         .order("created_at", { ascending: false });
 
       if (bookingsError) {
@@ -1691,279 +1705,32 @@ function OwnerBookingRequestsPageContent({
         : ownerReplies[bookingId] || ""
     ).trim();
 
-    let competingPendingBookings: Array<{
-      id: string;
-      renter_id: string;
-      booking_unit: string | null;
-      start_at: string;
-      end_at: string;
-      space_id: string;
-      status: string | null;
-    }> = [];
-
-    if (nextStatus === "approved") {
-      if (
-        !isSpaceBookable({
-          status: bookingToUpdate.space?.status,
-          public_listing_mode: (
-            bookingToUpdate.space as { public_listing_mode?: string | null } | undefined
-          )?.public_listing_mode,
-        })
-      ) {
-        setMessage(
-          "This listing is not active. Approve the listing before accepting bookings."
-        );
-        setBusyBookingId(null);
-        return;
-      }
-
-      const { data: rawBlockingBookings, error: blockingError } = await supabase
-        .from("bookings")
-        .select("id, booking_unit, start_at, end_at")
-        .eq("space_id", bookingToUpdate.space_id)
-        .in("status", [
-          "approved",
-          "accepted_awaiting_payment",
-          "awaiting_payment",
-          "paid_confirmed",
-          "confirmed",
-          "completed",
-        ])
-        .neq("id", bookingId);
-
-      const blockingBookings = (rawBlockingBookings || []) as BlockingBooking[];
-
-      if (blockingError) {
-        setMessage(blockingError.message);
-        setBusyBookingId(null);
-        return;
-      }
-
-      const hasConflict = blockingBookings.some((existing) =>
-        rangesOverlap(
-          resolveBookingUnit(
-            bookingToUpdate.booking_unit,
-            bookingToUpdate.space?.booking_unit,
-            bookingToUpdate.start_at,
-            bookingToUpdate.end_at
-          ),
-          bookingToUpdate.start_at,
-          bookingToUpdate.end_at,
-          resolveBookingUnit(
-            existing.booking_unit,
-            null,
-            existing.start_at,
-            existing.end_at
-          ),
-          existing.start_at,
-          existing.end_at
-        )
-      );
-
-      if (hasConflict) {
-        setMessage(
-          "This booking overlaps with another accepted booking and cannot be approved."
-        );
-        setBusyBookingId(null);
-        return;
-      }
-
-      // --- BEGIN: Find and store competing overlapping pending bookings for this space ---
-      const { data: rawCompetingPendingBookings, error: competingPendingError } = await supabase
-        .from("bookings")
-        .select("id, renter_id, booking_unit, start_at, end_at, space_id, status")
-        .eq("space_id", bookingToUpdate.space_id)
-        .in("status", ["pending", "pending_owner"])
-        .neq("id", bookingId);
-
-      if (competingPendingError) {
-        setMessage(competingPendingError.message);
-        setBusyBookingId(null);
-        return;
-      }
-
-      competingPendingBookings = ((rawCompetingPendingBookings || []) as Array<{
-        id: string;
-        renter_id: string;
-        booking_unit: string | null;
-        start_at: string;
-        end_at: string;
-        space_id: string;
-        status: string | null;
-      }>).filter((existing) =>
-        rangesOverlap(
-          resolveBookingUnit(
-            bookingToUpdate.booking_unit,
-            bookingToUpdate.space?.booking_unit,
-            bookingToUpdate.start_at,
-            bookingToUpdate.end_at
-          ),
-          bookingToUpdate.start_at,
-          bookingToUpdate.end_at,
-          resolveBookingUnit(existing.booking_unit, null, existing.start_at, existing.end_at),
-          existing.start_at,
-          existing.end_at
-        )
-      );
-      // --- END: Find and store competing overlapping pending bookings for this space ---
-    }
-
-    const updatePayload =
-      nextStatus === "approved"
-        ? {
-          status: "accepted_awaiting_payment",
-          payment_status: "awaiting_payment",
-          owner_response_at: new Date().toISOString(),
-          owner_response_message: ownerResponseMessage || null,
-        }
-        : nextStatus === "declined"
-          ? {
-            status: "declined",
-            payment_status: "unpaid",
-            owner_response_at: new Date().toISOString(),
-            owner_response_message: ownerResponseMessage || null,
-          }
-          : {
-            status: "pending_owner",
-            payment_status: bookingToUpdate.payment_status || "unpaid",
-            owner_response_at: new Date().toISOString(),
-            owner_response_message: ownerResponseMessage || null,
-          };
-
-    const { error } = await (supabase.from("bookings") as any)
-      .update(updatePayload)
-      .eq("id", bookingId);
-
-    if (error) {
-      setMessage(error.message);
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    if (!session?.access_token) {
+      setMessage("Please sign in again.");
       setBusyBookingId(null);
       return;
     }
 
-    if (nextStatus === "approved") {
-      try {
-        await fetch("/api/notifications/booking-event", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            bookingId,
-            eventType: "booking_approved_payment_needed",
-          }),
-        });
-      } catch (error) {
-        console.error("Could not send approval email:", error);
-      }
+    const action = nextStatus === "approved" ? "approve" : "decline";
+    const result = await postHostBookingResponse({
+      accessToken: session.access_token,
+      bookingId,
+      action,
+      message: ownerResponseMessage || null,
+    });
+
+    if (!result.ok) {
+      setMessage(result.error || "Could not update booking.");
+      setBusyBookingId(null);
+      return;
     }
-    if (nextStatus === "declined") {
-      try {
-        await fetch("/api/notifications/booking-event", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            bookingId,
-            eventType: "booking_declined",
-          }),
-        });
-      } catch (error) {
-        console.error("Could not send decline email:", error);
-      }
-    }
-
-    // --- BEGIN: Auto-decline competing overlapping pending bookings if approved ---
-    if (nextStatus === "approved") {
-      const competingIds = competingPendingBookings.map((item) => item.id);
-
-      if (competingIds.length > 0) {
-        const autoDeclineMessage =
-          "Your booking request was declined because another overlapping booking was approved for this space. Thank you for your interest. Please try another date.";
-        const competingRecipientIds = new Map(competingPendingBookings.map((item) => [item.id, item.renter_id]));
-
-        const { error: competingDeclineError } = await (supabase.from("bookings") as any)
-          .update({
-            status: "declined",
-            payment_status: "unpaid",
-            owner_response_at: new Date().toISOString(),
-            owner_response_message: autoDeclineMessage,
-          })
-          .in("id", competingIds);
-
-        if (competingDeclineError) {
-          setMessage(competingDeclineError.message);
-          setBusyBookingId(null);
-          return;
-        }
-
-        await Promise.all(
-          competingIds.map(async (competingId) => {
-            try {
-              await fetch("/api/notifications/booking-event", {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                  bookingId: competingId,
-                  eventType: "booking_declined",
-                }),
-              });
-            } catch (notificationError) {
-              console.error(
-                `Could not send auto-decline email for booking ${competingId}:`,
-                notificationError
-              );
-            }
-          })
-        );
-
-        if (sessionUserId) {
-          const autoDeclineMessages = competingIds
-            .map((competingId) => {
-              const recipientId = competingRecipientIds.get(competingId);
-              if (!recipientId) return null;
-
-              return {
-                booking_id: competingId,
-                sender_id: sessionUserId,
-                recipient_id: recipientId,
-                message: autoDeclineMessage,
-              };
-            })
-            .filter(Boolean);
-
-          if (autoDeclineMessages.length > 0) {
-            const { data: insertedMessages, error: autoDeclineMessageError } = await (supabase
-              .from("booking_messages") as any)
-              .insert(autoDeclineMessages)
-              .select("id, booking_id, sender_id, recipient_id, message, created_at");
-
-            if (autoDeclineMessageError) {
-              console.error("Could not save auto-decline booking messages:", autoDeclineMessageError);
-            } else if (insertedMessages) {
-              const typedInsertedMessages = insertedMessages as BookingMessage[];
-
-              setMessagesByBooking((current) => {
-                const updated = { ...current };
-
-                for (const item of typedInsertedMessages) {
-                  updated[item.booking_id] = [...(updated[item.booking_id] || []), item];
-                }
-
-                return updated;
-              });
-            }
-          }
-        }
-      }
-    }
-    // --- END: Auto-decline block ---
 
     setBookings((current) => {
-      const competingIds = nextStatus === "approved" && typeof competingPendingBookings !== "undefined"
-        ? new Set(competingPendingBookings.map((item) => item.id))
+      const competingIds = nextStatus === "approved"
+        ? new Set(result.competingDeclinedIds || [])
         : new Set<string>();
 
       return current.map((booking) => {

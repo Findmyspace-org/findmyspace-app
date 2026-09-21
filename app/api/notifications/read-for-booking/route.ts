@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { markMessageNotificationsReadForBooking } from "@/lib/notification-lifecycle";
+import { resolveAccessForSpace } from "@/lib/access/resolve-access";
 
 export async function POST(req: NextRequest) {
   try {
@@ -43,16 +44,26 @@ export async function POST(req: NextRequest) {
 
     const { data: booking, error: bookingError } = await admin
       .from("bookings")
-      .select("id, renter_id, owner_id")
+      .select("id, renter_id, owner_id, space_id")
       .eq("id", bookingId)
       .maybeSingle();
 
-    const row = booking as { id: string; renter_id: string; owner_id: string } | null;
+    const row = booking as {
+      id: string;
+      renter_id: string;
+      owner_id: string | null;
+      space_id: string;
+    } | null;
     if (bookingError || !row) {
       return NextResponse.json({ error: "Booking not found." }, { status: 404 });
     }
 
-    if (row.renter_id !== user.id && row.owner_id !== user.id) {
+    let allowed = row.renter_id === user.id || row.owner_id === user.id;
+    if (!allowed && row.space_id) {
+      const access = await resolveAccessForSpace(admin, user.id, row.space_id);
+      allowed = Boolean(access?.canManageBooking);
+    }
+    if (!allowed) {
       return NextResponse.json({ error: "Forbidden." }, { status: 403 });
     }
 

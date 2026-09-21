@@ -96,15 +96,17 @@ export default function HostDashboardPage() {
 
       try {
         const {
-          data: { user },
+          data: { session },
           error: authError,
-        } = await supabase.auth.getUser();
+        } = await supabase.auth.getSession();
 
-        if (authError || !user) {
+        if (authError || !session?.user) {
           setError("Please log in to view your host dashboard.");
           setLoading(false);
           return;
         }
+
+        const user = session.user;
 
         const { data: profileData } = await (supabase.from("profiles") as any)
           .select("id, id_verification_status, is_host")
@@ -113,17 +115,19 @@ export default function HostDashboardPage() {
 
         setProfile((profileData || null) as OwnerProfile | null);
 
-        const { data: listingData, error: listingError } = await (supabase
-          .from("spaces") as any)
-          .select(
-            "id, title, suburb, city, status, verification_status, created_at"
-          )
-          .eq("owner_id", user.id)
-          .order("created_at", { ascending: false });
-
-        if (listingError) throw listingError;
-
-        const nextListings = (listingData || []) as OwnerDashboardListing[];
+        const { fetchManagedSpaces } = await import("@/lib/host-managed-spaces-client");
+        const managed = session.access_token
+          ? await fetchManagedSpaces(session.access_token)
+          : [];
+        const nextListings = managed.map((space) => ({
+          id: space.id,
+          title: space.title,
+          suburb: space.suburb ?? null,
+          city: space.city ?? null,
+          status: space.status ?? null,
+          verification_status: null,
+          created_at: null,
+        })) as OwnerDashboardListing[];
         setListings(nextListings);
 
         const listingIds = nextListings.map((listing) => listing.id);

@@ -25,7 +25,7 @@ type ThreadPayload = {
     id: string;
     space_id: string;
     renter_id: string;
-    owner_id: string;
+    owner_id: string | null;
     status: string | null;
     payment_status: string | null;
     start_at: string | null;

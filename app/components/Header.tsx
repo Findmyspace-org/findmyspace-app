@@ -314,14 +314,13 @@ export default function Header() {
 
         let hostCount = 0;
 
-        if (isHost) {
-          const { data: hostRequests, error: hostError } = await supabase
-            .from("bookings")
-            .select("id, status")
-            .eq("owner_id", userId)
-            .in("status", ["pending", "pending_owner"]);
+        const { data: hostRequests, error: hostError } = await supabase
+          .from("bookings")
+          .select("id, status")
+          .neq("renter_id", userId)
+          .in("status", ["pending", "pending_owner"]);
 
-          hostCount = hostError ? 0 : (hostRequests || []).length;
+        hostCount = hostError ? 0 : (hostRequests || []).length;
 
           (hostRequests || []).forEach((booking: any) => {
             pushUniqueNotification({
@@ -348,7 +347,6 @@ export default function Header() {
           } catch (hostActionErr) {
             console.warn("Host action notifications failed:", hostActionErr);
           }
-        }
 
         if (mounted) {
           setBookingRequestActionCount(hostCount);

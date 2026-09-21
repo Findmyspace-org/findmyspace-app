@@ -73,7 +73,7 @@ export async function POST(
     const booking = bookingRow as {
       id: string;
       renter_id: string;
-      owner_id: string;
+      owner_id: string | null;
     };
 
     const messageText = `[Support] ${note}`;

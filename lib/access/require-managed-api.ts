@@ -142,3 +142,64 @@ export async function requireManagedPropertyApi(
 
   return { userId: auth.userId, admin: auth.admin, access };
 }
+
+export type ManagedBookingAuthOk = ManagedAuthOk & {
+  bookingId: string;
+  spaceId: string;
+};
+
+/**
+ * Host-side booking mutation gate. userId comes from the verified session.
+ * Renters cannot use this path even if they also have a grant.
+ */
+export async function requireManagedBookingApi(
+  req: NextRequest,
+  bookingId: string
+): Promise<ManagedBookingAuthOk | ManagedAuthFail> {
+  if (!UUID_RE.test(bookingId)) {
+    return {
+      response: NextResponse.json({ error: "Invalid booking id." }, { status: 400 }),
+    };
+  }
+
+  const auth = await authenticateManagedRequest(req);
+  if ("response" in auth) return auth;
+
+  const { data: booking, error } = await auth.admin
+    .from("bookings")
+    .select("id, space_id, renter_id")
+    .eq("id", bookingId)
+    .maybeSingle();
+
+  if (error || !booking) {
+    return {
+      response: NextResponse.json({ error: "Booking not found." }, { status: 404 }),
+    };
+  }
+
+  const row = booking as { id: string; space_id: string; renter_id: string };
+  if (row.renter_id === auth.userId) {
+    return {
+      response: NextResponse.json({ error: "Forbidden." }, { status: 403 }),
+    };
+  }
+
+  const access = await resolveAccessForSpace(
+    auth.admin,
+    auth.userId,
+    row.space_id
+  );
+  if (!access || !access.canManageBooking) {
+    return {
+      response: NextResponse.json({ error: "Forbidden." }, { status: 403 }),
+    };
+  }
+
+  return {
+    userId: auth.userId,
+    admin: auth.admin,
+    access,
+    bookingId: row.id,
+    spaceId: row.space_id,
+  };
+}

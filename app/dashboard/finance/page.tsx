@@ -52,23 +52,24 @@ export default function OwnerFinancePage() {
     setError("");
     try {
       const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session?.access_token) {
         setError("Sign in to view your finance.");
         setLoading(false);
         return;
       }
-      setSessionEmail(user.email ?? null);
+      setSessionEmail(session.user.email ?? null);
 
-      const { data: spaceRows, error: spaceErr } = await supabase
-        .from("spaces")
-        .select("id, title")
-        .eq("owner_id", user.id)
-        .order("title", { ascending: true });
-
-      if (spaceErr) throw spaceErr;
-      setSpaces((spaceRows || []) as SpaceOption[]);
+      const { fetchManagedSpaces } = await import("@/lib/host-managed-spaces-client");
+      const managed = await fetchManagedSpaces(session.access_token);
+      setSpaces(managed.map((row) => ({ id: row.id, title: row.title })));
+      const managedIds = managed.map((row) => row.id);
+      if (managedIds.length === 0) {
+        setBookings([]);
+        setLoading(false);
+        return;
+      }
 
       const { data: bookingRows, error: bookErr } = await (supabase
         .from("bookings") as any)
@@ -106,7 +107,7 @@ export default function OwnerFinancePage() {
             )
           `
         )
-        .eq("owner_id", user.id)
+        .in("space_id", managedIds)
         .order("created_at", { ascending: false })
         .limit(FINANCE_BOOKINGS_QUERY_LIMIT);
 

@@ -4,7 +4,8 @@ import { NextRequest, NextResponse } from "next/server";
 // for up to ~24 additional hours after the payment window.
 import { createClient } from "@supabase/supabase-js";
 import { isVercelCronAuthorized, unauthorizedCronResponse } from "@/lib/cron-auth";
-import { getPublicSiteUrlFromEnv } from "@/lib/site-url";
+import { resolveBookingHostRecipientId } from "@/lib/access/resolve-operational-booking-managers";
+import { notifyBookingEvent } from "@/lib/booking-event-notify";
 
 const RENTER_EXPIRY_MESSAGE =
   "Your booking expired because payment was not completed within 24 hours. Thank you for your interest. Please try again if you would still like to book this space.";
@@ -63,12 +64,10 @@ export async function GET(request: NextRequest) {
     console.log("RPC result:", data);
     console.log("Expired booking IDs:", bookingIds);
 
-    const appBaseUrl = getPublicSiteUrlFromEnv() ?? "";
-
     if (bookingIds.length > 0) {
       const { data: expiredBookings, error: fetchError } = await (supabase
         .from("bookings") as any)
-        .select("id, renter_id, owner_id")
+        .select("id, renter_id, owner_id, space_id")
         .in("id", bookingIds);
       console.log("Expired bookings fetched:", expiredBookings);
 
@@ -77,69 +76,66 @@ export async function GET(request: NextRequest) {
       } else {
         for (const booking of (expiredBookings || []) as {
           id: string;
-          renter_id: string;
-          owner_id: string;
+          renter_id: string | null;
+          owner_id: string | null;
+          space_id: string;
         }[]) {
-          const { id: bookingId, renter_id, owner_id } = booking;
+          const { id: bookingId, renter_id, owner_id, space_id } = booking;
           console.log("Processing booking:", bookingId, { renter_id, owner_id });
 
-          if (!renter_id || !owner_id) {
-            console.error(`Cron: missing renter_id or owner_id for booking ${bookingId}`);
+          if (!renter_id) {
+            console.error(`Cron: missing renter_id for booking ${bookingId}`);
             continue;
           }
 
-          const { error: insertError } = await (supabase
-            .from("booking_messages") as any)
-            .insert([
-              {
-                booking_id: bookingId,
-                sender_id: owner_id,
-                recipient_id: renter_id,
-                message: RENTER_EXPIRY_MESSAGE,
-              },
-              {
-                booking_id: bookingId,
-                sender_id: owner_id,
-                recipient_id: owner_id,
-                message: OWNER_EXPIRY_MESSAGE,
-              },
-            ]);
-          console.log("Insert attempted for booking:", bookingId);
+          const hostSenderId = await resolveBookingHostRecipientId(supabase, {
+            owner_id,
+            space_id,
+          });
 
-          if (insertError) {
-            console.error(
-              `Cron: booking_messages insert failed for ${bookingId}:`,
-              insertError
-            );
-            console.log("Insert error details:", insertError);
-            continue;
-          }
-
-          if (appBaseUrl) {
-            try {
-              const res = await fetch(
-                `${appBaseUrl}/api/notifications/booking-event`,
+          if (hostSenderId) {
+            const { error: insertError } = await (supabase
+              .from("booking_messages") as any)
+              .insert([
                 {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    bookingId,
-                    eventType: "booking_expired",
-                  }),
-                }
-              );
-              if (!res.ok) {
-                console.error(
-                  `Cron: booking-event notification failed for ${bookingId}:`,
-                  await res.text()
-                );
-              }
-            } catch (notifyErr) {
+                  booking_id: bookingId,
+                  sender_id: hostSenderId,
+                  recipient_id: renter_id,
+                  message: RENTER_EXPIRY_MESSAGE,
+                },
+                {
+                  booking_id: bookingId,
+                  sender_id: hostSenderId,
+                  recipient_id: hostSenderId,
+                  message: OWNER_EXPIRY_MESSAGE,
+                },
+              ]);
+            console.log("Insert attempted for booking:", bookingId);
+
+            if (insertError) {
               console.error(
-                `Cron: booking-event fetch failed for ${bookingId}:`,
-                notifyErr
+                `Cron: booking_messages insert failed for ${bookingId}:`,
+                insertError
               );
+              console.log("Insert error details:", insertError);
             }
+          } else {
+            console.warn(
+              `Cron: no host sender for booking ${bookingId}; skipping in-app expiry messages`
+            );
+          }
+
+          try {
+            await notifyBookingEvent({
+              admin: supabase,
+              bookingId,
+              eventType: "booking_expired",
+            });
+          } catch (notifyErr) {
+            console.error(
+              `Cron: booking-event notify failed for ${bookingId}:`,
+              notifyErr
+            );
           }
         }
       }

@@ -10,6 +10,7 @@ import {
   type InvoiceChargeRow,
   type InvoiceDocument,
 } from "@/lib/invoice-document";
+import { resolveAccessForSpace } from "@/lib/access/resolve-access";
 
 export async function loadInvoiceDocumentForRequest(params: {
   supabaseUrl: string;
@@ -54,6 +55,7 @@ export async function loadInvoiceDocumentForRequest(params: {
       id,
       renter_id,
       owner_id,
+      space_id,
       booking_unit,
       start_at,
       end_at,
@@ -95,10 +97,17 @@ export async function loadInvoiceDocumentForRequest(params: {
 
   const row = booking as typeof booking & {
     renter_id: string;
-    owner_id: string;
+    owner_id: string | null;
+    space_id: string;
   };
 
-  if (row.renter_id !== user.id && row.owner_id !== user.id) {
+  let canView = row.renter_id === user.id || row.owner_id === user.id;
+  if (!canView) {
+    const access = await resolveAccessForSpace(supabase, user.id, row.space_id);
+    canView = Boolean(access?.canViewBookingCommercial);
+  }
+
+  if (!canView) {
     return { ok: false, response: new Response("Forbidden", { status: 403 }) };
   }
 

@@ -6,7 +6,7 @@ type BookingRow = {
   id: string;
   space_id: string | null;
   renter_id: string;
-  owner_id: string;
+  owner_id: string | null;
   booking_unit: string | null;
   status: string | null;
   payment_status: string | null;
@@ -125,7 +125,7 @@ export async function GET(req: NextRequest) {
       const listing = booking.space_id
         ? spaceMap.get(booking.space_id)
         : null;
-      const owner = profileMap.get(booking.owner_id);
+      const owner = booking.owner_id ? profileMap.get(booking.owner_id) : undefined;
       const renter = profileMap.get(booking.renter_id);
       const searchable = [
         booking.id,

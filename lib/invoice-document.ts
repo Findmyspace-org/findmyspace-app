@@ -242,7 +242,7 @@ export function buildInvoiceDocument(
       email: booking.renter?.email || "—",
     },
     owner: {
-      name: displayName(booking.owner) || "—",
+      name: displayName(booking.owner) || "Host",
       email: booking.owner?.email || "—",
     },
     space: {

@@ -569,7 +569,7 @@ export default async function Page({
             <div className="rounded-lg border border-gray-200 bg-white p-3 shadow-sm sm:p-4">
               <BookingRequestForm
                 spaceId={space.id}
-                ownerId={space.owner_id!}
+                ownerId={space.owner_id}
                 bookingUnit={bookingUnit}
                 priceAmount={space.price_amount}
                 priceUnit={space.price_unit}

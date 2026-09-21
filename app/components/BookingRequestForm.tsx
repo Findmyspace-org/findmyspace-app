@@ -82,7 +82,7 @@ function isBlockingOverlapStatus(
 
 type BookingRequestFormProps = {
   spaceId: string;
-  ownerId: string;
+  ownerId?: string | null;
   bookingUnit: string | null;
   priceAmount?: number | null;
   priceUnit?: string | null;
@@ -1054,7 +1054,7 @@ export default function BookingRequestForm({
         return;
       }
 
-      if (user.id === ownerId) {
+      if (ownerId && user.id === ownerId) {
         setStatusMessage("You cannot book your own listing.");
         setLoading(false);
         return;
@@ -1164,7 +1164,7 @@ export default function BookingRequestForm({
         "payload",
         JSON.stringify({
           spaceId,
-          ownerId,
+          ownerId: ownerId || null,
           bookingUnit: bookingUnit || "day",
           startAt,
           endAt,
@@ -1173,7 +1173,7 @@ export default function BookingRequestForm({
           requirementAnswers: customFieldAnswers,
         } satisfies {
           spaceId: string;
-          ownerId: string;
+          ownerId: string | null;
           bookingUnit: string;
           startAt: string;
           endAt: string;
@@ -1238,21 +1238,6 @@ export default function BookingRequestForm({
           if (detailError) {
             console.error("booking_request_details insert:", detailError);
           }
-        }
-
-        try {
-          await fetch("/api/notifications/booking-event", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              bookingId: insertedBooking.id,
-              eventType: "booking_request_created",
-            }),
-          });
-        } catch (error) {
-          console.error("Could not send booking email:", error);
         }
       }
 

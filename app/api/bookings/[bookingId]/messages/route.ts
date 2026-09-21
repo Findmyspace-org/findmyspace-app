@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { isCommunicationAllowed } from "@/lib/booking-communication";
-import { getPublicSiteUrlFromEnv } from "@/lib/site-url";
+import { resolveAccessForSpace } from "@/lib/access/resolve-access";
+import { resolveBookingHostRecipientId } from "@/lib/access/resolve-operational-booking-managers";
+import { notifyBookingEvent } from "@/lib/booking-event-notify";
 
 const FORBIDDEN_MSG = "Messaging is only available after payment confirmation.";
 
@@ -63,7 +65,7 @@ export async function GET(
     id: string;
     space_id: string;
     renter_id: string;
-    owner_id: string;
+    owner_id: string | null;
     status: string | null;
     payment_status: string | null;
     start_at: string | null;
@@ -72,8 +74,12 @@ export async function GET(
   };
 
   const isRenter = row.renter_id === user.id;
-  const isOwner = row.owner_id === user.id;
-  if (!isRenter && !isOwner) {
+  let isHost = row.owner_id === user.id;
+  if (!isRenter && !isHost) {
+    const access = await resolveAccessForSpace(admin, user.id, row.space_id);
+    isHost = Boolean(access?.canManageBooking);
+  }
+  if (!isRenter && !isHost) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -101,11 +107,14 @@ export async function GET(
     );
   }
 
-  const counterpartyId = isRenter ? row.owner_id : row.renter_id;
-  const { data: cpProfile } = await (admin.from("profiles") as any)
-    .select("email, phone")
-    .eq("id", counterpartyId)
-    .single();
+  const hostRecipientId = await resolveBookingHostRecipientId(admin, row);
+  const counterpartyId = isRenter ? hostRecipientId : row.renter_id;
+  const { data: cpProfile } = counterpartyId
+    ? await (admin.from("profiles") as any)
+        .select("email, phone")
+        .eq("id", counterpartyId)
+        .single()
+    : { data: null };
 
   const cp = cpProfile as { email: string | null; phone: string | null } | null;
 
@@ -119,7 +128,7 @@ export async function GET(
     counterpartyContact,
     viewerRole: isRenter ? "renter" : "owner",
     ownerContact: isRenter ? counterpartyContact : null,
-    renterContact: isOwner ? counterpartyContact : null,
+    renterContact: isHost ? counterpartyContact : null,
     booking: {
       id: row.id,
       space_id: row.space_id,
@@ -191,7 +200,7 @@ export async function POST(
 
   const { data: booking, error: bookingError } = await admin
     .from("bookings")
-    .select("id, renter_id, owner_id, status, payment_status")
+    .select("id, renter_id, owner_id, space_id, status, payment_status")
     .eq("id", bookingId)
     .single();
 
@@ -202,14 +211,19 @@ export async function POST(
   const row = booking as {
     id: string;
     renter_id: string;
-    owner_id: string;
+    owner_id: string | null;
+    space_id: string;
     status: string | null;
     payment_status: string | null;
   };
 
   const isRenter = row.renter_id === user.id;
-  const isOwner = row.owner_id === user.id;
-  if (!isRenter && !isOwner) {
+  let isHost = row.owner_id === user.id;
+  if (!isRenter && !isHost) {
+    const access = await resolveAccessForSpace(admin, user.id, row.space_id);
+    isHost = Boolean(access?.canManageBooking);
+  }
+  if (!isRenter && !isHost) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -217,7 +231,16 @@ export async function POST(
     return NextResponse.json({ error: FORBIDDEN_MSG }, { status: 403 });
   }
 
-  const recipientId = isRenter ? row.owner_id : row.renter_id;
+  const recipientId = isRenter
+    ? await resolveBookingHostRecipientId(admin, row)
+    : row.renter_id;
+
+  if (!recipientId) {
+    return NextResponse.json(
+      { error: "No host is available to receive this message." },
+      { status: 409 }
+    );
+  }
 
   const { data: inserted, error: insertError } = await (admin.from("booking_messages") as any)
     .insert({
@@ -236,24 +259,17 @@ export async function POST(
     );
   }
 
-  const origin = getPublicSiteUrlFromEnv() ?? "";
-
-  if (origin) {
-    try {
-      await fetch(`${origin}/api/notifications/booking-event`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          bookingId,
-          eventType: "booking_message",
-          senderId: user.id,
-          recipientId,
-          message: text,
-        }),
-      });
-    } catch (e) {
-      console.error("booking-event notification:", e);
-    }
+  try {
+    await notifyBookingEvent({
+      admin,
+      bookingId,
+      eventType: "booking_message",
+      senderId: user.id,
+      recipientId,
+      message: text,
+    });
+  } catch (e) {
+    console.error("booking-event notification:", e);
   }
 
   return NextResponse.json({ message: inserted });

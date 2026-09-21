@@ -4,6 +4,7 @@ import {
   createBookingRequestServer,
   type BookingRequestPayload,
 } from "@/lib/booking-request-server";
+import { notifyBookingEvent } from "@/lib/booking-event-notify";
 
 export const runtime = "nodejs";
 
@@ -45,6 +46,15 @@ export async function POST(req: NextRequest) {
       payload,
       filesByFieldId
     );
+    try {
+      await notifyBookingEvent({
+        admin: auth.admin,
+        bookingId: result.bookingId,
+        eventType: "booking_request_created",
+      });
+    } catch (notifyErr) {
+      console.error("booking_request_created notification:", notifyErr);
+    }
     return NextResponse.json({ bookingId: result.bookingId });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Could not create booking request.";

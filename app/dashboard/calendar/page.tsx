@@ -1567,28 +1567,26 @@ export default function CalendarPage() {
             setMessage("");
 
             const {
-                data: { user },
+                data: { session },
                 error: authError,
-            } = await supabase.auth.getUser();
+            } = await supabase.auth.getSession();
 
-            if (authError || !user) {
+            if (authError || !session?.user || !session.access_token) {
                 setMessage("Please log in to view your calendar.");
                 setLoading(false);
                 return;
             }
 
-            const { data, error } = await (supabase.from("spaces") as any)
-                .select("id, title, city, suburb, status, booking_unit")
-                .eq("owner_id", user.id)
-                .order("title", { ascending: true });
-
-            if (error) {
-                setMessage(error.message || "Could not load spaces.");
-                setLoading(false);
-                return;
-            }
-
-            const nextSpaces = (data || []) as CalendarSpace[];
+            const { fetchManagedSpaces } = await import("@/lib/host-managed-spaces-client");
+            const managed = await fetchManagedSpaces(session.access_token);
+            const nextSpaces = managed.map((space) => ({
+                id: space.id,
+                title: space.title,
+                city: space.city ?? null,
+                suburb: space.suburb ?? null,
+                status: space.status ?? null,
+                booking_unit: space.booking_unit ?? null,
+            })) as CalendarSpace[];
             setSpaces(nextSpaces);
 
             const spaceIds = nextSpaces.map((space) => space.id);

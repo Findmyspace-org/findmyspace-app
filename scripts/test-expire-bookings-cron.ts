@@ -258,6 +258,10 @@ async function main() {
     /GRANT EXECUTE ON FUNCTION public\.expire_unpaid_bookings\(\) TO service_role/
   );
 
+  const cronSrc = readFileSync("app/api/cron/expire-bookings/route.ts", "utf8");
+  assert.doesNotMatch(cronSrc, /if \(!renter_id \|\| !owner_id\)/);
+  assert.match(cronSrc, /if \(!renter_id\)/);
+
   const vercel = JSON.parse(readFileSync("vercel.json", "utf8"));
   assert.deepEqual(vercel, {
     crons: [

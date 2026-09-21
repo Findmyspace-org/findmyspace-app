@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdminApi } from "@/lib/require-admin-api";
 import { adminAudit } from "@/lib/admin-audit";
-import { getPublicSiteUrlFromEnv } from "@/lib/site-url";
 import { normalizePaymentStatus } from "@/lib/finance-status";
+import { notifyBookingEvent } from "@/lib/booking-event-notify";
+import { resolveBookingHostRecipientId } from "@/lib/access/resolve-operational-booking-managers";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -60,7 +61,7 @@ export async function POST(
 
     const { data: bookingRow, error: fetchErr } = await (admin
       .from("bookings") as any)
-      .select("id, renter_id, owner_id, status, payment_status")
+      .select("id, renter_id, owner_id, space_id, status, payment_status")
       .eq("id", bookingId)
       .maybeSingle();
 
@@ -71,7 +72,8 @@ export async function POST(
     const booking = bookingRow as {
       id: string;
       renter_id: string;
-      owner_id: string;
+      owner_id: string | null;
+      space_id: string;
       status: string | null;
       payment_status: string | null;
     };
@@ -116,26 +118,27 @@ export async function POST(
       return NextResponse.json({ error: "Booking not found." }, { status: 404 });
     }
 
-    await (admin.from("booking_messages") as any).insert({
-      booking_id: booking.id,
-      sender_id: auth.userId,
-      recipient_id: booking.owner_id,
-      message: cancelMessage,
+    const hostRecipientId = await resolveBookingHostRecipientId(admin, {
+      owner_id: booking.owner_id,
+      space_id: booking.space_id,
     });
 
-    const origin = getPublicSiteUrlFromEnv() ?? "";
-    if (origin) {
+    if (hostRecipientId) {
+      await (admin.from("booking_messages") as any).insert({
+        booking_id: booking.id,
+        sender_id: auth.userId,
+        recipient_id: hostRecipientId,
+        message: cancelMessage,
+      });
+
       try {
-        await fetch(`${origin}/api/notifications/booking-event`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            bookingId: booking.id,
-            eventType: "booking_message",
-            senderId: auth.userId,
-            recipientId: booking.owner_id,
-            message: cancelMessage,
-          }),
+        await notifyBookingEvent({
+          admin,
+          bookingId: booking.id,
+          eventType: "booking_message",
+          senderId: auth.userId,
+          recipientId: hostRecipientId,
+          message: cancelMessage,
         });
       } catch (e) {
         console.error("booking-event notification (admin cancel):", e);

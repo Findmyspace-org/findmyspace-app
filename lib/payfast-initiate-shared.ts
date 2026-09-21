@@ -8,7 +8,7 @@ import {
 export type BookingRowForPayFastInitiate = {
   id: string;
   renter_id: string;
-  owner_id: string;
+  owner_id: string | null;
   status: string | null;
   payment_status: string | null;
   total_price: number | null;

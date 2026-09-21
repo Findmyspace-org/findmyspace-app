@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { getPublicSiteUrlFromEnv } from "@/lib/site-url";
 import { isPlatformAdminRole } from "@/lib/admin-roles";
+import { notifyBookingEvent } from "@/lib/booking-event-notify";
 
 type BookingRow = {
   id: string;
   space_id: string | null;
   renter_id: string;
-  owner_id: string;
+  owner_id: string | null;
   booking_unit: string | null;
   status: string | null;
   payment_status: string | null;
@@ -117,7 +117,12 @@ export async function GET(
         .order("created_at", { ascending: true }),
       (adminClient.from("profiles") as any)
         .select("id, first_name, last_name, full_name, email, phone, role")
-        .in("id", [booking.owner_id, booking.renter_id]),
+        .in(
+          "id",
+          [booking.owner_id, booking.renter_id].filter(
+            (id): id is string => Boolean(id)
+          )
+        ),
       booking.space_id
         ? adminClient
             .from("spaces")
@@ -137,7 +142,9 @@ export async function GET(
 
   const profiles = (profileData || []) as ProfileRow[];
   const profileMap = new Map(profiles.map((p) => [p.id, p]));
-  const ownerProfile = profileMap.get(booking.owner_id) || null;
+  const ownerProfile = booking.owner_id
+    ? profileMap.get(booking.owner_id) || null
+    : null;
   const renterProfile = profileMap.get(booking.renter_id) || null;
 
   const messages = ((messageData || []) as MessageRow[]).map((msg) => {
@@ -236,7 +243,7 @@ export async function POST(
     return NextResponse.json({ error: "Booking not found" }, { status: 404 });
   }
 
-  const booking = bookingData as { id: string; renter_id: string; owner_id: string };
+  const booking = bookingData as { id: string; renter_id: string; owner_id: string | null };
 
   const { data: recentMessages } = await (adminClient.from("booking_messages") as any)
     .select("sender_id")
@@ -286,24 +293,17 @@ export async function POST(
     role?: string | null;
   } | null;
 
-  const origin = getPublicSiteUrlFromEnv() ?? "";
-
-  if (origin) {
-    try {
-      await fetch(`${origin}/api/notifications/booking-event`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          bookingId: booking.id,
-          eventType: "booking_message",
-          senderId: userId,
-          recipientId,
-          message: text,
-        }),
-      });
-    } catch (e) {
-      console.error("booking-event notification:", e);
-    }
+  try {
+    await notifyBookingEvent({
+      admin: adminClient,
+      bookingId: booking.id,
+      eventType: "booking_message",
+      senderId: userId,
+      recipientId,
+      message: text,
+    });
+  } catch (e) {
+    console.error("booking-event notification:", e);
   }
 
   return NextResponse.json({

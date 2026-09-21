@@ -11,6 +11,7 @@ import {
   renterPaymentStatusLabel,
 } from "@/lib/booking-ui-labels";
 import { shouldShowBookingRequestNotes } from "@/lib/booking-notes-visibility";
+import { postHostBookingResponse } from "@/lib/booking-host-response-client";
 
 type Booking = {
   id: string;
@@ -77,7 +78,6 @@ export default function OwnerBookingsPage({
       .from("spaces")
       .select("status")
       .eq("id", spaceId)
-      .eq("owner_id", user.id)
       .maybeSingle();
 
     setSpaceStatus((spaceRow as { status: string | null } | null)?.status ?? null);
@@ -88,7 +88,6 @@ export default function OwnerBookingsPage({
         "id, renter_id, start_at, end_at, booking_unit, total_price, status, payment_status, notes"
       )
       .eq("space_id", spaceId)
-      .eq("owner_id", user.id)
       .order("created_at", { ascending: false });
 
     if (error) {
@@ -244,16 +243,23 @@ export default function OwnerBookingsPage({
       return;
     }
 
-    const { error } = await (supabase.from("bookings") as any)
-      .update({
-        status: "accepted_awaiting_payment",
-        payment_status: "awaiting_payment",
-        owner_response_at: new Date().toISOString(),
-      })
-      .eq("id", id);
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    if (!session?.access_token) {
+      setMessage("Please sign in again.");
+      setProcessingId(null);
+      return;
+    }
 
-    if (error) {
-      setMessage(error.message);
+    const result = await postHostBookingResponse({
+      accessToken: session.access_token,
+      bookingId: id,
+      action: "approve",
+    });
+
+    if (!result.ok) {
+      setMessage(result.error || "Could not approve booking.");
       setProcessingId(null);
       return;
     }
@@ -266,15 +272,23 @@ export default function OwnerBookingsPage({
     setProcessingId(id);
     setMessage("");
 
-    const { error } = await (supabase.from("bookings") as any)
-      .update({
-        status: "declined",
-        payment_status: "unpaid",
-      })
-      .eq("id", id);
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    if (!session?.access_token) {
+      setMessage("Please sign in again.");
+      setProcessingId(null);
+      return;
+    }
 
-    if (error) {
-      setMessage(error.message);
+    const result = await postHostBookingResponse({
+      accessToken: session.access_token,
+      bookingId: id,
+      action: "decline",
+    });
+
+    if (!result.ok) {
+      setMessage(result.error || "Could not decline booking.");
       setProcessingId(null);
       return;
     }
