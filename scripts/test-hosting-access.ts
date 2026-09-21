@@ -451,4 +451,20 @@ function navLabels(summary: ReturnType<typeof summarizeHostingAccess>) {
   assert.match(editor, /listingVerificationDisplayContext/);
 }
 
+{
+  const actionsMenu = readFileSync(
+    "app/components/admin/AdminRowActionsMenu.tsx",
+    "utf8"
+  );
+  const spacesTable = readFileSync(
+    "app/components/owner/OwnerSpacesTable.tsx",
+    "utf8"
+  );
+  assert.match(actionsMenu, /createPortal/);
+  assert.match(actionsMenu, /position: "fixed"/);
+  assert.match(spacesTable, /overflow-x-auto/);
+  assert.match(spacesTable, /label: "View details"/);
+  assert.match(spacesTable, /label: "Edit space"/);
+}
+
 console.log("test-hosting-access: all assertions passed");
