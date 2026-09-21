@@ -328,9 +328,10 @@ function PeoplePageContent() {
             >
               <h2 className="text-base font-semibold text-[#0c1d2f]">Add person</h2>
               <p className="mt-1 text-sm text-gray-600">
-                Enter their email. If they already have a verified FindMySpace
-                account, access becomes active immediately. Otherwise it stays
-                pending until they sign in with that email.
+                Enter their email and choose the access they need. We&apos;ll
+                send them an invitation. Access becomes active once they sign
+                in or create an account with that email and accept the
+                invitation.
               </p>
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
                 <label className="text-sm">

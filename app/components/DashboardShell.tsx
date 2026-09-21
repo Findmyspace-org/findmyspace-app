@@ -8,16 +8,18 @@
  *   - lg and up  → vertical sidebar on the left
  *   - below lg   → horizontal scrolling pill tabs above the content
  *
- * The shell is intentionally lightweight: it does not fetch data or depend on
- * routes outside its own props, so the same component can host any workspace
- * (renter, host, future admin redesign).
+ * The shell stays route-agnostic: pages pass nav items and titles. The
+ * secondary My Account ↔ Hosting switch is rendered here so it stays
+ * consistent across every workspace page.
  *
  * IMPORTANT: this is contextual workspace navigation. It must NOT duplicate
- * the global burger menu's primary entries (My dashboard / Host dashboard /
+ * the global burger menu's primary entries (My account / Hosting /
  * Admin dashboard) — those still live in the header.
  */
 
 import { GuardedLink, UnsavedChangesProvider } from "@/app/components/UnsavedChangesProvider";
+import WorkspaceSwitch from "@/app/components/WorkspaceSwitch";
+import { workspaceKindFromLabel } from "@/lib/workspace-switch";
 import { usePathname } from "next/navigation";
 
 export type DashboardNavItem = {
@@ -40,7 +42,7 @@ export type DashboardNavItem = {
 type DashboardShellProps = {
   /** Eyebrow above the title — e.g. "My account", "Hosting", "Admin". */
   workspaceLabel: string;
-  /** Main page title — e.g. "Welcome back", "Host dashboard". */
+  /** Main page title — e.g. "Welcome back", "Overview". */
   pageTitle: string;
   /**
    * Optional context under the title — e.g. the current Organisation name
@@ -75,6 +77,7 @@ export default function DashboardShell({
   children,
 }: DashboardShellProps) {
   const pathname = usePathname();
+  const workspaceKind = workspaceKindFromLabel(workspaceLabel);
 
   function isActive(item: DashboardNavItem): boolean {
     const itemPath = item.href.split("?")[0];
@@ -93,13 +96,16 @@ export default function DashboardShell({
         {/* Heading band — calm, structured, premium. Tightened on mobile so
             the workspace nav sits closer to the top of the viewport. */}
         <header className="mb-3 sm:mb-6">
-          <div className="flex flex-wrap items-center gap-2">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-500 sm:text-[11px]">
-              {workspaceLabel}
-            </p>
-            {pageEyebrowPill ? (
-              <span className="inline-flex items-center">{pageEyebrowPill}</span>
-            ) : null}
+          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-500 sm:text-[11px]">
+                {workspaceLabel}
+              </p>
+              {pageEyebrowPill ? (
+                <span className="inline-flex items-center">{pageEyebrowPill}</span>
+              ) : null}
+            </div>
+            {workspaceKind ? <WorkspaceSwitch kind={workspaceKind} /> : null}
           </div>
           <h1 className="mt-1 text-xl font-semibold tracking-tight text-[#0c1d2f] sm:mt-1.5 sm:text-3xl">
             {pageTitle}

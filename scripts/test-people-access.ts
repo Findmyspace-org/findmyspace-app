@@ -219,6 +219,11 @@ assert.match(peoplePage, /Add person/);
 assert.match(peoplePage, /My Spaces/);
 assert.match(peoplePage, /People & access/);
 assert.doesNotMatch(peoplePage, /Paarl Girls/);
+assert.match(peoplePage, /We&apos;ll[\s\S]*send them an invitation/);
+assert.match(peoplePage, /accept the[\s\S]*invitation/);
+assert.doesNotMatch(peoplePage, /access becomes active immediately/);
+assert.doesNotMatch(peoplePage, /already have a verified FindMySpace/);
+assert.doesNotMatch(peoplePage, /pending until they sign in with that email/);
 
 // A / B list authority
 {

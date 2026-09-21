@@ -109,7 +109,7 @@ export default function HostDashboardPage() {
         } = await supabase.auth.getSession();
 
         if (authError || !session?.user) {
-          setError("Please log in to view your host dashboard.");
+          setError("Please log in to view Hosting.");
           setLoading(false);
           return;
         }
@@ -180,7 +180,7 @@ export default function HostDashboardPage() {
           console.warn("Pending listing questions count failed:", qErr);
         }
       } catch (loadError: any) {
-        setError(loadError?.message || "Could not load host dashboard.");
+        setError(loadError?.message || "Could not load Hosting.");
       } finally {
         setLoading(false);
       }
@@ -262,7 +262,7 @@ export default function HostDashboardPage() {
     <RequireAuth>
       <DashboardShell
         workspaceLabel="Hosting"
-        pageTitle="Host dashboard"
+        pageTitle="Overview"
         pageSubtitle="Respond to requests, keep listings up to date, and track earnings — all in one workspace."
         navItems={hosting.navItems}
         activeHref="/dashboard/owner"
@@ -270,7 +270,7 @@ export default function HostDashboardPage() {
         {loading ? (
           <div className="flex items-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-8 text-sm text-gray-600 shadow-sm">
             <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-            Loading your host dashboard…
+            Loading Hosting…
           </div>
         ) : (
           <>
@@ -479,7 +479,7 @@ export default function HostDashboardPage() {
 }
 
 // ---------------------------------------------------------------------------
-// UI primitives, scoped to the host dashboard.
+// UI primitives, scoped to the Hosting overview.
 // ---------------------------------------------------------------------------
 
 function MetricCard({

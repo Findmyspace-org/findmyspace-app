@@ -1621,7 +1621,7 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
           href="/dashboard/verification?step=overview"
           className="shrink-0 text-sm font-medium text-[#c1121f] underline-offset-4 hover:underline"
         >
-          Host dashboard
+          Verification & payouts
         </Link>
       </div>
 

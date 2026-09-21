@@ -17,6 +17,14 @@ import {
   type HostingAccessInput,
 } from "../lib/access/hosting-access";
 import { hostingNavItems } from "../lib/dashboard-nav";
+import {
+  HOSTING_OVERVIEW_PATH,
+  MY_ACCOUNT_HREF,
+  SWITCH_TO_HOSTING_LABEL,
+  SWITCH_TO_MY_ACCOUNT_LABEL,
+  workspaceKindFromLabel,
+  workspaceSwitch,
+} from "../lib/workspace-switch";
 import type { AccessContext, OrganisationAccessGrant } from "../lib/access/roles";
 
 const USER = "5860f254-26e9-4f7f-8760-3fd69bd9fff3";
@@ -69,6 +77,11 @@ function accessCtx(overrides: Partial<AccessContext> = {}): AccessContext {
 
 const header = readFileSync("app/components/Header.tsx", "utf8");
 const dashboard = readFileSync("app/dashboard/page.tsx", "utf8");
+const dashboardShell = readFileSync("app/components/DashboardShell.tsx", "utf8");
+const workspaceSwitchUi = readFileSync(
+  "app/components/WorkspaceSwitch.tsx",
+  "utf8"
+);
 const listings = readFileSync("app/dashboard/listings/page.tsx", "utf8");
 const owner = readFileSync("app/dashboard/owner/page.tsx", "utf8");
 const requests = readFileSync("app/dashboard/requests/page.tsx", "utf8");
@@ -179,11 +192,18 @@ function navLabels(summary: ReturnType<typeof summarizeHostingAccess>) {
 // D/E Header Hosting vs Become a host
 {
   assert.match(header, /hasHostingAccess/);
-  assert.match(header, /label: "Hosting"/);
+  assert.match(header, /title: "My account"/);
+  assert.match(header, /title: "Hosting"/);
+  assert.match(header, /label: "Overview"/);
   assert.match(header, /hostingOwnerHref/);
   assert.match(header, /Become a host/);
   assert.match(header, /\/dashboard\/become-host/);
   assert.match(header, /fetchHostingAccessSummary/);
+  assert.doesNotMatch(header, /Host dashboard/);
+  assert.doesNotMatch(header, /My dashboard/);
+  assert.doesNotMatch(header, /Switch to host/);
+  assert.match(header, /setHasHostingAccess\(summary\.hasHostingAccess\)/);
+  assert.doesNotMatch(header, /setHasHostingAccess\(data\?\.is_host === true\)/);
 }
 
 // F. Space Manager Hosting nav contains core items
@@ -363,8 +383,12 @@ function navLabels(summary: ReturnType<typeof summarizeHostingAccess>) {
     primaryOrganisationId: null,
   });
   assert.equal(renterOrg, null);
-  assert.match(dashboard, /Switch to Hosting/);
-  assert.match(dashboard, /hasHostingAccess/);
+  const unauthorisedSwitch = workspaceSwitch({
+    kind: "account",
+    hasHostingAccess: false,
+    organisationId: ORG,
+  });
+  assert.equal(unauthorisedSwitch, null);
 }
 
 // T. spaces.owner_id remains unnecessary for Organisation manager authority
@@ -465,6 +489,68 @@ function navLabels(summary: ReturnType<typeof summarizeHostingAccess>) {
   assert.match(spacesTable, /overflow-x-auto/);
   assert.match(spacesTable, /label: "View details"/);
   assert.match(spacesTable, /label: "Edit space"/);
+}
+
+// Workspace switch uses hasHostingAccess, not profiles.is_host
+{
+  assert.equal(workspaceKindFromLabel("My account"), "account");
+  assert.equal(workspaceKindFromLabel("Hosting"), "hosting");
+
+  const smAccount = workspaceSwitch({
+    kind: "account",
+    hasHostingAccess: smSummary.hasHostingAccess,
+    organisationId: ORG,
+  });
+  assert.equal(smSummary.hasHostingAccess, true);
+  assert.equal(smAccount?.label, SWITCH_TO_HOSTING_LABEL);
+  assert.equal(smAccount?.href, `${HOSTING_OVERVIEW_PATH}?organisation=${ORG}`);
+
+  const smHosting = workspaceSwitch({
+    kind: "hosting",
+    hasHostingAccess: smSummary.hasHostingAccess,
+    organisationId: ORG,
+  });
+  assert.equal(smHosting?.label, SWITCH_TO_MY_ACCOUNT_LABEL);
+  assert.equal(smHosting?.href, MY_ACCOUNT_HREF);
+
+  const renterAccount = workspaceSwitch({
+    kind: "account",
+    hasHostingAccess: renterSummary.hasHostingAccess,
+    organisationId: null,
+  });
+  assert.equal(renterSummary.hasHostingAccess, false);
+  assert.equal(renterAccount, null);
+
+  for (const summary of [oaSummary, pmSummary, legacySummary, gaSummary]) {
+    assert.equal(summary.hasHostingAccess, true);
+    assert.equal(
+      workspaceSwitch({
+        kind: "account",
+        hasHostingAccess: summary.hasHostingAccess,
+        organisationId: summary.primaryOrganisationId,
+      })?.label,
+      SWITCH_TO_HOSTING_LABEL
+    );
+    assert.equal(
+      workspaceSwitch({
+        kind: "hosting",
+        hasHostingAccess: summary.hasHostingAccess,
+        organisationId: summary.primaryOrganisationId,
+      })?.href,
+      MY_ACCOUNT_HREF
+    );
+  }
+
+  assert.match(dashboardShell, /WorkspaceSwitch/);
+  assert.match(workspaceSwitchUi, /fetchHostingAccessSummary/);
+  assert.match(workspaceSwitchUi, /resolveHostingOrganisationId/);
+  assert.match(workspaceSwitchUi, /workspaceSwitch/);
+  assert.doesNotMatch(workspaceSwitchUi, /is_host/);
+  assert.doesNotMatch(dashboard, /Switch to Hosting/);
+  assert.match(owner, /pageTitle="Overview"/);
+  assert.doesNotMatch(owner, /Host dashboard/);
+  assert.equal(smSummary.isSpaceManager, true);
+  assert.equal(navHrefs(smSummary).includes("/dashboard/people"), false);
 }
 
 console.log("test-hosting-access: all assertions passed");

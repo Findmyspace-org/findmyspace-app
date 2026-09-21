@@ -27,7 +27,6 @@ import DashboardShell from "@/app/components/DashboardShell";
 import { RENTER_NAV } from "@/lib/dashboard-nav";
 import {
   ArrowRight,
-  BadgeCheck,
   Bell,
   CalendarCheck,
   CalendarClock,
@@ -104,8 +103,6 @@ export default function RenterDashboardPage() {
   const [firstName, setFirstName] = useState<string | null>(null);
   const [role, setRole] = useState<string | null>(null);
   const [isHost, setIsHost] = useState(false);
-  const [hasHostingAccess, setHasHostingAccess] = useState(false);
-  const [hostingOwnerHref, setHostingOwnerHref] = useState("/dashboard/owner");
   const [loading, setLoading] = useState(true);
 
   const [bookings, setBookings] = useState<RenterBookingRow[]>([]);
@@ -142,22 +139,6 @@ export default function RenterDashboardPage() {
           setRole(profile?.role || "user");
           setIsHost(profile?.is_host === true);
           setFirstName(profile?.first_name || null);
-        }
-
-        try {
-          const { fetchHostingAccessSummary } = await import(
-            "@/lib/hosting-access-client"
-          );
-          const { hostingHref } = await import("@/lib/access/hosting-access");
-          const summary = await fetchHostingAccessSummary();
-          if (mounted) {
-            setHasHostingAccess(summary.hasHostingAccess);
-            setHostingOwnerHref(
-              hostingHref("/dashboard/owner", summary.primaryOrganisationId)
-            );
-          }
-        } catch {
-          if (mounted) setHasHostingAccess(profile?.is_host === true);
         }
       } catch (err) {
         console.warn("renter dashboard profile load failed:", err);
@@ -505,14 +486,6 @@ export default function RenterDashboardPage() {
                 >
                   Browse spaces
                 </QuickLinkChip>
-                {hasHostingAccess ? (
-                  <QuickLinkChip
-                    href={hostingOwnerHref}
-                    icon={<BadgeCheck className="h-3.5 w-3.5" aria-hidden />}
-                  >
-                    Switch to Hosting
-                  </QuickLinkChip>
-                ) : null}
               </div>
             </section>
           </>

@@ -256,7 +256,7 @@ export default function Header() {
           );
         } catch {
           if (!mounted) return;
-          setHasHostingAccess(data?.is_host === true);
+          setHasHostingAccess(false);
         }
       } catch (error) {
         console.error("Profile load failed:", error);
@@ -852,12 +852,13 @@ export default function Header() {
 
   // Workspace-based primary navigation.
   //
-  // Goal: the burger menu answers "what role am I in right now?", not "what
-  // feature do I want?". Every workspace owns its own contextual nav once the
-  // user lands inside its dashboard, so we deliberately do NOT surface
-  // Messages, Notifications, Listing questions, Finance, My listings,
-  // Booking requests, or Host settings here — those routes still work and
-  // are reached from inside their respective workspace.
+  // Goal: the burger menu answers which workspace the user is entering
+  // (My account vs Hosting), not "what feature do I want?". Every workspace
+  // owns its own contextual nav once the user lands inside its dashboard, so
+  // we deliberately do NOT surface Messages, Notifications, Listing questions,
+  // Finance, My listings, Booking requests, or Host settings here — those
+  // routes still work and are reached from inside their respective workspace.
+  // Become a host stays only for users with no Hosting access.
   const menuSections: MenuSection[] = [
     {
       title: "Explore",
@@ -871,26 +872,13 @@ export default function Header() {
   if (!loading && isLoggedIn) {
     menuSections.push({
       title: "My account",
-      items: hasHostingAccess
-        ? [
-            {
-              label: "My dashboard",
-              href: "/dashboard",
-              icon: CalendarCheck,
-            },
-            {
-              label: "Hosting",
-              href: hostingOwnerHref,
-              icon: LayoutDashboard,
-            },
-          ]
-        : [
-            {
-              label: "My dashboard",
-              href: "/dashboard",
-              icon: LayoutDashboard,
-            },
-          ],
+      items: [
+        {
+          label: "Overview",
+          href: "/dashboard",
+          icon: CalendarCheck,
+        },
+      ],
     });
 
     menuSections.push({
@@ -898,7 +886,7 @@ export default function Header() {
       items: hasHostingAccess
         ? [
             {
-              label: "Host dashboard",
+              label: "Overview",
               href: hostingOwnerHref,
               icon: LayoutDashboard,
             },
