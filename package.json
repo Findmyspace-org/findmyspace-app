@@ -48,6 +48,7 @@
     "test:people-access": "tsx scripts/test-people-access.ts",
     "test:hosting-access": "tsx scripts/test-hosting-access.ts",
     "test:organisation-commercial": "tsx scripts/test-organisation-commercial.ts",
+    "test:organisation-property": "tsx scripts/test-organisation-property.ts",
     "test:organisation-verification-console": "tsx scripts/test-organisation-verification-console.ts",
     "test:verification-display": "tsx scripts/test-verification-display.ts",
     "test:hosting-overview-commercial": "tsx scripts/test-hosting-overview-commercial.ts",

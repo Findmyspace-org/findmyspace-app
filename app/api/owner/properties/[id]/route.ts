@@ -1,6 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireManagedPropertyApi } from "@/lib/access/require-managed-api";
 import { formatPropertyAddress } from "@/lib/admin-property";
+import { adminAudit } from "@/lib/admin-audit";
+import {
+  parseOrganisationPropertyWriteBody,
+  stripForbiddenOrganisationPropertyWriteKeys,
+  organisationPropertyPatchRow,
+} from "@/lib/organisation-property";
+import { organisationCommercialErrorResponse } from "@/lib/organisation-commercial-http";
+import { updateOrganisationProperty } from "@/lib/organisation-property-server";
 import {
   propertyMatchesHostingContext,
   resolveRequestHostingContext,
@@ -242,4 +250,86 @@ export async function GET(
     spaces: activeSpaces,
     archived_spaces: archivedSpaces,
   });
+}
+
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+  const auth = await requireManagedPropertyApi(req, id);
+  if ("response" in auth) return auth.response;
+
+  const { context } = await resolveRequestHostingContext(
+    auth.admin,
+    auth.userId,
+    req.nextUrl.searchParams.get(ORGANISATION_QUERY_PARAM)
+  );
+  const { data: propertyRow } = await auth.admin
+    .from("properties")
+    .select("organisation_id, owner_id")
+    .eq("id", id)
+    .maybeSingle();
+  const organisationId =
+    (propertyRow as { organisation_id: string | null } | null)?.organisation_id ??
+    null;
+  if (!propertyMatchesHostingContext(organisationId, context)) {
+    return NextResponse.json({ error: "Not found." }, { status: 404 });
+  }
+
+  try {
+    const raw = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+    const body = stripForbiddenOrganisationPropertyWriteKeys(raw);
+    const parsed = parseOrganisationPropertyWriteBody(body);
+    if (!parsed.ok) {
+      return NextResponse.json({ error: parsed.error }, { status: 400 });
+    }
+
+    if (organisationId) {
+      const actorKind = auth.access.isGlobalAdmin
+        ? "global_admin"
+        : auth.access.isOrganisationAdmin
+          ? "organisation_admin"
+          : auth.access.isPropertyManager
+            ? "property_manager"
+            : "legacy_host";
+      const property = await updateOrganisationProperty(auth.admin, {
+        organisationId,
+        propertyId: id,
+        actorUserId: auth.userId,
+        isGlobalAdmin: auth.access.isGlobalAdmin,
+        actorKind,
+        fields: parsed.fields,
+      });
+      return NextResponse.json({ property });
+    }
+
+    const patch = organisationPropertyPatchRow(parsed.fields);
+    if (Object.keys(patch).length === 0) {
+      return NextResponse.json({ error: "No fields to update." }, { status: 400 });
+    }
+    const { data: updated, error } = await auth.admin
+      .from("properties")
+      .update(patch)
+      .eq("id", id)
+      .is("organisation_id", null)
+      .select("id, organisation_id, owner_id")
+      .maybeSingle();
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+    if (!updated) {
+      return NextResponse.json({ error: "Not found." }, { status: 404 });
+    }
+    await adminAudit({
+      action: "property_updated",
+      actorUserId: auth.userId,
+      targetType: "property",
+      targetId: id,
+      meta: { fields: Object.keys(patch), organisation_id: null },
+    });
+    return NextResponse.json({ property: updated });
+  } catch (error) {
+    return organisationCommercialErrorResponse(error);
+  }
 }

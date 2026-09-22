@@ -21,6 +21,8 @@ export async function POST(
       organisationId,
       propertyId,
       payload,
+      actorUserId: auth.userId,
+      isGlobalAdmin: auth.access.isGlobalAdmin,
     });
     return NextResponse.json({ listing }, { status: 201 });
   } catch (error) {

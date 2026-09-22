@@ -8,6 +8,8 @@ import {
   organisationCommercialAuditEvent,
 } from "@/lib/organisation-commercial-audit";
 import { notifyOrganisationCommercialEvent } from "@/lib/organisation-commercial-notify";
+import { resolveOrganisationListingPropertyChoice } from "@/lib/organisation-property";
+import { createOrganisationProperty } from "@/lib/organisation-property-server";
 import { resolveOrganisationPayoutReadiness } from "@/lib/access/organisation-payout-readiness";
 import { actorDisplayLabel } from "@/lib/organisation-verification-console";
 import {
@@ -993,76 +995,95 @@ export async function createOrganisationListing(
     organisationId: string;
     propertyId?: string | null;
     payload: Record<string, unknown>;
+    actorUserId: string;
+    isGlobalAdmin?: boolean;
   }
 ): Promise<{ id: string; propertyId: string }> {
-  let propertyId = input.propertyId?.trim() || null;
+  const { data: existing } = await admin
+    .from("properties")
+    .select("id, archived_at")
+    .eq("organisation_id", input.organisationId)
+    .order("created_at", { ascending: true });
+  const organisationPropertyIds = (
+    (existing || []) as Array<{ id: string; archived_at?: string | null }>
+  )
+    .filter((row) => !row.archived_at)
+    .map((row) => row.id);
 
-  if (propertyId) {
-    const { data: property } = await admin
-      .from("properties")
-      .select("id, organisation_id")
-      .eq("id", propertyId)
-      .maybeSingle();
-    const row = property as { id: string; organisation_id: string | null } | null;
-    if (!row || row.organisation_id !== input.organisationId) {
-      throw new OrganisationCommercialError(
-        400,
-        "Property must belong to this organisation.",
-        "property_mismatch"
-      );
-    }
+  const choice = resolveOrganisationListingPropertyChoice({
+    organisationPropertyIds,
+    requestedPropertyId: input.propertyId,
+  });
+
+  let propertyId: string | null = null;
+  if (choice.kind === "invalid") {
+    throw new OrganisationCommercialError(
+      400,
+      "Property must belong to this organisation.",
+      "property_mismatch"
+    );
+  }
+  if (choice.kind === "required") {
+    throw new OrganisationCommercialError(
+      400,
+      "Choose which property this space belongs to.",
+      "property_required"
+    );
+  }
+  if (choice.kind === "use") {
+    propertyId = choice.propertyId;
   } else {
-    const { data: existing } = await admin
-      .from("properties")
-      .select("id")
-      .eq("organisation_id", input.organisationId)
-      .order("created_at", { ascending: true })
-      .limit(2);
-    const properties = (existing || []) as Array<{ id: string }>;
-    if (properties.length === 1) {
-      propertyId = properties[0].id;
-    } else if (properties.length === 0) {
-      const { data: org } = await admin
-        .from("organisations")
-        .select("name")
-        .eq("id", input.organisationId)
-        .maybeSingle();
-      const { data: created, error: propError } = await admin
-        .from("properties")
-        .insert({
-          name:
-            (input.payload.city as string | undefined)?.trim() ||
-            (org as { name?: string } | null)?.name ||
-            "Organisation property",
-          address_line1: input.payload.street_address || input.payload.address_line_1 || null,
-          suburb: input.payload.suburb || null,
-          city: input.payload.city || null,
-          province: input.payload.province || null,
-          postal_code: input.payload.postal_code || null,
-          country: input.payload.country || "South Africa",
-          latitude: input.payload.latitude ?? null,
-          longitude: input.payload.longitude ?? null,
-          organisation_id: input.organisationId,
-          owner_id: null,
-          created_by_admin: false,
-        })
-        .select("id")
-        .single();
-      if (propError || !created) {
-        throw new OrganisationCommercialError(
-          400,
-          propError?.message || "Could not create organisation property.",
-          "property_create_failed"
-        );
-      }
-      propertyId = (created as { id: string }).id;
-    } else {
-      throw new OrganisationCommercialError(
-        400,
-        "Choose which property this space belongs to.",
-        "property_required"
-      );
-    }
+    const { data: org } = await admin
+      .from("organisations")
+      .select("name")
+      .eq("id", input.organisationId)
+      .maybeSingle();
+    const created = await createOrganisationProperty(admin, {
+      organisationId: input.organisationId,
+      actorUserId: input.actorUserId,
+      isGlobalAdmin: Boolean(input.isGlobalAdmin),
+      fields: {
+        name:
+          (typeof input.payload.city === "string" && input.payload.city.trim()) ||
+          (org as { name?: string } | null)?.name ||
+          "Organisation property",
+        address_line1:
+          (typeof input.payload.street_address === "string"
+            ? input.payload.street_address
+            : null) ||
+          (typeof input.payload.address_line_1 === "string"
+            ? input.payload.address_line_1
+            : null),
+        suburb:
+          typeof input.payload.suburb === "string" ? input.payload.suburb : null,
+        city: typeof input.payload.city === "string" ? input.payload.city : null,
+        province:
+          typeof input.payload.province === "string" ? input.payload.province : null,
+        postal_code:
+          typeof input.payload.postal_code === "string"
+            ? input.payload.postal_code
+            : null,
+        country:
+          typeof input.payload.country === "string"
+            ? input.payload.country
+            : "South Africa",
+        latitude:
+          typeof input.payload.latitude === "number" ? input.payload.latitude : null,
+        longitude:
+          typeof input.payload.longitude === "number"
+            ? input.payload.longitude
+            : null,
+      },
+    });
+    propertyId = created.id;
+  }
+
+  if (!propertyId) {
+    throw new OrganisationCommercialError(
+      400,
+      "Choose which property this space belongs to.",
+      "property_required"
+    );
   }
 
   const {

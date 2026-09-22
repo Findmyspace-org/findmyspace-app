@@ -22,8 +22,14 @@ export function listSpaceChooserOptions(input: ListSpaceChooserInput): {
   };
 }
 
-export function organisationListingHref(organisationId: string): string {
-  return `/dashboard/new-space?organisation=${encodeURIComponent(organisationId)}`;
+export function organisationListingHref(
+  organisationId: string,
+  propertyId?: string | null
+): string {
+  const params = new URLSearchParams();
+  params.set("organisation", organisationId);
+  if (propertyId) params.set("property", propertyId);
+  return `/dashboard/new-space?${params.toString()}`;
 }
 
 export function personalListingHref(isHost: boolean): string {

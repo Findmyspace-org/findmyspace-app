@@ -90,7 +90,7 @@ export async function fetchOwnerPropertyById(
   const withArchive = await client
     .from("properties")
     .select(
-      "id, name, description, address_line1, suburb, city, province, postal_code, country, owner_accepted_at, owner_id, archived_at, terms_title, terms_text, terms_document_url, require_terms_acceptance, terms_acceptance_label, terms_updated_at"
+      "id, name, description, address_line1, suburb, city, province, postal_code, country, owner_accepted_at, owner_id, organisation_id, archived_at, terms_title, terms_text, terms_document_url, require_terms_acceptance, terms_acceptance_label, terms_updated_at"
     )
     .eq("id", propertyId)
     .maybeSingle();
@@ -122,7 +122,7 @@ export async function fetchOwnerPropertyById(
   const fallback = await client
     .from("properties")
     .select(
-      "id, name, description, address_line1, suburb, city, province, postal_code, country, owner_accepted_at, owner_id, terms_title, terms_text, terms_document_url, require_terms_acceptance, terms_acceptance_label, terms_updated_at"
+      "id, name, description, address_line1, suburb, city, province, postal_code, country, owner_accepted_at, owner_id, organisation_id, terms_title, terms_text, terms_document_url, require_terms_acceptance, terms_acceptance_label, terms_updated_at"
     )
     .eq("id", propertyId)
     .maybeSingle();

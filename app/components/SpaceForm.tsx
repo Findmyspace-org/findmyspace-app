@@ -22,6 +22,8 @@ import {
 import { isGoogleMapsUrl } from "@/lib/google-maps-url";
 import { ownerApiFetch } from "@/lib/owner-api-client";
 import { createOrganisationListingRequest } from "@/lib/organisation-commercial-client";
+import { listOrganisationPropertiesRequest } from "@/lib/organisation-property-client";
+import { resolveOrganisationListingPropertyChoice } from "@/lib/organisation-property";
 import { OrganisationListingVerificationNotice } from "@/app/components/OrganisationListingVerificationNotice";
 import {
   listingDraftRestoreNote,
@@ -84,6 +86,7 @@ const LISTING_CREATE_STEPS: ListingFormStepMeta[] = [
 type SpaceFormProps = {
   onCreated?: () => void | Promise<void>;
   organisationId?: string | null;
+  propertyId?: string | null;
   showOrganisationCommercialAction?: boolean;
 };
 
@@ -198,6 +201,7 @@ function restoreBookingRequirementDraft(
 export default function SpaceForm({
   onCreated,
   organisationId = null,
+  propertyId = null,
   showOrganisationCommercialAction = false,
 }: SpaceFormProps) {
   const [title, setTitle] = useState("");
@@ -243,6 +247,12 @@ export default function SpaceForm({
   const stepContentAnchorRef = useRef<HTMLDivElement | null>(null);
 
   const [message, setMessage] = useState("");
+  const [organisationProperties, setOrganisationProperties] = useState<
+    Array<{ id: string; name: string }>
+  >([]);
+  const [selectedPropertyId, setSelectedPropertyId] = useState(
+    propertyId?.trim() || ""
+  );
   const [loading, setLoading] = useState(false);
   const [searchingAddress, setSearchingAddress] = useState(false);
   const [usingDeviceLocation, setUsingDeviceLocation] = useState(false);
@@ -280,6 +290,41 @@ export default function SpaceForm({
   const skipAutocompleteRef = useRef(false);
 
   const intelCategory = useMemo(() => mapSpaceTypeToIntelCategory(spaceType), [spaceType]);
+
+  useEffect(() => {
+    if (!organisationId) {
+      setOrganisationProperties([]);
+      setSelectedPropertyId("");
+      return;
+    }
+    let mounted = true;
+    listOrganisationPropertiesRequest(organisationId)
+      .then((result) => {
+        if (!mounted) return;
+        const properties = result.properties || [];
+        setOrganisationProperties(properties);
+        const choice = resolveOrganisationListingPropertyChoice({
+          organisationPropertyIds: properties.map((property) => property.id),
+          requestedPropertyId: propertyId,
+        });
+        if (choice.kind === "use") {
+          setSelectedPropertyId(choice.propertyId);
+        } else if (choice.kind === "create_first") {
+          setSelectedPropertyId("");
+        } else if (
+          propertyId &&
+          properties.some((property) => property.id === propertyId)
+        ) {
+          setSelectedPropertyId(propertyId);
+        }
+      })
+      .catch(() => {
+        if (mounted) setOrganisationProperties([]);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [organisationId, propertyId]);
 
   const listingQualityOptionsCreate = useMemo(
     () => ({
@@ -1099,6 +1144,29 @@ export default function SpaceForm({
     setStepFieldError(null);
     setLoading(true);
 
+    if (organisationId) {
+      const choice = resolveOrganisationListingPropertyChoice({
+        organisationPropertyIds: organisationProperties.map(
+          (property) => property.id
+        ),
+        requestedPropertyId: selectedPropertyId,
+      });
+      if (choice.kind === "required") {
+        const msg = "Choose which property this space belongs to.";
+        setStepFieldError(msg);
+        setMessage(msg);
+        setLoading(false);
+        return;
+      }
+      if (choice.kind === "invalid") {
+        const msg = "Choose a property that belongs to this organisation.";
+        setStepFieldError(msg);
+        setMessage(msg);
+        setLoading(false);
+        return;
+      }
+    }
+
     if (!organisationId && !ownershipProofFile) {
       const msg = "Please upload proof of ownership for this space.";
       setStepFieldError(msg);
@@ -1306,7 +1374,12 @@ export default function SpaceForm({
         const { owner_id: _ignoredOwner, ...orgPayload } = spacePayload;
         const created = await createOrganisationListingRequest(
           organisationId,
-          { ...orgPayload, _attributes: attributes }
+          {
+            ...orgPayload,
+            _attributes: attributes,
+            property_id:
+              selectedPropertyId.trim() || propertyId?.trim() || null,
+          }
         );
         insertedSpace = { id: created.listing.id };
       } else {
@@ -1671,10 +1744,57 @@ export default function SpaceForm({
         aria-hidden={currentStep !== 0}
       >
       {organisationId ? (
+        <>
         <OrganisationListingVerificationNotice
           organisationId={organisationId}
           showCommercialLink={showOrganisationCommercialAction}
         />
+        <section className="rounded-2xl border border-[#e5e7eb] bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-5">
+          <h3 className="mb-1 text-base font-semibold text-[#0f172a]">
+            Property
+          </h3>
+          {organisationProperties.length === 0 ? (
+            <p className="text-sm text-[#64748b]">
+              This organisation has no properties yet. Listing this space will
+              create the first property, or you can{" "}
+              <Link
+                href={`/dashboard/properties/new?organisation=${encodeURIComponent(organisationId)}`}
+                className="font-medium text-[#0f2740] underline-offset-2 hover:underline"
+              >
+                add a property first
+              </Link>
+              .
+            </p>
+          ) : organisationProperties.length === 1 ? (
+            <p className="text-sm text-[#334155]">
+              This space will belong to{" "}
+              <span className="font-medium">
+                {organisationProperties[0].name}
+              </span>
+              .
+            </p>
+          ) : (
+            <label className="block text-sm">
+              <span className="mb-1 block font-medium text-[#0c1d2f]">
+                Choose property
+              </span>
+              <select
+                required
+                value={selectedPropertyId}
+                onChange={(event) => setSelectedPropertyId(event.target.value)}
+                className="w-full rounded-lg border border-[#d4dbe2] bg-white px-3 py-2 text-sm outline-none focus:border-[#0c1d2f] focus:ring-1 focus:ring-[#0c1d2f]"
+              >
+                <option value="">Select a property</option>
+                {organisationProperties.map((property) => (
+                  <option key={property.id} value={property.id}>
+                    {property.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+        </section>
+        </>
       ) : (
       <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#e5e7eb] bg-[#f8fafc] px-3 py-2.5 sm:px-4">
         <p className="text-xs leading-snug text-[#64748b] sm:text-sm">

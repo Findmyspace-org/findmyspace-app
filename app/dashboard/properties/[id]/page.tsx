@@ -12,6 +12,12 @@ import { useHostingWorkspace } from "@/lib/use-hosting-workspace";
 import { ownerApiFetch } from "@/lib/owner-api-client";
 import { hostingHref } from "@/lib/access/hosting-access";
 import { ORGANISATION_QUERY_PARAM } from "@/lib/access/organisation-workspace";
+import { organisationListingHref } from "@/lib/list-space-chooser";
+import { canShowOrganisationAddProperty } from "@/lib/organisation-property";
+import {
+  hostingPrimaryActionClass,
+  hostingSecondaryActionClass,
+} from "@/app/components/hosting/hosting-ui";
 import {
   getOwnerListingStatusBadgeClass,
   getPropertyChildSpaceNextAction,
@@ -33,6 +39,7 @@ type PropertyDetail = {
   name: string;
   description: string | null;
   formatted_address: string;
+  organisation_id?: string | null;
   terms_title?: string | null;
   terms_text?: string | null;
   terms_document_url?: string | null;
@@ -146,6 +153,14 @@ function PropertyDetailContent() {
     return spaces.filter((space) => matchesPropertySpaceHealthFilter(space, healthFilter));
   }, [healthFilter, spaces]);
 
+  const canAddProperty = canShowOrganisationAddProperty({
+    contextKind: hosting.context.kind,
+    showOrganisationCommercial: hosting.summary.showOrganisationCommercial,
+  });
+  const canAddSpace = Boolean(
+    canAddProperty && hosting.organisationId && propertyId
+  );
+
   return (
     <DashboardShell
       workspaceLabel="Hosting"
@@ -153,6 +168,32 @@ function PropertyDetailContent() {
       pageSubtitle="Spaces under this venue."
       navItems={hosting.navItems}
       activeHref="/dashboard/properties"
+      pageActions={
+        property ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <Link
+              href={hostingHref(
+                `/dashboard/properties/${propertyId}/edit`,
+                hosting.hrefOrganisationId
+              )}
+              className={hostingSecondaryActionClass}
+            >
+              Edit property
+            </Link>
+            {canAddSpace ? (
+              <Link
+                href={organisationListingHref(
+                  hosting.organisationId as string,
+                  propertyId
+                )}
+                className={hostingPrimaryActionClass}
+              >
+                Add space
+              </Link>
+            ) : null}
+          </div>
+        ) : null
+      }
     >
       <div className="mx-auto max-w-4xl">
         <Link
@@ -215,6 +256,20 @@ function PropertyDetailContent() {
               {spaces.length === 0 ? (
                 <p className="mt-3 text-sm text-gray-600">
                   No spaces linked to this property yet.
+                  {canAddSpace ? (
+                    <>
+                      {" "}
+                      <Link
+                        href={organisationListingHref(
+                          hosting.organisationId as string,
+                          propertyId
+                        )}
+                        className="font-medium text-[#0f2740] hover:underline"
+                      >
+                        Add a space
+                      </Link>
+                    </>
+                  ) : null}
                 </p>
               ) : visibleSpaces.length === 0 ? (
                 <p className="mt-3 text-sm text-gray-600">

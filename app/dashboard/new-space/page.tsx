@@ -29,6 +29,7 @@ function NewSpacePageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const requestedOrganisationId = searchParams.get("organisation")?.trim() || null;
+  const requestedPropertyId = searchParams.get("property")?.trim() || null;
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [profile, setProfile] = useState<ProfileRow | null>(null);
@@ -214,9 +215,13 @@ function NewSpacePageContent() {
 
             <SpaceForm
               organisationId={organisationId}
+              propertyId={organisationId ? requestedPropertyId : null}
               showOrganisationCommercialAction={Boolean(organisationId)}
               onCreated={async () => {
-                router.push("/dashboard/listings?created=pending");
+                const listingsHref = organisationId
+                  ? `/dashboard/listings?created=pending&organisation=${encodeURIComponent(organisationId)}`
+                  : "/dashboard/listings?created=pending";
+                router.push(listingsHref);
                 router.refresh();
               }}
             />

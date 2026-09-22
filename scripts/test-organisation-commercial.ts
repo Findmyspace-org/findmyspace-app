@@ -579,8 +579,13 @@ function accessCtx(partial: Partial<AccessContext>): AccessContext {
   const spaceForm = readFileSync("app/components/SpaceForm.tsx", "utf8");
   assert.match(spaceForm, /organisationId/);
   assert.match(spaceForm, /createOrganisationListingRequest/);
+  assert.match(spaceForm, /property_id/);
+  assert.match(spaceForm, /listOrganisationPropertiesRequest/);
   const listingServer = readFileSync("lib/organisation-commercial-server.ts", "utf8");
   assert.match(listingServer, /owner_id: null/);
+  assert.match(listingServer, /createOrganisationProperty/);
+  assert.match(listingServer, /resolveOrganisationListingPropertyChoice/);
+  assert.match(listingServer, /actorUserId/);
 }
 
 {

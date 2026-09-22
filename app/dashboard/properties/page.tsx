@@ -10,6 +10,11 @@ import { useHostingWorkspace } from "@/lib/use-hosting-workspace";
 import { ownerApiFetch } from "@/lib/owner-api-client";
 import { hostingHref } from "@/lib/access/hosting-access";
 import { ORGANISATION_QUERY_PARAM } from "@/lib/access/organisation-workspace";
+import { canShowOrganisationAddProperty } from "@/lib/organisation-property";
+import {
+  hostingPrimaryActionClass,
+  hostingSecondaryActionClass,
+} from "@/app/components/hosting/hosting-ui";
 
 type PropertyRow = {
   id: string;
@@ -58,12 +63,27 @@ function PropertiesPageContent() {
     void load();
   }, [load]);
 
+  const canAddProperty = canShowOrganisationAddProperty({
+    contextKind: hosting.context.kind,
+    showOrganisationCommercial: hosting.summary.showOrganisationCommercial,
+  });
+
   return (
       <DashboardShell
         workspaceLabel="Hosting"
         pageTitle="My properties"
         navItems={hosting.navItems}
         activeHref="/dashboard/properties"
+        pageActions={
+          canAddProperty ? (
+            <Link
+              href={hostingHref("/dashboard/properties/new", hosting.hrefOrganisationId)}
+              className={hostingPrimaryActionClass}
+            >
+              Add property
+            </Link>
+          ) : null
+        }
       >
       <div>
         <p className="text-sm text-gray-600">
@@ -87,19 +107,32 @@ function PropertiesPageContent() {
         ) : properties.length === 0 ? (
           <div className="mt-4 rounded-lg border border-dashed border-gray-300 bg-white p-6 text-center">
             <p className="text-sm text-gray-600">
-              You don&apos;t have any properties yet. Create a property or accept a property
-              invitation from FindMySpace to get started.
+              {canAddProperty
+                ? "Add a property for this organisation, then list spaces under it."
+                : "You don't have any properties yet. Create a property or accept a property invitation from FindMySpace to get started."}
             </p>
             <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
-              <Link
-                href="/contact"
-                className="inline-flex items-center rounded-md bg-[#0c1d2f] px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90"
-              >
-                Request a property
-              </Link>
+              {canAddProperty ? (
+                <Link
+                  href={hostingHref(
+                    "/dashboard/properties/new",
+                    hosting.hrefOrganisationId
+                  )}
+                  className={hostingPrimaryActionClass}
+                >
+                  Add property
+                </Link>
+              ) : (
+                <Link
+                  href="/contact"
+                  className="inline-flex items-center rounded-md bg-[#0c1d2f] px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90"
+                >
+                  Request a property
+                </Link>
+              )}
               <Link
                 href={hosting.listingsHref}
-                className="inline-flex items-center rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-[#0c1d2f] hover:bg-[#fbfcfd]"
+                className={hostingSecondaryActionClass}
               >
                 Go to My spaces
               </Link>
