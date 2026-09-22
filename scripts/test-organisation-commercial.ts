@@ -437,6 +437,8 @@ function accessCtx(partial: Partial<AccessContext>): AccessContext {
   );
   assert.match(adminOrgsPage, /useAdminRole/);
   assert.match(adminOrgsPage, /isAdmin/);
+  assert.match(adminOrgsPage, /Change decision/);
+  assert.match(adminOrgsPage, /verification_notes/);
   assert.doesNotMatch(adminOrgsPage, /select\("role"\)/);
   assert.doesNotMatch(adminOrgsPage, /hasAdminUiAccess\(nextRole\)/);
   assert.doesNotMatch(adminOrgsPage, /hasAdminUiAccess\(role\)/);

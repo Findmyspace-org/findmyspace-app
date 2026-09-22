@@ -9,6 +9,7 @@ import {
 } from "@/lib/organisation-commercial-audit";
 import { notifyOrganisationCommercialEvent } from "@/lib/organisation-commercial-notify";
 import { resolveOrganisationPayoutReadiness } from "@/lib/access/organisation-payout-readiness";
+import { actorDisplayLabel } from "@/lib/organisation-verification-console";
 import {
   BANK_ACCOUNT_TYPES,
   DOCUMENT_KINDS,
@@ -34,17 +35,65 @@ import {
 } from "@/lib/organisation-commercial-storage";
 
 const COMMERCIAL_SELECT =
-  "organisation_id, legal_name, trading_name, organisation_type, registration_number, vat_number, address_line1, suburb, city, province, postal_code, country, primary_contact_name, primary_contact_email, primary_contact_phone, authorised_representative_name, authorised_representative_title, verification_status, verification_method, verification_notes, rejection_reason, submitted_at, verified_at, rejected_at";
+  "organisation_id, legal_name, trading_name, organisation_type, registration_number, vat_number, address_line1, suburb, city, province, postal_code, country, primary_contact_name, primary_contact_email, primary_contact_phone, authorised_representative_name, authorised_representative_title, verification_status, verification_method, verification_notes, rejection_reason, submitted_at, verified_at, verified_by, rejected_at, rejected_by";
 
 const BANK_MASKED_SELECT =
   "id, organisation_id, version_number, is_current, account_holder_name, bank_name, account_type, branch_code, account_number_last4, proof_of_bank_path, status, review_notes, rejection_reason, submitted_at, reviewed_at";
 
-const BANK_ADMIN_SELECT = `${BANK_MASKED_SELECT}, account_number`;
+const BANK_ADMIN_SELECT = `${BANK_MASKED_SELECT}, account_number, reviewed_by`;
 
 function trimOrNull(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
   return trimmed === "" ? null : trimmed;
+}
+
+type CommercialRow = Omit<
+  OrganisationCommercialProfileDto,
+  "verified_by_label" | "rejected_by_label"
+> & {
+  verified_by?: string | null;
+  rejected_by?: string | null;
+};
+
+async function loadProfileLabels(
+  admin: SupabaseClient,
+  ids: Array<string | null | undefined>
+): Promise<Map<string, string>> {
+  const unique = Array.from(
+    new Set(ids.filter((id): id is string => Boolean(id)))
+  );
+  const labels = new Map<string, string>();
+  if (unique.length === 0) return labels;
+  const { data } = await admin
+    .from("profiles")
+    .select("id, full_name, first_name, last_name, email")
+    .in("id", unique);
+  for (const row of (data || []) as Array<{
+    id: string;
+    full_name: string | null;
+    first_name: string | null;
+    last_name: string | null;
+    email: string | null;
+  }>) {
+    labels.set(row.id, actorDisplayLabel(row));
+  }
+  return labels;
+}
+
+async function toCommercialDto(
+  admin: SupabaseClient,
+  row: CommercialRow | null
+): Promise<OrganisationCommercialProfileDto | null> {
+  if (!row) return null;
+  const labels = await loadProfileLabels(admin, [row.verified_by, row.rejected_by]);
+  return {
+    ...row,
+    verified_by: row.verified_by ?? null,
+    verified_by_label: row.verified_by ? labels.get(row.verified_by) ?? null : null,
+    rejected_by: row.rejected_by ?? null,
+    rejected_by_label: row.rejected_by ? labels.get(row.rejected_by) ?? null : null,
+  };
 }
 
 function mapRpcError(message: string): OrganisationCommercialError {
@@ -149,7 +198,10 @@ export async function loadOrganisationCommercialBundle(
     | (MaskedOrganisationBankDto & { proof_of_bank_path?: string | null })
     | null;
   const maskedBank = bankRow ? toMaskedBankDto(bankRow) : null;
-  const commercialDto = (commercial as OrganisationCommercialProfileDto | null) ?? null;
+  const commercialDto = await toCommercialDto(
+    admin,
+    (commercial as CommercialRow | null) ?? null
+  );
 
   return {
     organisation: {
@@ -242,7 +294,7 @@ export async function updateOrganisationCommercialProfile(
     })
   );
 
-  return data as OrganisationCommercialProfileDto;
+  return (await toCommercialDto(admin, data as CommercialRow)) as OrganisationCommercialProfileDto;
 }
 
 export async function submitOrganisationVerification(
@@ -319,7 +371,7 @@ export async function submitOrganisationVerification(
     actorUserId: input.actorUserId,
   });
 
-  return data as OrganisationCommercialProfileDto;
+  return (await toCommercialDto(admin, data as CommercialRow)) as OrganisationCommercialProfileDto;
 }
 
 export async function decideOrganisationVerification(
@@ -336,6 +388,16 @@ export async function decideOrganisationVerification(
 ): Promise<OrganisationCommercialProfileDto> {
   const notes = trimOrNull(input.notes);
   const reason = trimOrNull(input.reason);
+
+  const { data: existingRow, error: existingError } = await admin
+    .from("organisation_commercial_profiles")
+    .select(COMMERCIAL_SELECT)
+    .eq("organisation_id", input.organisationId)
+    .maybeSingle();
+  if (existingError || !existingRow) {
+    throw new OrganisationCommercialError(404, "Organisation not found.", "not_found");
+  }
+  const existing = existingRow as CommercialRow;
 
   if (input.decision === "verify") {
     const method = trimOrNull(input.method);
@@ -368,6 +430,10 @@ export async function decideOrganisationVerification(
       }
     }
 
+    if (existing.verification_status === "verified") {
+      return (await toCommercialDto(admin, existing)) as OrganisationCommercialProfileDto;
+    }
+
     const { data, error } = await admin
       .from("organisation_commercial_profiles")
       .update({
@@ -381,13 +447,29 @@ export async function decideOrganisationVerification(
         rejected_by: null,
       })
       .eq("organisation_id", input.organisationId)
+      .in("verification_status", ["pending", "rejected"])
       .select(COMMERCIAL_SELECT)
-      .single();
+      .maybeSingle();
 
-    if (error || !data) {
+    if (error) {
       throw new OrganisationCommercialError(
         400,
-        error?.message || "Could not verify organisation.",
+        error.message || "Could not verify organisation.",
+        "verify_failed"
+      );
+    }
+    if (!data) {
+      const { data: latest } = await admin
+        .from("organisation_commercial_profiles")
+        .select(COMMERCIAL_SELECT)
+        .eq("organisation_id", input.organisationId)
+        .maybeSingle();
+      if ((latest as CommercialRow | null)?.verification_status === "verified") {
+        return (await toCommercialDto(admin, latest as CommercialRow)) as OrganisationCommercialProfileDto;
+      }
+      throw new OrganisationCommercialError(
+        400,
+        "Could not verify organisation.",
         "verify_failed"
       );
     }
@@ -412,7 +494,7 @@ export async function decideOrganisationVerification(
       actorUserId: input.actorUserId,
     });
 
-    return data as OrganisationCommercialProfileDto;
+    return (await toCommercialDto(admin, data as CommercialRow)) as OrganisationCommercialProfileDto;
   }
 
   if (!reason) {
@@ -421,6 +503,10 @@ export async function decideOrganisationVerification(
       "A rejection reason is required.",
       "reason_required"
     );
+  }
+
+  if (existing.verification_status === "rejected") {
+    return (await toCommercialDto(admin, existing)) as OrganisationCommercialProfileDto;
   }
 
   const { data, error } = await admin
@@ -435,13 +521,29 @@ export async function decideOrganisationVerification(
       verification_method: null,
     })
     .eq("organisation_id", input.organisationId)
+    .in("verification_status", ["pending", "verified"])
     .select(COMMERCIAL_SELECT)
-    .single();
+    .maybeSingle();
 
-  if (error || !data) {
+  if (error) {
     throw new OrganisationCommercialError(
       400,
-      error?.message || "Could not reject organisation verification.",
+      error.message || "Could not reject organisation verification.",
+      "reject_failed"
+    );
+  }
+  if (!data) {
+    const { data: latest } = await admin
+      .from("organisation_commercial_profiles")
+      .select(COMMERCIAL_SELECT)
+      .eq("organisation_id", input.organisationId)
+      .maybeSingle();
+    if ((latest as CommercialRow | null)?.verification_status === "rejected") {
+      return (await toCommercialDto(admin, latest as CommercialRow)) as OrganisationCommercialProfileDto;
+    }
+    throw new OrganisationCommercialError(
+      400,
+      "Could not reject organisation verification.",
       "reject_failed"
     );
   }
@@ -466,7 +568,7 @@ export async function decideOrganisationVerification(
     reason,
   });
 
-  return data as OrganisationCommercialProfileDto;
+  return (await toCommercialDto(admin, data as CommercialRow)) as OrganisationCommercialProfileDto;
 }
 
 export async function addOrganisationVerificationDocument(
@@ -569,8 +671,12 @@ export async function loadAdminOrganisationBank(
     .eq("is_current", true)
     .maybeSingle();
   if (!data) return null;
-  const row = data as AdminOrganisationBankDto & { proof_of_bank_path: string };
+  const row = data as AdminOrganisationBankDto & {
+    proof_of_bank_path: string;
+    reviewed_by?: string | null;
+  };
   const masked = toMaskedBankDto(row);
+  const labels = await loadProfileLabels(admin, [row.reviewed_by]);
   return {
     ...masked,
     account_number: row.account_number,
@@ -580,6 +686,10 @@ export async function loadAdminOrganisationBank(
       ORGANISATION_BANK_PROOFS_BUCKET,
       row.proof_of_bank_path
     ),
+    reviewed_by: row.reviewed_by ?? null,
+    reviewed_by_label: row.reviewed_by
+      ? labels.get(row.reviewed_by) ?? null
+      : null,
   };
 }
 
@@ -728,6 +838,12 @@ export async function decideOrganisationBankVerification(
   }
 
   if (input.decision === "verify") {
+    if (row.status === "verified") {
+      return toMaskedBankDto(
+        current as unknown as MaskedOrganisationBankDto & { proof_of_bank_path?: string }
+      );
+    }
+
     const { data, error } = await admin
       .from("organisation_bank_accounts")
       .update({
@@ -739,13 +855,31 @@ export async function decideOrganisationBankVerification(
       })
       .eq("id", row.id)
       .eq("is_current", true)
+      .in("status", ["pending", "rejected"])
       .select(BANK_MASKED_SELECT)
-      .single();
+      .maybeSingle();
 
-    if (error || !data) {
+    if (error) {
       throw new OrganisationCommercialError(
         400,
-        error?.message || "Could not verify bank details.",
+        error.message || "Could not verify bank details.",
+        "verify_failed"
+      );
+    }
+    if (!data) {
+      const { data: latest } = await admin
+        .from("organisation_bank_accounts")
+        .select(BANK_MASKED_SELECT)
+        .eq("id", row.id)
+        .maybeSingle();
+      if ((latest as { status?: string } | null)?.status === "verified") {
+        return toMaskedBankDto(
+          latest as MaskedOrganisationBankDto & { proof_of_bank_path?: string }
+        );
+      }
+      throw new OrganisationCommercialError(
+        400,
+        "Could not verify bank details.",
         "verify_failed"
       );
     }
@@ -782,6 +916,12 @@ export async function decideOrganisationBankVerification(
     );
   }
 
+  if (row.status === "rejected") {
+    return toMaskedBankDto(
+      current as unknown as MaskedOrganisationBankDto & { proof_of_bank_path?: string }
+    );
+  }
+
   const { data, error } = await admin
     .from("organisation_bank_accounts")
     .update({
@@ -793,13 +933,31 @@ export async function decideOrganisationBankVerification(
     })
     .eq("id", row.id)
     .eq("is_current", true)
+    .in("status", ["pending", "verified"])
     .select(BANK_MASKED_SELECT)
-    .single();
+    .maybeSingle();
 
-  if (error || !data) {
+  if (error) {
     throw new OrganisationCommercialError(
       400,
-      error?.message || "Could not reject bank details.",
+      error.message || "Could not reject bank details.",
+      "reject_failed"
+    );
+  }
+  if (!data) {
+    const { data: latest } = await admin
+      .from("organisation_bank_accounts")
+      .select(BANK_MASKED_SELECT)
+      .eq("id", row.id)
+      .maybeSingle();
+    if ((latest as { status?: string } | null)?.status === "rejected") {
+      return toMaskedBankDto(
+        latest as MaskedOrganisationBankDto & { proof_of_bank_path?: string }
+      );
+    }
+    throw new OrganisationCommercialError(
+      400,
+      "Could not reject bank details.",
       "reject_failed"
     );
   }

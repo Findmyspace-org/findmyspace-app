@@ -37,6 +37,8 @@ import {
 import { deriveAdminVerificationQueueFlags } from "@/lib/workflow-state";
 import { markNotificationsReadByRelatedClient } from "@/lib/mark-notifications-read-client";
 import { broadcastAdminInboxRefresh } from "@/lib/inbox-refresh";
+import { adminApiFetch } from "@/lib/admin-api-client";
+import { countOrganisationAwaitingReview } from "@/lib/organisation-verification-console";
 
 type ProfileRow = {
   id: string;
@@ -132,6 +134,9 @@ function AdminVerificationPageContent({
   } | null>(null);
   const [ownerComment, setOwnerComment] = useState<Record<string, string>>({});
   const [bankComment, setBankComment] = useState<Record<string, string>>({});
+  const [organisationAwaitingCount, setOrganisationAwaitingCount] = useState<number | null>(
+    null
+  );
 
   const { highlightedId } = useFocusHighlight({
     focusId: focusProfileId,
@@ -205,6 +210,17 @@ function AdminVerificationPageContent({
     }
 
     setRole("admin");
+
+    try {
+      const result = (await adminApiFetch("/api/admin/organisations/commercial-queue")) as {
+        items?: Array<{ verification_status: string; bank_status: string }>;
+      };
+      setOrganisationAwaitingCount(
+        countOrganisationAwaitingReview(result.items || [])
+      );
+    } catch {
+      setOrganisationAwaitingCount(null);
+    }
 
     const { data: rawProfileRows, error: profileError } = await (supabase
       .from("profiles") as any)
@@ -617,11 +633,41 @@ function AdminVerificationPageContent({
       <div className="mx-auto max-w-7xl">
         <h1 className="mb-1 text-4xl font-bold text-[#192a3a]">Admin - Verification</h1>
         <p className="mb-5 text-gray-600">
-          Review owner identity and bank verification details.{" "}
-          <Link className="underline" href="/admin/verification/organisations">
-            Organisation verification
-          </Link>
+          Review personal hosts and organisations as separate commercial verification contexts.
         </p>
+
+        <div className="mb-6 grid gap-3 md:grid-cols-2">
+          <div className="rounded-xl border-2 border-[#192a3a] bg-[#192a3a]/5 p-5">
+            <p className="text-xs font-semibold uppercase tracking-wide text-[#192a3a]/70">
+              Personal hosts
+            </p>
+            <p className="mt-1 text-xl font-semibold text-[#192a3a]">
+              Identity and personal bank verification
+            </p>
+            <p className="mt-2 text-sm text-gray-600">
+              This page. Review host identity documents and personal payout bank details.
+            </p>
+          </div>
+          <Link
+            href="/admin/verification/organisations"
+            className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm transition hover:border-[#192a3a] hover:shadow-md"
+          >
+            <p className="text-xs font-semibold uppercase tracking-wide text-[#192a3a]/70">
+              Organisations
+            </p>
+            <p className="mt-1 text-xl font-semibold text-[#192a3a]">
+              Organisation authority and payout bank verification
+            </p>
+            <p className="mt-2 text-sm text-gray-600">
+              Verify the organisation separately from its payout bank account.
+            </p>
+            {organisationAwaitingCount && organisationAwaitingCount > 0 ? (
+              <span className="mt-3 inline-flex rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-800">
+                {organisationAwaitingCount} awaiting review
+              </span>
+            ) : null}
+          </Link>
+        </div>
 
         {message ? (
           <div className="mb-4 rounded-lg bg-green-100 p-4 text-sm text-green-800">

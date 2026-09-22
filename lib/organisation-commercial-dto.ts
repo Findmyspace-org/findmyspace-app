@@ -57,7 +57,11 @@ export type OrganisationCommercialProfileDto = {
   rejection_reason: string | null;
   submitted_at: string | null;
   verified_at: string | null;
+  verified_by: string | null;
+  verified_by_label: string | null;
   rejected_at: string | null;
+  rejected_by: string | null;
+  rejected_by_label: string | null;
 };
 
 export type OrganisationVerificationDocumentDto = {
@@ -94,6 +98,8 @@ export type AdminOrganisationBankDto = MaskedOrganisationBankDto & {
   account_number: string;
   proof_of_bank_path: string;
   proof_signed_url: string | null;
+  reviewed_by: string | null;
+  reviewed_by_label: string | null;
 };
 
 export type OrganisationCommercialBundle = {
