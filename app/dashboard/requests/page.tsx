@@ -24,7 +24,6 @@ import {
   Wallet,
   XCircle,
 } from "lucide-react";
-import { isSpaceBookable } from "@/lib/listing-lifecycle";
 import { supabase } from "@/lib/supabase";
 import RequireAuth from "@/app/components/RequireAuth";
 import DashboardShell from "@/app/components/DashboardShell";

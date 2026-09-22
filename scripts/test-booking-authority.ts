@@ -336,6 +336,8 @@ function grant(
 
 {
   const create = readFileSync("lib/booking-request-server.ts", "utf8");
+  assert.match(create, /is_bookable/);
+  assert.match(create, /bookableSpaceError/);
   assert.match(create, /snapshotBookingOwnership/);
   assert.match(create, /resolveOperationalBookingManagers/);
   assert.match(create, /resolveCommercialBeneficiary/);
@@ -385,6 +387,8 @@ function grant(
   const payfast = readFileSync("app/api/payfast/initiate/route.ts", "utf8");
   assert.match(payfast, /renter_id !== user\.id/);
   assert.doesNotMatch(payfast, /booking\.owner_id !==/);
+  assert.doesNotMatch(payfast, /is_bookable/);
+  assert.doesNotMatch(payfast, /assertSpaceBookableForPayment/);
 }
 
 {

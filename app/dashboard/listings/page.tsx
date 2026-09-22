@@ -28,8 +28,8 @@ import {
   getOwnerListingNextAction,
   getOwnerListingStatusBadgeClass,
   getOwnerListingStatusLabel,
-  isBookableListingStatus,
   isOwnerCompletionFlowStatus,
+  isSpacePubliclyVisible,
 } from "@/lib/listing-lifecycle";
 import { formatGroupSizeShort } from "@/lib/group-size";
 import { formatSpacePriceDisplay } from "@/lib/space-pricing";
@@ -878,7 +878,7 @@ function MyListingsPageContent({
                         </div>
 
                         <div className="mt-4 flex flex-wrap gap-2">
-                          {isBookableListingStatus(selectedSpace.status) ? (
+                          {isSpacePubliclyVisible(selectedSpace) ? (
                             <Link
                               href={`/spaces/${selectedSpace.id}`}
                               className="inline-flex items-center gap-2 rounded-md border px-2.5 py-0.5 text-sm text-[#192a3a] hover:bg-gray-50"

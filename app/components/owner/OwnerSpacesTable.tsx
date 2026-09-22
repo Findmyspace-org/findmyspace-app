@@ -5,7 +5,7 @@ import Image from "next/image";
 import { Building2, ImageIcon } from "lucide-react";
 import { AdminRowActionsMenu } from "@/app/components/admin/AdminRowActionsMenu";
 import { FOCUS_HIGHLIGHT_CLASS } from "@/lib/use-focus-highlight";
-import { isBookableListingStatus } from "@/lib/listing-lifecycle";
+import { isSpacePubliclyVisible } from "@/lib/listing-lifecycle";
 import type { OwnerListingNextAction } from "@/lib/listing-lifecycle";
 import {
   ORGANISATION_MANAGED_VERIFICATION_LABEL,
@@ -110,7 +110,7 @@ export function OwnerSpacesTable({
             const nextAction = getNextAction(space);
             const isLive =
               space.status === "active" || space.status === "paused";
-            const publicHref = isBookableListingStatus(space.status)
+            const publicHref = isSpacePubliclyVisible(space)
               ? `/spaces/${space.id}`
               : null;
 

@@ -1,5 +1,4 @@
 import { isAwaitingGatewayPayment } from "@/lib/finance-status";
-import { assertSpaceBookableForPayment } from "@/lib/booking-guards";
 import {
   buildPayFastInitiatePaymentData,
   generatePayFastSignature,
@@ -15,17 +14,20 @@ export type BookingRowForPayFastInitiate = {
   space_id: string;
 };
 
-/** Same eligibility checks as `app/api/payfast/initiate/route.ts` (renter flow). */
+/**
+ * Same eligibility checks as `app/api/payfast/initiate/route.ts` (renter flow).
+ *
+ * Validates an EXISTING booking's payment state (renter, accepted/awaiting
+ * payment, frozen amount). Intentionally does NOT re-check current
+ * `spaces.is_bookable` or `public_listing_mode` — those gates apply only to
+ * NEW booking creation. A host may turn off new requests without blocking
+ * payment of an already accepted booking.
+ */
 export function validateBookingForPayFastInitiate(
   booking: BookingRowForPayFastInitiate,
-  spaceStatus?: string | null
+  _currentSpaceStatus?: string | null
 ): { ok: true } | { ok: false; error: string; status: number } {
-  if (spaceStatus !== undefined) {
-    const spaceGuard = assertSpaceBookableForPayment(spaceStatus);
-    if (!spaceGuard.ok) {
-      return spaceGuard;
-    }
-  }
+  void _currentSpaceStatus;
 
   if (booking.status === "expired") {
     return {

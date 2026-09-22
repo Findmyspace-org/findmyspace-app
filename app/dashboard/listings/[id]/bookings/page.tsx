@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { isSpaceBookable } from "@/lib/listing-lifecycle";
+import { isListingLiveForExistingBookings } from "@/lib/listing-lifecycle";
 import { supabase } from "@/lib/supabase";
 import RequireAuth from "@/app/components/RequireAuth";
 import { getDisplayName } from "@/lib/utils";
@@ -54,7 +54,7 @@ export default function OwnerBookingsPage({
   const [message, setMessage] = useState("");
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [blockingBookings, setBlockingBookings] = useState<BlockingBooking[]>([]);
-  const [spaceStatus, setSpaceStatus] = useState<string | null>(null);
+  const [spaceLive, setSpaceLive] = useState(false);
 
   useEffect(() => {
     loadBookings();
@@ -76,11 +76,18 @@ export default function OwnerBookingsPage({
 
     const { data: spaceRow } = await supabase
       .from("spaces")
-      .select("status")
+      .select("status, public_listing_mode")
       .eq("id", spaceId)
       .maybeSingle();
 
-    setSpaceStatus((spaceRow as { status: string | null } | null)?.status ?? null);
+    setSpaceLive(
+      isListingLiveForExistingBookings(
+        spaceRow as {
+          status: string | null;
+          public_listing_mode: string | null;
+        } | null
+      )
+    );
 
     const { data: bookingsData, error } = await supabase
       .from("bookings")
@@ -218,7 +225,7 @@ export default function OwnerBookingsPage({
       return;
     }
 
-    if (!isSpaceBookable(spaceStatus)) {
+    if (!spaceLive) {
       setMessage(
         "This listing is not active. You cannot approve bookings until the listing is live."
       );

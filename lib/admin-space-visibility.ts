@@ -36,6 +36,7 @@ export function getAdminSpaceVisibilityInfo(
   space: {
     status?: string | null;
     public_listing_mode?: string | null;
+    is_bookable?: boolean | null;
   } | string | null | undefined
 ): AdminSpaceVisibilityInfo {
   const status =
@@ -46,6 +47,11 @@ export function getAdminSpaceVisibilityInfo(
     typeof space === "object" && space !== null
       ? normalizePublicListingMode(space.public_listing_mode)
       : PUBLIC_LISTING_MODE_OFF;
+
+  const isBookable =
+    typeof space === "object" && space !== null
+      ? space.is_bookable
+      : undefined;
 
   if (isArchivedSpace(status)) {
     return {
@@ -71,6 +77,7 @@ export function getAdminSpaceVisibilityInfo(
       bookabilityLabel: isBookableListingStatus({
         status,
         public_listing_mode: mode,
+        is_bookable: isBookable,
       })
         ? "Bookable"
         : "Not bookable",

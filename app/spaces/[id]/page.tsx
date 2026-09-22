@@ -61,6 +61,8 @@ type Space = {
   title: string;
   description: string | null;
   status: string | null;
+  public_listing_mode?: string | null;
+  is_bookable?: boolean | null;
   city: string | null;
   suburb: string | null;
   street_address: string | null;
@@ -491,12 +493,23 @@ export default async function Page({
                 </li>
               </ul>
 
-              <label
-                htmlFor="space-booking-toggle"
-                className="mt-5 inline-flex w-full cursor-pointer items-center justify-center rounded-xl bg-[#0f2740] px-5 py-3 text-sm font-semibold text-white shadow-sm ring-1 ring-black/10 transition hover:opacity-95"
-              >
-                Book this space
-              </label>
+              {bookable ? (
+                <label
+                  htmlFor="space-booking-toggle"
+                  className="mt-5 inline-flex w-full cursor-pointer items-center justify-center rounded-xl bg-[#0f2740] px-5 py-3 text-sm font-semibold text-white shadow-sm ring-1 ring-black/10 transition hover:opacity-95"
+                >
+                  Book this space
+                </label>
+              ) : (
+                <div className="mt-5 rounded-xl border border-gray-200 bg-[#fafbfc] px-5 py-3 text-center">
+                  <p className="text-sm font-semibold text-[#192a3a]">
+                    Booking unavailable
+                  </p>
+                  <p className="mt-1 text-xs text-gray-600">
+                    Not currently accepting bookings.
+                  </p>
+                </div>
+              )}
             </section>
 
             <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">

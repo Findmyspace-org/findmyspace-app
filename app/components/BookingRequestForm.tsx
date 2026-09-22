@@ -1063,7 +1063,7 @@ export default function BookingRequestForm({
       const { data: spaceStatusRow, error: spaceStatusError } = await (
         supabase.from("spaces") as any
       )
-        .select("status, public_listing_mode")
+        .select("status, public_listing_mode, is_bookable")
         .eq("id", spaceId)
         .single();
 
@@ -1073,9 +1073,10 @@ export default function BookingRequestForm({
         !isSpaceBookable(spaceStatusRow as {
           status: string | null;
           public_listing_mode: string | null;
+          is_bookable: boolean | null;
         })
       ) {
-        setStatusMessage("This listing is not available for booking.");
+        setStatusMessage("This space is not currently accepting bookings.");
         setLoading(false);
         return;
       }

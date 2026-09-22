@@ -32,6 +32,7 @@ export const PUBLIC_SPACE_SELECT = [
   "longitude",
   "status",
   "public_listing_mode",
+  "is_bookable",
   "created_at",
   "updated_at",
 ].join(", ");

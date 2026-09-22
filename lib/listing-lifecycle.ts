@@ -104,45 +104,77 @@ export function ownerClaimedSpaceUpdate(params: {
   };
 }
 
+export type SpaceBookabilityFields = SpaceListingModeFields & {
+  is_bookable?: boolean | null;
+};
+
 export type SpaceBookabilityInput =
   | string
   | null
   | undefined
-  | (SpaceListingModeFields & { is_bookable?: boolean | null });
+  | SpaceBookabilityFields;
+
+/** Authoritative operational switch: only explicit `true` is bookable. */
+export function isExplicitBookableFlag(value: unknown): boolean {
+  return value === true;
+}
 
 function resolveBookabilityFields(
   input: SpaceBookabilityInput
-): SpaceListingModeFields & { is_bookable?: boolean | null } {
+): SpaceBookabilityFields {
   if (typeof input === "string" || input === null || input === undefined) {
-    return { status: input ?? null, public_listing_mode: PUBLIC_LISTING_MODE_LIVE };
+    return { status: input ?? null, public_listing_mode: null };
   }
   return input;
 }
 
-function resolveIsBookableFlag(
-  input: SpaceBookabilityInput,
-  publicListingMode: string | null | undefined
-): boolean {
-  if (typeof input === "object" && input !== null && "is_bookable" in input) {
-    return Boolean(input.is_bookable);
-  }
+/**
+ * Trusted rule for NEW booking requests.
+ * Requires status active + public_listing_mode live + is_bookable === true.
+ * Missing, null, undefined, or false is_bookable fails closed.
+ * A status string alone is not bookable (do not infer from live).
+ */
+export function isSpaceBookable(input: SpaceBookabilityInput): boolean {
+  const { status, public_listing_mode, is_bookable } =
+    resolveBookabilityFields(input);
   return (
-    isLiveBookableMode(publicListingMode ?? PUBLIC_LISTING_MODE_LIVE)
+    status === BOOKABLE_LISTING_STATUS &&
+    isLiveBookableMode(public_listing_mode) &&
+    isExplicitBookableFlag(is_bookable)
   );
 }
 
-export function isSpaceBookable(input: SpaceBookabilityInput): boolean {
-  const { status, public_listing_mode } = resolveBookabilityFields(input);
+/**
+ * Listing is currently live for existing-booking operations (approval UI).
+ * Does not use is_bookable — that switch only stops NEW requests.
+ */
+export function isListingLiveForExistingBookings(
+  input: SpaceListingModeFields | null | undefined
+): boolean {
+  if (!input) return false;
   return (
-    status === BOOKABLE_LISTING_STATUS &&
-    isLiveBookableMode(public_listing_mode ?? PUBLIC_LISTING_MODE_LIVE) &&
-    resolveIsBookableFlag(input, public_listing_mode)
+    input.status === BOOKABLE_LISTING_STATUS &&
+    isLiveBookableMode(input.public_listing_mode)
   );
 }
+
+export const SPACE_NOT_ACCEPTING_BOOKINGS_ERROR =
+  "This space is not currently accepting bookings.";
+
+export const LISTING_NOT_AVAILABLE_FOR_BOOKING_ERROR =
+  "This listing is not available for booking.";
 
 export function bookableSpaceError(input: SpaceBookabilityInput): string | null {
   if (isSpaceBookable(input)) return null;
-  return "This listing is not available for booking.";
+  const fields = resolveBookabilityFields(input);
+  if (
+    fields.status === BOOKABLE_LISTING_STATUS &&
+    isLiveBookableMode(fields.public_listing_mode) &&
+    !isExplicitBookableFlag(fields.is_bookable)
+  ) {
+    return SPACE_NOT_ACCEPTING_BOOKINGS_ERROR;
+  }
+  return LISTING_NOT_AVAILABLE_FOR_BOOKING_ERROR;
 }
 
 /** Owner dashboard: claimed listings moving through completion → review → live. */

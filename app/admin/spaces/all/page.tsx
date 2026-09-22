@@ -41,6 +41,7 @@ type SpaceRow = {
   address_line_1: string | null;
   status: string | null;
   public_listing_mode: string | null;
+  is_bookable?: boolean | null;
   space_type: string | null;
   min_group_size?: number | null;
   max_group_size?: number | null;

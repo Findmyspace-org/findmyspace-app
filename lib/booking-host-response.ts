@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { isSpaceBookable } from "@/lib/listing-lifecycle";
+import { isListingLiveForExistingBookings } from "@/lib/listing-lifecycle";
 import {
   bookingRangesOverlap,
   canHostRespondToStatus,
@@ -107,7 +107,7 @@ export async function applyHostBookingResponse(
       .maybeSingle();
 
     if (
-      !isSpaceBookable(
+      !isListingLiveForExistingBookings(
         space as {
           status: string | null;
           public_listing_mode: string | null;

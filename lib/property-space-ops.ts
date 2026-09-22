@@ -222,6 +222,7 @@ export function buildPropertySpaceRow(
   const visibility = getAdminSpaceVisibilityInfo({
     status,
     public_listing_mode: publicListingMode,
+    is_bookable: space.is_bookable,
   });
   const archived = isArchivedSpace(status);
   const browseEligibility = getPublicBrowseEligibility({

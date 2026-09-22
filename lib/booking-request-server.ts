@@ -4,7 +4,7 @@ import {
   computeBookingTotals,
   resolveBookingUnitPrice,
 } from "@/lib/booking-pricing";
-import { isSpaceBookable } from "@/lib/listing-lifecycle";
+import { bookableSpaceError } from "@/lib/listing-lifecycle";
 import { snapshotBookingOwnership } from "@/lib/access/operational-booking-managers";
 import { resolveOperationalBookingManagers } from "@/lib/access/resolve-operational-booking-managers";
 import {
@@ -53,6 +53,7 @@ type SpacePricingRow = {
   owner_id: string | null;
   status: string | null;
   public_listing_mode: string | null;
+  is_bookable: boolean | null;
   property_id: string | null;
   booking_unit: string | null;
   price_amount: number | null;
@@ -175,7 +176,7 @@ export async function createBookingRequestServer(
   const { data: spaceRow, error: spaceErr } = await admin
     .from("spaces")
     .select(
-      "id, owner_id, status, public_listing_mode, property_id, booking_unit, price_amount, price_unit, price_per_hour, price_per_day, price_per_month, platform_fee_percent, deposit_type, deposit_months, monthly_payment_day, min_booking_hours, min_booking_days, min_booking_months"
+      "id, owner_id, status, public_listing_mode, is_bookable, property_id, booking_unit, price_amount, price_unit, price_per_hour, price_per_day, price_per_month, platform_fee_percent, deposit_type, deposit_months, monthly_payment_day, min_booking_hours, min_booking_days, min_booking_months"
     )
     .eq("id", spaceId)
     .maybeSingle();
@@ -186,8 +187,9 @@ export async function createBookingRequestServer(
 
   const space = spaceRow as SpacePricingRow;
 
-  if (!isSpaceBookable(space)) {
-    throw new Error("This listing is not available for booking.");
+  const bookableError = bookableSpaceError(space);
+  if (bookableError) {
+    throw new Error(bookableError);
   }
 
   if (isLegacyOwnerSelfBooking(space.owner_id, renterId)) {

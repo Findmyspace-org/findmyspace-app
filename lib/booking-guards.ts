@@ -20,16 +20,15 @@ export function assertSpaceBookable(
   return { ok: true };
 }
 
+/**
+ * Do not use for PayFast initiate.
+ * Existing booking payment must not re-run current-space new-booking
+ * eligibility (`is_bookable` / live). PayFast uses
+ * `validateBookingForPayFastInitiate` instead.
+ */
 export function assertSpaceBookableForPayment(
   input: SpaceBookabilityInput
 ): BookableGuardResult {
-  const message = bookableSpaceError(input);
-  if (message) {
-    return {
-      ok: false,
-      error: "Payment is not available because this listing is no longer active.",
-      status: 400,
-    };
-  }
+  void input;
   return { ok: true };
 }

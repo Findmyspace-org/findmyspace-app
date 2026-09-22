@@ -17,12 +17,12 @@ const OWNER_EDITABLE = new Set([
 ]);
 
 function isSpaceBookable(input) {
-  if (typeof input === "object" && input !== null) {
-    return (
-      input.status === BOOKABLE && (input.public_listing_mode || "live") === "live"
-    );
-  }
-  return input === BOOKABLE;
+  if (typeof input !== "object" || input === null) return false;
+  return (
+    input.status === BOOKABLE &&
+    input.public_listing_mode === "live" &&
+    input.is_bookable === true
+  );
 }
 
 function isSpacePubliclyVisible(input) {
@@ -73,13 +73,8 @@ function isOwnerListingLockedForEdit(status) {
   );
 }
 
-function assertSpaceBookableForPayment(input) {
-  if (!isSpaceBookable(input)) {
-    return {
-      ok: false,
-      error: "Payment is not available because this listing is no longer active.",
-    };
-  }
+function assertSpaceBookableForPayment(_input) {
+  void _input;
   return { ok: true };
 }
 
@@ -96,11 +91,30 @@ function test(name, fn) {
   console.log(`✓ ${name}`);
 }
 
-test("only active + live mode is bookable", () => {
-  assert.equal(isSpaceBookable({ status: "active", public_listing_mode: "live" }), true);
+test("only active + live + explicit is_bookable is bookable", () => {
+  assert.equal(
+    isSpaceBookable({
+      status: "active",
+      public_listing_mode: "live",
+      is_bookable: true,
+    }),
+    true
+  );
+  assert.equal(
+    isSpaceBookable({ status: "active", public_listing_mode: "live" }),
+    false
+  );
+  assert.equal(
+    isSpaceBookable({
+      status: "active",
+      public_listing_mode: "live",
+      is_bookable: false,
+    }),
+    false
+  );
   assert.equal(isSpaceBookable({ status: "active", public_listing_mode: "enquiry" }), false);
   assert.equal(isSpaceBookable({ status: "unclaimed", public_listing_mode: "enquiry" }), false);
-  assert.equal(isSpaceBookable("active"), true);
+  assert.equal(isSpaceBookable("active"), false);
 });
 
 test("public visibility uses listing mode", () => {
@@ -153,13 +167,13 @@ test("owner edit permissions by status", () => {
   assert.equal(canOwnerEditListing("pending_verification"), false);
 });
 
-test("payment guard messaging", () => {
-  const blocked = assertSpaceBookableForPayment({
+test("existing booking payment does not re-check is_bookable", () => {
+  const allowed = assertSpaceBookableForPayment({
     status: "active",
     public_listing_mode: "enquiry",
+    is_bookable: false,
   });
-  assert.equal(blocked.ok, false);
-  assert.match(blocked.error, /no longer active/i);
+  assert.equal(allowed.ok, true);
 });
 
 test("admin enquiry eligibility", () => {

@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
   let query = admin
     .from("spaces")
     .select(
-      "id, title, city, suburb, address_line_1, status, public_listing_mode, created_at, submitted_for_review_at, owner_id, property_id, created_by_admin, space_type, min_group_size, max_group_size"
+      "id, title, city, suburb, address_line_1, status, public_listing_mode, is_bookable, created_at, submitted_for_review_at, owner_id, property_id, created_by_admin, space_type, min_group_size, max_group_size"
     )
     .order("created_at", { ascending: false })
     .limit(500);
@@ -140,6 +140,7 @@ export async function GET(req: NextRequest) {
       address_line_1: space.address_line_1 as string | null,
       status,
       public_listing_mode: publicListingMode,
+      is_bookable: Boolean(space.is_bookable),
       space_type: space.space_type as string | null,
       min_group_size: space.min_group_size as number | null | undefined,
       max_group_size: space.max_group_size as number | null | undefined,

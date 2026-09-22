@@ -218,16 +218,13 @@ export async function POST(req: NextRequest) {
 
     const { data: spaceData } = await supabaseAdmin
       .from("spaces")
-      .select("id, title, status")
+      .select("id, title")
       .eq("id", booking.space_id)
       .single();
 
-    const space = (spaceData || null) as (SpaceRow & { status: string | null }) | null;
+    const space = (spaceData || null) as SpaceRow | null;
 
-    const eligibility = validateBookingForPayFastInitiate(
-      booking,
-      space?.status ?? null
-    );
+    const eligibility = validateBookingForPayFastInitiate(booking);
     if (!eligibility.ok) {
       return NextResponse.json(
         { error: eligibility.error },
