@@ -30,6 +30,7 @@ import {
   PERSONAL_LISTING_VERIFICATION_BANNER,
   PERSONAL_LISTING_VERIFICATION_HREF,
 } from "../lib/organisation-listing-copy";
+import { hostingOverviewVerificationKind } from "../lib/hosting-overview-commercial";
 
 const USER = "5860f254-26e9-4f7f-8760-3fd69bd9fff3";
 const ORG = "21cf12c3-3235-4cd3-8106-801d120dc7b5";
@@ -433,6 +434,61 @@ const payfastRoute = readFileSync("app/api/payfast/initiate/route.ts", "utf8");
   );
   assert.match(sql, /organisation_commercial_profiles/);
   assert.doesNotMatch(sql, /21cf12c3-3235-4cd3-8106-801d120dc7b5/);
+}
+
+{
+  const headerSrc = readFileSync("app/components/Header.tsx", "utf8");
+  assert.match(headerSrc, /List space/);
+  assert.doesNotMatch(ownerSrc, /pageActions/);
+  assert.doesNotMatch(ownerSrc, /List a space/);
+  assert.match(listingsSrc, /hostingOverviewVerificationKind/);
+  assert.match(
+    listingsSrc,
+    /verificationKind === "personal" \? <OwnerVerificationAlerts/
+  );
+  assert.doesNotMatch(listingsSrc, /isHost && <OwnerVerificationAlerts/);
+  assert.doesNotMatch(listingsSrc, /setIsHost/);
+  assert.doesNotMatch(listingsSrc, /pageActions=/);
+
+  const oaKind = hostingOverviewVerificationKind({
+    organisationId: ORG,
+    showOrganisationCommercial: true,
+    isLegacyHost: true,
+  });
+  const gaKind = hostingOverviewVerificationKind({
+    organisationId: ORG,
+    showOrganisationCommercial: true,
+    isLegacyHost: true,
+  });
+  const smKind = hostingOverviewVerificationKind({
+    organisationId: ORG,
+    showOrganisationCommercial: false,
+    isLegacyHost: false,
+  });
+  const pmKind = hostingOverviewVerificationKind({
+    organisationId: ORG,
+    showOrganisationCommercial: false,
+    isLegacyHost: false,
+  });
+  const personalKind = hostingOverviewVerificationKind({
+    organisationId: null,
+    showOrganisationCommercial: false,
+    isLegacyHost: true,
+  });
+  assert.equal(oaKind, "organisation");
+  assert.equal(gaKind, "organisation");
+  assert.equal(smKind, "none");
+  assert.equal(pmKind, "none");
+  assert.equal(personalKind, "personal");
+  assert.notEqual(oaKind, "personal");
+  assert.equal(
+    hostingOverviewVerificationKind({
+      organisationId: null,
+      showOrganisationCommercial: true,
+      isLegacyHost: true,
+    }),
+    "personal"
+  );
 }
 
 console.log("test-verification-display: all assertions passed");

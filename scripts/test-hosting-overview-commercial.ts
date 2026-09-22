@@ -97,6 +97,8 @@ const commercialApi = readFileSync(
   assert.match(layoutSrc, /ID verification required/);
   assert.match(layoutSrc, /showFinance/);
   assert.doesNotMatch(ownerSrc, /host-overview-tools/);
+  assert.doesNotMatch(ownerSrc, /List a space/);
+  assert.doesNotMatch(ownerSrc, /pageActions/);
   assert.match(helperSrc, /compactPayoutReadinessLabel/);
   assert.match(helperSrc, /OrganisationPayoutReadiness/);
   assert.doesNotMatch(helperSrc, /owner_id/);

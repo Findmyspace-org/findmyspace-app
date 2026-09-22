@@ -18,6 +18,8 @@ const ORG = "21cf12c3-3235-4cd3-8106-801d120dc7b5";
 
 const shell = readFileSync("app/components/DashboardShell.tsx", "utf8");
 const owner = readFileSync("app/dashboard/owner/page.tsx", "utf8");
+const listings = readFileSync("app/dashboard/listings/page.tsx", "utf8");
+const header = readFileSync("app/components/Header.tsx", "utf8");
 const ui = readFileSync("app/components/hosting/hosting-ui.tsx", "utf8");
 
 {
@@ -30,7 +32,12 @@ const ui = readFileSync("app/components/hosting/hosting-ui.tsx", "utf8");
   assert.match(ui, /HostingOpsStrip/);
   assert.match(owner, /HostingSummaryStrip/);
   assert.doesNotMatch(owner, /host-overview-tools/);
-  assert.match(owner, /List a space/);
+  assert.doesNotMatch(owner, /List a space/);
+  assert.doesNotMatch(owner, /pageActions/);
+  assert.match(header, /List space/);
+  assert.match(listings, /verificationKind === "personal" \? <OwnerVerificationAlerts/);
+  assert.doesNotMatch(listings, /isHost && <OwnerVerificationAlerts/);
+  assert.doesNotMatch(listings, /fetchOrganisationCommercial/);
 }
 
 {

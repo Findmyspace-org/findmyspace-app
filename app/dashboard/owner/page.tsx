@@ -14,7 +14,6 @@
  * duplicated the global header; that's now replaced by `DashboardShell`.
  */
 
-import Link from "next/link";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
@@ -29,7 +28,6 @@ import {
   HostingSummaryStrip,
   HostingWorkspaceList,
   HostingWorkspaceRow,
-  hostingPrimaryActionClass,
 } from "@/app/components/hosting/hosting-ui";
 import { hostingHref } from "@/lib/access/hosting-access";
 import { ORGANISATION_QUERY_PARAM } from "@/lib/access/organisation-workspace";
@@ -341,16 +339,6 @@ function HostDashboardPageContent() {
         pageTitle="Overview"
         navItems={hosting.navItems}
         activeHref="/dashboard/owner"
-        pageActions={
-          hosting.summary.showCreateSpace ? (
-            <Link
-              href={orgHref("/dashboard/new-space")}
-              className={hostingPrimaryActionClass}
-            >
-              List a space
-            </Link>
-          ) : null
-        }
       >
         {loading ? (
           <div className="flex items-center gap-2 py-6 text-sm text-gray-600">

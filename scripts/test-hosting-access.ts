@@ -266,6 +266,8 @@ function navLabels(summary: ReturnType<typeof summarizeHostingAccess>) {
   assert.equal(smSummary.showCreateSpace, false);
   assert.match(listings, /showCreateSpace/);
   assert.match(listings, /List a space/);
+  assert.doesNotMatch(listings, /pageActions=/);
+  assert.match(listings, /hostingOverviewVerificationKind/);
   assert.match(newSpace, /!profile\?\.is_host/);
   assert.match(newSpace, /fetchManageableOrganisations/);
   assert.match(newSpace, /canOpenOrganisationListingContext/);

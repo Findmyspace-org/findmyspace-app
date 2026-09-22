@@ -39,6 +39,7 @@ import {
   verificationFieldsForManagedListing,
   type VerificationDisplayContext,
 } from "@/lib/verification-display-context";
+import { hostingOverviewVerificationKind } from "@/lib/hosting-overview-commercial";
 import {
   ArrowRight,
   MapPin,
@@ -149,13 +150,17 @@ function MyListingsPageContent({
   requestedOrganisationId: string | null;
 }) {
   const hosting = useHostingWorkspace(requestedOrganisationId);
+  const verificationKind = hostingOverviewVerificationKind({
+    organisationId: hosting.organisationId,
+    showOrganisationCommercial: hosting.summary.showOrganisationCommercial,
+    isLegacyHost: hosting.summary.isLegacyHost,
+  });
   const [sessionEmail, setSessionEmail] = useState<string | null>(null);
   const [spaces, setSpaces] = useState<Space[]>([]);
 
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [isHost, setIsHost] = useState(false);
   const [claimContext, setClaimContext] = useState<ClaimContext>({
     contactComplete: false,
     hasIdFront: false,
@@ -267,8 +272,6 @@ function MyListingsPageContent({
         window.location.href = "/dashboard/become-host";
         return;
       }
-
-      setIsHost(summary.isLegacyHost || profileData?.is_host === true);
 
       const { data: idDocRows } = await supabase
         .from("owner_verification_documents")
@@ -555,16 +558,6 @@ function MyListingsPageContent({
         pageTitle="My spaces"
         navItems={hosting.navItems}
         activeHref="/dashboard/listings"
-        pageActions={
-          hosting.summary.showCreateSpace ? (
-            <Link
-              href={hostingHref("/dashboard/new-space", hosting.organisationId)}
-              className={hostingPrimaryActionClass}
-            >
-              List a space
-            </Link>
-          ) : null
-        }
       >
         <>
           <HostingToolbar>
@@ -599,7 +592,7 @@ function MyListingsPageContent({
             </div>
           )}
 
-          {isHost && <OwnerVerificationAlerts />}
+          {verificationKind === "personal" ? <OwnerVerificationAlerts /> : null}
 
           {message && (
             <div className="rounded-md bg-gray-100 px-3 py-2 text-sm text-gray-800">
