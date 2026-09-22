@@ -6,7 +6,7 @@
  */
 
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { computeAccess } from "../lib/access/compute-access";
 import {
   summarizeHostingAccess,
@@ -386,14 +386,19 @@ const payfastRoute = readFileSync("app/api/payfast/initiate/route.ts", "utf8");
   );
 }
 
-// No migration 069
+// Migration 069 is organisation commercial verification, not personal hardening
 {
   const migrations = readdirSync("supabase/migrations");
   assert.equal(
     migrations.some((name) => name.startsWith("069_")),
-    false
+    true
   );
-  assert.equal(existsSync("supabase/migrations/069_20260921_organisation_verification.sql"), false);
+  const sql = readFileSync(
+    "supabase/migrations/069_20260922_organisation_commercial_verification.sql",
+    "utf8"
+  );
+  assert.match(sql, /organisation_commercial_profiles/);
+  assert.doesNotMatch(sql, /21cf12c3-3235-4cd3-8106-801d120dc7b5/);
 }
 
 console.log("test-verification-display: all assertions passed");

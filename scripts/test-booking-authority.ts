@@ -338,13 +338,15 @@ function grant(
   const create = readFileSync("lib/booking-request-server.ts", "utf8");
   assert.match(create, /snapshotBookingOwnership/);
   assert.match(create, /resolveOperationalBookingManagers/);
+  assert.match(create, /resolveCommercialBeneficiary/);
+  assert.match(create, /resolveOrganisationBookingReadiness/);
   assert.doesNotMatch(create, /space\.owner_id !== ownerId/);
   assert.match(create, /isLegacyOwnerSelfBooking/);
   assert.match(create, /You cannot book your own listing/);
-  assert.match(create, /This organisation is no longer available for booking/);
   assert.match(create, /This property is no longer available for booking/);
   assert.match(create, /owner_id: snapshot\.ownerId/);
   assert.match(create, /organisation_id: snapshot\.organisationId/);
+  assert.match(create, /commercial_beneficiary_type/);
 }
 
 {
@@ -552,9 +554,15 @@ function grant(
 // AK archived organisation cannot receive new booking
 {
   const create = readFileSync("lib/booking-request-server.ts", "utf8");
-  assert.match(create, /orgRow\.status === "archived"/);
+  assert.match(create, /resolveOrganisationBookingReadiness/);
   assert.match(create, /isArchivedProperty/);
   assert.match(create, /!operational\?\.canAcceptPublicBooking/);
+  const readiness = readFileSync(
+    "lib/access/organisation-booking-readiness.ts",
+    "utf8"
+  );
+  assert.match(readiness, /organisation_archived/);
+  assert.match(readiness, /This organisation is no longer available for booking/);
 }
 
 // AL actual actor remains correct under competing manager actions

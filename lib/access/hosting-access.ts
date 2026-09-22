@@ -30,6 +30,7 @@ export type HostingAccessSummary = {
   showProperties: boolean;
   showFinance: boolean;
   showPeople: boolean;
+  showOrganisationCommercial: boolean;
   showVerification: boolean;
   showCreateSpace: boolean;
   organisationIds: string[];
@@ -75,6 +76,7 @@ export function summarizeHostingAccess(
   );
 
   const showPeople = isGlobalAdmin || isOrganisationAdmin;
+  const showOrganisationCommercial = showPeople;
   const showProperties =
     isGlobalAdmin || isOrganisationAdmin || isPropertyManager || isLegacyHost;
   const showFinance =
@@ -93,6 +95,7 @@ export function summarizeHostingAccess(
     showProperties,
     showFinance,
     showPeople,
+    showOrganisationCommercial,
     showVerification,
     showCreateSpace,
     organisationIds,

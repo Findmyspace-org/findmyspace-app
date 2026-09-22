@@ -7,6 +7,12 @@ import {
 import { isSpaceBookable } from "@/lib/listing-lifecycle";
 import { snapshotBookingOwnership } from "@/lib/access/operational-booking-managers";
 import { resolveOperationalBookingManagers } from "@/lib/access/resolve-operational-booking-managers";
+import {
+  NO_COMMERCIAL_BENEFICIARY_ERROR,
+  resolveCommercialBeneficiary,
+  snapshotBookingBeneficiary,
+} from "@/lib/access/commercial-beneficiary";
+import { resolveOrganisationBookingReadiness } from "@/lib/access/organisation-booking-readiness";
 import { isLegacyOwnerSelfBooking } from "@/lib/booking-self-booking";
 import { isArchivedProperty } from "@/lib/property-archive";
 import {
@@ -205,27 +211,47 @@ export async function createBookingRequestServer(
     }
 
     organisationId = propertyRow?.organisation_id ?? null;
+  }
 
-    if (organisationId) {
-      const { data: organisation } = await admin
-        .from("organisations")
-        .select("id, status, archived_at")
-        .eq("id", organisationId)
-        .maybeSingle();
-      const orgRow = organisation as {
-        id: string;
-        status: string | null;
-        archived_at: string | null;
-      } | null;
-      if (
-        !orgRow ||
-        orgRow.status === "archived" ||
-        Boolean(orgRow.archived_at)
-      ) {
-        throw new Error(
-          "This organisation is no longer available for booking."
-        );
-      }
+  const beneficiary = resolveCommercialBeneficiary({
+    propertyOrganisationId: organisationId,
+    spaceOwnerId: space.owner_id,
+  });
+
+  if (beneficiary.type === "none") {
+    throw new Error(NO_COMMERCIAL_BENEFICIARY_ERROR);
+  }
+
+  if (organisationId) {
+    const { data: organisation } = await admin
+      .from("organisations")
+      .select("id, status, archived_at")
+      .eq("id", organisationId)
+      .maybeSingle();
+    const orgRow = organisation as {
+      id: string;
+      status: string | null;
+      archived_at: string | null;
+    } | null;
+
+    const { data: commercial } = await admin
+      .from("organisation_commercial_profiles")
+      .select("verification_status")
+      .eq("organisation_id", organisationId)
+      .maybeSingle();
+
+    const readiness = resolveOrganisationBookingReadiness({
+      organisationId,
+      organisationStatus: orgRow?.status ?? null,
+      organisationArchivedAt: orgRow?.archived_at ?? null,
+      verificationStatus:
+        (commercial as { verification_status?: string } | null)
+          ?.verification_status ?? null,
+      commercialProfileExists: Boolean(commercial),
+      beneficiary,
+    });
+    if (!readiness.ok) {
+      throw new Error(readiness.message);
     }
   }
 
@@ -240,6 +266,7 @@ export async function createBookingRequestServer(
     spaceOwnerId: space.owner_id,
     organisationId,
   });
+  const beneficiarySnapshot = snapshotBookingBeneficiary(beneficiary);
 
   const unit = bookingUnit || space.booking_unit || "day";
   const quantity = calculateBookingQuantity(unit, startAt, endAt);
@@ -297,6 +324,11 @@ export async function createBookingRequestServer(
     renter_id: renterId,
     owner_id: snapshot.ownerId,
     organisation_id: snapshot.organisationId,
+    commercial_beneficiary_type: beneficiarySnapshot.commercial_beneficiary_type,
+    commercial_beneficiary_user_id:
+      beneficiarySnapshot.commercial_beneficiary_user_id,
+    commercial_beneficiary_organisation_id:
+      beneficiarySnapshot.commercial_beneficiary_organisation_id,
     booking_unit: unit,
     start_at: startAt,
     end_at: endAt,

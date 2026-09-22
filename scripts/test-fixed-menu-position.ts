@@ -5,7 +5,7 @@
  */
 
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { computeAccess } from "../lib/access/compute-access";
 import {
   computeFixedMenuPosition,
@@ -144,11 +144,7 @@ const listingsSrc = readFileSync("app/dashboard/listings/page.tsx", "utf8");
 assert.equal(estimateMenuHeight(4) > estimateMenuHeight(1), true);
 assert.equal(
   readdirSync("supabase/migrations").some((name) => name.startsWith("069_")),
-  false
-);
-assert.equal(
-  existsSync("supabase/migrations/069_20260921_organisation_verification.sql"),
-  false
+  true
 );
 
 console.log("test-fixed-menu-position: all assertions passed");

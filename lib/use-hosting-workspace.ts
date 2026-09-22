@@ -20,6 +20,7 @@ const EMPTY_SUMMARY: HostingAccessSummary = {
   showProperties: false,
   showFinance: false,
   showPeople: false,
+  showOrganisationCommercial: false,
   showVerification: false,
   showCreateSpace: false,
   organisationIds: [],

@@ -617,7 +617,10 @@ function AdminVerificationPageContent({
       <div className="mx-auto max-w-7xl">
         <h1 className="mb-1 text-4xl font-bold text-[#192a3a]">Admin - Verification</h1>
         <p className="mb-5 text-gray-600">
-          Review owner identity and bank verification details.
+          Review owner identity and bank verification details.{" "}
+          <Link className="underline" href="/admin/verification/organisations">
+            Organisation verification
+          </Link>
         </p>
 
         {message ? (

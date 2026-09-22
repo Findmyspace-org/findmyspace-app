@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import RequireAuth from "@/app/components/RequireAuth";
 import SpaceForm from "@/app/components/SpaceForm";
@@ -20,8 +20,10 @@ type ProfileRow = {
   bank_verification_status: string | null;
 };
 
-export default function NewSpacePage() {
+function NewSpacePageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const organisationId = searchParams.get("organisation");
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [profile, setProfile] = useState<ProfileRow | null>(null);
@@ -74,7 +76,7 @@ export default function NewSpacePage() {
     );
   }
 
-  if (!profile?.is_host) {
+  if (!organisationId && !profile?.is_host) {
     return (
       <RequireAuth>
         <main className="min-h-screen bg-[#f8fafc] pb-12 text-[#192a3a]">
@@ -96,10 +98,10 @@ export default function NewSpacePage() {
                 </Link>
 
                 <Link
-                  href="/dashboard"
+                  href="/dashboard/list-space"
                   className="inline-flex min-h-[48px] items-center justify-center rounded-xl border border-[#d7dde3] bg-white px-5 py-3 text-sm font-medium text-[#334155] shadow-sm transition hover:border-[#b8c2cc]"
                 >
-                  Back to dashboard
+                  Choose listing context
                 </Link>
               </div>
             </div>
@@ -126,7 +128,9 @@ export default function NewSpacePage() {
                 in the <span className="text-[#c1121f]">right place.</span>
               </h1>
               <p className="mt-4 max-w-2xl text-base leading-relaxed text-[#1f2937] sm:text-lg">
-                Create a trusted listing for storage, parking, workspaces and more.
+                {organisationId
+                  ? "This listing will belong to the organisation, not your personal host profile."
+                  : "Create a trusted listing for storage, parking, workspaces and more."}
               </p>
             </div>
           </div>
@@ -135,15 +139,19 @@ export default function NewSpacePage() {
         <section className="relative z-20 mx-auto -mt-14 max-w-6xl px-4 sm:-mt-16 sm:px-6">
           <div className="space-y-5">
             <div className="rounded-3xl border border-sky-200/90 bg-sky-50/90 px-5 py-4 text-sm leading-relaxed text-sky-950 shadow-[0_1px_3px_rgba(15,23,42,0.06)]">
-              {LISTING_GOES_LIVE_AFTER_APPROVALS}
+              {organisationId
+                ? "Organisation listings can be built before verification. Paid bookings stay blocked until the organisation is verified."
+                : LISTING_GOES_LIVE_AFTER_APPROVALS}
             </div>
 
-            {(profile.owner_verification_status !== "verified" ||
-              profile.bank_verification_status !== "verified") && (
+            {!organisationId &&
+            profile &&
+            (profile.owner_verification_status !== "verified" ||
+              profile.bank_verification_status !== "verified") ? (
               <div className="rounded-3xl border border-amber-200/90 bg-amber-50/90 px-5 py-4 text-sm leading-relaxed text-amber-950 shadow-[0_1px_3px_rgba(15,23,42,0.06)]">
                 {HOST_VERIFICATION_IN_PROGRESS_NOTE}
               </div>
-            )}
+            ) : null}
 
             {message ? (
               <div className="rounded-3xl border border-[#e5e7eb] bg-white px-5 py-4 text-sm text-[#334155] shadow-sm">
@@ -152,6 +160,7 @@ export default function NewSpacePage() {
             ) : null}
 
             <SpaceForm
+              organisationId={organisationId}
               onCreated={async () => {
                 router.push("/dashboard/listings?created=pending");
                 router.refresh();
@@ -161,5 +170,19 @@ export default function NewSpacePage() {
         </section>
       </main>
     </RequireAuth>
+  );
+}
+
+export default function NewSpacePage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="min-h-screen bg-[#f8fafc] px-4 pt-10 text-sm text-[#64748b]">
+          Loading listing form...
+        </main>
+      }
+    >
+      <NewSpacePageContent />
+    </Suspense>
   );
 }

@@ -21,6 +21,8 @@ import {
 } from "@/lib/google-maps-url-apply-client";
 import { isGoogleMapsUrl } from "@/lib/google-maps-url";
 import { ownerApiFetch } from "@/lib/owner-api-client";
+import { createOrganisationListingRequest } from "@/lib/organisation-commercial-client";
+import { uploadSpacePhotos } from "@/lib/space-photos-client";
 import { supabase } from "@/lib/supabase";
 import { prepareFilesForUpload } from "@/lib/image-compression-client";
 import {
@@ -72,6 +74,7 @@ const LISTING_CREATE_STEPS: ListingFormStepMeta[] = [
 
 type SpaceFormProps = {
   onCreated?: () => void | Promise<void>;
+  organisationId?: string | null;
 };
 
 type InsertedSpace = {
@@ -182,7 +185,7 @@ function restoreBookingRequirementDraft(
   };
 }
 
-export default function SpaceForm({ onCreated }: SpaceFormProps) {
+export default function SpaceForm({ onCreated, organisationId = null }: SpaceFormProps) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [city, setCity] = useState("");
@@ -1082,7 +1085,7 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
     setStepFieldError(null);
     setLoading(true);
 
-    if (!ownershipProofFile) {
+    if (!organisationId && !ownershipProofFile) {
       const msg = "Please upload proof of ownership for this space.";
       setStepFieldError(msg);
       setMessage(msg);
@@ -1283,64 +1286,96 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
         ...groupSizePayloadFromForm(spaceType, minGroupSize, maxGroupSize),
       };
 
-      const { data, error: spaceError } = await supabase
-        .from("spaces")
-        .insert([spacePayload] as any)
-        .select("id")
-        .single();
+      let insertedSpace: InsertedSpace | null = null;
 
-      const insertedSpace = data as InsertedSpace | null;
+      if (organisationId) {
+        const { owner_id: _ignoredOwner, ...orgPayload } = spacePayload;
+        const created = await createOrganisationListingRequest(
+          organisationId,
+          { ...orgPayload, _attributes: attributes }
+        );
+        insertedSpace = { id: created.listing.id };
+      } else {
+        const { data, error: spaceError } = await supabase
+          .from("spaces")
+          .insert([spacePayload] as any)
+          .select("id")
+          .single();
 
-      if (spaceError || !insertedSpace) {
-        setMessage(spaceError?.message || "Could not create listing.");
-        setLoading(false);
-        return;
-      }
+        insertedSpace = data as InsertedSpace | null;
 
-      if (imageFiles.length > 0) {
-        const imageRows: SpaceImageInsertRow[] = [];
-
-        for (let i = 0; i < imageFiles.length; i++) {
-          const file = imageFiles[i];
-          const fileExt = file.name.split(".").pop();
-          const fileName = `${user.id}/${insertedSpace.id}-${Date.now()}-${i}.${fileExt}`;
-
-          const { error: uploadError } = await supabase.storage
-            .from("space-images")
-            .upload(fileName, file, {
-              cacheControl: "3600",
-              upsert: false,
-            });
-
-          if (uploadError) {
-            setMessage(`Image upload failed: ${uploadError.message}`);
-            setLoading(false);
-            return;
-          }
-
-          const { data: publicUrlData } = supabase.storage
-            .from("space-images")
-            .getPublicUrl(fileName);
-
-          imageRows.push({
-            space_id: insertedSpace.id,
-            image_url: publicUrlData.publicUrl,
-            file_path: fileName,
-            sort_order: i,
-          });
-        }
-
-        const { error: imageInsertError } = await supabase
-          .from("space_images")
-          .insert(imageRows as any);
-
-        if (imageInsertError) {
-          setMessage(`Saving images failed: ${imageInsertError.message}`);
+        if (spaceError || !insertedSpace) {
+          setMessage(spaceError?.message || "Could not create listing.");
           setLoading(false);
           return;
         }
       }
 
+      if (!insertedSpace) {
+        setMessage("Could not create listing.");
+        setLoading(false);
+        return;
+      }
+
+      if (imageFiles.length > 0) {
+        if (organisationId) {
+          const upload = await uploadSpacePhotos(
+            "host",
+            insertedSpace.id,
+            imageFiles,
+            []
+          );
+          if (upload.failed.length > 0) {
+            setMessage(`Image upload failed: ${upload.failed[0]}`);
+            setLoading(false);
+            return;
+          }
+        } else {
+          const imageRows: SpaceImageInsertRow[] = [];
+
+          for (let i = 0; i < imageFiles.length; i++) {
+            const file = imageFiles[i];
+            const fileExt = file.name.split(".").pop();
+            const fileName = `${user.id}/${insertedSpace.id}-${Date.now()}-${i}.${fileExt}`;
+
+            const { error: uploadError } = await supabase.storage
+              .from("space-images")
+              .upload(fileName, file, {
+                cacheControl: "3600",
+                upsert: false,
+              });
+
+            if (uploadError) {
+              setMessage(`Image upload failed: ${uploadError.message}`);
+              setLoading(false);
+              return;
+            }
+
+            const { data: publicUrlData } = supabase.storage
+              .from("space-images")
+              .getPublicUrl(fileName);
+
+            imageRows.push({
+              space_id: insertedSpace.id,
+              image_url: publicUrlData.publicUrl,
+              file_path: fileName,
+              sort_order: i,
+            });
+          }
+
+          const { error: imageInsertError } = await supabase
+            .from("space_images")
+            .insert(imageRows as any);
+
+          if (imageInsertError) {
+            setMessage(`Saving images failed: ${imageInsertError.message}`);
+            setLoading(false);
+            return;
+          }
+        }
+      }
+
+      if (!organisationId) {
       const attributeRows: SpaceAttributeInsertRow[] = Object.entries(attributes).flatMap(
         ([attributeKey, values]) =>
           values.map((value) => ({
@@ -1361,31 +1396,39 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
           return;
         }
       }
+      }
 
-      const uploadedOwnership = await uploadPrivateFile(
-        "listing-ownership",
-        user.id,
-        ownershipProofFile,
-        `ownership-${insertedSpace.id}`
-      );
+      if (!organisationId) {
+        if (!ownershipProofFile) {
+          setMessage("Please upload proof of ownership for this space.");
+          setLoading(false);
+          return;
+        }
+        const uploadedOwnership = await uploadPrivateFile(
+          "listing-ownership",
+          user.id,
+          ownershipProofFile,
+          `ownership-${insertedSpace.id}`
+        );
 
-      const ownershipRow: ListingOwnershipInsertRow = {
-        space_id: insertedSpace.id,
-        owner_id: user.id,
-        document_type: "ownership_proof",
-        file_url: uploadedOwnership.fileUrl,
-        file_path: uploadedOwnership.filePath,
-        status: "pending",
-      };
+        const ownershipRow: ListingOwnershipInsertRow = {
+          space_id: insertedSpace.id,
+          owner_id: user.id,
+          document_type: "ownership_proof",
+          file_url: uploadedOwnership.fileUrl,
+          file_path: uploadedOwnership.filePath,
+          status: "pending",
+        };
 
-      const { error: ownershipInsertError } = await supabase
-        .from("listing_ownership_documents")
-        .insert(ownershipRow as any);
+        const { error: ownershipInsertError } = await supabase
+          .from("listing_ownership_documents")
+          .insert(ownershipRow as any);
 
-      if (ownershipInsertError) {
-        setMessage(`Saving ownership proof failed: ${ownershipInsertError.message}`);
-        setLoading(false);
-        return;
+        if (ownershipInsertError) {
+          setMessage(`Saving ownership proof failed: ${ownershipInsertError.message}`);
+          setLoading(false);
+          return;
+        }
       }
 
       const intelSave = await upsertListingBookingIntelTables(supabase as any, {
@@ -2472,6 +2515,7 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
                 />
                 <span>At least one listing photo</span>
               </li>
+              {!organisationId ? (
               <li className="flex gap-2.5">
                 <CheckCircle2
                   className={`mt-0.5 h-4 w-4 shrink-0 ${
@@ -2481,10 +2525,12 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
                 />
                 <span>Ownership proof uploaded for this space</span>
               </li>
+              ) : null}
             </ul>
           </div>
         </section>
 
+        {!organisationId ? (
         <section className="rounded-2xl border border-[#e5e7eb] bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-5">
           <h3 className="mb-1 text-base font-semibold text-[#0f172a] sm:text-lg">
             Proof you own or control this space
@@ -2511,6 +2557,7 @@ export default function SpaceForm({ onCreated }: SpaceFormProps) {
             </p>
           </div>
         </section>
+        ) : null}
       </div>
 
       <div className="mt-1 flex flex-col gap-2 border-t border-[#e5e7eb] pt-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">

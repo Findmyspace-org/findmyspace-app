@@ -256,9 +256,11 @@ function navLabels(summary: ReturnType<typeof summarizeHostingAccess>) {
 {
   const hrefs = navHrefs(smSummary);
   assert.equal(hrefs.includes("/dashboard/people"), false);
+  assert.equal(hrefs.includes("/dashboard/organisation"), false);
   assert.equal(hrefs.includes("/dashboard/properties"), false);
   assert.equal(hrefs.includes("/dashboard/finance"), false);
   assert.equal(smSummary.showPeople, false);
+  assert.equal(smSummary.showOrganisationCommercial, false);
   assert.equal(smSummary.showProperties, false);
   assert.equal(smSummary.showFinance, false);
   assert.equal(smSummary.showCreateSpace, false);
@@ -312,16 +314,20 @@ function navLabels(summary: ReturnType<typeof summarizeHostingAccess>) {
 // K. OA/PM/legacy owner Hosting nav remains correct
 {
   assert.equal(oaSummary.showPeople, true);
+  assert.equal(oaSummary.showOrganisationCommercial, true);
   assert.equal(oaSummary.showProperties, true);
   assert.equal(oaSummary.showFinance, true);
   assert.equal(oaSummary.showCreateSpace, true);
   assert.equal(navHrefs(oaSummary).includes("/dashboard/people"), true);
+  assert.equal(navHrefs(oaSummary).includes("/dashboard/organisation"), true);
 
   assert.equal(pmSummary.showPeople, false);
+  assert.equal(pmSummary.showOrganisationCommercial, false);
   assert.equal(pmSummary.showProperties, true);
   assert.equal(pmSummary.showFinance, true);
   assert.equal(pmSummary.showCreateSpace, false);
   assert.equal(navHrefs(pmSummary).includes("/dashboard/people"), false);
+  assert.equal(navHrefs(pmSummary).includes("/dashboard/organisation"), false);
   assert.equal(navHrefs(pmSummary).includes("/dashboard/properties"), true);
 
   assert.equal(legacySummary.showProperties, true);

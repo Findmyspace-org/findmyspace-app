@@ -821,17 +821,12 @@ export default function Header() {
 
     if (!sessionEmail) {
       setAuthMode("signup");
-      setAuthNextPath("/dashboard/become-host");
+      setAuthNextPath("/dashboard/list-space");
       setAuthModalOpen(true);
       return;
     }
 
-    if (isHost) {
-      window.location.href = "/dashboard/new-space";
-      return;
-    }
-
-    window.location.href = "/dashboard/become-host";
+    window.location.href = "/dashboard/list-space";
   }
 
   if (hideHeader) {

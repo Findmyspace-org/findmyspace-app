@@ -47,6 +47,7 @@
     "test:booking-authority": "tsx scripts/test-booking-authority.ts",
     "test:people-access": "tsx scripts/test-people-access.ts",
     "test:hosting-access": "tsx scripts/test-hosting-access.ts",
+    "test:organisation-commercial": "tsx scripts/test-organisation-commercial.ts",
     "test:verification-display": "tsx scripts/test-verification-display.ts",
     "test:fixed-menu-position": "tsx scripts/test-fixed-menu-position.ts",
     "test:crm-org-contact-filters": "tsx scripts/test-crm-org-contact-filters.ts",

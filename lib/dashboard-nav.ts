@@ -102,6 +102,12 @@ export const HOST_NAV: DashboardNavItem[] = [
     matchPrefix: true,
   },
   {
+    label: "Organisation",
+    href: "/dashboard/organisation",
+    icon: Building2,
+    matchPrefix: true,
+  },
+  {
     label: "Verification & payouts",
     href: "/dashboard/verification",
     icon: Settings,
@@ -122,6 +128,8 @@ export function hostingNavItems(
     if (item.href === "/dashboard/properties") return summary.showProperties;
     if (item.href === "/dashboard/finance") return summary.showFinance;
     if (item.href === "/dashboard/people") return summary.showPeople;
+    if (item.href === "/dashboard/organisation")
+      return summary.showOrganisationCommercial;
     if (item.href === "/dashboard/verification") return summary.showVerification;
     return true;
   }).map((item) => ({
