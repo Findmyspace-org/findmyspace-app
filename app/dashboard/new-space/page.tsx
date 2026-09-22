@@ -6,6 +6,11 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import RequireAuth from "@/app/components/RequireAuth";
 import SpaceForm from "@/app/components/SpaceForm";
+import { fetchManageableOrganisations } from "@/lib/access/organisation-access-client";
+import {
+  canOpenOrganisationListingContext,
+  organisationListingDeniedHref,
+} from "@/lib/list-space-chooser";
 import {
   HOST_VERIFICATION_IN_PROGRESS_NOTE,
   LISTING_GOES_LIVE_AFTER_APPROVALS,
@@ -23,18 +28,22 @@ type ProfileRow = {
 function NewSpacePageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const organisationId = searchParams.get("organisation");
+  const requestedOrganisationId = searchParams.get("organisation")?.trim() || null;
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [profile, setProfile] = useState<ProfileRow | null>(null);
+  const [authorizedOrganisationId, setAuthorizedOrganisationId] = useState<
+    string | null
+  >(null);
 
   useEffect(() => {
-    loadProfile();
-  }, []);
+    void load();
+  }, [requestedOrganisationId]);
 
-  async function loadProfile() {
+  async function load() {
     setLoading(true);
     setMessage("");
+    setAuthorizedOrganisationId(null);
 
     const {
       data: { user },
@@ -45,6 +54,30 @@ function NewSpacePageContent() {
       setMessage("Please log in first.");
       setLoading(false);
       return;
+    }
+
+    if (requestedOrganisationId) {
+      try {
+        const result = await fetchManageableOrganisations();
+        const allowedOrganisationIds = (result.organisations || []).map(
+          (organisation) => organisation.id
+        );
+        if (
+          !canOpenOrganisationListingContext({
+            requestedOrganisationId,
+            allowedOrganisationIds,
+          })
+        ) {
+          router.replace(organisationListingDeniedHref());
+          return;
+        }
+        setAuthorizedOrganisationId(requestedOrganisationId);
+        setLoading(false);
+        return;
+      } catch {
+        router.replace(organisationListingDeniedHref());
+        return;
+      }
     }
 
     const { data, error } = await (supabase.from("profiles") as any)
@@ -69,6 +102,26 @@ function NewSpacePageContent() {
           <div className="mx-auto max-w-6xl px-4 pt-10 sm:px-6">
             <div className="rounded-3xl border border-[#e5e7eb] bg-white p-8 shadow-[0_28px_65px_rgba(15,23,42,0.08)]">
               <p className="text-sm text-[#64748b]">Loading your host profile...</p>
+            </div>
+          </div>
+        </main>
+      </RequireAuth>
+    );
+  }
+
+  const organisationId =
+    requestedOrganisationId &&
+    authorizedOrganisationId === requestedOrganisationId
+      ? authorizedOrganisationId
+      : null;
+
+  if (requestedOrganisationId && !organisationId) {
+    return (
+      <RequireAuth>
+        <main className="min-h-screen bg-[#f8fafc] pb-12 text-[#192a3a]">
+          <div className="mx-auto max-w-6xl px-4 pt-10 sm:px-6">
+            <div className="rounded-3xl border border-[#e5e7eb] bg-white p-8 shadow-[0_28px_65px_rgba(15,23,42,0.08)]">
+              <p className="text-sm text-[#64748b]">Checking listing access...</p>
             </div>
           </div>
         </main>

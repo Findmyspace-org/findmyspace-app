@@ -17,14 +17,19 @@ import { computeAccess } from "../lib/access/compute-access";
 import { summarizeHostingAccess } from "../lib/access/hosting-access";
 import { hostingNavItems } from "../lib/dashboard-nav";
 import {
+  canOpenOrganisationListingContext,
   listSpaceChooserOptions,
+  listSpaceDeniedMessage,
+  organisationListingDeniedHref,
   organisationListingHref,
   personalListingHref,
 } from "../lib/list-space-chooser";
+import { hasAdminUiAccess } from "../lib/client-admin-access";
 import { toMaskedBankDto } from "../lib/organisation-commercial-dto";
 import type { AccessContext, OrganisationAccessGrant } from "../lib/access/roles";
 
 const ORG = "21cf12c3-3235-4cd3-8106-801d120dc7b5";
+const ORG_B = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
 const PROP = "b13d1be1-0bc6-437d-8deb-d43b881fe5cb";
 const CLASSROOM_1 = "cd1ebdff-0259-4185-8a0c-ac2892f03778";
 const OWNER = "11111111-1111-4111-8111-111111111111";
@@ -412,6 +417,147 @@ function accessCtx(partial: Partial<AccessContext>): AccessContext {
     "utf8"
   );
   assert.match(commercialApi, /canManageOrganisationFinance/);
+
+  const adminOrgsPage = readFileSync(
+    "app/admin/verification/organisations/page.tsx",
+    "utf8"
+  );
+  assert.match(adminOrgsPage, /useAdminRole/);
+  assert.match(adminOrgsPage, /isAdmin/);
+  assert.doesNotMatch(adminOrgsPage, /select\("role"\)/);
+  assert.doesNotMatch(adminOrgsPage, /hasAdminUiAccess\(nextRole\)/);
+  assert.doesNotMatch(adminOrgsPage, /hasAdminUiAccess\(role\)/);
+}
+
+{
+  assert.equal(hasAdminUiAccess("admin", false), true);
+  assert.equal(hasAdminUiAccess("super_admin", false), true);
+  assert.equal(hasAdminUiAccess("admin", true), false);
+  assert.equal(hasAdminUiAccess("super_admin", true), false);
+  assert.equal(hasAdminUiAccess("user", false), false);
+  assert.equal(hasAdminUiAccess("user", true), false);
+
+  const oa = computeAccess(
+    accessCtx({
+      userId: OA,
+      grants: [grant({ role: "org_admin", status: "active" })],
+    })
+  );
+  assert.equal(oa.isGlobalAdmin, false);
+  assert.equal(oa.isOrganisationAdmin, true);
+  assert.equal(hasAdminUiAccess("user", false), false);
+
+  const sm = computeAccess(
+    accessCtx({
+      userId: SM,
+      grants: [
+        grant({
+          role: "space_manager",
+          status: "active",
+          propertyId: PROP,
+          spaceId: CLASSROOM_1,
+        }),
+      ],
+    })
+  );
+  assert.equal(sm.isGlobalAdmin, false);
+  assert.equal(sm.canManageOrganisationFinance, false);
+
+  const pm = computeAccess(
+    accessCtx({
+      userId: PM,
+      spaceId: null,
+      grants: [
+        grant({
+          role: "property_manager",
+          status: "active",
+          propertyId: PROP,
+        }),
+      ],
+    })
+  );
+  assert.equal(pm.isGlobalAdmin, false);
+  assert.equal(pm.canManageOrganisationFinance, false);
+
+  const disabledGaWithOa = computeAccess(
+    accessCtx({
+      userId: GA,
+      profileRole: "admin",
+      adminAccessDisabled: true,
+      grants: [grant({ role: "org_admin", status: "active" })],
+    })
+  );
+  assert.equal(disabledGaWithOa.isGlobalAdmin, false);
+  assert.equal(disabledGaWithOa.isOrganisationAdmin, true);
+  assert.equal(disabledGaWithOa.canManageOrganisationFinance, true);
+  assert.equal(disabledGaWithOa.canManagePeopleAccess, true);
+  assert.equal(hasAdminUiAccess("admin", true), false);
+}
+
+{
+  const oaAllowed = [ORG];
+  assert.equal(
+    canOpenOrganisationListingContext({
+      requestedOrganisationId: ORG,
+      allowedOrganisationIds: oaAllowed,
+    }),
+    true
+  );
+  assert.equal(
+    canOpenOrganisationListingContext({
+      requestedOrganisationId: ORG_B,
+      allowedOrganisationIds: oaAllowed,
+    }),
+    false
+  );
+
+  const gaAllowed = [ORG, ORG_B];
+  assert.equal(
+    canOpenOrganisationListingContext({
+      requestedOrganisationId: ORG,
+      allowedOrganisationIds: gaAllowed,
+    }),
+    true
+  );
+
+  assert.equal(
+    canOpenOrganisationListingContext({
+      requestedOrganisationId: ORG,
+      allowedOrganisationIds: [],
+    }),
+    false
+  );
+
+  const disabledGaOaAllowed = [ORG];
+  assert.equal(
+    canOpenOrganisationListingContext({
+      requestedOrganisationId: ORG,
+      allowedOrganisationIds: disabledGaOaAllowed,
+    }),
+    true
+  );
+
+  assert.equal(personalListingHref(false), "/dashboard/become-host");
+  assert.equal(personalListingHref(true), "/dashboard/new-space");
+  assert.equal(
+    organisationListingDeniedHref(),
+    "/dashboard/list-space?denied=organisation-context"
+  );
+  assert.match(
+    listSpaceDeniedMessage("organisation-context") || "",
+    /don't have access to list a space for that organisation/
+  );
+
+  const newSpace = readFileSync("app/dashboard/new-space/page.tsx", "utf8");
+  assert.match(newSpace, /fetchManageableOrganisations/);
+  assert.match(newSpace, /canOpenOrganisationListingContext/);
+  assert.match(newSpace, /organisationListingDeniedHref/);
+  assert.match(newSpace, /authorizedOrganisationId/);
+  assert.match(newSpace, /!organisationId && !profile\?\.is_host/);
+  assert.doesNotMatch(newSpace, /if \(organisationId && !profile\?\.is_host\)/);
+
+  const listSpace = readFileSync("app/dashboard/list-space/page.tsx", "utf8");
+  assert.match(listSpace, /listSpaceDeniedMessage/);
 }
 
 {

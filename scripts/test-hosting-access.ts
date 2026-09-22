@@ -267,6 +267,9 @@ function navLabels(summary: ReturnType<typeof summarizeHostingAccess>) {
   assert.match(listings, /showCreateSpace/);
   assert.match(listings, /\+ Add space/);
   assert.match(newSpace, /!profile\?\.is_host/);
+  assert.match(newSpace, /fetchManageableOrganisations/);
+  assert.match(newSpace, /canOpenOrganisationListingContext/);
+  assert.match(newSpace, /organisationListingDeniedHref/);
 }
 
 // H. invitation acceptance redirects

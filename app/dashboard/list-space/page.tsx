@@ -8,6 +8,7 @@ import { fetchManageableOrganisations } from "@/lib/access/organisation-access-c
 import { createOrganisationRequest } from "@/lib/organisation-commercial-client";
 import { ORGANISATION_TYPES } from "@/lib/organisation-commercial-dto";
 import {
+  listSpaceDeniedMessage,
   organisationListingHref,
   personalListingHref,
 } from "@/lib/list-space-chooser";
@@ -33,7 +34,13 @@ export default function ListSpacePage() {
 
   async function load() {
     setLoading(true);
-    setMessage("");
+    const deniedMessage =
+      typeof window !== "undefined"
+        ? listSpaceDeniedMessage(
+            new URLSearchParams(window.location.search).get("denied")
+          )
+        : null;
+    setMessage(deniedMessage || "");
     try {
       const {
         data: { user },

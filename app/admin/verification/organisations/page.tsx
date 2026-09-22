@@ -4,8 +4,7 @@ import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { adminApiFetch } from "@/lib/admin-api-client";
-import { hasAdminUiAccess } from "@/lib/client-admin-access";
-import { supabase } from "@/lib/supabase";
+import { useAdminRole } from "@/lib/use-admin-role";
 import type {
   AdminOrganisationBankDto,
   OrganisationCommercialBundle,
@@ -26,7 +25,7 @@ type QueueItem = {
 function AdminOrganisationVerificationContent() {
   const searchParams = useSearchParams();
   const focusId = searchParams.get("organisation");
-  const [role, setRole] = useState<string | null>(null);
+  const { loading: roleLoading, isAdmin } = useAdminRole();
   const [items, setItems] = useState<QueueItem[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(focusId);
   const [detail, setDetail] = useState<
@@ -40,34 +39,21 @@ function AdminOrganisationVerificationContent() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (roleLoading) return;
+    if (!isAdmin) {
+      setLoading(false);
+      return;
+    }
     void loadQueue();
-  }, []);
+  }, [roleLoading, isAdmin]);
 
   useEffect(() => {
-    if (!selectedId) return;
+    if (!isAdmin || !selectedId) return;
     void loadDetail(selectedId);
-  }, [selectedId]);
+  }, [isAdmin, selectedId]);
 
   async function loadQueue() {
     setLoading(true);
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) {
-      setMessage("Please log in first.");
-      setLoading(false);
-      return;
-    }
-    const { data: profile } = await (supabase.from("profiles") as any)
-      .select("role")
-      .eq("id", user.id)
-      .maybeSingle();
-    const nextRole = (profile as { role?: string } | null)?.role || "user";
-    setRole(nextRole);
-    if (!hasAdminUiAccess(nextRole)) {
-      setLoading(false);
-      return;
-    }
     try {
       const result = (await adminApiFetch("/api/admin/organisations/commercial-queue")) as {
         items: QueueItem[];
@@ -128,11 +114,11 @@ function AdminOrganisationVerificationContent() {
     }
   }
 
-  if (loading) {
+  if (roleLoading || loading) {
     return <main className="p-8 text-sm text-gray-600">Loading organisation verification...</main>;
   }
 
-  if (!hasAdminUiAccess(role)) {
+  if (!isAdmin) {
     return (
       <main className="p-8">
         <h1 className="text-2xl font-bold">Access denied</h1>
