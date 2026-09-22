@@ -22,6 +22,14 @@ import {
   showsPersonalVerificationUi,
   verificationFieldsForManagedListing,
 } from "../lib/verification-display-context";
+import {
+  listingFormVerificationNoticeKind,
+  ORGANISATION_LISTING_VERIFICATION_BODY,
+  organisationListingCommercialHref,
+  PERSONAL_LISTING_VERIFICATION_ACTION,
+  PERSONAL_LISTING_VERIFICATION_BANNER,
+  PERSONAL_LISTING_VERIFICATION_HREF,
+} from "../lib/organisation-listing-copy";
 
 const USER = "5860f254-26e9-4f7f-8760-3fd69bd9fff3";
 const ORG = "21cf12c3-3235-4cd3-8106-801d120dc7b5";
@@ -355,6 +363,29 @@ const payfastRoute = readFileSync("app/api/payfast/initiate/route.ts", "utf8");
   assert.match(hostActionSrc, /includePersonalVerification/);
   assert.match(editorSrc, /listingVerificationDisplayContext/);
   assert.match(editorSrc, /showPersonalVerificationUi/);
+  assert.match(editorSrc, /OrganisationListingVerificationNotice/);
+  assert.match(
+    editorSrc,
+    /showCommercialLink=\{hosting\.summary\.showOrganisationCommercial\}/
+  );
+  assert.equal(
+    listingFormVerificationNoticeKind(ORG),
+    "organisation"
+  );
+  assert.equal(listingFormVerificationNoticeKind(null), "personal");
+  assert.equal(
+    organisationListingCommercialHref(ORG),
+    `/dashboard/organisation?organisation=${ORG}`
+  );
+  assert.match(PERSONAL_LISTING_VERIFICATION_BANNER, /identity, bank, and ownership proof/);
+  assert.equal(PERSONAL_LISTING_VERIFICATION_ACTION, "Verification & payouts");
+  assert.equal(PERSONAL_LISTING_VERIFICATION_HREF, "/dashboard/verification?step=overview");
+  assert.match(ORGANISATION_LISTING_VERIFICATION_BODY, /payout readiness/);
+  assert.doesNotMatch(ORGANISATION_LISTING_VERIFICATION_BODY, /identity/);
+  const spaceFormSrc = readFileSync("app/components/SpaceForm.tsx", "utf8");
+  assert.match(spaceFormSrc, /PERSONAL_LISTING_VERIFICATION_BANNER/);
+  assert.match(spaceFormSrc, /OrganisationListingVerificationNotice/);
+  assert.match(spaceFormSrc, /showOrganisationCommercialAction = false/);
   assert.match(ownerSrc, /isLegacyHost \? <OwnerVerificationAlerts/);
   assert.match(hostListingApi, /organisation_id: organisationId/);
 }

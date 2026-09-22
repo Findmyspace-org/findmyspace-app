@@ -24,6 +24,19 @@ import {
   organisationListingHref,
   personalListingHref,
 } from "../lib/list-space-chooser";
+import {
+  listingDraftRestoreNote,
+  listingFormBackHref,
+  listingFormBackLabel,
+  listingFormVerificationNoticeKind,
+  ORGANISATION_LISTING_VERIFICATION_ACTION,
+  ORGANISATION_LISTING_VERIFICATION_BODY,
+  ORGANISATION_LISTING_VERIFICATION_HEADING,
+  organisationListingCommercialHref,
+  PERSONAL_LISTING_VERIFICATION_ACTION,
+  PERSONAL_LISTING_VERIFICATION_BANNER,
+  PERSONAL_LISTING_VERIFICATION_HREF,
+} from "../lib/organisation-listing-copy";
 import { hasAdminUiAccess } from "../lib/client-admin-access";
 import { toMaskedBankDto } from "../lib/organisation-commercial-dto";
 import type { AccessContext, OrganisationAccessGrant } from "../lib/access/roles";
@@ -566,6 +579,117 @@ function accessCtx(partial: Partial<AccessContext>): AccessContext {
   assert.match(spaceForm, /createOrganisationListingRequest/);
   const listingServer = readFileSync("lib/organisation-commercial-server.ts", "utf8");
   assert.match(listingServer, /owner_id: null/);
+}
+
+{
+  assert.equal(listingFormVerificationNoticeKind(null), "personal");
+  assert.equal(listingFormVerificationNoticeKind(undefined), "personal");
+  assert.equal(listingFormVerificationNoticeKind(ORG), "organisation");
+  assert.equal(
+    organisationListingCommercialHref(ORG),
+    `/dashboard/organisation?organisation=${ORG}`
+  );
+  assert.equal(
+    PERSONAL_LISTING_VERIFICATION_BANNER,
+    "Listings stay pending until identity, bank, and ownership proof are approved."
+  );
+  assert.equal(PERSONAL_LISTING_VERIFICATION_ACTION, "Verification & payouts");
+  assert.equal(
+    PERSONAL_LISTING_VERIFICATION_HREF,
+    "/dashboard/verification?step=overview"
+  );
+  assert.equal(
+    listingFormBackHref(null),
+    PERSONAL_LISTING_VERIFICATION_HREF
+  );
+  assert.equal(listingFormBackLabel(null), "Back to host dashboard");
+  assert.equal(listingFormBackHref(ORG), "/dashboard/list-space");
+  assert.match(listingDraftRestoreNote(null), /ownership proof/);
+  assert.doesNotMatch(listingDraftRestoreNote(ORG), /ownership proof/);
+
+  assert.equal(
+    ORGANISATION_LISTING_VERIFICATION_HEADING,
+    "Organisation verification"
+  );
+  assert.equal(
+    ORGANISATION_LISTING_VERIFICATION_ACTION,
+    "Organisation verification"
+  );
+  assert.match(ORGANISATION_LISTING_VERIFICATION_BODY, /payout readiness/);
+  assert.match(
+    ORGANISATION_LISTING_VERIFICATION_BODY,
+    /Paid bookings become available once FindMySpace verifies the organisation/
+  );
+  assert.doesNotMatch(ORGANISATION_LISTING_VERIFICATION_BODY, /identity/);
+  assert.doesNotMatch(ORGANISATION_LISTING_VERIFICATION_BODY, /ownership proof/);
+  assert.doesNotMatch(
+    ORGANISATION_LISTING_VERIFICATION_BODY,
+    /bank verification is required before/i
+  );
+  assert.doesNotMatch(
+    ORGANISATION_LISTING_VERIFICATION_BODY,
+    /required for (accepting )?bookings/i
+  );
+
+  const spaceForm = readFileSync("app/components/SpaceForm.tsx", "utf8");
+  assert.match(spaceForm, /PERSONAL_LISTING_VERIFICATION_BANNER/);
+  assert.match(spaceForm, /PERSONAL_LISTING_VERIFICATION_ACTION/);
+  assert.match(spaceForm, /PERSONAL_LISTING_VERIFICATION_HREF/);
+  assert.match(spaceForm, /OrganisationListingVerificationNotice/);
+  assert.match(spaceForm, /showOrganisationCommercialAction = false/);
+  assert.match(spaceForm, /organisationId \? \(/);
+  assert.doesNotMatch(
+    spaceForm,
+    /Listings stay pending until identity, bank, and ownership proof are approved\./
+  );
+  assert.doesNotMatch(spaceForm, /21cf12c3-3235-4cd3-8106-801d120dc7b5/);
+
+  const newSpace = readFileSync("app/dashboard/new-space/page.tsx", "utf8");
+  assert.match(
+    newSpace,
+    /showOrganisationCommercialAction=\{Boolean\(organisationId\)\}/
+  );
+
+  const notice = readFileSync(
+    "app/components/OrganisationListingVerificationNotice.tsx",
+    "utf8"
+  );
+  assert.match(notice, /showCommercialLink/);
+  assert.match(notice, /organisationListingCommercialHref/);
+  assert.match(notice, /\{showCommercialLink \? \(/);
+
+  const editor = readFileSync("app/spaces/[id]/edit/page.tsx", "utf8");
+  assert.match(editor, /listingVerificationDisplayContext/);
+  assert.match(editor, /VERIFICATION_DISPLAY_ORGANISATION_MANAGED/);
+  assert.match(editor, /OrganisationListingVerificationNotice/);
+  assert.match(editor, /showCommercialLink=\{hosting\.summary\.showOrganisationCommercial\}/);
+  assert.match(editor, /data\.organisation_id/);
+  assert.doesNotMatch(editor, /showOrganisationManagedNotice && profile/);
+  assert.doesNotMatch(editor, /is_host.*organisation_managed/);
+
+  const sm = summarizeHostingAccess({
+    profileRole: "user",
+    isHostProfile: false,
+    ownedSpaceCount: 0,
+    ownedPropertyCount: 0,
+    grants: [
+      grant({
+        role: "space_manager",
+        status: "active",
+        spaceId: CLASSROOM_1,
+      }),
+    ],
+  });
+  assert.equal(sm.showOrganisationCommercial, false);
+  assert.equal(sm.isSpaceManager, true);
+  const oaHost = summarizeHostingAccess({
+    profileRole: "user",
+    isHostProfile: false,
+    ownedSpaceCount: 0,
+    ownedPropertyCount: 0,
+    grants: [grant({ role: "org_admin", status: "active" })],
+  });
+  assert.equal(oaHost.showOrganisationCommercial, true);
 }
 
 console.log("organisation commercial tests passed");

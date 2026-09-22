@@ -214,6 +214,7 @@ function NewSpacePageContent() {
 
             <SpaceForm
               organisationId={organisationId}
+              showOrganisationCommercialAction={Boolean(organisationId)}
               onCreated={async () => {
                 router.push("/dashboard/listings?created=pending");
                 router.refresh();

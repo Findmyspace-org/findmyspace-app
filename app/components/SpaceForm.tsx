@@ -22,6 +22,15 @@ import {
 import { isGoogleMapsUrl } from "@/lib/google-maps-url";
 import { ownerApiFetch } from "@/lib/owner-api-client";
 import { createOrganisationListingRequest } from "@/lib/organisation-commercial-client";
+import { OrganisationListingVerificationNotice } from "@/app/components/OrganisationListingVerificationNotice";
+import {
+  listingDraftRestoreNote,
+  listingFormBackHref,
+  listingFormBackLabel,
+  PERSONAL_LISTING_VERIFICATION_ACTION,
+  PERSONAL_LISTING_VERIFICATION_BANNER,
+  PERSONAL_LISTING_VERIFICATION_HREF,
+} from "@/lib/organisation-listing-copy";
 import { uploadSpacePhotos } from "@/lib/space-photos-client";
 import { supabase } from "@/lib/supabase";
 import { prepareFilesForUpload } from "@/lib/image-compression-client";
@@ -75,6 +84,7 @@ const LISTING_CREATE_STEPS: ListingFormStepMeta[] = [
 type SpaceFormProps = {
   onCreated?: () => void | Promise<void>;
   organisationId?: string | null;
+  showOrganisationCommercialAction?: boolean;
 };
 
 type InsertedSpace = {
@@ -185,7 +195,11 @@ function restoreBookingRequirementDraft(
   };
 }
 
-export default function SpaceForm({ onCreated, organisationId = null }: SpaceFormProps) {
+export default function SpaceForm({
+  onCreated,
+  organisationId = null,
+  showOrganisationCommercialAction = false,
+}: SpaceFormProps) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [city, setCity] = useState("");
@@ -1618,7 +1632,7 @@ export default function SpaceForm({ onCreated, organisationId = null }: SpaceFor
         >
           <p className="min-w-0 flex-1">
             <span className="font-medium text-sky-950">We saved your progress.</span>{" "}
-            Text fields were restored; add photos and ownership proof again if needed.
+            {listingDraftRestoreNote(organisationId)}
           </p>
           <button
             type="button"
@@ -1656,17 +1670,24 @@ export default function SpaceForm({ onCreated, organisationId = null }: SpaceFor
         className={currentStep === 0 ? "listing-step-panel space-y-4" : "hidden"}
         aria-hidden={currentStep !== 0}
       >
+      {organisationId ? (
+        <OrganisationListingVerificationNotice
+          organisationId={organisationId}
+          showCommercialLink={showOrganisationCommercialAction}
+        />
+      ) : (
       <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#e5e7eb] bg-[#f8fafc] px-3 py-2.5 sm:px-4">
         <p className="text-xs leading-snug text-[#64748b] sm:text-sm">
-          Listings stay pending until identity, bank, and ownership proof are approved.
+          {PERSONAL_LISTING_VERIFICATION_BANNER}
         </p>
         <Link
-          href="/dashboard/verification?step=overview"
+          href={PERSONAL_LISTING_VERIFICATION_HREF}
           className="shrink-0 text-sm font-medium text-[#c1121f] underline-offset-4 hover:underline"
         >
-          Verification & payouts
+          {PERSONAL_LISTING_VERIFICATION_ACTION}
         </Link>
       </div>
+      )}
 
       <section className="rounded-2xl border border-sky-200/80 bg-sky-50/70 p-4 shadow-sm sm:p-5">
         <h3 className="mb-0.5 text-sm font-semibold text-[#0f172a] sm:text-base">
@@ -2571,10 +2592,10 @@ export default function SpaceForm({ onCreated, organisationId = null }: SpaceFor
           </button>
         ) : (
           <Link
-            href="/dashboard/verification?step=overview"
+            href={listingFormBackHref(organisationId)}
             className="order-2 inline-flex min-h-[44px] items-center justify-center rounded-xl border border-[#d7dde3] bg-white px-4 py-2.5 text-sm font-medium text-[#334155] shadow-sm transition hover:border-[#b8c2cc] sm:order-1"
           >
-            Back to host dashboard
+            {listingFormBackLabel(organisationId)}
           </Link>
         )}
         <div className="order-1 flex w-full flex-col gap-2 sm:order-2 sm:w-auto sm:flex-row">

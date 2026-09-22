@@ -8,8 +8,9 @@
  *
  * Organisation-managed does NOT mean the Organisation is verified. It means
  * the operator's personal identity/bank/proof must not be shown as this
- * listing's requirements. Organisation commercial verification is a later
- * schema (069) and is out of scope.
+ * listing's requirements. Organisation commercial copy uses listing
+ * organisationId / property.organisation_id, not the operator's personal
+ * host profile.
  */
 
 export const VERIFICATION_DISPLAY_PERSONAL_HOST = "personal_host";

@@ -11,9 +11,11 @@ import DashboardShell from "@/app/components/DashboardShell";
 import { useHostingWorkspace } from "@/lib/use-hosting-workspace";
 import { ownerApiFetch } from "@/lib/owner-api-client";
 import OwnerVerificationAlerts from "@/app/components/OwnerVerificationAlerts";
+import { OrganisationListingVerificationNotice } from "@/app/components/OrganisationListingVerificationNotice";
 import {
   listingVerificationDisplayContext,
   showsPersonalVerificationUi,
+  VERIFICATION_DISPLAY_ORGANISATION_MANAGED,
 } from "@/lib/verification-display-context";
 import {
   GroupSizeFields,
@@ -918,13 +920,17 @@ export default function EditListingPage(_props: PageProps) {
     title,
   ]);
 
+  const verificationDisplayContext = listingVerificationDisplayContext({
+    organisationId,
+    ownerId,
+    currentUserId: sessionUserId,
+  });
   const showPersonalVerificationUi = showsPersonalVerificationUi(
-    listingVerificationDisplayContext({
-      organisationId,
-      ownerId,
-      currentUserId: sessionUserId,
-    })
+    verificationDisplayContext
   );
+  const showOrganisationManagedNotice =
+    verificationDisplayContext === VERIFICATION_DISPLAY_ORGANISATION_MANAGED &&
+    Boolean(organisationId);
 
   return (
     <RequireAuth>
@@ -989,6 +995,15 @@ export default function EditListingPage(_props: PageProps) {
             {showPersonalVerificationUi ? (
             <div className="mb-6">
               <OwnerVerificationAlerts />
+            </div>
+            ) : null}
+
+            {showOrganisationManagedNotice && organisationId ? (
+            <div className="mb-6">
+              <OrganisationListingVerificationNotice
+                organisationId={organisationId}
+                showCommercialLink={hosting.summary.showOrganisationCommercial}
+              />
             </div>
             ) : null}
 
