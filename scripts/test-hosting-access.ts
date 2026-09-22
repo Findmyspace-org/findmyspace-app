@@ -657,6 +657,8 @@ function navLabels(summary: ReturnType<typeof summarizeHostingAccess>) {
   assert.doesNotMatch(dashboardShell, /Switch to Booking/);
   assert.doesNotMatch(workspaceSwitchUi, /Switch to Hosting/);
   assert.match(owner, /pageTitle="Overview"/);
+  assert.match(owner, /useHostingWorkspace\(requestedOrganisationId\)/);
+  assert.match(owner, /hostingOverviewVerificationKind/);
   assert.doesNotMatch(owner, /Host dashboard/);
   assert.equal(smSummary.isSpaceManager, true);
   assert.equal(navHrefs(smSummary).includes("/dashboard/people"), false);

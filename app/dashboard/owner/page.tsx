@@ -15,7 +15,8 @@
  */
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   AlertCircle,
   ArrowRight,
@@ -41,6 +42,15 @@ import DashboardShell from "@/app/components/DashboardShell";
 import { useHostingWorkspace } from "@/lib/use-hosting-workspace";
 import OwnerVerificationAlerts from "@/app/components/OwnerVerificationAlerts";
 import RequireAuth from "@/app/components/RequireAuth";
+import { hostingHref } from "@/lib/access/hosting-access";
+import { ORGANISATION_QUERY_PARAM } from "@/lib/access/organisation-workspace";
+import { fetchOrganisationCommercial } from "@/lib/organisation-commercial-client";
+import type { OrganisationCommercialBundle } from "@/lib/organisation-commercial-dto";
+import {
+  hostingOverviewVerificationKind,
+  hostingOverviewVerificationTool,
+  organisationOverviewCard,
+} from "@/lib/hosting-overview-commercial";
 
 type OwnerDashboardListing = {
   id: string;
@@ -81,14 +91,31 @@ function formatCompactMoney(amount: number) {
   return `R ${amount.toLocaleString("en-ZA")}`;
 }
 
-export default function HostDashboardPage() {
-  const hosting = useHostingWorkspace();
+function HostDashboardPageContent() {
+  const searchParams = useSearchParams();
+  const requestedOrganisationId = searchParams.get(ORGANISATION_QUERY_PARAM);
+  const hosting = useHostingWorkspace(requestedOrganisationId);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [listings, setListings] = useState<OwnerDashboardListing[]>([]);
   const [bookings, setBookings] = useState<OwnerDashboardBooking[]>([]);
   const [profile, setProfile] = useState<OwnerProfile | null>(null);
   const [pendingQuestionsCount, setPendingQuestionsCount] = useState(0);
+  const [commercial, setCommercial] =
+    useState<OrganisationCommercialBundle | null>(null);
+
+  const verificationKind = hostingOverviewVerificationKind({
+    organisationId: hosting.organisationId,
+    showOrganisationCommercial: hosting.summary.showOrganisationCommercial,
+    isLegacyHost: hosting.summary.isLegacyHost,
+  });
+  const verificationTool = hostingOverviewVerificationTool({
+    organisationId: hosting.organisationId,
+    showOrganisationCommercial: hosting.summary.showOrganisationCommercial,
+    showVerification: hosting.summary.showVerification,
+  });
+  const orgHref = (pathname: string) =>
+    hostingHref(pathname, hosting.organisationId);
 
   useEffect(() => {
     if (hosting.loading) return;
@@ -96,6 +123,25 @@ export default function HostDashboardPage() {
       window.location.replace("/dashboard/become-host");
     }
   }, [hosting.loading, hosting.summary.hasHostingAccess]);
+
+  useEffect(() => {
+    if (verificationKind !== "organisation" || !hosting.organisationId) {
+      setCommercial(null);
+      return;
+    }
+    const organisationId = hosting.organisationId;
+    let mounted = true;
+    fetchOrganisationCommercial(organisationId)
+      .then((bundle) => {
+        if (mounted) setCommercial(bundle);
+      })
+      .catch(() => {
+        if (mounted) setCommercial(null);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [verificationKind, hosting.organisationId]);
 
   useEffect(() => {
     async function loadDashboard() {
@@ -258,6 +304,21 @@ export default function HostDashboardPage() {
     [profile]
   );
 
+  const organisationCard = useMemo(() => {
+    if (verificationKind !== "organisation" || !hosting.organisationId) {
+      return null;
+    }
+    if (!commercial?.payout_readiness) return null;
+    return organisationOverviewCard({
+      organisationId: hosting.organisationId,
+      payout: commercial.payout_readiness,
+      verificationStatus: commercial.commercial?.verification_status ?? null,
+      verificationSubmittedAt: commercial.commercial?.submitted_at ?? null,
+      verificationRejectionReason:
+        commercial.commercial?.rejection_reason ?? null,
+    });
+  }, [commercial, hosting.organisationId, verificationKind]);
+
   return (
     <RequireAuth>
       <DashboardShell
@@ -280,8 +341,8 @@ export default function HostDashboardPage() {
               </div>
             ) : null}
 
-            {/* Verification & listing actions — personal-host context only. */}
-            {hosting.summary.isLegacyHost ? <OwnerVerificationAlerts /> : null}
+            {/* Verification alerts — personal-host context only. */}
+            {verificationKind === "personal" ? <OwnerVerificationAlerts /> : null}
 
             {/* TOP METRICS — what hosts most often act on. */}
             <section aria-labelledby="host-overview-metrics">
@@ -297,7 +358,7 @@ export default function HostDashboardPage() {
                   value={pendingRequestsCount}
                   subtitle="Waiting for your response"
                   icon={<Mail className="h-6 w-6" aria-hidden />}
-                  href="/dashboard/requests"
+                  href={orgHref("/dashboard/requests")}
                   highlight={pendingRequestsCount > 0}
                 />
                 <MetricCard
@@ -305,7 +366,7 @@ export default function HostDashboardPage() {
                   value={pendingQuestionsCount}
                   subtitle="Yes/no questions from renters"
                   icon={<HelpCircle className="h-6 w-6" aria-hidden />}
-                  href="/dashboard/comms?view=hosting"
+                  href={orgHref("/dashboard/comms?view=hosting")}
                   highlight={pendingQuestionsCount > 0}
                 />
                 <MetricCard
@@ -313,7 +374,7 @@ export default function HostDashboardPage() {
                   value={formatCompactMoney(monthlyIncome)}
                   subtitle="Confirmed booking income"
                   icon={<Wallet className="h-6 w-6" aria-hidden />}
-                  href="/dashboard/finance"
+                  href={orgHref("/dashboard/finance")}
                 />
                 <MetricCard
                   title="Listings awaiting approval"
@@ -326,7 +387,7 @@ export default function HostDashboardPage() {
                         }`
                   }
                   icon={<BadgeCheck className="h-6 w-6" aria-hidden />}
-                  href="/dashboard/listings"
+                  href={orgHref("/dashboard/listings")}
                   highlight={pendingListingApprovalCount > 0}
                 />
               </div>
@@ -345,14 +406,14 @@ export default function HostDashboardPage() {
                   title="My spaces"
                   description="Manage individual spaces people can book."
                   icon={<Building2 className="h-5 w-5" aria-hidden />}
-                  href="/dashboard/listings"
+                  href={orgHref("/dashboard/listings")}
                   meta={`${activeListingsCount} active`}
                 />
                 <WorkspaceCard
                   title="Booking requests"
                   description="Approve or decline pending requests on your listings."
                   icon={<ClipboardList className="h-5 w-5" aria-hidden />}
-                  href="/dashboard/requests"
+                  href={orgHref("/dashboard/requests")}
                   meta={
                     pendingRequestsCount > 0
                       ? `${pendingRequestsCount} pending`
@@ -364,7 +425,7 @@ export default function HostDashboardPage() {
                   title="Comms"
                   description="Renter questions, booking messages and platform updates."
                   icon={<Inbox className="h-5 w-5" aria-hidden />}
-                  href="/dashboard/comms?view=hosting"
+                  href={orgHref("/dashboard/comms?view=hosting")}
                   meta={
                     pendingQuestionsCount > 0
                       ? `${pendingQuestionsCount} to answer`
@@ -389,7 +450,7 @@ export default function HostDashboardPage() {
                   value={awaitingPaymentCount}
                   subtitle="Approved bookings waiting on the renter"
                   icon={<CreditCard className="h-5 w-5" aria-hidden />}
-                  href="/dashboard/requests"
+                  href={orgHref("/dashboard/requests")}
                   highlight={awaitingPaymentCount > 0}
                 />
                 <DetailCard
@@ -397,9 +458,28 @@ export default function HostDashboardPage() {
                   value={confirmedBookingsCount}
                   subtitle="Paid and on the calendar"
                   icon={<CheckCircle2 className="h-5 w-5" aria-hidden />}
-                  href="/dashboard/calendar"
+                  href={orgHref("/dashboard/calendar")}
                 />
-                {hosting.summary.isLegacyHost ? (
+                {organisationCard ? (
+                <DetailCard
+                  title={organisationCard.title}
+                  value={organisationCard.value}
+                  subtitle={organisationCard.subtitle}
+                  ticks={organisationCard.ticks}
+                  icon={
+                    organisationCard.ready ? (
+                      <BadgeCheck className="h-5 w-5" aria-hidden />
+                    ) : organisationCard.highlight ? (
+                      <AlertCircle className="h-5 w-5" aria-hidden />
+                    ) : (
+                      <Building2 className="h-5 w-5" aria-hidden />
+                    )
+                  }
+                  href={organisationCard.href}
+                  highlight={organisationCard.highlight}
+                  ready={organisationCard.ready}
+                />
+                ) : verificationKind === "personal" ? (
                 <DetailCard
                   title="Profile & verification"
                   value={profileNeedsAttention ? "Action" : "OK"}
@@ -434,22 +514,22 @@ export default function HostDashboardPage() {
               </h2>
               <div className="flex flex-wrap gap-2">
                 <ToolChip
-                  href="/dashboard/calendar"
+                  href={orgHref("/dashboard/calendar")}
                   icon={<CalendarDays className="h-3.5 w-3.5" aria-hidden />}
                 >
                   Calendar
                 </ToolChip>
-                {hosting.summary.showVerification ? (
+                {verificationTool ? (
                 <ToolChip
-                  href="/dashboard/verification"
+                  href={verificationTool.href}
                   icon={<Settings className="h-3.5 w-3.5" aria-hidden />}
                 >
-                  Verification &amp; settings
+                  {verificationTool.label}
                 </ToolChip>
                 ) : null}
                 {hosting.summary.showFinance ? (
                 <ToolChip
-                  href="/dashboard/finance"
+                  href={orgHref("/dashboard/finance")}
                   icon={<Landmark className="h-3.5 w-3.5" aria-hidden />}
                 >
                   Finance
@@ -457,7 +537,7 @@ export default function HostDashboardPage() {
                 ) : null}
                 {hosting.summary.showCreateSpace ? (
                 <ToolChip
-                  href="/dashboard/new-space"
+                  href={orgHref("/dashboard/new-space")}
                   icon={<HousePlus className="h-3.5 w-3.5" aria-hidden />}
                 >
                   List a new space
@@ -475,6 +555,21 @@ export default function HostDashboardPage() {
         )}
       </DashboardShell>
     </RequireAuth>
+  );
+}
+
+export default function HostDashboardPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex items-center gap-2 px-6 py-10 text-sm text-gray-600">
+          <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+          Loading Hosting…
+        </div>
+      }
+    >
+      <HostDashboardPageContent />
+    </Suspense>
   );
 }
 
@@ -589,6 +684,8 @@ function DetailCard({
   icon,
   href,
   highlight = false,
+  ready = false,
+  ticks = [],
 }: {
   title: string;
   value: number | string;
@@ -596,12 +693,20 @@ function DetailCard({
   icon: React.ReactNode;
   href: string;
   highlight?: boolean;
+  ready?: boolean;
+  ticks?: string[];
 }) {
+  const valueText = String(value);
+  const compactValue = valueText.length > 18;
   return (
     <Link
       href={href}
       className={`group flex h-full flex-col rounded-2xl border bg-white p-3 shadow-sm transition hover:-translate-y-0.5 hover:border-gray-300 hover:shadow-md sm:p-4 ${
-        highlight ? "border-amber-300 bg-amber-50/30" : "border-gray-200"
+        ready
+          ? "border-emerald-200 bg-emerald-50/40"
+          : highlight
+            ? "border-amber-300 bg-amber-50/30"
+            : "border-gray-200"
       }`}
     >
       <div className="flex items-center gap-2 text-xs font-medium text-gray-500">
@@ -610,12 +715,30 @@ function DetailCard({
         </span>
         {title}
       </div>
-      <p className="mt-2 break-words text-2xl font-semibold tracking-tight text-[#0c1d2f]">
+      <p
+        className={`mt-2 break-words font-semibold tracking-tight text-[#0c1d2f] ${
+          compactValue ? "text-base leading-snug sm:text-lg" : "text-2xl"
+        }`}
+      >
         {value}
       </p>
-      <p className="mt-1 flex-1 text-xs leading-relaxed text-gray-600">
-        {subtitle}
-      </p>
+      {ticks.length > 0 ? (
+        <ul className="mt-2 space-y-1 text-xs leading-relaxed text-emerald-800">
+          {ticks.map((tick) => (
+            <li key={tick} className="flex items-start gap-1.5">
+              <CheckCircle2
+                className="mt-0.5 h-3.5 w-3.5 shrink-0"
+                aria-hidden
+              />
+              <span>{tick}</span>
+            </li>
+          ))}
+        </ul>
+      ) : subtitle ? (
+        <p className="mt-1 flex-1 text-xs leading-relaxed text-gray-600">
+          {subtitle}
+        </p>
+      ) : null}
     </Link>
   );
 }

@@ -386,7 +386,10 @@ const payfastRoute = readFileSync("app/api/payfast/initiate/route.ts", "utf8");
   assert.match(spaceFormSrc, /PERSONAL_LISTING_VERIFICATION_BANNER/);
   assert.match(spaceFormSrc, /OrganisationListingVerificationNotice/);
   assert.match(spaceFormSrc, /showOrganisationCommercialAction = false/);
-  assert.match(ownerSrc, /isLegacyHost \? <OwnerVerificationAlerts/);
+  assert.match(ownerSrc, /verificationKind === "personal" \? <OwnerVerificationAlerts/);
+  assert.match(ownerSrc, /useHostingWorkspace\(requestedOrganisationId\)/);
+  assert.match(ownerSrc, /fetchOrganisationCommercial/);
+  assert.doesNotMatch(ownerSrc, /isLegacyHost \? <OwnerVerificationAlerts/);
   assert.match(hostListingApi, /organisation_id: organisationId/);
 }
 
