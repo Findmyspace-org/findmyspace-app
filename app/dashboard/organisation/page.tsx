@@ -222,6 +222,10 @@ function OrganisationCommercialPageContent() {
         ) : null}
         {loading || hosting.loading ? (
           <p className="text-sm text-[#64748b]">Loading organisation...</p>
+        ) : selection.kind === "unavailable" ? (
+          <p className="text-sm text-[#64748b]">
+            This organisation is not available in your workspace.
+          </p>
         ) : !bundle ? (
           <p className="text-sm text-[#64748b]">Select an organisation to manage commercial details.</p>
         ) : (

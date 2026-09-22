@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { isCommunicationAllowed } from "@/lib/booking-communication";
+import {
+  listManagedSpaceIdsForHostingContext,
+  resolveRequestHostingContext,
+} from "@/lib/access/hosting-context";
 import { listManagedSpaceIds } from "@/lib/access/list-managed-spaces";
+import { ORGANISATION_QUERY_PARAM } from "@/lib/access/organisation-workspace";
 import { getDisplayName } from "@/lib/utils";
 
 export async function GET(req: NextRequest) {
@@ -38,10 +43,37 @@ export async function GET(req: NextRequest) {
       auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
     });
 
-    const managedSpaceIds = await listManagedSpaceIds(admin, user.id);
-    const bookingFilters = [`renter_id.eq.${user.id}`, `owner_id.eq.${user.id}`];
+    const requestedOrganisationId = req.nextUrl.searchParams.get(
+      ORGANISATION_QUERY_PARAM
+    );
+    const hostingScoped = req.nextUrl.searchParams.has(ORGANISATION_QUERY_PARAM);
+
+    let managedSpaceIds: string[];
+    if (hostingScoped) {
+      const { summary, context } = await resolveRequestHostingContext(
+        admin,
+        user.id,
+        requestedOrganisationId
+      );
+      managedSpaceIds = await listManagedSpaceIdsForHostingContext(
+        admin,
+        user.id,
+        context,
+        { isGlobalAdmin: summary.isGlobalAdmin }
+      );
+    } else {
+      managedSpaceIds = await listManagedSpaceIds(admin, user.id);
+    }
+
+    const bookingFilters: string[] = hostingScoped
+      ? []
+      : [`renter_id.eq.${user.id}`, `owner_id.eq.${user.id}`];
     if (managedSpaceIds.length > 0) {
       bookingFilters.push(`space_id.in.(${managedSpaceIds.join(",")})`);
+    }
+
+    if (bookingFilters.length === 0) {
+      return NextResponse.json({ threads: [] });
     }
 
     const { data: bookings, error: bookingsError } = await admin

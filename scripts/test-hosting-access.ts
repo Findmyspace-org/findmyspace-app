@@ -379,7 +379,7 @@ function navLabels(summary: ReturnType<typeof summarizeHostingAccess>) {
 // O. booking requests scoped to managed spaces
 {
   assert.match(requests, /fetchManagedSpaces/);
-  assert.match(requests, /managedIds\.has\(booking\.space_id\)/);
+  assert.match(requests, /\.in\("space_id", managedIds\)/);
 }
 
 // P. calendar scoped to managed spaces
@@ -418,7 +418,7 @@ function navLabels(summary: ReturnType<typeof summarizeHostingAccess>) {
     organisationIds: [ORG],
     primaryOrganisationId: ORG,
   });
-  assert.equal(fallback, ORG);
+  assert.equal(fallback, null);
   const renterOrg = resolveHostingOrganisationId({
     requestedId: ORG,
     organisationIds: [],
@@ -646,7 +646,7 @@ function navLabels(summary: ReturnType<typeof summarizeHostingAccess>) {
   assert.match(dashboardShell, /useWorkspaceChrome/);
   assert.match(dashboardShell, /WorkspaceSwitch/);
   assert.match(workspaceChrome, /fetchHostingWorkspaceDisplay/);
-  assert.match(workspaceChrome, /resolveHostingOrganisationId/);
+  assert.match(workspaceChrome, /hostingContextFromSummary/);
   assert.match(workspaceChrome, /hostingOrganisationContextName/);
   assert.doesNotMatch(workspaceChrome, /is_host/);
   assert.match(workspaceSwitchUi, /aria-label="Workspace"/);

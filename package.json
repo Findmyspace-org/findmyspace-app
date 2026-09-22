@@ -52,6 +52,7 @@
     "test:verification-display": "tsx scripts/test-verification-display.ts",
     "test:hosting-overview-commercial": "tsx scripts/test-hosting-overview-commercial.ts",
     "test:hosting-workspace-ui": "tsx scripts/test-hosting-workspace-ui.ts",
+    "test:hosting-context": "tsx scripts/test-hosting-context.ts",
     "test:fixed-menu-position": "tsx scripts/test-fixed-menu-position.ts",
     "test:crm-org-contact-filters": "tsx scripts/test-crm-org-contact-filters.ts",
     "test:crm-primary-contact": "tsx scripts/test-crm-primary-contact.ts",

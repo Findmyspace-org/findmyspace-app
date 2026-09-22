@@ -3,11 +3,18 @@
 import { useEffect, useMemo, useState } from "react";
 import { hostingNavItems } from "@/lib/dashboard-nav";
 import type { DashboardNavItem } from "@/app/components/DashboardShell";
+import { useSearchParams } from "next/navigation";
 import {
   hostingHref,
-  resolveHostingOrganisationId,
   type HostingAccessSummary,
 } from "@/lib/access/hosting-access";
+import {
+  hostingContextFromSummary,
+  hostingContextHrefOrganisationId,
+  hostingContextOrganisationId,
+  type HostingContext,
+} from "@/lib/access/hosting-context";
+import { ORGANISATION_QUERY_PARAM } from "@/lib/access/organisation-workspace";
 import { fetchHostingAccessSummary } from "@/lib/hosting-access-client";
 
 const EMPTY_SUMMARY: HostingAccessSummary = {
@@ -28,6 +35,10 @@ const EMPTY_SUMMARY: HostingAccessSummary = {
 };
 
 export function useHostingWorkspace(requestedId?: string | null) {
+  const searchParams = useSearchParams();
+  const requestedFromUrl = searchParams.get(ORGANISATION_QUERY_PARAM);
+  const requestedOrganisationId =
+    requestedId !== undefined ? requestedId : requestedFromUrl;
   const [summary, setSummary] = useState<HostingAccessSummary>(EMPTY_SUMMARY);
   const [loading, setLoading] = useState(true);
 
@@ -48,27 +59,31 @@ export function useHostingWorkspace(requestedId?: string | null) {
     };
   }, []);
 
-  const organisationId = useMemo(
-    () =>
-      resolveHostingOrganisationId({
-        requestedId: requestedId ?? null,
-        organisationIds: summary.organisationIds,
-        primaryOrganisationId: summary.primaryOrganisationId,
-      }),
-    [requestedId, summary.organisationIds, summary.primaryOrganisationId]
+  const context: HostingContext = useMemo(
+    () => hostingContextFromSummary(summary, requestedOrganisationId),
+    [requestedOrganisationId, summary]
+  );
+  const organisationId = hostingContextOrganisationId(context);
+  const hrefOrganisationId = hostingContextHrefOrganisationId(
+    context,
+    requestedOrganisationId
   );
 
   const navItems: DashboardNavItem[] = useMemo(
-    () => hostingNavItems(summary, organisationId),
-    [summary, organisationId]
+    () => hostingNavItems(summary, hrefOrganisationId),
+    [summary, hrefOrganisationId]
   );
 
   return {
     summary,
     loading,
+    context,
     organisationId,
+    requestedOrganisationId: requestedOrganisationId?.trim() || null,
+    hrefOrganisationId,
     navItems,
-    ownerHref: hostingHref("/dashboard/owner", organisationId),
-    listingsHref: hostingHref("/dashboard/listings", organisationId),
+    ownerHref: hostingHref("/dashboard/owner", hrefOrganisationId),
+    listingsHref: hostingHref("/dashboard/listings", hrefOrganisationId),
+    propertiesHref: hostingHref("/dashboard/properties", hrefOrganisationId),
   };
 }

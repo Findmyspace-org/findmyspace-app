@@ -1,12 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
-import { listManagedSpaceIds } from "@/lib/access/list-managed-spaces";
+import {
+  listManagedSpaceIdsForHostingContext,
+  resolveRequestHostingContext,
+} from "@/lib/access/hosting-context";
+import { ORGANISATION_QUERY_PARAM } from "@/lib/access/organisation-workspace";
 import { requireAuthenticatedApi } from "@/lib/require-authenticated-api";
 
 export async function GET(req: NextRequest) {
   const auth = await requireAuthenticatedApi(req);
   if ("response" in auth) return auth.response;
 
-  const spaceIds = await listManagedSpaceIds(auth.admin, auth.userId);
+  const requestedOrganisationId = req.nextUrl.searchParams.get(
+    ORGANISATION_QUERY_PARAM
+  );
+  const { summary, context } = await resolveRequestHostingContext(
+    auth.admin,
+    auth.userId,
+    requestedOrganisationId
+  );
+  const spaceIds = await listManagedSpaceIdsForHostingContext(
+    auth.admin,
+    auth.userId,
+    context,
+    { isGlobalAdmin: summary.isGlobalAdmin }
+  );
   if (spaceIds.length === 0) {
     return NextResponse.json({ spaces: [] });
   }

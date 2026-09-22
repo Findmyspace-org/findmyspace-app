@@ -1,3 +1,5 @@
+import { hostingHref } from "@/lib/access/hosting-access";
+
 export type ManagedSpaceRow = {
   id: string;
   title: string | null;
@@ -29,9 +31,14 @@ export type ManagedSpaceRow = {
 };
 
 export async function fetchManagedSpaces(
-  accessToken: string
+  accessToken: string,
+  requestedOrganisationId?: string | null
 ): Promise<ManagedSpaceRow[]> {
-  const res = await fetch("/api/host/managed-spaces", {
+  const path = hostingHref(
+    "/api/host/managed-spaces",
+    requestedOrganisationId?.trim() || null
+  );
+  const res = await fetch(path, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   const json = (await res.json().catch(() => null)) as {

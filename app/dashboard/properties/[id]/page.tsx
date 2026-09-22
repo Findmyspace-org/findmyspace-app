@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowLeft, ArrowRight } from "lucide-react";
 import RequireAuth from "@/app/components/RequireAuth";
@@ -10,6 +10,8 @@ import { PropertyReadinessDashboard } from "@/app/components/PropertyReadinessDa
 import { OwnerPropertySpaceSteps } from "@/app/components/OwnerPropertySpaceSteps";
 import { useHostingWorkspace } from "@/lib/use-hosting-workspace";
 import { ownerApiFetch } from "@/lib/owner-api-client";
+import { hostingHref } from "@/lib/access/hosting-access";
+import { ORGANISATION_QUERY_PARAM } from "@/lib/access/organisation-workspace";
 import {
   getOwnerListingStatusBadgeClass,
   getPropertyChildSpaceNextAction,
@@ -56,7 +58,9 @@ type SpaceRow = {
 };
 
 function PropertyDetailContent() {
-  const hosting = useHostingWorkspace();
+  const searchParams = useSearchParams();
+  const requestedOrganisationId = searchParams.get(ORGANISATION_QUERY_PARAM);
+  const hosting = useHostingWorkspace(requestedOrganisationId);
   const params = useParams();
   const propertyId = typeof params.id === "string" ? params.id : "";
 
@@ -94,7 +98,12 @@ function PropertyDetailContent() {
     if (!propertyId) return;
     setLoading(true);
     try {
-      const result = await ownerApiFetch(`/api/owner/properties/${propertyId}`);
+      const result = await ownerApiFetch(
+        hostingHref(
+          `/api/owner/properties/${propertyId}`,
+          requestedOrganisationId
+        )
+      );
       setProperty(result.property as PropertyDetail);
       setSpaces((result.spaces as SpaceRow[]) || []);
       setSummary(
@@ -126,7 +135,7 @@ function PropertyDetailContent() {
       setProgress(null);
     }
     setLoading(false);
-  }, [propertyId]);
+  }, [propertyId, requestedOrganisationId]);
 
   useEffect(() => {
     void load();
@@ -147,7 +156,7 @@ function PropertyDetailContent() {
     >
       <div className="mx-auto max-w-4xl">
         <Link
-          href="/dashboard/properties"
+          href={hosting.propertiesHref}
           className="mb-4 inline-flex items-center gap-2 text-sm font-medium text-gray-700 hover:text-gray-900"
         >
           <ArrowLeft className="h-4 w-4" />

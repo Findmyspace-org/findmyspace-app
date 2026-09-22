@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { formatPropertyAddress } from "@/lib/admin-property";
-import { listManagedPropertyIds } from "@/lib/access/list-managed-properties";
+import {
+  listManagedPropertyIdsForHostingContext,
+  resolveRequestHostingContext,
+} from "@/lib/access/hosting-context";
+import { ORGANISATION_QUERY_PARAM } from "@/lib/access/organisation-workspace";
 import { requireAuthenticatedApi } from "@/lib/require-authenticated-api";
 import { isArchivedProperty } from "@/lib/property-archive";
 
@@ -8,7 +12,20 @@ export async function GET(req: NextRequest) {
   const auth = await requireAuthenticatedApi(req);
   if ("response" in auth) return auth.response;
 
-  const propertyIds = await listManagedPropertyIds(auth.admin, auth.userId);
+  const requestedOrganisationId = req.nextUrl.searchParams.get(
+    ORGANISATION_QUERY_PARAM
+  );
+  const { summary, context } = await resolveRequestHostingContext(
+    auth.admin,
+    auth.userId,
+    requestedOrganisationId
+  );
+  const propertyIds = await listManagedPropertyIdsForHostingContext(
+    auth.admin,
+    auth.userId,
+    context,
+    { isGlobalAdmin: summary.isGlobalAdmin }
+  );
   if (propertyIds.length === 0) {
     return NextResponse.json({ properties: [] });
   }

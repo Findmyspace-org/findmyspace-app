@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   AlertCircle,
   CalendarDays,
@@ -13,6 +14,7 @@ import RequireAuth from "@/app/components/RequireAuth";
 import DashboardShell from "@/app/components/DashboardShell";
 import { HostingSummaryStrip } from "@/app/components/hosting/hosting-ui";
 import { useHostingWorkspace } from "@/lib/use-hosting-workspace";
+import { ORGANISATION_QUERY_PARAM } from "@/lib/access/organisation-workspace";
 import {
   buildFinanceLineItems,
   type FinanceBookingInput,
@@ -35,8 +37,10 @@ function formatMoney(n: number) {
   })}`;
 }
 
-export default function OwnerFinancePage() {
-  const hosting = useHostingWorkspace();
+function OwnerFinancePageContent() {
+  const searchParams = useSearchParams();
+  const requestedOrganisationId = searchParams.get(ORGANISATION_QUERY_PARAM);
+  const hosting = useHostingWorkspace(requestedOrganisationId);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [sessionEmail, setSessionEmail] = useState<string | null>(null);
@@ -71,7 +75,10 @@ export default function OwnerFinancePage() {
       setSessionEmail(session.user.email ?? null);
 
       const { fetchManagedSpaces } = await import("@/lib/host-managed-spaces-client");
-      const managed = await fetchManagedSpaces(session.access_token);
+      const managed = await fetchManagedSpaces(
+        session.access_token,
+        requestedOrganisationId
+      );
       setSpaces(managed.map((row) => ({ id: row.id, title: row.title })));
       const managedIds = managed.map((row) => row.id);
       if (managedIds.length === 0) {
@@ -136,7 +143,7 @@ export default function OwnerFinancePage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [requestedOrganisationId]);
 
   useEffect(() => {
     void loadOwnerFinance();
@@ -528,5 +535,13 @@ export default function OwnerFinancePage() {
         </>
       </DashboardShell>
     </RequireAuth>
+  );
+}
+
+export default function OwnerFinancePage() {
+  return (
+    <Suspense fallback={<main className="p-8 text-gray-600">Loading…</main>}>
+      <OwnerFinancePageContent />
+    </Suspense>
   );
 }

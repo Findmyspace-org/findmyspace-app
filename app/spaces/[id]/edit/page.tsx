@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback, Suspense } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import SpaceCategoryFields from "@/app/components/SpaceCategoryFields";
@@ -197,7 +197,7 @@ function buildOwnerListingSnapshot(values: {
   return JSON.stringify(values);
 }
 
-export default function EditListingPage(_props: PageProps) {
+function EditListingPageContent(_props: PageProps) {
   const router = useRouter();
   const routeParams = useParams();
   const routeSpaceId = typeof routeParams.id === "string" ? routeParams.id : "";
@@ -1347,6 +1347,14 @@ export default function EditListingPage(_props: PageProps) {
         </div>
       </DashboardShell>
     </RequireAuth>
+  );
+}
+
+export default function EditListingPage(props: PageProps) {
+  return (
+    <Suspense fallback={<main className="p-8 text-gray-600">Loading…</main>}>
+      <EditListingPageContent {...props} />
+    </Suspense>
   );
 }
 

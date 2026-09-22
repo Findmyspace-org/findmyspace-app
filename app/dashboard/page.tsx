@@ -19,7 +19,7 @@
  */
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import RequireAuth from "@/app/components/RequireAuth";
 import OwnerVerificationAlerts from "@/app/components/OwnerVerificationAlerts";
@@ -97,7 +97,7 @@ function formatRelativeShort(iso: string | null): string {
   return d.toLocaleDateString("en-ZA", { day: "numeric", month: "short" });
 }
 
-export default function RenterDashboardPage() {
+function RenterDashboardPageContent() {
   const [email, setEmail] = useState<string | null>(null);
   const [firstName, setFirstName] = useState<string | null>(null);
   const [role, setRole] = useState<string | null>(null);
@@ -487,6 +487,14 @@ export default function RenterDashboardPage() {
         )}
       </DashboardShell>
     </RequireAuth>
+  );
+}
+
+export default function RenterDashboardPage() {
+  return (
+    <Suspense fallback={<main className="p-8 text-gray-600">Loading…</main>}>
+      <RenterDashboardPageContent />
+    </Suspense>
   );
 }
 

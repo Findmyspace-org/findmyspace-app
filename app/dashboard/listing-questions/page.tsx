@@ -63,9 +63,14 @@ function formatDate(iso: string) {
 type ContentProps = {
   focusId: string | null;
   initialTab: Tab | null;
+  requestedOrganisationId: string | null;
 };
 
-function ListingQuestionsPageContent({ focusId, initialTab }: ContentProps) {
+function ListingQuestionsPageContent({
+  focusId,
+  initialTab,
+  requestedOrganisationId,
+}: ContentProps) {
   const [renterQuestions, setRenterQuestions] = useState<ListingQuestion[]>([]);
   const [ownerQuestions, setOwnerQuestions] = useState<ListingQuestion[]>([]);
   const [loading, setLoading] = useState(true);
@@ -93,9 +98,12 @@ function ListingQuestionsPageContent({ focusId, initialTab }: ContentProps) {
         return;
       }
       const headers = { Authorization: `Bearer ${session.access_token}` };
+      const ownerUrl = requestedOrganisationId
+        ? `/api/listing-questions?role=owner&organisation=${encodeURIComponent(requestedOrganisationId)}`
+        : "/api/listing-questions?role=owner";
       const [renterRes, ownerRes] = await Promise.all([
         fetch("/api/listing-questions?role=renter", { headers }),
-        fetch("/api/listing-questions?role=owner", { headers }),
+        fetch(ownerUrl, { headers }),
       ]);
       const renterJson = (await renterRes.json().catch(() => null)) as
         | { questions?: ListingQuestion[] }
@@ -121,7 +129,7 @@ function ListingQuestionsPageContent({ focusId, initialTab }: ContentProps) {
     } finally {
       setLoading(false);
     }
-  }, [tabLocked]);
+  }, [tabLocked, requestedOrganisationId]);
 
   useEffect(() => {
     void load();
@@ -554,10 +562,15 @@ function ListingQuestionsSearchParamsClient() {
   const searchParams = useSearchParams();
   const focusId = searchParams.get("focus");
   const tabParam = searchParams.get("tab");
+  const requestedOrganisationId = searchParams.get("organisation");
   const initialTab: Tab | null =
     tabParam === "owner" || tabParam === "renter" ? tabParam : null;
   return (
-    <ListingQuestionsPageContent focusId={focusId} initialTab={initialTab} />
+    <ListingQuestionsPageContent
+      focusId={focusId}
+      initialTab={initialTab}
+      requestedOrganisationId={requestedOrganisationId}
+    />
   );
 }
 

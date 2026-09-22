@@ -38,6 +38,8 @@ const ui = readFileSync("app/components/hosting/hosting-ui.tsx", "utf8");
   assert.match(listings, /verificationKind === "personal" \? <OwnerVerificationAlerts/);
   assert.doesNotMatch(listings, /isHost && <OwnerVerificationAlerts/);
   assert.doesNotMatch(listings, /fetchOrganisationCommercial/);
+  assert.match(listings, /fetchManagedSpaces\(/);
+  assert.match(listings, /requestedOrganisationId/);
 }
 
 {

@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireManagedPropertyApi } from "@/lib/access/require-managed-api";
 import { formatPropertyAddress } from "@/lib/admin-property";
+import {
+  propertyMatchesHostingContext,
+  resolveRequestHostingContext,
+} from "@/lib/access/hosting-context";
+import { ORGANISATION_QUERY_PARAM } from "@/lib/access/organisation-workspace";
 import { computeListingCompletion } from "@/lib/listing-completion";
 import { getOwnerListingStatusLabel } from "@/lib/listing-lifecycle";
 import { buildOwnerPropertySpaceSteps } from "@/lib/owner-property-space-steps";
@@ -27,6 +32,25 @@ export async function GET(
   const { id } = await params;
   const auth = await requireManagedPropertyApi(req, id);
   if ("response" in auth) return auth.response;
+
+  const { context } = await resolveRequestHostingContext(
+    auth.admin,
+    auth.userId,
+    req.nextUrl.searchParams.get(ORGANISATION_QUERY_PARAM)
+  );
+  const { data: propertyOrg } = await auth.admin
+    .from("properties")
+    .select("organisation_id")
+    .eq("id", id)
+    .maybeSingle();
+  if (
+    !propertyMatchesHostingContext(
+      (propertyOrg as { organisation_id: string | null } | null)?.organisation_id,
+      context
+    )
+  ) {
+    return NextResponse.json({ error: "Not found." }, { status: 404 });
+  }
 
   const propertyResult = await fetchOwnerPropertyById(auth.admin, id);
   if (!propertyResult.ok) {

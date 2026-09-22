@@ -65,6 +65,7 @@ import RequireAuth from "@/app/components/RequireAuth";
 import DashboardShell from "@/app/components/DashboardShell";
 import { RENTER_NAV } from "@/lib/dashboard-nav";
 import { useHostingWorkspace } from "@/lib/use-hosting-workspace";
+import { hostingHref } from "@/lib/access/hosting-access";
 import {
   LISTING_QUESTION_BLOCKED_REPLY,
   LISTING_QUESTION_MAX_LENGTH,
@@ -1073,6 +1074,19 @@ export function CommsCenterContent({
         Authorization: `Bearer ${accessToken}`,
       } as const;
 
+      const hostScoped = viewParam === "hosting";
+      const hostOrg = hostScoped ? hosting.requestedOrganisationId : null;
+      const ownerQuestionsUrl = hostScoped
+        ? hostOrg
+          ? hostingHref("/api/listing-questions?role=owner", hostOrg)
+          : "/api/listing-questions?role=owner&organisation="
+        : "/api/listing-questions?role=owner";
+      const threadsUrl = hostScoped
+        ? hostOrg
+          ? hostingHref("/api/bookings/message-threads", hostOrg)
+          : "/api/bookings/message-threads?organisation="
+        : "/api/bookings/message-threads";
+
       const [
         notifResult,
         renterQRes,
@@ -1089,10 +1103,10 @@ export function CommsCenterContent({
         fetch("/api/listing-questions?role=renter", {
           headers: authHeaders,
         }).catch(() => null),
-        fetch("/api/listing-questions?role=owner", {
+        fetch(ownerQuestionsUrl, {
           headers: authHeaders,
         }).catch(() => null),
-        fetch("/api/bookings/message-threads", {
+        fetch(threadsUrl, {
           headers: authHeaders,
         }).catch(() => null),
       ]);
@@ -1158,7 +1172,7 @@ export function CommsCenterContent({
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [viewParam, hosting.requestedOrganisationId]);
 
   useEffect(() => {
     void loadAll(true);
@@ -1619,7 +1633,14 @@ export function CommsCenterContent({
               Open all message threads →
             </Link>
             <Link
-              href="/dashboard/listing-questions"
+              href={
+                isHostWorkspace
+                  ? hostingHref(
+                      "/dashboard/listing-questions",
+                      hosting.organisationId || hosting.requestedOrganisationId
+                    )
+                  : "/dashboard/listing-questions"
+              }
               className="font-medium text-[#475569] underline-offset-2 hover:text-[#0f172a] hover:underline"
             >
               Manage listing questions →

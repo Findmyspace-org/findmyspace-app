@@ -2,11 +2,14 @@
 
 import Link from "next/link";
 import { Suspense, useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { MapPin } from "lucide-react";
 import RequireAuth from "@/app/components/RequireAuth";
 import DashboardShell from "@/app/components/DashboardShell";
 import { useHostingWorkspace } from "@/lib/use-hosting-workspace";
 import { ownerApiFetch } from "@/lib/owner-api-client";
+import { hostingHref } from "@/lib/access/hosting-access";
+import { ORGANISATION_QUERY_PARAM } from "@/lib/access/organisation-workspace";
 
 type PropertyRow = {
   id: string;
@@ -17,7 +20,9 @@ type PropertyRow = {
 };
 
 function PropertiesPageContent() {
-  const hosting = useHostingWorkspace();
+  const searchParams = useSearchParams();
+  const requestedOrganisationId = searchParams.get(ORGANISATION_QUERY_PARAM);
+  const hosting = useHostingWorkspace(requestedOrganisationId);
   const [properties, setProperties] = useState<PropertyRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
@@ -33,7 +38,9 @@ function PropertiesPageContent() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const result = await ownerApiFetch("/api/owner/properties");
+      const result = await ownerApiFetch(
+        hostingHref("/api/owner/properties", requestedOrganisationId)
+      );
       setProperties((result.properties as PropertyRow[]) || []);
       setMigrationWarning(
         typeof result.migration_warning === "string" ? result.migration_warning : ""
@@ -45,7 +52,7 @@ function PropertiesPageContent() {
       setMigrationWarning("");
     }
     setLoading(false);
-  }, []);
+  }, [requestedOrganisationId]);
 
   useEffect(() => {
     void load();
@@ -61,7 +68,7 @@ function PropertiesPageContent() {
       <div>
         <p className="text-sm text-gray-600">
           Venue locations linked to your account. Bookable rooms still appear under{" "}
-          <Link href="/dashboard/listings" className="font-medium text-[#0c1d2f] underline">
+          <Link href={hosting.listingsHref} className="font-medium text-[#0c1d2f] underline">
             My spaces
           </Link>
           .
@@ -91,7 +98,7 @@ function PropertiesPageContent() {
                 Request a property
               </Link>
               <Link
-                href="/dashboard/listings"
+                href={hosting.listingsHref}
                 className="inline-flex items-center rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-[#0c1d2f] hover:bg-[#fbfcfd]"
               >
                 Go to My spaces
@@ -103,7 +110,10 @@ function PropertiesPageContent() {
             {properties.map((property) => (
               <li key={property.id}>
                 <Link
-                  href={`/dashboard/properties/${property.id}`}
+                  href={hostingHref(
+                    `/dashboard/properties/${property.id}`,
+                    hosting.hrefOrganisationId
+                  )}
                   className="flex items-start justify-between gap-3 px-3.5 py-3 hover:bg-[#fbfcfd]"
                 >
                   <div className="min-w-0">

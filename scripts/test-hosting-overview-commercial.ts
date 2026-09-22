@@ -83,6 +83,8 @@ const commercialApi = readFileSync(
 {
   assert.match(ownerSrc, /useHostingWorkspace\(requestedOrganisationId\)/);
   assert.match(ownerSrc, /ORGANISATION_QUERY_PARAM/);
+  assert.match(ownerSrc, /fetchManagedSpaces/);
+  assert.match(ownerSrc, /requestedOrganisationId/);
   assert.match(ownerSrc, /fetchOrganisationCommercial/);
   assert.match(ownerSrc, /hostingOverviewVerificationKind/);
   assert.match(ownerSrc, /hostingOverviewOpsItems/);

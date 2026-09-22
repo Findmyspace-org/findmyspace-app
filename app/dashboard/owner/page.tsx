@@ -100,7 +100,7 @@ function HostDashboardPageContent() {
     isLegacyHost: hosting.summary.isLegacyHost,
   });
   const orgHref = (pathname: string) =>
-    hostingHref(pathname, hosting.organisationId);
+    hostingHref(pathname, hosting.hrefOrganisationId);
 
   useEffect(() => {
     if (hosting.loading) return;
@@ -156,7 +156,10 @@ function HostDashboardPageContent() {
 
         const { fetchManagedSpaces } = await import("@/lib/host-managed-spaces-client");
         const managed = session.access_token
-          ? await fetchManagedSpaces(session.access_token)
+          ? await fetchManagedSpaces(
+              session.access_token,
+              requestedOrganisationId
+            )
           : [];
         const nextListings = managed.map((space) => ({
           id: space.id,
@@ -198,15 +201,29 @@ function HostDashboardPageContent() {
           setBookings((bookingData || []) as OwnerDashboardBooking[]);
         }
 
-        // Pending listing yes/no questions — primary inbox metric for hosts.
+        // Pending listing yes/no questions — scoped to this Hosting context.
         try {
-          const { count } = await (supabase.from(
-            "listing_yes_no_questions"
-          ) as any)
-            .select("id", { count: "exact", head: true })
-            .eq("owner_id", user.id)
-            .eq("status", "pending");
-          if (typeof count === "number") setPendingQuestionsCount(count);
+          if (session.access_token && listingIds.length > 0) {
+            const questionsPath = hostingHref(
+              "/api/listing-questions?role=owner",
+              requestedOrganisationId
+            );
+            const questionsRes = await fetch(questionsPath, {
+              headers: { Authorization: `Bearer ${session.access_token}` },
+            });
+            const questionsJson = questionsRes.ok
+              ? ((await questionsRes.json()) as {
+                  questions?: Array<{ status?: string | null }>;
+                })
+              : { questions: [] };
+            setPendingQuestionsCount(
+              (questionsJson.questions || []).filter(
+                (question) => question.status === "pending"
+              ).length
+            );
+          } else {
+            setPendingQuestionsCount(0);
+          }
         } catch (qErr) {
           console.warn("Pending listing questions count failed:", qErr);
         }
@@ -218,7 +235,7 @@ function HostDashboardPageContent() {
     }
 
     loadDashboard();
-  }, []);
+  }, [requestedOrganisationId]);
 
   const activeListingsCount = useMemo(
     () => listings.filter((listing) => listing.status === "active").length,

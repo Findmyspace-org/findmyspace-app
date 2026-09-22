@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { resolveHostingOrganisationId } from "@/lib/access/hosting-access";
+import { useSearchParams } from "next/navigation";
+import { hostingContextFromSummary } from "@/lib/access/hosting-context";
+import { ORGANISATION_QUERY_PARAM } from "@/lib/access/organisation-workspace";
 import { fetchHostingWorkspaceDisplay } from "@/lib/hosting-access-client";
 import {
   hostingOrganisationContextName,
@@ -10,16 +12,14 @@ import {
   type WorkspaceSelectorModel,
 } from "@/lib/workspace-switch";
 
-function requestedOrganisationId(): string | null {
-  if (typeof window === "undefined") return null;
-  return new URLSearchParams(window.location.search).get("organisation");
-}
 
 function selectorOrNull(model: WorkspaceSelectorModel): WorkspaceSelectorModel | null {
   return model.visible ? model : null;
 }
 
 export function useWorkspaceChrome(kind: WorkspaceKind | null) {
+  const searchParams = useSearchParams();
+  const requestedOrganisationId = searchParams.get(ORGANISATION_QUERY_PARAM);
   const [selector, setSelector] = useState<WorkspaceSelectorModel | null>(() =>
     kind === "hosting"
       ? workspaceSelector({
@@ -53,11 +53,12 @@ export function useWorkspaceChrome(kind: WorkspaceKind | null) {
     fetchHostingWorkspaceDisplay()
       .then(({ summary, organisations }) => {
         if (!mounted) return;
-        const organisationId = resolveHostingOrganisationId({
-          requestedId: requestedOrganisationId(),
-          organisationIds: summary.organisationIds,
-          primaryOrganisationId: summary.primaryOrganisationId,
-        });
+        const context = hostingContextFromSummary(
+          summary,
+          requestedOrganisationId
+        );
+        const organisationId =
+          context.kind === "organisation" ? context.organisationId : null;
         setSelector(
           selectorOrNull(
             workspaceSelector({
@@ -93,7 +94,7 @@ export function useWorkspaceChrome(kind: WorkspaceKind | null) {
     return () => {
       mounted = false;
     };
-  }, [kind]);
+  }, [kind, requestedOrganisationId]);
 
   return { selector, organisationName };
 }

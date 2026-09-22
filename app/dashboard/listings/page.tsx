@@ -179,7 +179,7 @@ function MyListingsPageContent({
 
   useEffect(() => {
     loadMyListings();
-  }, []);
+  }, [requestedOrganisationId]);
 
   // Mark related listing-lifecycle notifications for this space as read.
   useEffect(() => {
@@ -289,7 +289,10 @@ function MyListingsPageContent({
         hasIdBack: idTypes.includes("id_back"),
       });
 
-      const managed = await fetchManagedSpaces(session.access_token);
+      const managed = await fetchManagedSpaces(
+        session.access_token,
+        requestedOrganisationId
+      );
 
       const mergedSpaces: Space[] = managed.map((space) => {
         const verification = verificationFieldsForManagedListing({
@@ -495,7 +498,10 @@ function MyListingsPageContent({
 
 
   function goToBooking(bookingId: string) {
-    window.location.href = `/dashboard/requests?booking=${bookingId}`;
+    window.location.href = hostingHref(
+      `/dashboard/requests?booking=${bookingId}`,
+      requestedOrganisationId
+    );
   }
 
   const filteredSpaces = useMemo(() => {
@@ -883,7 +889,10 @@ function MyListingsPageContent({
                           ) : null}
 
                           <Link
-                            href={`/spaces/${selectedSpace.id}/edit`}
+                            href={hostingHref(
+                              `/spaces/${selectedSpace.id}/edit`,
+                              hosting.organisationId
+                            )}
                             className="inline-flex items-center gap-2 rounded-md border px-2.5 py-0.5 text-sm text-[#192a3a] hover:bg-gray-50"
                           >
                             <Pencil className="h-4 w-4" />

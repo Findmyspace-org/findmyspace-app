@@ -29,6 +29,7 @@ import { supabase } from "@/lib/supabase";
 import RequireAuth from "@/app/components/RequireAuth";
 import DashboardShell from "@/app/components/DashboardShell";
 import { useHostingWorkspace } from "@/lib/use-hosting-workspace";
+import { ORGANISATION_QUERY_PARAM } from "@/lib/access/organisation-workspace";
 import DecisionSuggestion from "@/app/components/DecisionSuggestion";
 import { getDisplayName } from "@/lib/utils";
 import { isCommunicationAllowed } from "@/lib/booking-communication";
@@ -1156,10 +1157,12 @@ function ExpandedBookingPanel({
 
 function OwnerBookingRequestsPageContent({
   focusBookingId,
+  requestedOrganisationId,
 }: {
   focusBookingId: string | null;
+  requestedOrganisationId: string | null;
 }) {
-  const hosting = useHostingWorkspace();
+  const hosting = useHostingWorkspace(requestedOrganisationId);
   const [sessionEmail, setSessionEmail] = useState<string | null>(null);
   const [sessionUserId, setSessionUserId] = useState<string | null>(null);
   const [bookings, setBookings] = useState<EnrichedBooking[]>([]);
@@ -1197,7 +1200,7 @@ function OwnerBookingRequestsPageContent({
 
   useEffect(() => {
     loadRequests();
-  }, []);
+  }, [requestedOrganisationId]);
 
   // When arriving via `?focus=`, expand the matching booking once data loaded.
   useEffect(() => {
@@ -1309,34 +1312,36 @@ function OwnerBookingRequestsPageContent({
         }
       }
 
-      const { data: bookingsData, error: bookingsError } = await supabase
-        .from("bookings")
-        .select(
-          "id, space_id, renter_id, owner_id, booking_unit, start_at, end_at, notes, owner_response_message, status, payment_status, total_price, created_at, terms_accepted, terms_accepted_at, accepted_terms_updated_at, accepted_terms_title, accepted_terms_label"
-        )
-        .neq("renter_id", user.id)
-        .order("created_at", { ascending: false });
-
-      if (bookingsError) {
-        setMessage(bookingsError.message);
-        setLoading(false);
-        return;
-      }
-
-      const rawBookings = (bookingsData || []) as Booking[];
       const {
         data: { session },
       } = await supabase.auth.getSession();
-      let scopedBookings = rawBookings;
+      let scopedBookings: Booking[] = [];
       if (session?.access_token) {
         const { fetchManagedSpaces } = await import(
           "@/lib/host-managed-spaces-client"
         );
-        const managed = await fetchManagedSpaces(session.access_token);
-        const managedIds = new Set(managed.map((space) => space.id));
-        scopedBookings = rawBookings.filter((booking) =>
-          managedIds.has(booking.space_id)
+        const managed = await fetchManagedSpaces(
+          session.access_token,
+          requestedOrganisationId
         );
+        const managedIds = managed.map((space) => space.id);
+        if (managedIds.length > 0) {
+          const { data: bookingsData, error: bookingsError } = await supabase
+            .from("bookings")
+            .select(
+              "id, space_id, renter_id, owner_id, booking_unit, start_at, end_at, notes, owner_response_message, status, payment_status, total_price, created_at, terms_accepted, terms_accepted_at, accepted_terms_updated_at, accepted_terms_title, accepted_terms_label"
+            )
+            .neq("renter_id", user.id)
+            .in("space_id", managedIds)
+            .order("created_at", { ascending: false });
+
+          if (bookingsError) {
+            setMessage(bookingsError.message);
+            setLoading(false);
+            return;
+          }
+          scopedBookings = (bookingsData || []) as Booking[];
+        }
       }
 
       const detailByBookingId = new Map<string, Record<string, unknown>>();
@@ -2172,7 +2177,13 @@ function OwnerBookingRequestsPageContent({
 function OwnerBookingRequestsSearchParamsClient() {
   const searchParams = useSearchParams();
   const focusBookingId = searchParams.get("focus");
-  return <OwnerBookingRequestsPageContent focusBookingId={focusBookingId} />;
+  const requestedOrganisationId = searchParams.get(ORGANISATION_QUERY_PARAM);
+  return (
+    <OwnerBookingRequestsPageContent
+      focusBookingId={focusBookingId}
+      requestedOrganisationId={requestedOrganisationId}
+    />
+  );
 }
 
 export default function OwnerBookingRequestsPage() {

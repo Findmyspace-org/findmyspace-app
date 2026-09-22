@@ -3,7 +3,8 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
     CalendarDays,
     ChevronLeft,
@@ -24,6 +25,7 @@ import {
 import RequireAuth from "@/app/components/RequireAuth";
 import DashboardShell from "@/app/components/DashboardShell";
 import { useHostingWorkspace } from "@/lib/use-hosting-workspace";
+import { ORGANISATION_QUERY_PARAM } from "@/lib/access/organisation-workspace";
 import { downloadInvoicePdf } from "@/lib/invoice-download-client";
 import OwnerCalendarLegend from "@/app/dashboard/_components/calendar/OwnerCalendarLegend";
 import { supabase } from "@/lib/supabase";
@@ -1547,8 +1549,10 @@ function SideDrawer({ open, title, subtitle, onClose, children }: SideDrawerProp
     );
 }
 
-export default function CalendarPage() {
-    const hosting = useHostingWorkspace();
+function CalendarPageContent() {
+    const searchParams = useSearchParams();
+    const requestedOrganisationId = searchParams.get(ORGANISATION_QUERY_PARAM);
+    const hosting = useHostingWorkspace(requestedOrganisationId);
     const [bookingType, setBookingType] = useState<CalendarBookingType>("day");
     const [searchText, setSearchText] = useState("");
     const [areaFilter, setAreaFilter] = useState("all");
@@ -1579,7 +1583,10 @@ export default function CalendarPage() {
             }
 
             const { fetchManagedSpaces } = await import("@/lib/host-managed-spaces-client");
-            const managed = await fetchManagedSpaces(session.access_token);
+            const managed = await fetchManagedSpaces(
+                session.access_token,
+                requestedOrganisationId
+            );
             const nextSpaces = managed.map((space) => ({
                 id: space.id,
                 title: space.title,
@@ -1654,7 +1661,7 @@ export default function CalendarPage() {
         }
 
         loadSpaces();
-    }, []);
+    }, [requestedOrganisationId]);
 
     const areaOptions = useMemo(() => {
         const values = Array.from(
@@ -2149,5 +2156,13 @@ export default function CalendarPage() {
                 </>
             </DashboardShell>
         </RequireAuth>
+    );
+}
+
+export default function CalendarPage() {
+    return (
+        <Suspense fallback={<main className="p-8 text-gray-600">Loading…</main>}>
+            <CalendarPageContent />
+        </Suspense>
     );
 }

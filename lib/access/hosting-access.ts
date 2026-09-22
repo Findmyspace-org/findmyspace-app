@@ -132,11 +132,20 @@ export function resolveHostingOrganisationId(input: {
   requestedId: string | null | undefined;
   organisationIds: string[];
   primaryOrganisationId: string | null;
+  isGlobalAdmin?: boolean;
+  isLegacyHost?: boolean;
 }): string | null {
-  // Organisation context does not grant authority. An unauthorised id is ignored.
+  // Organisation context does not grant authority. An explicit unauthorised id
+  // must not silently substitute another organisation.
   const requested = input.requestedId?.trim() || "";
-  if (requested && input.organisationIds.includes(requested)) {
-    return requested;
+  if (requested) {
+    if (input.organisationIds.includes(requested)) return requested;
+    if (input.isGlobalAdmin) {
+      const uuid =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+      if (uuid.test(requested)) return requested;
+    }
+    return null;
   }
   return input.primaryOrganisationId;
 }

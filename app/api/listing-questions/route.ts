@@ -11,7 +11,11 @@ import {
   buildListingQuestionsBatchCopy,
 } from "@/lib/communication-copy";
 import { getCanonicalPublicSiteUrl } from "@/lib/site-url";
-import { listManagedSpaceIds } from "@/lib/access/list-managed-spaces";
+import {
+  listManagedSpaceIdsForHostingContext,
+  resolveRequestHostingContext,
+} from "@/lib/access/hosting-context";
+import { ORGANISATION_QUERY_PARAM } from "@/lib/access/organisation-workspace";
 
 /**
  * Listing yes/no questions — collection endpoints.
@@ -333,7 +337,20 @@ export async function GET(req: NextRequest) {
 
     if (isRenter) query = query.eq("renter_id", user.id);
     else {
-      const managedSpaceIds = await listManagedSpaceIds(admin, user.id);
+      const requestedOrganisationId = searchParams.get(
+        ORGANISATION_QUERY_PARAM
+      );
+      const { summary, context } = await resolveRequestHostingContext(
+        admin,
+        user.id,
+        requestedOrganisationId
+      );
+      const managedSpaceIds = await listManagedSpaceIdsForHostingContext(
+        admin,
+        user.id,
+        context,
+        { isGlobalAdmin: summary.isGlobalAdmin }
+      );
       if (managedSpaceIds.length === 0) {
         return NextResponse.json({ questions: [] });
       }
