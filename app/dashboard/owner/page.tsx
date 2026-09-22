@@ -17,40 +17,32 @@
 import Link from "next/link";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import {
-  AlertCircle,
-  ArrowRight,
-  BadgeCheck,
-  Building2,
-  CalendarDays,
-  CheckCircle2,
-  ClipboardList,
-  CreditCard,
-  HelpCircle,
-  HousePlus,
-  Inbox,
-  Landmark,
-  LayoutDashboard,
-  Loader2,
-  Mail,
-  Settings,
-  UserCircle2,
-  Wallet,
-} from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import DashboardShell from "@/app/components/DashboardShell";
 import { useHostingWorkspace } from "@/lib/use-hosting-workspace";
 import OwnerVerificationAlerts from "@/app/components/OwnerVerificationAlerts";
 import RequireAuth from "@/app/components/RequireAuth";
+import {
+  HostingOpsStrip,
+  HostingSectionLabel,
+  HostingSummaryStrip,
+  HostingWorkspaceList,
+  HostingWorkspaceRow,
+  hostingPrimaryActionClass,
+} from "@/app/components/hosting/hosting-ui";
 import { hostingHref } from "@/lib/access/hosting-access";
 import { ORGANISATION_QUERY_PARAM } from "@/lib/access/organisation-workspace";
 import { fetchOrganisationCommercial } from "@/lib/organisation-commercial-client";
 import type { OrganisationCommercialBundle } from "@/lib/organisation-commercial-dto";
 import {
   hostingOverviewVerificationKind,
-  hostingOverviewVerificationTool,
   organisationOverviewCard,
 } from "@/lib/hosting-overview-commercial";
+import {
+  hostingOverviewOpsItems,
+  hostingOverviewSummaryItems,
+} from "@/lib/hosting-overview-layout";
 
 type OwnerDashboardListing = {
   id: string;
@@ -108,11 +100,6 @@ function HostDashboardPageContent() {
     organisationId: hosting.organisationId,
     showOrganisationCommercial: hosting.summary.showOrganisationCommercial,
     isLegacyHost: hosting.summary.isLegacyHost,
-  });
-  const verificationTool = hostingOverviewVerificationTool({
-    organisationId: hosting.organisationId,
-    showOrganisationCommercial: hosting.summary.showOrganisationCommercial,
-    showVerification: hosting.summary.showVerification,
   });
   const orgHref = (pathname: string) =>
     hostingHref(pathname, hosting.organisationId);
@@ -319,237 +306,115 @@ function HostDashboardPageContent() {
     });
   }, [commercial, hosting.organisationId, verificationKind]);
 
+  const summaryItems = hostingOverviewSummaryItems({
+    pendingRequestsCount,
+    pendingQuestionsCount,
+    monthlyIncomeLabel: formatCompactMoney(monthlyIncome),
+    activeListingsCount,
+    pendingListingApprovalCount,
+    showFinance: hosting.summary.showFinance,
+    requestsHref: orgHref("/dashboard/requests"),
+    commsHref: orgHref("/dashboard/comms?view=hosting"),
+    financeHref: orgHref("/dashboard/finance"),
+    listingsHref: orgHref("/dashboard/listings"),
+  });
+
+  const opsItems = hostingOverviewOpsItems({
+    awaitingPaymentCount,
+    confirmedBookingsCount,
+    requestsHref: orgHref("/dashboard/requests"),
+    calendarHref: orgHref("/dashboard/calendar"),
+    organisationCard,
+    personalVerification:
+      verificationKind === "personal"
+        ? {
+            needsAttention: profileNeedsAttention,
+            href: "/dashboard/verification",
+          }
+        : null,
+  });
+
   return (
     <RequireAuth>
       <DashboardShell
         workspaceLabel="Hosting"
         pageTitle="Overview"
-        pageSubtitle="Respond to requests, keep listings up to date, and track earnings — all in one workspace."
         navItems={hosting.navItems}
         activeHref="/dashboard/owner"
+        pageActions={
+          hosting.summary.showCreateSpace ? (
+            <Link
+              href={orgHref("/dashboard/new-space")}
+              className={hostingPrimaryActionClass}
+            >
+              List a space
+            </Link>
+          ) : null
+        }
       >
         {loading ? (
-          <div className="flex items-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-8 text-sm text-gray-600 shadow-sm">
+          <div className="flex items-center gap-2 py-6 text-sm text-gray-600">
             <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
             Loading Hosting…
           </div>
         ) : (
           <>
             {error ? (
-              <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
                 {error}
               </div>
             ) : null}
 
-            {/* Verification alerts — personal-host context only. */}
             {verificationKind === "personal" ? <OwnerVerificationAlerts /> : null}
 
-            {/* TOP METRICS — what hosts most often act on. */}
-            <section aria-labelledby="host-overview-metrics">
-              <h2
-                id="host-overview-metrics"
-                className="mb-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-gray-500"
-              >
-                Today
-              </h2>
-              <div className="grid grid-cols-2 gap-2 sm:gap-4 xl:grid-cols-4">
-                <MetricCard
-                  title="Pending booking requests"
-                  value={pendingRequestsCount}
-                  subtitle="Waiting for your response"
-                  icon={<Mail className="h-6 w-6" aria-hidden />}
-                  href={orgHref("/dashboard/requests")}
-                  highlight={pendingRequestsCount > 0}
-                />
-                <MetricCard
-                  title="Pending questions"
-                  value={pendingQuestionsCount}
-                  subtitle="Yes/no questions from renters"
-                  icon={<HelpCircle className="h-6 w-6" aria-hidden />}
-                  href={orgHref("/dashboard/comms?view=hosting")}
-                  highlight={pendingQuestionsCount > 0}
-                />
-                <MetricCard
-                  title="Revenue this month"
-                  value={formatCompactMoney(monthlyIncome)}
-                  subtitle="Confirmed booking income"
-                  icon={<Wallet className="h-6 w-6" aria-hidden />}
-                  href={orgHref("/dashboard/finance")}
-                />
-                <MetricCard
-                  title="Listings awaiting approval"
-                  value={pendingListingApprovalCount}
-                  subtitle={
-                    pendingListingApprovalCount > 0
-                      ? "Items in admin review"
-                      : `${activeListingsCount} active listing${
-                          activeListingsCount === 1 ? "" : "s"
-                        }`
-                  }
-                  icon={<BadgeCheck className="h-6 w-6" aria-hidden />}
-                  href={orgHref("/dashboard/listings")}
-                  highlight={pendingListingApprovalCount > 0}
-                />
-              </div>
-            </section>
+            <HostingSummaryStrip items={summaryItems} />
 
-            {/* PRIMARY WORKSPACE SECTIONS — main host actions. */}
             <section aria-labelledby="host-overview-workspace">
-              <h2
-                id="host-overview-workspace"
-                className="mb-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-gray-500"
-              >
+              <HostingSectionLabel id="host-overview-workspace">
                 Workspace
-              </h2>
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                <WorkspaceCard
+              </HostingSectionLabel>
+              <HostingWorkspaceList labelledBy="host-overview-workspace">
+                <HostingWorkspaceRow
                   title="My spaces"
-                  description="Manage individual spaces people can book."
-                  icon={<Building2 className="h-5 w-5" aria-hidden />}
+                  description="Manage the spaces people can book."
                   href={orgHref("/dashboard/listings")}
-                  meta={`${activeListingsCount} active`}
+                  status={
+                    pendingListingApprovalCount > 0
+                      ? `${pendingListingApprovalCount} pending review`
+                      : `${activeListingsCount} active`
+                  }
+                  attention={pendingListingApprovalCount > 0}
                 />
-                <WorkspaceCard
+                <HostingWorkspaceRow
                   title="Booking requests"
-                  description="Approve or decline pending requests on your listings."
-                  icon={<ClipboardList className="h-5 w-5" aria-hidden />}
+                  description="Approve or decline pending requests."
                   href={orgHref("/dashboard/requests")}
-                  meta={
+                  status={
                     pendingRequestsCount > 0
                       ? `${pendingRequestsCount} pending`
                       : "All caught up"
                   }
-                  emphasised={pendingRequestsCount > 0}
+                  attention={pendingRequestsCount > 0}
                 />
-                <WorkspaceCard
+                <HostingWorkspaceRow
                   title="Comms"
-                  description="Renter questions, booking messages and platform updates."
-                  icon={<Inbox className="h-5 w-5" aria-hidden />}
+                  description="Renter questions and booking messages."
                   href={orgHref("/dashboard/comms?view=hosting")}
-                  meta={
+                  status={
                     pendingQuestionsCount > 0
                       ? `${pendingQuestionsCount} to answer`
                       : "Inbox"
                   }
-                  emphasised={pendingQuestionsCount > 0}
+                  attention={pendingQuestionsCount > 0}
                 />
-              </div>
+              </HostingWorkspaceList>
             </section>
 
-            {/* SECONDARY — operational details surfaced at a glance. */}
             <section aria-labelledby="host-overview-detail">
-              <h2
-                id="host-overview-detail"
-                className="mb-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-gray-500"
-              >
+              <HostingSectionLabel id="host-overview-detail">
                 Operations
-              </h2>
-              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                <DetailCard
-                  title="Awaiting payment"
-                  value={awaitingPaymentCount}
-                  subtitle="Approved bookings waiting on the renter"
-                  icon={<CreditCard className="h-5 w-5" aria-hidden />}
-                  href={orgHref("/dashboard/requests")}
-                  highlight={awaitingPaymentCount > 0}
-                />
-                <DetailCard
-                  title="Confirmed bookings"
-                  value={confirmedBookingsCount}
-                  subtitle="Paid and on the calendar"
-                  icon={<CheckCircle2 className="h-5 w-5" aria-hidden />}
-                  href={orgHref("/dashboard/calendar")}
-                />
-                {organisationCard ? (
-                <DetailCard
-                  title={organisationCard.title}
-                  value={organisationCard.value}
-                  subtitle={organisationCard.subtitle}
-                  ticks={organisationCard.ticks}
-                  icon={
-                    organisationCard.ready ? (
-                      <BadgeCheck className="h-5 w-5" aria-hidden />
-                    ) : organisationCard.highlight ? (
-                      <AlertCircle className="h-5 w-5" aria-hidden />
-                    ) : (
-                      <Building2 className="h-5 w-5" aria-hidden />
-                    )
-                  }
-                  href={organisationCard.href}
-                  highlight={organisationCard.highlight}
-                  ready={organisationCard.ready}
-                />
-                ) : verificationKind === "personal" ? (
-                <DetailCard
-                  title="Profile & verification"
-                  value={profileNeedsAttention ? "Action" : "OK"}
-                  subtitle={
-                    profileNeedsAttention
-                      ? "ID verification required"
-                      : "Profile verified"
-                  }
-                  icon={
-                    profileNeedsAttention ? (
-                      <AlertCircle className="h-5 w-5" aria-hidden />
-                    ) : (
-                      <UserCircle2 className="h-5 w-5" aria-hidden />
-                    )
-                  }
-                  href="/dashboard/verification"
-                  highlight={profileNeedsAttention}
-                />
-                ) : null}
-              </div>
-            </section>
-
-            {/* SECONDARY TOOLS — calendar, verification, finance shortcuts.
-                Mirrors the sidebar but as tactile chips for users who prefer
-                buttons to a tree. */}
-            <section aria-labelledby="host-overview-tools">
-              <h2
-                id="host-overview-tools"
-                className="mb-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-gray-500"
-              >
-                Tools
-              </h2>
-              <div className="flex flex-wrap gap-2">
-                <ToolChip
-                  href={orgHref("/dashboard/calendar")}
-                  icon={<CalendarDays className="h-3.5 w-3.5" aria-hidden />}
-                >
-                  Calendar
-                </ToolChip>
-                {verificationTool ? (
-                <ToolChip
-                  href={verificationTool.href}
-                  icon={<Settings className="h-3.5 w-3.5" aria-hidden />}
-                >
-                  {verificationTool.label}
-                </ToolChip>
-                ) : null}
-                {hosting.summary.showFinance ? (
-                <ToolChip
-                  href={orgHref("/dashboard/finance")}
-                  icon={<Landmark className="h-3.5 w-3.5" aria-hidden />}
-                >
-                  Finance
-                </ToolChip>
-                ) : null}
-                {hosting.summary.showCreateSpace ? (
-                <ToolChip
-                  href={orgHref("/dashboard/new-space")}
-                  icon={<HousePlus className="h-3.5 w-3.5" aria-hidden />}
-                >
-                  List a new space
-                </ToolChip>
-                ) : null}
-                <ToolChip
-                  href="/dashboard"
-                  icon={<LayoutDashboard className="h-3.5 w-3.5" aria-hidden />}
-                >
-                  Switch to my dashboard
-                </ToolChip>
-              </div>
+              </HostingSectionLabel>
+              <HostingOpsStrip items={opsItems} />
             </section>
           </>
         )}
@@ -570,195 +435,5 @@ export default function HostDashboardPage() {
     >
       <HostDashboardPageContent />
     </Suspense>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// UI primitives, scoped to the Hosting overview.
-// ---------------------------------------------------------------------------
-
-function MetricCard({
-  title,
-  value,
-  subtitle,
-  icon,
-  href,
-  highlight = false,
-}: {
-  title: string;
-  value: number | string;
-  subtitle: string;
-  icon: React.ReactNode;
-  href: string;
-  highlight?: boolean;
-}) {
-  // Mirror the renter SummaryCard behaviour: compact tile on mobile, richer
-  // card on desktop. Hosts often have 4 metric cards so on phones we want a
-  // tight 2-col grid that fits above the fold.
-  return (
-    <Link
-      href={href}
-      className={`group block rounded-2xl border bg-white p-3 shadow-sm transition hover:-translate-y-0.5 hover:border-gray-300 hover:shadow-md sm:p-4 ${
-        highlight ? "border-amber-300 bg-amber-50/30" : "border-gray-200"
-      }`}
-    >
-      <div className="flex items-start justify-between gap-2 sm:gap-3">
-        <div className="min-w-0 flex-1">
-          <p className="text-[11px] font-medium text-gray-500 sm:text-[12px]">
-            {title}
-          </p>
-          <p className="mt-0.5 break-words text-2xl font-semibold tracking-tight text-[#0c1d2f] sm:mt-1 sm:text-3xl">
-            {value}
-          </p>
-          {/* Subtitle hidden on mobile to keep tiles short. */}
-          <p className="mt-2 hidden text-xs leading-relaxed text-gray-600 sm:block">
-            {subtitle}
-          </p>
-        </div>
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#f7f9fb] text-[#0c1d2f] sm:h-10 sm:w-10 sm:rounded-xl [&>svg]:h-4 [&>svg]:w-4 sm:[&>svg]:h-6 sm:[&>svg]:w-6">
-          {icon}
-        </span>
-      </div>
-    </Link>
-  );
-}
-
-function WorkspaceCard({
-  title,
-  description,
-  icon,
-  href,
-  meta,
-  emphasised = false,
-}: {
-  title: string;
-  description: string;
-  icon: React.ReactNode;
-  href: string;
-  meta?: string;
-  emphasised?: boolean;
-}) {
-  return (
-    <Link
-      href={href}
-      className={`group flex h-full flex-col rounded-2xl border bg-white p-3 shadow-sm transition hover:-translate-y-0.5 hover:border-gray-300 hover:shadow-md sm:p-4 ${
-        emphasised ? "border-[#0c1d2f]/40 bg-[#fbfcfd]" : "border-gray-200"
-      }`}
-    >
-      <div className="flex items-center gap-2">
-        <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#0c1d2f] text-white">
-          {icon}
-        </span>
-        <p className="text-sm font-semibold text-[#0c1d2f]">{title}</p>
-      </div>
-      <p className="mt-2 flex-1 text-xs leading-relaxed text-gray-600">
-        {description}
-      </p>
-      <div className="mt-3 flex items-center justify-between gap-2 text-xs">
-        {meta ? (
-          <span
-            className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-              emphasised
-                ? "bg-[#0c1d2f] text-white"
-                : "bg-[#f7f9fb] text-[#475569]"
-            }`}
-          >
-            {meta}
-          </span>
-        ) : (
-          <span />
-        )}
-        <span className="inline-flex items-center gap-1 font-semibold text-[#0c1d2f] opacity-0 transition group-hover:opacity-100">
-          Open
-          <ArrowRight className="h-3 w-3" aria-hidden />
-        </span>
-      </div>
-    </Link>
-  );
-}
-
-function DetailCard({
-  title,
-  value,
-  subtitle,
-  icon,
-  href,
-  highlight = false,
-  ready = false,
-  ticks = [],
-}: {
-  title: string;
-  value: number | string;
-  subtitle: string;
-  icon: React.ReactNode;
-  href: string;
-  highlight?: boolean;
-  ready?: boolean;
-  ticks?: string[];
-}) {
-  const valueText = String(value);
-  const compactValue = valueText.length > 18;
-  return (
-    <Link
-      href={href}
-      className={`group flex h-full flex-col rounded-2xl border bg-white p-3 shadow-sm transition hover:-translate-y-0.5 hover:border-gray-300 hover:shadow-md sm:p-4 ${
-        ready
-          ? "border-emerald-200 bg-emerald-50/40"
-          : highlight
-            ? "border-amber-300 bg-amber-50/30"
-            : "border-gray-200"
-      }`}
-    >
-      <div className="flex items-center gap-2 text-xs font-medium text-gray-500">
-        <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-[#f7f9fb] text-[#0c1d2f] sm:h-7 sm:w-7">
-          {icon}
-        </span>
-        {title}
-      </div>
-      <p
-        className={`mt-2 break-words font-semibold tracking-tight text-[#0c1d2f] ${
-          compactValue ? "text-base leading-snug sm:text-lg" : "text-2xl"
-        }`}
-      >
-        {value}
-      </p>
-      {ticks.length > 0 ? (
-        <ul className="mt-2 space-y-1 text-xs leading-relaxed text-emerald-800">
-          {ticks.map((tick) => (
-            <li key={tick} className="flex items-start gap-1.5">
-              <CheckCircle2
-                className="mt-0.5 h-3.5 w-3.5 shrink-0"
-                aria-hidden
-              />
-              <span>{tick}</span>
-            </li>
-          ))}
-        </ul>
-      ) : subtitle ? (
-        <p className="mt-1 flex-1 text-xs leading-relaxed text-gray-600">
-          {subtitle}
-        </p>
-      ) : null}
-    </Link>
-  );
-}
-
-function ToolChip({
-  href,
-  icon,
-  children,
-}: {
-  href: string;
-  icon: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  return (
-    <Link
-      href={href}
-      className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3.5 py-2 text-xs font-semibold text-[#0c1d2f] shadow-sm transition hover:-translate-y-0.5 hover:border-gray-300 hover:bg-[#fbfcfd]"
-    >
-      <span className="text-[#475569]">{icon}</span>
-      {children}
-    </Link>
   );
 }

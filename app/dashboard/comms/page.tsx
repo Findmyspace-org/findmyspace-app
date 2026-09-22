@@ -1652,8 +1652,12 @@ export function CommsCenterContent({
     <RequireAuth>
       <DashboardShell
         workspaceLabel={isHostWorkspace ? "Hosting" : "Booking"}
-        pageTitle="Comms Center"
-        pageSubtitle="Platform updates, listing questions, booking messages, and actions in one place."
+        pageTitle={isHostWorkspace ? "Comms" : "Comms Center"}
+        pageSubtitle={
+          isHostWorkspace
+            ? "Platform updates, listing questions, and booking messages."
+            : "Platform updates, listing questions, booking messages, and actions in one place."
+        }
         navItems={navItems}
         activeHref={navActiveHref}
       >

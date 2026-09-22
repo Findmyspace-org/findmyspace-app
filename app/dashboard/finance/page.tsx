@@ -11,6 +11,7 @@ import {
 import { supabase } from "@/lib/supabase";
 import RequireAuth from "@/app/components/RequireAuth";
 import DashboardShell from "@/app/components/DashboardShell";
+import { HostingSummaryStrip } from "@/app/components/hosting/hosting-ui";
 import { useHostingWorkspace } from "@/lib/use-hosting-workspace";
 import {
   buildFinanceLineItems,
@@ -214,7 +215,6 @@ export default function OwnerFinancePage() {
       <DashboardShell
         workspaceLabel="Hosting"
         pageTitle="Finance"
-        pageSubtitle="Payments, deposits, fees, and net earnings across your listings."
         navItems={hosting.navItems}
         activeHref="/dashboard/finance"
       >
@@ -241,11 +241,11 @@ export default function OwnerFinancePage() {
 
           {loading ? (
             <div className="space-y-6">
-              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+              <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-gray-200 sm:grid-cols-3 xl:grid-cols-6">
                 {[1, 2, 3, 4, 5, 6].map((i) => (
                   <div
                     key={i}
-                    className="h-28 animate-pulse rounded-lg border border-gray-200 bg-white shadow-sm"
+                    className="h-16 animate-pulse bg-white"
                   />
                 ))}
               </div>
@@ -264,8 +264,9 @@ export default function OwnerFinancePage() {
             </div>
           ) : (
             <>
-              <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
-                {[
+              <HostingSummaryStrip
+                label="Finance summary"
+                items={[
                   {
                     title: "Gross received",
                     value: formatMoney(summary.grossReceived),
@@ -296,23 +297,14 @@ export default function OwnerFinancePage() {
                     value: formatMoney(summary.committedFutureIncome),
                     sub: "Monthly leases — rent not yet due (not cash received)",
                   },
-                ].map((card) => (
-                  <div
-                    key={card.title}
-                    className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm"
-                  >
-                    <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
-                      {card.title}
-                    </p>
-                    <p className="mt-2 text-xl font-semibold text-[#192a3a]">
-                      {card.value}
-                    </p>
-                    <p className="mt-1 text-xs text-gray-500">{card.sub}</p>
-                  </div>
-                ))}
-              </div>
+                ].map((card) => ({
+                  label: card.title,
+                  value: card.value,
+                  hint: card.sub,
+                }))}
+              />
 
-              <div className="mb-6 rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+              <div className="rounded-lg border border-gray-200 bg-white p-3">
                 <div className="mb-3 flex flex-wrap items-center gap-2 text-sm font-medium text-[#192a3a]">
                   <Search className="h-4 w-4" />
                   Filters

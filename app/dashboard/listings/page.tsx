@@ -11,6 +11,13 @@ import { useHostingWorkspace } from "@/lib/use-hosting-workspace";
 import { fetchManagedSpaces } from "@/lib/host-managed-spaces-client";
 import { ownerApiFetch } from "@/lib/owner-api-client";
 import { ORGANISATION_QUERY_PARAM } from "@/lib/access/organisation-workspace";
+import { hostingHref } from "@/lib/access/hosting-access";
+import {
+  HostingFilterChip,
+  HostingSearchInput,
+  HostingToolbar,
+  hostingPrimaryActionClass,
+} from "@/app/components/hosting/hosting-ui";
 import OwnerVerificationAlerts from "@/app/components/OwnerVerificationAlerts";
 import { OwnerSpacesTable } from "@/app/components/owner/OwnerSpacesTable";
 import {
@@ -45,7 +52,6 @@ import {
   BadgeCheck,
   PauseCircle,
   PlayCircle,
-  Search,
   X,
 } from "lucide-react";
 
@@ -547,88 +553,56 @@ function MyListingsPageContent({
       <DashboardShell
         workspaceLabel="Hosting"
         pageTitle="My spaces"
-        pageSubtitle="Manage individual spaces people can book."
         navItems={hosting.navItems}
         activeHref="/dashboard/listings"
+        pageActions={
+          hosting.summary.showCreateSpace ? (
+            <Link
+              href={hostingHref("/dashboard/new-space", hosting.organisationId)}
+              className={hostingPrimaryActionClass}
+            >
+              List a space
+            </Link>
+          ) : null
+        }
       >
         <>
-          <div className="rounded-2xl border border-gray-200 bg-white p-3 shadow-sm sm:p-5">
-            <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
-              <div className="flex flex-wrap gap-2 xl:gap-3">
-                <Link
-                  href="/dashboard/calendar"
-                  className="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-[#192a3a] hover:bg-gray-50 sm:px-4"
+          <HostingToolbar>
+            <HostingSearchInput
+              value={searchText}
+              onChange={setSearchText}
+              placeholder="Search by space name or area"
+            />
+            <div className="flex flex-wrap gap-1.5">
+              {[
+                { key: "all", label: "All", count: counts.all },
+                { key: "setup", label: "Setup", count: counts.setup },
+                { key: "active", label: "Active", count: counts.active },
+                { key: "pending", label: "Pending", count: counts.pending },
+                { key: "paused", label: "Paused", count: counts.paused },
+              ].map((item) => (
+                <HostingFilterChip
+                  key={item.key}
+                  active={statusFilter === item.key}
+                  count={item.count}
+                  onClick={() => setStatusFilter(item.key)}
                 >
-                  Open calendar
-                </Link>
-                {hosting.summary.showCreateSpace ? (
-                <Link
-                  href="/dashboard/new-space"
-                  className="rounded-md bg-[#192a3a] px-3 py-2 text-sm font-medium text-white hover:opacity-90 sm:px-4"
-                >
-                  + Add space
-                </Link>
-                ) : null}
-              </div>
+                  {item.label}
+                </HostingFilterChip>
+              ))}
             </div>
-
-            <div className="mt-3 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-              <div className="relative min-w-[240px] flex-1 xl:max-w-[340px]">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                <input
-                  value={searchText}
-                  onChange={(e) => setSearchText(e.target.value)}
-                  placeholder="Search by space name or area"
-                  className="w-full rounded-md border border-gray-300 bg-white py-2 pl-10 pr-3 text-sm outline-none focus:border-[#192a3a]"
-                />
-              </div>
-
-              <div className="flex flex-wrap gap-3">
-                {[
-                  { key: "all", label: "All", count: counts.all },
-                  { key: "setup", label: "Setup", count: counts.setup },
-                  { key: "active", label: "Active", count: counts.active },
-                  { key: "pending", label: "Pending", count: counts.pending },
-                  { key: "paused", label: "Paused", count: counts.paused },
-                ].map((item) => (
-                  <button
-                    key={item.key}
-                    onClick={() => setStatusFilter(item.key)}
-                    className={`flex items-center gap-2 rounded-md border px-4 py-2 text-sm ${statusFilter === item.key
-                        ? "bg-[#192a3a] text-white"
-                        : "bg-white text-[#192a3a]"
-                      }`}
-                  >
-                    <span>{item.label}</span>
-
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusFilter === item.key
-                          ? "bg-white text-[#192a3a]"
-                          : "bg-gray-200 text-gray-700"
-                        }`}
-                    >
-                      {item.count}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
+          </HostingToolbar>
 
           {createdStatus === "pending" && (
-            <div className="mb-6 rounded-md border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
+            <div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">
               Your listing has been submitted and is waiting for admin approval.
             </div>
           )}
 
-          {isHost && (
-            <div className="mb-6">
-              <OwnerVerificationAlerts />
-            </div>
-          )}
+          {isHost && <OwnerVerificationAlerts />}
 
           {message && (
-            <div className="mb-6 rounded-md bg-gray-100 p-3 text-sm text-gray-800">
+            <div className="rounded-md bg-gray-100 px-3 py-2 text-sm text-gray-800">
               {message}
             </div>
           )}
@@ -636,7 +610,7 @@ function MyListingsPageContent({
           {loading ? (
             <Box>Loading your spaces...</Box>
           ) : spaces.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-gray-300 bg-white p-10 text-center">
+            <div className="rounded-lg border border-dashed border-gray-300 bg-white p-6 text-center">
               <p className="text-sm text-gray-600">
                 You don&apos;t have any spaces yet.
                 {hosting.summary.showCreateSpace
@@ -645,10 +619,10 @@ function MyListingsPageContent({
               </p>
               {hosting.summary.showCreateSpace ? (
               <Link
-                href="/dashboard/new-space"
-                className="mt-6 inline-flex rounded-md bg-[#192a3a] px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+                href={hostingHref("/dashboard/new-space", hosting.organisationId)}
+                className={`mt-4 ${hostingPrimaryActionClass}`}
               >
-                + Add space
+                List a space
               </Link>
               ) : null}
             </div>

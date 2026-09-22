@@ -210,7 +210,7 @@ function OrganisationCommercialPageContent() {
           />
         ) : null
       }
-      pageSubtitle="Organisation verification, supporting evidence, and bank details for payout readiness."
+      pageSubtitle="Verification, evidence, and bank details for payout readiness."
       navItems={hosting.navItems}
       activeHref="/dashboard/organisation"
     >
@@ -226,8 +226,8 @@ function OrganisationCommercialPageContent() {
           <p className="text-sm text-[#64748b]">Select an organisation to manage commercial details.</p>
         ) : (
           <>
-            <section className="rounded-2xl border border-[#e5e7eb] bg-white p-5">
-              <h2 className="text-lg font-semibold">Verification status</h2>
+            <section className="rounded-lg border border-[#e5e7eb] bg-white p-4">
+              <h2 className="text-base font-semibold">Verification status</h2>
               <p className="mt-2 text-sm text-[#475569]">
                 Organisation: {bundle.commercial?.verification_status || "pending"}
               </p>
@@ -239,8 +239,8 @@ function OrganisationCommercialPageContent() {
               </p>
             </section>
 
-            <form onSubmit={handleSave} className="rounded-2xl border border-[#e5e7eb] bg-white p-5 space-y-3">
-              <h2 className="text-lg font-semibold">Organisation details</h2>
+            <form onSubmit={handleSave} className="rounded-lg border border-[#e5e7eb] bg-white p-4 space-y-3">
+              <h2 className="text-base font-semibold">Organisation details</h2>
               <input
                 required
                 value={legalName}
@@ -291,8 +291,8 @@ function OrganisationCommercialPageContent() {
               ) : null}
             </form>
 
-            <form onSubmit={handleUploadDocument} className="rounded-2xl border border-[#e5e7eb] bg-white p-5 space-y-3">
-              <h2 className="text-lg font-semibold">Supporting documents</h2>
+            <form onSubmit={handleUploadDocument} className="rounded-lg border border-[#e5e7eb] bg-white p-4 space-y-3">
+              <h2 className="text-base font-semibold">Supporting documents</h2>
               <ul className="text-sm text-[#475569]">
                 {bundle.documents.map((doc) => (
                   <li key={doc.id}>
@@ -334,8 +334,8 @@ function OrganisationCommercialPageContent() {
               </button>
             </form>
 
-            <section className="rounded-2xl border border-[#e5e7eb] bg-white p-5 space-y-3">
-              <h2 className="text-lg font-semibold">Banking</h2>
+            <section className="rounded-lg border border-[#e5e7eb] bg-white p-4 space-y-3">
+              <h2 className="text-base font-semibold">Banking</h2>
               {bundle.bank ? (
                 <p className="text-sm text-[#475569]">
                   {bundle.bank.bank_name} · {bundle.bank.account_holder_name} ·{" "}

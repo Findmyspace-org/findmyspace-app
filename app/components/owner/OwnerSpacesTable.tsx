@@ -86,19 +86,19 @@ export function OwnerSpacesTable({
   canTogglePause,
 }: OwnerSpacesTableProps) {
   return (
-    <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
+    <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
       <table className="w-full min-w-0 table-fixed text-left text-sm">
         <thead className="border-b border-gray-200 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
           <tr>
-            <th className="w-14 px-2 py-3 font-medium">Image</th>
-            <th className="min-w-0 px-2 py-3 font-medium">Space</th>
-            <th className="hidden w-28 px-2 py-3 font-medium md:table-cell">Price</th>
-            <th className="hidden w-32 px-2 py-3 font-medium lg:table-cell">Capacity</th>
-            <th className="w-[7.5rem] px-2 py-3 font-medium">Status</th>
-            <th className="hidden min-w-[11rem] px-2 py-3 font-medium lg:table-cell">
+            <th className="w-14 px-2 py-2 font-medium">Image</th>
+            <th className="min-w-0 px-2 py-2 font-medium">Space</th>
+            <th className="hidden w-28 px-2 py-2 font-medium md:table-cell">Price</th>
+            <th className="hidden w-32 px-2 py-2 font-medium lg:table-cell">Capacity</th>
+            <th className="w-[7.5rem] px-2 py-2 font-medium">Status</th>
+            <th className="hidden min-w-[11rem] px-2 py-2 font-medium lg:table-cell">
               Verification
             </th>
-            <th className="w-[5.5rem] px-2 py-3 text-right font-medium">Actions</th>
+            <th className="w-[5.5rem] px-2 py-2 text-right font-medium">Actions</th>
           </tr>
         </thead>
         <tbody>

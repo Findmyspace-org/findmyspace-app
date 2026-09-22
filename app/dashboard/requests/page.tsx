@@ -529,20 +529,19 @@ function RequestsPageHeader({
   // Page title + intro now live in DashboardShell. This header keeps only the
   // search input and status filters, rendered as a slim card.
   return (
-    <div className="rounded-2xl border border-gray-200 bg-white p-3 shadow-sm sm:p-5">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:gap-4">
-        <div className="relative w-full shrink-0 lg:max-w-[min(100%,260px)]">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-          <input
-            value={searchText}
-            onChange={(e) => onSearchTextChange(e.target.value)}
-            placeholder="Search by listing, renter, or area"
-            className="w-full rounded-md border border-gray-300 bg-white py-2 pl-10 pr-3 text-sm outline-none focus:border-[#192a3a]"
-          />
-        </div>
+    <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:gap-3">
+      <div className="relative w-full shrink-0 lg:max-w-[min(100%,220px)]">
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+        <input
+          value={searchText}
+          onChange={(e) => onSearchTextChange(e.target.value)}
+          placeholder="Search by listing, renter, or area"
+          className="w-full rounded-md border border-gray-200 bg-white py-1.5 pl-9 pr-3 text-sm outline-none focus:border-[#0c1d2f]"
+        />
+      </div>
 
-        <div className="min-w-0 flex-1">
-          <StatusFilterButtons
+      <div className="min-w-0 flex-1">
+        <StatusFilterButtons
             items={[
               { key: "all", label: "All", count: counts.all, icon: ClipboardList },
               { key: "pending", label: "Pending", count: counts.pending, icon: CircleDot },
@@ -560,7 +559,6 @@ function RequestsPageHeader({
             onChange={onStatusFilterChange}
           />
         </div>
-      </div>
     </div>
   );
 }
@@ -1863,7 +1861,6 @@ function OwnerBookingRequestsPageContent({
       <DashboardShell
         workspaceLabel="Hosting"
         pageTitle="Booking requests"
-        pageSubtitle="Review incoming requests and track each booking through the payment and confirmation journey."
         navItems={hosting.navItems}
         activeHref="/dashboard/requests"
       >

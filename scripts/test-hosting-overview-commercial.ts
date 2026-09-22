@@ -16,6 +16,10 @@ import {
   hostingOverviewVerificationTool,
   organisationOverviewCard,
 } from "../lib/hosting-overview-commercial";
+import {
+  hostingOverviewOpsItems,
+  hostingOverviewSummaryItems,
+} from "../lib/hosting-overview-layout";
 
 const ORG_A = "21cf12c3-3235-4cd3-8106-801d120dc7b5";
 const ORG_B = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
@@ -70,6 +74,7 @@ function card(
 
 const ownerSrc = readFileSync("app/dashboard/owner/page.tsx", "utf8");
 const helperSrc = readFileSync("lib/hosting-overview-commercial.ts", "utf8");
+const layoutSrc = readFileSync("lib/hosting-overview-layout.ts", "utf8");
 const commercialApi = readFileSync(
   "lib/access/require-org-commercial-api.ts",
   "utf8"
@@ -80,7 +85,8 @@ const commercialApi = readFileSync(
   assert.match(ownerSrc, /ORGANISATION_QUERY_PARAM/);
   assert.match(ownerSrc, /fetchOrganisationCommercial/);
   assert.match(ownerSrc, /hostingOverviewVerificationKind/);
-  assert.match(ownerSrc, /hostingOverviewVerificationTool/);
+  assert.match(ownerSrc, /hostingOverviewOpsItems/);
+  assert.match(ownerSrc, /hostingOverviewSummaryItems/);
   assert.match(ownerSrc, /organisationOverviewCard/);
   assert.match(ownerSrc, /verificationKind === "personal" \? <OwnerVerificationAlerts/);
   assert.doesNotMatch(
@@ -88,7 +94,9 @@ const commercialApi = readFileSync(
     /isLegacyHost \? <OwnerVerificationAlerts/
   );
   assert.match(ownerSrc, /verificationKind === "personal"/);
-  assert.match(ownerSrc, /Profile & verification/);
+  assert.match(layoutSrc, /ID verification required/);
+  assert.match(layoutSrc, /showFinance/);
+  assert.doesNotMatch(ownerSrc, /host-overview-tools/);
   assert.match(helperSrc, /compactPayoutReadinessLabel/);
   assert.match(helperSrc, /OrganisationPayoutReadiness/);
   assert.doesNotMatch(helperSrc, /owner_id/);
@@ -423,6 +431,54 @@ const commercialApi = readFileSync(
     grants: [grant({ role: "org_admin", status: "active" })],
   } satisfies AccessContext);
   assert.equal(gaAccess.canManageOrganisationFinance, true);
+}
+
+{
+  const smSummary = hostingOverviewSummaryItems({
+    pendingRequestsCount: 1,
+    pendingQuestionsCount: 0,
+    monthlyIncomeLabel: "R 10",
+    activeListingsCount: 2,
+    pendingListingApprovalCount: 0,
+    showFinance: false,
+    requestsHref: "/dashboard/requests",
+    commsHref: "/dashboard/comms?view=hosting",
+    financeHref: "/dashboard/finance",
+    listingsHref: "/dashboard/listings",
+  });
+  assert.equal(smSummary.some((item) => item.label === "Revenue"), false);
+  assert.equal(smSummary.some((item) => item.label === "Requests"), true);
+
+  const oaOps = hostingOverviewOpsItems({
+    awaitingPaymentCount: 0,
+    confirmedBookingsCount: 3,
+    requestsHref: "/r",
+    calendarHref: "/c",
+    organisationCard: card(ORG_A, {
+      verificationStatus: "verified",
+      currentBankStatus: "verified",
+    }),
+    personalVerification: {
+      needsAttention: true,
+      href: "/dashboard/verification",
+    },
+  });
+  assert.equal(oaOps.some((item) => item.label === "Organisation"), true);
+  assert.equal(oaOps.some((item) => item.label === "Verification"), false);
+  assert.equal(oaOps.find((item) => item.label === "Organisation")?.value, "Ready");
+
+  const personalOps = hostingOverviewOpsItems({
+    awaitingPaymentCount: 0,
+    confirmedBookingsCount: 0,
+    requestsHref: "/r",
+    calendarHref: "/c",
+    organisationCard: null,
+    personalVerification: {
+      needsAttention: true,
+      href: "/dashboard/verification",
+    },
+  });
+  assert.equal(personalOps.at(-1)?.detail, "ID verification required");
 }
 
 console.log("test-hosting-overview-commercial: ok");

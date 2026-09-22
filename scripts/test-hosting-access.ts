@@ -265,7 +265,7 @@ function navLabels(summary: ReturnType<typeof summarizeHostingAccess>) {
   assert.equal(smSummary.showFinance, false);
   assert.equal(smSummary.showCreateSpace, false);
   assert.match(listings, /showCreateSpace/);
-  assert.match(listings, /\+ Add space/);
+  assert.match(listings, /List a space/);
   assert.match(newSpace, /!profile\?\.is_host/);
   assert.match(newSpace, /fetchManageableOrganisations/);
   assert.match(newSpace, /canOpenOrganisationListingContext/);
@@ -658,7 +658,8 @@ function navLabels(summary: ReturnType<typeof summarizeHostingAccess>) {
   assert.doesNotMatch(workspaceSwitchUi, /Switch to Hosting/);
   assert.match(owner, /pageTitle="Overview"/);
   assert.match(owner, /useHostingWorkspace\(requestedOrganisationId\)/);
-  assert.match(owner, /hostingOverviewVerificationKind/);
+  assert.match(owner, /HostingSummaryStrip/);
+  assert.doesNotMatch(owner, /host-overview-tools/);
   assert.doesNotMatch(owner, /Host dashboard/);
   assert.equal(smSummary.isSpaceManager, true);
   assert.equal(navHrefs(smSummary).includes("/dashboard/people"), false);
@@ -730,8 +731,10 @@ function navLabels(summary: ReturnType<typeof summarizeHostingAccess>) {
   assert.match(workspaceSwitchUi, /HOSTING_WORKSPACE_LABEL/);
   assert.doesNotMatch(workspaceSwitchUi, /→/);
   assert.match(dashboardShell, /chrome\.selector/);
+  assert.match(dashboardShell, /pageActions/);
+  assert.match(dashboardShell, /workspaceKind === "hosting"/);
   assert.match(dashboardShell, /sm:justify-between/);
-  assert.match(dashboardShell, /self-end sm:self-auto/);
+  assert.match(dashboardShell, /self-end sm:items-end sm:self-auto/);
   assert.match(workspaceChrome, /workspaceSelector/);
   assert.doesNotMatch(workspaceChrome, /is_host/);
   assert.match(people, /We&apos;ll[\s\S]*send them an invitation/);

@@ -63,6 +63,8 @@ type DashboardShellProps = {
    * tabs that share the same route, e.g. Comms with `?view=`).
    */
   activeHref?: string;
+  /** Compact actions aligned with the page title (Hosting). Booking unused. */
+  pageActions?: React.ReactNode;
   /** Workspace body. */
   children: React.ReactNode;
 };
@@ -75,11 +77,13 @@ export default function DashboardShell({
   pageEyebrowPill,
   navItems,
   activeHref,
+  pageActions,
   children,
 }: DashboardShellProps) {
   const pathname = usePathname();
   const workspaceKind = workspaceKindFromLabel(workspaceLabel);
   const chrome = useWorkspaceChrome(workspaceKind);
+  const hosting = workspaceKind === "hosting";
 
   function isActive(item: DashboardNavItem): boolean {
     const itemPath = item.href.split("?")[0];
@@ -94,10 +98,14 @@ export default function DashboardShell({
   return (
     <UnsavedChangesProvider>
       <div className="min-h-screen bg-[#f7f9fb] text-[#192a3a]">
-      <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6 sm:py-7 lg:px-8">
+      <div
+        className={`mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 ${
+          hosting ? "py-4 sm:py-5" : "py-4 sm:py-7"
+        }`}
+      >
         {/* Heading band — calm, structured, premium. Tightened on mobile so
             the workspace nav sits closer to the top of the viewport. */}
-        <header className="mb-3 sm:mb-6">
+        <header className={hosting ? "mb-3 sm:mb-4" : "mb-3 sm:mb-6"}>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
             <div className="min-w-0">
               <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
@@ -118,29 +126,50 @@ export default function DashboardShell({
                   <span className="inline-flex items-center">{pageEyebrowPill}</span>
                 ) : null}
               </div>
-              <h1 className="mt-1 text-xl font-semibold tracking-tight text-[#0c1d2f] sm:mt-1.5 sm:text-3xl">
+              <h1
+                className={`mt-1 font-semibold tracking-tight text-[#0c1d2f] ${
+                  hosting
+                    ? "text-xl sm:text-2xl"
+                    : "text-xl sm:mt-1.5 sm:text-3xl"
+                }`}
+              >
                 {pageTitle}
               </h1>
               {pageContext ? <div className="mt-1 sm:mt-1.5">{pageContext}</div> : null}
               {pageSubtitle ? (
-                <p className="mt-1 max-w-2xl text-xs leading-relaxed text-gray-600 sm:mt-2 sm:text-sm">
+                <p
+                  className={`mt-1 max-w-2xl leading-relaxed text-gray-600 ${
+                    hosting ? "text-xs sm:text-sm" : "text-xs sm:mt-2 sm:text-sm"
+                  }`}
+                >
                   {pageSubtitle}
                 </p>
               ) : null}
             </div>
-            {chrome.selector ? (
-              <div className="self-end sm:self-auto">
-                <WorkspaceSwitch
-                  active={chrome.selector.active}
-                  bookingHref={chrome.selector.bookingHref}
-                  hostingHref={chrome.selector.hostingHref}
-                />
+            {chrome.selector || pageActions ? (
+              <div className="flex flex-col items-stretch gap-2 self-end sm:items-end sm:self-auto">
+                {chrome.selector ? (
+                  <WorkspaceSwitch
+                    active={chrome.selector.active}
+                    bookingHref={chrome.selector.bookingHref}
+                    hostingHref={chrome.selector.hostingHref}
+                  />
+                ) : null}
+                {pageActions ? (
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    {pageActions}
+                  </div>
+                ) : null}
               </div>
             ) : null}
           </div>
         </header>
 
-        <div className="flex flex-col gap-3 sm:gap-4 lg:flex-row lg:gap-6">
+        <div
+          className={`flex flex-col lg:flex-row ${
+            hosting ? "gap-3 lg:gap-5" : "gap-3 sm:gap-4 lg:gap-6"
+          }`}
+        >
           {/* Mobile + tablet: horizontal pill tabs. Scrolls if it overflows
               so we never end up with a wrapped, multi-row mess. */}
           <nav
@@ -156,7 +185,9 @@ export default function DashboardShell({
                     <GuardedLink
                       href={item.href}
                       aria-current={active ? "page" : undefined}
-                      className={`inline-flex items-center gap-2 whitespace-nowrap rounded-full border px-3.5 py-2 text-sm font-medium transition ${
+                      className={`inline-flex items-center gap-2 whitespace-nowrap rounded-full border font-medium transition ${
+                        hosting ? "px-3 py-1.5 text-xs" : "px-3.5 py-2 text-sm"
+                      } ${
                         active
                           ? "border-[#0c1d2f] bg-[#0c1d2f] text-white shadow-sm"
                           : "border-gray-200 bg-white text-[#192a3a] hover:border-gray-300 hover:bg-[#fbfcfd]"
@@ -190,10 +221,20 @@ export default function DashboardShell({
           {/* Desktop sidebar. */}
           <aside
             aria-label={`${workspaceLabel} navigation`}
-            className="hidden lg:block lg:w-60 lg:shrink-0"
+            className={`hidden lg:block lg:shrink-0 ${
+              hosting
+                ? "lg:w-56 lg:border-r lg:border-gray-200 lg:pr-4"
+                : "lg:w-60"
+            }`}
           >
             <nav>
-              <ul className="space-y-1 rounded-2xl border border-gray-200 bg-white p-2 shadow-sm">
+              <ul
+                className={
+                  hosting
+                    ? "space-y-0.5"
+                    : "space-y-1 rounded-2xl border border-gray-200 bg-white p-2 shadow-sm"
+                }
+              >
                 {navItems.map((item) => {
                   const active = isActive(item);
                   const Icon = item.icon;
@@ -202,13 +243,19 @@ export default function DashboardShell({
                       <GuardedLink
                         href={item.href}
                         aria-current={active ? "page" : undefined}
-                        className={`group flex items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition ${
+                        className={`group flex items-center justify-between gap-2 font-medium transition ${
+                          hosting
+                            ? "rounded-lg px-2.5 py-2 text-[13px]"
+                            : "gap-3 rounded-xl px-3 py-2.5 text-sm"
+                        } ${
                           active
                             ? "bg-[#0c1d2f] text-white shadow-sm"
-                            : "text-[#192a3a] hover:bg-gray-100"
+                            : hosting
+                              ? "text-[#334155] hover:bg-white hover:text-[#0c1d2f]"
+                              : "text-[#192a3a] hover:bg-gray-100"
                         }`}
                       >
-                        <span className="flex min-w-0 items-center gap-3">
+                        <span className={`flex min-w-0 items-center ${hosting ? "gap-2.5" : "gap-3"}`}>
                           <Icon
                             className={`h-4 w-4 shrink-0 ${
                               active
@@ -240,7 +287,11 @@ export default function DashboardShell({
 
           {/* Workspace body. min-w-0 so children with overflow (tables,
               long titles, charts) can shrink correctly inside the flex row. */}
-          <section className="min-w-0 flex-1 space-y-4 sm:space-y-6">
+          <section
+            className={`min-w-0 flex-1 ${
+              hosting ? "space-y-3 sm:space-y-4" : "space-y-4 sm:space-y-6"
+            }`}
+          >
             {children}
           </section>
         </div>

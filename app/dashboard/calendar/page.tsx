@@ -2065,7 +2065,6 @@ export default function CalendarPage() {
             <DashboardShell
                 workspaceLabel="Hosting"
                 pageTitle="Calendar"
-                pageSubtitle="Visualise bookings and block availability across your spaces."
                 navItems={hosting.navItems}
                 activeHref="/dashboard/calendar"
             >
