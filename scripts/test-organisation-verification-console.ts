@@ -161,6 +161,7 @@ import {
   assert.doesNotMatch(page, /target="_blank"[\s\S]{0,80}View proof of bank/);
   assert.match(page, /useAdminRole/);
   assert.match(page, /isAdmin/);
+  assert.match(page, /OrganisationPayoutAdminPanel/);
 
   const modal = readFileSync(
     "app/components/admin/OrganisationProofPreviewModal.tsx",

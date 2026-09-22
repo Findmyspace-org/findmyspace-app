@@ -51,6 +51,7 @@
     "test:organisation-commercial": "tsx scripts/test-organisation-commercial.ts",
     "test:organisation-property": "tsx scripts/test-organisation-property.ts",
     "test:organisation-verification-console": "tsx scripts/test-organisation-verification-console.ts",
+    "test:organisation-payout": "tsx scripts/test-organisation-payout.ts",
     "test:verification-display": "tsx scripts/test-verification-display.ts",
     "test:hosting-overview-commercial": "tsx scripts/test-hosting-overview-commercial.ts",
     "test:hosting-workspace-ui": "tsx scripts/test-hosting-workspace-ui.ts",

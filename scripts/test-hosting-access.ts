@@ -408,6 +408,9 @@ function navLabels(summary: ReturnType<typeof summarizeHostingAccess>) {
   assert.equal(smSummary.showFinance, false);
   assert.match(finance, /showFinance/);
   assert.match(finance, /window\.location\.replace\(hosting\.ownerHref\)/);
+  assert.match(finance, /canShowOrganisationPayoutLedger/);
+  assert.match(finance, /OrganisationFinancePayouts/);
+  assert.doesNotMatch(finance, /Record payout/);
 }
 
 // S. organisation query param is not authority

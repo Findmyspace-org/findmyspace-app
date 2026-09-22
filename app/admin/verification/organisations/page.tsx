@@ -21,6 +21,7 @@ import {
   type OrganisationReviewQueueItem,
 } from "@/lib/organisation-verification-console";
 import { OrganisationProofPreviewModal } from "@/app/components/admin/OrganisationProofPreviewModal";
+import { OrganisationPayoutAdminPanel } from "@/app/components/admin/OrganisationPayoutAdminPanel";
 
 type DetailBundle = OrganisationCommercialBundle & {
   admin_bank: AdminOrganisationBankDto | null;
@@ -699,6 +700,7 @@ function AdminOrganisationVerificationContent() {
                     </>
                   )}
                 </div>
+                <OrganisationPayoutAdminPanel organisationId={detail.organisation.id} />
               </>
             )}
           </section>

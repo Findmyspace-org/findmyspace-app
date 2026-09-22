@@ -624,7 +624,7 @@ assert.doesNotMatch(peoplePage, /pending until they sign in with that email/);
 {
   assert.match(bookingAuthority, /test-booking-authority/);
   assert.match(browseTest, /test-public-browse-eligibility/);
-  assert.match(lifecycleTest, /only active \+ live mode is bookable/);
+  assert.match(lifecycleTest, /only active \+ live \+ explicit is_bookable is bookable/);
 }
 
 // AP activation failure does not break login

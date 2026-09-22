@@ -13,8 +13,10 @@ import { supabase } from "@/lib/supabase";
 import RequireAuth from "@/app/components/RequireAuth";
 import DashboardShell from "@/app/components/DashboardShell";
 import { HostingSummaryStrip } from "@/app/components/hosting/hosting-ui";
+import { OrganisationFinancePayouts } from "@/app/components/hosting/OrganisationFinancePayouts";
 import { useHostingWorkspace } from "@/lib/use-hosting-workspace";
 import { ORGANISATION_QUERY_PARAM } from "@/lib/access/organisation-workspace";
+import { canShowOrganisationPayoutLedger } from "@/lib/organisation-payout";
 import {
   buildFinanceLineItems,
   type FinanceBookingInput,
@@ -310,6 +312,13 @@ function OwnerFinancePageContent() {
                   hint: card.sub,
                 }))}
               />
+
+              {canShowOrganisationPayoutLedger({
+                showOrganisationCommercial: hosting.summary.showOrganisationCommercial,
+                organisationId: hosting.organisationId,
+              }) && hosting.organisationId ? (
+                <OrganisationFinancePayouts organisationId={hosting.organisationId} />
+              ) : null}
 
               <div className="rounded-lg border border-gray-200 bg-white p-3">
                 <div className="mb-3 flex flex-wrap items-center gap-2 text-sm font-medium text-[#192a3a]">
