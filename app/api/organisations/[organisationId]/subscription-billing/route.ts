@@ -3,6 +3,7 @@ import { requireOrgCommercialApi } from "@/lib/access/require-org-commercial-api
 import { listSubscriptionPeriods } from "@/lib/subscription-billing-server";
 import { loadResolvedCommercialTerms } from "@/lib/commercial-terms-server";
 import { toHostCommercialArrangementDto } from "@/lib/host-commercial-copy";
+import { organisationCanSeeSubscriptionInvoice } from "@/lib/subscription-billing";
 
 export async function GET(
   req: NextRequest,
@@ -17,7 +18,7 @@ export async function GET(
       listSubscriptionPeriods(auth.admin, { organisationId }),
       loadResolvedCommercialTerms(auth.admin, { organisationId }),
     ]);
-    const visible = periods.filter((row) => row.status !== "draft");
+    const visible = periods.filter(organisationCanSeeSubscriptionInvoice);
     return NextResponse.json({
       organisationId,
       arrangement: toHostCommercialArrangementDto(terms),

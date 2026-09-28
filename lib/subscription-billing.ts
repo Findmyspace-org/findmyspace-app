@@ -14,6 +14,9 @@ import {
 } from "@/lib/commercial-subscription";
 import type { CommercialModel } from "@/lib/commercial-terms";
 
+export const TEST_INVOICE_BANNER = "TEST INVOICE — NOT FOR PAYMENT";
+export const TEST_INVOICE_EXPLANATION =
+  "This invoice was generated for billing workflow testing. No payment is required.";
 export const SUBSCRIPTION_INVOICE_PREFIX = "FMS-SUB";
 export const DEFAULT_SUBSCRIPTION_DUE_DAYS = 14;
 export const SUBSCRIPTION_BILLING_TIMEZONE = "Africa/Johannesburg";
@@ -91,6 +94,7 @@ export type SubscriptionPeriodRow = {
   billing_email: string | null;
   email_sent_at: string | null;
   issued_by: string | null;
+  is_test_invoice: boolean;
   voided_at: string | null;
   voided_by: string | null;
   void_reason: string | null;
@@ -150,6 +154,19 @@ export function formatBillingMonthLabel(billingMonth: string): string {
   }).format(new Date(`${month}T00:00:00+02:00`));
 }
 
+export function johannesburgCalendarDate(value: Date = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: SUBSCRIPTION_BILLING_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(value);
+  const year = parts.find((part) => part.type === "year")?.value;
+  const month = parts.find((part) => part.type === "month")?.value;
+  const day = parts.find((part) => part.type === "day")?.value;
+  return `${year}-${month}-${day}`;
+}
+
 export function addSubscriptionCalendarDays(yyyyMmDd: string, days: number): string {
   const [year, month, day] = yyyyMmDd.split("-").map(Number);
   const date = new Date(Date.UTC(year, month - 1, day));
@@ -159,6 +176,45 @@ export function addSubscriptionCalendarDays(yyyyMmDd: string, days: number): str
 
 export function defaultSubscriptionDueDate(invoiceDate: string): string {
   return addSubscriptionCalendarDays(invoiceDate, DEFAULT_SUBSCRIPTION_DUE_DAYS);
+}
+
+export function resolveSubscriptionDueDate(
+  invoiceDate: string,
+  dueDateOverride?: string | null
+): string {
+  const trimmed = dueDateOverride?.trim() || "";
+  if (trimmed) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+      throw new SubscriptionBillingError(
+        "Due date must be a calendar date.",
+        "invalid_due_date"
+      );
+    }
+    return trimmed;
+  }
+  return defaultSubscriptionDueDate(invoiceDate);
+}
+
+export function subscriptionIssueIsTestInvoice(input: {
+  eftConfigured: boolean;
+  allowIncompletePaymentInstructions?: boolean;
+}): boolean {
+  return !input.eftConfigured && Boolean(input.allowIncompletePaymentInstructions);
+}
+
+export function shouldSendSubscriptionInvoiceEmail(input: {
+  isTestInvoice: boolean;
+  sendEmail?: boolean;
+  sendTestInvoiceEmail?: boolean;
+}): boolean {
+  if (input.isTestInvoice) return input.sendTestInvoiceEmail === true;
+  return input.sendEmail !== false;
+}
+
+export function organisationCanSeeSubscriptionInvoice(
+  period: Pick<SubscriptionPeriodRow, "status" | "is_test_invoice">
+): boolean {
+  return !period.is_test_invoice && period.status !== "draft";
 }
 
 export function formatSubscriptionInvoiceNumber(year: number, seq: number): string {
@@ -303,9 +359,16 @@ export function canIssueSubscriptionInvoice(period: Pick<SubscriptionPeriodRow, 
   return { ok: true };
 }
 
-export function canRecordSubscriptionPayment(period: Pick<SubscriptionPeriodRow, "status" | "payment_status">): {
+export function canRecordSubscriptionPayment(
+  period: Pick<SubscriptionPeriodRow, "status" | "payment_status"> & {
+    is_test_invoice?: boolean;
+  }
+): {
   ok: true;
 } | { ok: false; error: string } {
+  if (period.is_test_invoice) {
+    return { ok: false, error: "Test invoices cannot be marked paid through the normal payment flow." };
+  }
   if (period.status === "void") {
     return { ok: false, error: "A voided invoice cannot be marked paid." };
   }
@@ -331,15 +394,25 @@ export function canVoidSubscriptionInvoice(period: Pick<SubscriptionPeriodRow, "
 }
 
 export function summariseSubscriptionRevenue(
-  periods: Array<Pick<SubscriptionPeriodRow, "status" | "payment_status" | "monthly_amount">>
+  periods: Array<
+    Pick<SubscriptionPeriodRow, "status" | "payment_status" | "monthly_amount"> & {
+      is_test_invoice?: boolean;
+    }
+  >
 ): {
   invoiced: number;
   paid: number;
   outstanding: number;
+  testInvoiceCount: number;
 } {
   let invoiced = 0;
   let paid = 0;
+  let testInvoiceCount = 0;
   for (const period of periods) {
+    if (period.is_test_invoice) {
+      testInvoiceCount += 1;
+      continue;
+    }
     if (period.status !== "invoiced") continue;
     const amount = roundMoney(period.monthly_amount);
     invoiced += amount;
@@ -349,6 +422,7 @@ export function summariseSubscriptionRevenue(
     invoiced: roundMoney(invoiced),
     paid: roundMoney(paid),
     outstanding: roundMoney(invoiced - paid),
+    testInvoiceCount,
   };
 }
 
@@ -507,6 +581,12 @@ export function subscriptionInvoiceReadiness(input: {
     canIssueWithoutEft,
     canEmail: canIssueWithoutEft && input.hasBillingEmail,
   };
+}
+
+export function subscriptionTestInvoicePaymentLines(): string[] {
+  return [
+    "Banking details are not configured. Do not make payment against this test invoice.",
+  ];
 }
 
 export function subscriptionPaymentInstructions(

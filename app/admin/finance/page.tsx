@@ -38,6 +38,7 @@ type AdminFinanceSummary = {
   subscriptionInvoiced?: number;
   subscriptionPaid?: number;
   subscriptionOutstanding?: number;
+  subscriptionTestInvoiceCount?: number;
 };
 
 type SpaceOption = { id: string; title: string };
@@ -348,6 +349,11 @@ export default function AdminFinancePage() {
                   title: "Subscription outstanding",
                   value: formatMoney(summary.subscriptionOutstanding || 0),
                   sub: "Invoiced and unpaid",
+                },
+                {
+                  title: "Test invoices",
+                  value: String(summary.subscriptionTestInvoiceCount || 0),
+                  sub: "Excluded from subscription revenue",
                 },
                 {
                   title: "Owner earnings (liability)",

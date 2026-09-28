@@ -198,6 +198,7 @@ export async function POST(req: NextRequest) {
         {
           dueDate: (body?.due_date as string | null) ?? null,
           sendEmail: body?.send_email !== false,
+          sendTestInvoiceEmail: body?.send_test_invoice_email === true,
           allowIncompletePaymentInstructions: body?.allow_incomplete_payment_instructions === true,
         }
       );
@@ -209,6 +210,7 @@ export async function POST(req: NextRequest) {
         meta: {
           invoice_number: issued.period.invoice_number,
           email_sent: issued.emailSent,
+          is_test_invoice: issued.period.is_test_invoice,
         },
       });
       return NextResponse.json({ ok: true, ...issued });
@@ -252,6 +254,7 @@ export async function POST(req: NextRequest) {
         actorUserId: auth.userId,
         targetType: "commercial_subscription_periods",
         targetId: period.id,
+        meta: { invoice_number: period.invoice_number, void_reason: period.void_reason },
       });
       return NextResponse.json({ ok: true, period });
     }

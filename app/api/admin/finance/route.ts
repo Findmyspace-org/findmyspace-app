@@ -163,7 +163,7 @@ export async function GET(req: NextRequest) {
     ).sort((a, b) => (a.title || "").localeCompare(b.title || ""));
 
     const subscriptionRevenue = await loadSubscriptionRevenueSummary(admin).catch(
-      () => ({ invoiced: 0, paid: 0, outstanding: 0 })
+      () => ({ invoiced: 0, paid: 0, outstanding: 0, testInvoiceCount: 0 })
     );
 
     return NextResponse.json({
@@ -182,6 +182,7 @@ export async function GET(req: NextRequest) {
         subscriptionInvoiced: subscriptionRevenue.invoiced,
         subscriptionPaid: subscriptionRevenue.paid,
         subscriptionOutstanding: subscriptionRevenue.outstanding,
+        subscriptionTestInvoiceCount: subscriptionRevenue.testInvoiceCount,
       },
       filters: {
         chargeTypes,

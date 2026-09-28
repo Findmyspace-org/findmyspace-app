@@ -37,8 +37,15 @@ import {
   findmyspaceBillingBankStatus,
   subscriptionInvoiceReadiness,
   subscriptionPaymentInstructions,
+  johannesburgCalendarDate,
+  resolveSubscriptionDueDate,
+  subscriptionIssueIsTestInvoice,
+  shouldSendSubscriptionInvoiceEmail,
+  organisationCanSeeSubscriptionInvoice,
+  TEST_INVOICE_BANNER,
   type SubscriptionPeriodRow,
 } from "../lib/subscription-billing";
+import { renderSubscriptionInvoiceHtml } from "../lib/subscription-invoice-document";
 import { hostingNavItems } from "../lib/dashboard-nav";
 import { summarizeHostingAccessForContext } from "../lib/access/hosting-access";
 
@@ -82,6 +89,22 @@ function access(ctx: Partial<AccessContext> = {}): ReturnType<typeof computeAcce
     "2026-09-30T22:00:00.000Z"
   );
   assert.equal(defaultSubscriptionDueDate("2026-10-01"), "2026-10-15");
+  assert.equal(defaultSubscriptionDueDate("2026-09-28"), "2026-10-12");
+  assert.equal(resolveSubscriptionDueDate("2026-09-28", null), "2026-10-12");
+  assert.equal(resolveSubscriptionDueDate("2026-09-28", ""), "2026-10-12");
+  assert.equal(resolveSubscriptionDueDate("2026-09-28", "2026-10-20"), "2026-10-20");
+  assert.equal(
+    johannesburgCalendarDate(new Date("2026-09-27T22:30:00.000Z")),
+    "2026-09-28"
+  );
+  assert.equal(
+    johannesburgCalendarDate(new Date("2026-09-28T21:30:00.000Z")),
+    "2026-09-28"
+  );
+  assert.equal(
+    johannesburgCalendarDate(new Date("2026-09-28T22:30:00.000Z")),
+    "2026-09-29"
+  );
 }
 
 {
@@ -403,13 +426,37 @@ function access(ctx: Partial<AccessContext> = {}): ReturnType<typeof computeAcce
   const paid = { ...invoiced, payment_status: "paid" as const };
   assert.equal(canVoidSubscriptionInvoice(paid).ok, false);
   assert.equal(canVoidSubscriptionInvoice(invoiced).ok, true);
+  assert.equal(
+    canRecordSubscriptionPayment({ ...invoiced, is_test_invoice: true }).ok,
+    false
+  );
   assert.deepEqual(
     summariseSubscriptionRevenue([
       { status: "invoiced", payment_status: "unpaid", monthly_amount: 350 },
       { status: "invoiced", payment_status: "paid", monthly_amount: 350 },
       { status: "open", payment_status: "unpaid", monthly_amount: 999 },
     ]),
-    { invoiced: 700, paid: 350, outstanding: 350 }
+    { invoiced: 700, paid: 350, outstanding: 350, testInvoiceCount: 0 }
+  );
+  assert.deepEqual(
+    summariseSubscriptionRevenue([
+      {
+        status: "invoiced",
+        payment_status: "unpaid",
+        monthly_amount: 350,
+        is_test_invoice: true,
+      },
+      {
+        status: "void",
+        payment_status: "unpaid",
+        monthly_amount: 350,
+        is_test_invoice: true,
+      },
+      { status: "void", payment_status: "unpaid", monthly_amount: 400 },
+      { status: "invoiced", payment_status: "paid", monthly_amount: 250 },
+      { status: "invoiced", payment_status: "unpaid", monthly_amount: 1800 },
+    ]),
+    { invoiced: 2050, paid: 250, outstanding: 1800, testInvoiceCount: 2 }
   );
 }
 
@@ -572,6 +619,13 @@ function access(ctx: Partial<AccessContext> = {}): ReturnType<typeof computeAcce
   assert.match(server, /eft_incomplete/);
   assert.match(server, /allowIncompletePaymentInstructions/);
 
+  assert.match(server, /neq\("status", "void"\)/);
+  assert.match(server, /is_test_invoice: isTestInvoice/);
+  assert.match(server, /sendTestInvoiceEmail/);
+  assert.match(server, /void_reason_required/);
+  assert.match(server, /TEST — NOT FOR PAYMENT/);
+  assert.doesNotMatch(server, /DELETE FROM public\.commercial_subscription_periods/);
+
   const api = readFileSync("app/api/admin/subscription-billing/route.ts", "utf8");
   assert.match(api, /requireAdminApi/);
   assert.match(api, /create_month/);
@@ -584,6 +638,7 @@ function access(ctx: Partial<AccessContext> = {}): ReturnType<typeof computeAcce
     "utf8"
   );
   assert.match(oaApi, /requireOrgCommercialApi/);
+  assert.match(oaApi, /organisationCanSeeSubscriptionInvoice/);
   assert.doesNotMatch(oaApi, /recordSubscriptionPayment/);
   assert.doesNotMatch(oaApi, /voidSubscriptionInvoice/);
 
@@ -600,7 +655,13 @@ function access(ctx: Partial<AccessContext> = {}): ReturnType<typeof computeAcce
   assert.match(adminPage, /Billing contact/);
   assert.match(adminPage, /FMS_BILLING_BANK_NAME/);
   assert.match(adminPage, /Invoice can be issued. Email cannot be sent/);
+  assert.match(adminPage, /Invoice date/);
+  assert.match(adminPage, /Due date/);
+  assert.match(adminPage, /Issue test invoice/);
+  assert.match(adminPage, /I confirm this is a test invoice and is not for payment/);
+  assert.match(adminPage, /This invoice will be marked TEST — NOT FOR PAYMENT/);
   assert.match(adminPage, /allow_incomplete_payment_instructions/);
+  assert.doesNotMatch(adminPage, /Issue without complete EFT instructions/);
 
   const hostPage = readFileSync("app/dashboard/subscription/page.tsx", "utf8");
   assert.match(hostPage, /showOrganisationCommercial/);
@@ -609,6 +670,7 @@ function access(ctx: Partial<AccessContext> = {}): ReturnType<typeof computeAcce
 
   const financeApi = readFileSync("app/api/admin/finance/route.ts", "utf8");
   assert.match(financeApi, /subscriptionInvoiced/);
+  assert.match(financeApi, /subscriptionTestInvoiceCount/);
   assert.doesNotMatch(financeApi, /commercial_subscription_periods[\s\S]*platform_fee/);
 
   const nextConfig = readFileSync("next.config.ts", "utf8");
@@ -691,6 +753,153 @@ function access(ctx: Partial<AccessContext> = {}): ReturnType<typeof computeAcce
   assert.doesNotMatch(migration077, /INSERT INTO public\.commercial_terms/);
   assert.doesNotMatch(migration077, /UPDATE public\.commercial_terms/);
   assert.doesNotMatch(migration077, /UPDATE public\.bookings/);
+}
+
+{
+  assert.equal(
+    subscriptionIssueIsTestInvoice({
+      eftConfigured: false,
+      allowIncompletePaymentInstructions: true,
+    }),
+    true
+  );
+  assert.equal(
+    subscriptionIssueIsTestInvoice({
+      eftConfigured: true,
+      allowIncompletePaymentInstructions: true,
+    }),
+    false
+  );
+  assert.equal(
+    subscriptionIssueIsTestInvoice({
+      eftConfigured: false,
+      allowIncompletePaymentInstructions: false,
+    }),
+    false
+  );
+  assert.equal(
+    shouldSendSubscriptionInvoiceEmail({ isTestInvoice: true, sendEmail: true }),
+    false
+  );
+  assert.equal(
+    shouldSendSubscriptionInvoiceEmail({
+      isTestInvoice: true,
+      sendTestInvoiceEmail: true,
+    }),
+    true
+  );
+  assert.equal(
+    shouldSendSubscriptionInvoiceEmail({ isTestInvoice: false, sendEmail: true }),
+    true
+  );
+  assert.equal(
+    organisationCanSeeSubscriptionInvoice({
+      status: "invoiced",
+      is_test_invoice: true,
+    }),
+    false
+  );
+  assert.equal(
+    organisationCanSeeSubscriptionInvoice({
+      status: "invoiced",
+      is_test_invoice: false,
+    }),
+    true
+  );
+}
+
+{
+  const snapshot = buildSubscriptionCalculationSnapshot({
+    billingMonth: "2026-10-01",
+    billedScope: { scopeType: "organisation", scopeId: ORG },
+    billedOrganisationId: ORG,
+    billedOrganisationName: "Drakenstein Municipality",
+    billedPartyName: "Drakenstein Municipality",
+    termsId: "571d053b-dac6-48ee-b6ef-a038a44f82ba",
+    termsEffectiveFrom: "2026-09-28T22:00:00.000Z",
+    includedUnits: 1,
+    baseAmount: 250,
+    arrangementSummary: "Subscription",
+    resolution: {
+      billedScopeType: "organisation",
+      billedScopeId: ORG,
+      pricingMode: "progressive_property_pricing",
+      inventoryBasis: "property",
+      inventoryCount: 3,
+      matchedTier: null,
+      monthlyAmount: 350,
+      unresolvedReason: null,
+      breakdown: [
+        { kind: "base", label: "Base", unitCount: 1, rate: 250, subtotal: 250, minCount: null, maxCount: null },
+        { kind: "band", label: "2–10", unitCount: 2, rate: 50, subtotal: 100, minCount: 2, maxCount: 10 },
+      ],
+    },
+  });
+  const basePeriod: SubscriptionPeriodRow = {
+    id: "976a27b1-4fe5-4867-a48f-804da87ff7c9",
+    billing_month: "2026-10-01",
+    scope_type: "organisation",
+    scope_id: ORG,
+    billed_organisation_id: ORG,
+    billed_party_name: "Drakenstein Municipality",
+    commercial_terms_id: "571d053b-dac6-48ee-b6ef-a038a44f82ba",
+    pricing_mode: "progressive_property_pricing",
+    inventory_count: 3,
+    matched_tier_id: null,
+    matched_tier_label: null,
+    monthly_amount: 350,
+    status: "invoiced",
+    payment_status: "unpaid",
+    invoice_number: "FMS-SUB-2026-0001",
+    invoice_date: "2026-09-28",
+    due_date: "2026-10-01",
+    paid_at: null,
+    amount_paid: null,
+    payment_reference: null,
+    payment_note: null,
+    payment_recorded_by: null,
+    calculation_snapshot: snapshot,
+    billing_email: null,
+    email_sent_at: null,
+    issued_by: "ebf238f5-a25b-464b-b663-e6f8bc4e6867",
+    is_test_invoice: true,
+    voided_at: null,
+    voided_by: null,
+    void_reason: null,
+    created_at: "2026-09-28T19:54:43.240674+00",
+  };
+  const testHtml = renderSubscriptionInvoiceHtml(basePeriod);
+  assert.match(testHtml, new RegExp(TEST_INVOICE_BANNER));
+  assert.match(testHtml, /No payment is required/);
+  assert.match(testHtml, /Do not make payment against this invoice/);
+  assert.match(testHtml, /Do not make payment against this test invoice/);
+  assert.doesNotMatch(testHtml, /Pay by EFT to FindMySpace/);
+  const realHtml = renderSubscriptionInvoiceHtml({
+    ...basePeriod,
+    is_test_invoice: false,
+  });
+  assert.doesNotMatch(realHtml, new RegExp(TEST_INVOICE_BANNER));
+  assert.match(realHtml, /Pay by EFT to FindMySpace/);
+}
+
+{
+  const migration078 = readFileSync(
+    "supabase/migrations/078_20260928_subscription_test_invoices.sql",
+    "utf8"
+  );
+  assert.match(migration078, /is_test_invoice boolean NOT NULL DEFAULT false/);
+  assert.match(migration078, /FMS-SUB-2026-0001/);
+  assert.match(migration078, /Production billing workflow test/);
+  assert.match(migration078, /status = 'void'/);
+  assert.match(migration078, /status IS DISTINCT FROM 'void'/);
+  assert.doesNotMatch(migration078, /due_date\s*=/);
+  assert.doesNotMatch(migration078, /monthly_amount\s*=/);
+  assert.doesNotMatch(migration078, /calculation_snapshot\s*=/);
+  assert.doesNotMatch(migration078, /DELETE FROM public\.commercial_subscription_periods/);
+  assert.doesNotMatch(migration078, /INSERT INTO public\.commercial_terms/);
+  assert.doesNotMatch(migration078, /UPDATE public\.commercial_terms/);
+  assert.doesNotMatch(migration078, /UPDATE public\.bookings/);
+  assert.doesNotMatch(migration078, /organisation_payouts/);
 }
 
 console.log("subscription-billing tests passed");

@@ -8,6 +8,8 @@ import {
   formatBillingMonthLabel,
   parseBillingMonthInput,
   subscriptionInvoiceReadiness,
+  defaultSubscriptionDueDate,
+  johannesburgCalendarDate,
   type SubscriptionPeriodPreview,
   type SubscriptionPeriodRow,
 } from "@/lib/subscription-billing";
@@ -28,17 +30,26 @@ export default function AdminSubscriptionsPage() {
   const [organisationFilter, setOrganisationFilter] = useState("");
   const [periods, setPeriods] = useState<SubscriptionPeriodRow[]>([]);
   const [previews, setPreviews] = useState<SubscriptionPeriodPreview[]>([]);
-  const [revenue, setRevenue] = useState({ invoiced: 0, paid: 0, outstanding: 0 });
+  const [revenue, setRevenue] = useState({
+    invoiced: 0,
+    paid: 0,
+    outstanding: 0,
+    testInvoiceCount: 0,
+  });
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [messageTone, setMessageTone] = useState<"success" | "error">("success");
   const [payRef, setPayRef] = useState("");
   const [payNote, setPayNote] = useState("");
   const [payPeriodId, setPayPeriodId] = useState<string | null>(null);
-  const [dueDate, setDueDate] = useState("");
+  const [dueDate, setDueDate] = useState(() =>
+    defaultSubscriptionDueDate(johannesburgCalendarDate())
+  );
   const [eftConfigured, setEftConfigured] = useState(false);
   const [eftMissing, setEftMissing] = useState<string[]>([]);
-  const [allowIncompleteEft, setAllowIncompleteEft] = useState(false);
+  const [confirmTestInvoice, setConfirmTestInvoice] = useState(false);
+  const [voidPeriodId, setVoidPeriodId] = useState<string | null>(null);
+  const [voidReason, setVoidReason] = useState("");
   const [billingOrgId, setBillingOrgId] = useState("");
   const [billingName, setBillingName] = useState("");
   const [billingEmail, setBillingEmail] = useState("");
@@ -57,11 +68,23 @@ export default function AdminSubscriptionsPage() {
         }`
       )) as {
         periods?: SubscriptionPeriodRow[];
-        revenue?: { invoiced: number; paid: number; outstanding: number };
+        revenue?: {
+          invoiced: number;
+          paid: number;
+          outstanding: number;
+          testInvoiceCount?: number;
+        };
         billingSetup?: { eft?: { configured?: boolean; missing?: string[] } };
       };
       setPeriods(json.periods || []);
-      if (json.revenue) setRevenue(json.revenue);
+      if (json.revenue) {
+        setRevenue({
+          invoiced: json.revenue.invoiced,
+          paid: json.revenue.paid,
+          outstanding: json.revenue.outstanding,
+          testInvoiceCount: json.revenue.testInvoiceCount || 0,
+        });
+      }
       const eft = json.billingSetup?.eft;
       setEftConfigured(Boolean(eft?.configured));
       setEftMissing(eft?.missing || []);
@@ -143,6 +166,8 @@ export default function AdminSubscriptionsPage() {
       setMessageTone("success");
       setMessage(json.emailWarning || "Saved.");
       setPayPeriodId(null);
+      setVoidPeriodId(null);
+      setConfirmTestInvoice(false);
       await load();
     } catch (err) {
       setMessageTone("error");
@@ -235,7 +260,7 @@ export default function AdminSubscriptionsPage() {
           </p>
         </div>
 
-        <section className="grid gap-3 sm:grid-cols-3">
+        <section className="grid gap-3 sm:grid-cols-4">
           <div className="rounded-xl border border-gray-200 bg-white p-4">
             <p className="text-xs uppercase tracking-wide text-gray-500">Invoiced</p>
             <p className="mt-1 text-xl font-semibold">{money(revenue.invoiced)}</p>
@@ -247,6 +272,11 @@ export default function AdminSubscriptionsPage() {
           <div className="rounded-xl border border-gray-200 bg-white p-4">
             <p className="text-xs uppercase tracking-wide text-gray-500">Outstanding</p>
             <p className="mt-1 text-xl font-semibold">{money(revenue.outstanding)}</p>
+          </div>
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+            <p className="text-xs uppercase tracking-wide text-amber-800">Test invoices</p>
+            <p className="mt-1 text-xl font-semibold">{revenue.testInvoiceCount || 0}</p>
+            <p className="mt-1 text-[11px] text-amber-800">Excluded from revenue totals</p>
           </div>
         </section>
 
@@ -467,7 +497,16 @@ export default function AdminSubscriptionsPage() {
                     <td className="py-2 pr-3">{money(row.monthly_amount)}</td>
                     <td className="py-2 pr-3">
                       {row.invoice_number || row.status}
+                      {row.is_test_invoice ? (
+                        <div className="font-semibold text-red-800">TEST — NOT FOR PAYMENT</div>
+                      ) : null}
+                      {row.invoice_date ? <div>Issued {row.invoice_date}</div> : null}
                       {row.due_date ? <div>Due {row.due_date}</div> : null}
+                      {row.status === "void" ? (
+                        <div className="text-red-700">
+                          Void{row.void_reason ? ` · ${row.void_reason}` : ""}
+                        </div>
+                      ) : null}
                     </td>
                     <td className="py-2 pr-3">{row.payment_status}</td>
                     <td className="py-2 space-y-1">
@@ -481,11 +520,13 @@ export default function AdminSubscriptionsPage() {
                             hasBillingEmail: Boolean(row.billing_email),
                             eftConfigured,
                           });
-                          const canClick =
-                            readiness.canIssue ||
-                            (allowIncompleteEft && readiness.canIssueWithoutEft);
+                          const invoiceDate = johannesburgCalendarDate();
+                          const issueAsTest = !eftConfigured;
+                          const canIssuePayable = readiness.canIssue;
+                          const canIssueTest =
+                            issueAsTest && confirmTestInvoice && readiness.canIssueWithoutEft;
                           return (
-                            <div className="space-y-1">
+                            <div className="space-y-2">
                               <ul className="space-y-0.5 text-[11px] text-gray-600">
                                 {readiness.items.map((item) => (
                                   <li key={item.key}>
@@ -497,43 +538,88 @@ export default function AdminSubscriptionsPage() {
                                   </li>
                                 ))}
                               </ul>
-                              <label className="flex items-center gap-1 text-[11px] text-gray-600">
+                              <label className="block text-[11px] text-gray-600">
+                                Invoice date
                                 <input
-                                  type="checkbox"
-                                  checked={allowIncompleteEft}
-                                  onChange={(event) =>
-                                    setAllowIncompleteEft(event.target.checked)
-                                  }
+                                  type="date"
+                                  value={invoiceDate}
+                                  readOnly
+                                  className="mt-0.5 block rounded border border-gray-300 bg-gray-50 px-1 py-0.5"
                                 />
-                                Issue without complete EFT instructions
                               </label>
-                              <div className="flex flex-wrap gap-1">
+                              <label className="block text-[11px] text-gray-600">
+                                Due date
                                 <input
                                   type="date"
                                   value={dueDate}
                                   onChange={(event) => setDueDate(event.target.value)}
-                                  className="rounded border border-gray-300 px-1 py-0.5"
+                                  className="mt-0.5 block rounded border border-gray-300 px-1 py-0.5"
                                 />
+                                <span className="mt-0.5 block text-[10px] text-gray-500">
+                                  Default is invoice date + 14 calendar days (Africa/Johannesburg).
+                                  Billing month is not the due date.
+                                </span>
+                              </label>
+                              {issueAsTest ? (
+                                <div className="rounded-md border border-red-200 bg-red-50 p-2 text-[11px] text-red-950">
+                                  <p className="font-semibold">
+                                    This invoice will be marked TEST — NOT FOR PAYMENT because
+                                    FindMySpace EFT details are not configured.
+                                  </p>
+                                  <p className="mt-1">
+                                    It will not be emailed to the organisation. Do not treat it as a
+                                    payable invoice.
+                                  </p>
+                                  <label className="mt-2 flex items-start gap-2 font-medium">
+                                    <input
+                                      type="checkbox"
+                                      checked={confirmTestInvoice}
+                                      onChange={(event) =>
+                                        setConfirmTestInvoice(event.target.checked)
+                                      }
+                                    />
+                                    <span>
+                                      I confirm this is a test invoice and is not for payment.
+                                    </span>
+                                  </label>
+                                  <button
+                                    type="button"
+                                    disabled={!canIssueTest || loading}
+                                    onClick={() =>
+                                      void runAction("issue", {
+                                        period_id: row.id,
+                                        due_date: dueDate,
+                                        send_email: false,
+                                        send_test_invoice_email: false,
+                                        allow_incomplete_payment_instructions: true,
+                                      })
+                                    }
+                                    className="mt-2 text-red-800 underline disabled:cursor-not-allowed disabled:text-gray-400"
+                                  >
+                                    Issue test invoice
+                                  </button>
+                                </div>
+                              ) : (
                                 <button
                                   type="button"
-                                  disabled={!canClick || loading}
+                                  disabled={!canIssuePayable || loading}
                                   onClick={() =>
                                     void runAction("issue", {
                                       period_id: row.id,
-                                      due_date: dueDate || null,
-                                      allow_incomplete_payment_instructions: allowIncompleteEft,
+                                      due_date: dueDate,
+                                      allow_incomplete_payment_instructions: false,
                                     })
                                   }
                                   className="text-[#192a3a] underline disabled:cursor-not-allowed disabled:text-gray-400"
                                 >
                                   Issue invoice
                                 </button>
-                              </div>
+                              )}
                             </div>
                           );
                         })()
                       ) : null}
-                      {row.status === "invoiced" ? (
+                      {row.invoice_number ? (
                         <button
                           type="button"
                           onClick={() => void downloadPdf(row.id)}
@@ -542,7 +628,9 @@ export default function AdminSubscriptionsPage() {
                           Download PDF
                         </button>
                       ) : null}
-                      {row.status === "invoiced" && row.payment_status !== "paid" ? (
+                      {row.status === "invoiced" &&
+                      row.payment_status !== "paid" &&
+                      !row.is_test_invoice ? (
                         payPeriodId === row.id ? (
                           <div className="space-y-1">
                             <input
@@ -582,13 +670,41 @@ export default function AdminSubscriptionsPage() {
                         )
                       ) : null}
                       {row.status !== "void" && row.payment_status !== "paid" ? (
-                        <button
-                          type="button"
-                          onClick={() => void runAction("void", { period_id: row.id })}
-                          className="block text-red-700 underline"
-                        >
-                          Void
-                        </button>
+                        voidPeriodId === row.id ? (
+                          <div className="space-y-1">
+                            <textarea
+                              placeholder="Void reason, e.g. Production billing workflow test"
+                              value={voidReason}
+                              onChange={(event) => setVoidReason(event.target.value)}
+                              className="w-full rounded border border-gray-300 px-1 py-0.5"
+                              rows={2}
+                            />
+                            <button
+                              type="button"
+                              disabled={voidReason.trim().length < 3 || loading}
+                              onClick={() =>
+                                void runAction("void", {
+                                  period_id: row.id,
+                                  reason: voidReason.trim(),
+                                })
+                              }
+                              className="text-red-700 underline disabled:cursor-not-allowed disabled:text-gray-400"
+                            >
+                              Confirm void
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setVoidPeriodId(row.id);
+                              setVoidReason("");
+                            }}
+                            className="block text-red-700 underline"
+                          >
+                            Void
+                          </button>
+                        )
                       ) : null}
                     </td>
                   </tr>

@@ -19,13 +19,17 @@ import {
   canIssueSubscriptionInvoice,
   canRecordSubscriptionPayment,
   canVoidSubscriptionInvoice,
-  defaultSubscriptionDueDate,
   evaluateSubscriptionEligibility,
   parseBillingMonthInput,
   billingMonthEffectiveAt,
   skipReasonMessage,
   summariseSubscriptionRevenue,
+  johannesburgCalendarDate,
   findmyspaceBillingBankStatus,
+  TEST_INVOICE_BANNER,
+  resolveSubscriptionDueDate,
+  subscriptionIssueIsTestInvoice,
+  shouldSendSubscriptionInvoiceEmail,
   type SubscriptionCalculationSnapshot,
   type SubscriptionPeriodPreview,
   type SubscriptionPeriodRow,
@@ -39,7 +43,7 @@ import {
 import { progressiveBandGapWarning } from "@/lib/commercial-progressive-pricing";
 
 const PERIOD_COLUMNS =
-  "id, billing_month, scope_type, scope_id, billed_organisation_id, billed_party_name, commercial_terms_id, pricing_mode, inventory_count, matched_tier_id, matched_tier_label, monthly_amount, status, payment_status, invoice_number, invoice_date, due_date, paid_at, amount_paid, payment_reference, payment_note, payment_recorded_by, calculation_snapshot, billing_email, email_sent_at, issued_by, voided_at, voided_by, void_reason, created_at";
+  "id, billing_month, scope_type, scope_id, billed_organisation_id, billed_party_name, commercial_terms_id, pricing_mode, inventory_count, matched_tier_id, matched_tier_label, monthly_amount, status, payment_status, invoice_number, invoice_date, due_date, paid_at, amount_paid, payment_reference, payment_note, payment_recorded_by, calculation_snapshot, billing_email, email_sent_at, issued_by, is_test_invoice, voided_at, voided_by, void_reason, created_at";
 
 type OrgRow = {
   id: string;
@@ -90,6 +94,7 @@ function asPeriod(row: Record<string, unknown>): SubscriptionPeriodRow {
     billing_email: (row.billing_email as string | null) ?? null,
     email_sent_at: (row.email_sent_at as string | null) ?? null,
     issued_by: (row.issued_by as string | null) ?? null,
+    is_test_invoice: Boolean(row.is_test_invoice),
     voided_at: (row.voided_at as string | null) ?? null,
     voided_by: (row.voided_by as string | null) ?? null,
     void_reason: (row.void_reason as string | null) ?? null,
@@ -562,6 +567,7 @@ async function findPeriod(
     .eq("scope_type", input.scopeType)
     .eq("scope_id", input.scopeId)
     .eq("billing_month", input.billingMonth)
+    .neq("status", "void")
     .maybeSingle();
   if (error) {
     throw new Error(error.message || "Could not load subscription period.");
@@ -649,6 +655,7 @@ export async function issueSubscriptionInvoice(
   input: {
     dueDate?: string | null;
     sendEmail?: boolean;
+    sendTestInvoiceEmail?: boolean;
     allowIncompletePaymentInstructions?: boolean;
   } = {}
 ): Promise<{ period: SubscriptionPeriodRow; emailSent: boolean; emailWarning: string | null }> {
@@ -658,7 +665,11 @@ export async function issueSubscriptionInvoice(
     throw new SubscriptionBillingError(allowed.error, "cannot_issue");
   }
   const eft = findmyspaceBillingBankStatus();
-  if (!eft.configured && !input.allowIncompletePaymentInstructions) {
+  const isTestInvoice = subscriptionIssueIsTestInvoice({
+    eftConfigured: eft.configured,
+    allowIncompletePaymentInstructions: input.allowIncompletePaymentInstructions,
+  });
+  if (!eft.configured && !isTestInvoice) {
     throw new SubscriptionBillingError(
       `Payment instructions are incomplete (${eft.missing.join(", ")}). Configure FindMySpace EFT details before issuing a payable invoice.`,
       "eft_incomplete",
@@ -666,14 +677,8 @@ export async function issueSubscriptionInvoice(
     );
   }
 
-  const todayParts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Africa/Johannesburg",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(new Date());
-  const today = `${todayParts.find((part) => part.type === "year")?.value}-${todayParts.find((part) => part.type === "month")?.value}-${todayParts.find((part) => part.type === "day")?.value}`;
-  const dueDate = input.dueDate?.trim() || defaultSubscriptionDueDate(today);
+  const today = johannesburgCalendarDate();
+  const dueDate = resolveSubscriptionDueDate(today, input.dueDate);
   const year = Number(today.slice(0, 4));
   const { data: numberData, error: numberError } = await admin.rpc(
     "next_subscription_invoice_number",
@@ -692,6 +697,7 @@ export async function issueSubscriptionInvoice(
       invoice_date: today,
       due_date: dueDate,
       issued_by: actorUserId,
+      is_test_invoice: isTestInvoice,
     })
     .eq("id", periodId)
     .eq("status", period.status)
@@ -704,9 +710,19 @@ export async function issueSubscriptionInvoice(
   let issued = asPeriod(data as Record<string, unknown>);
   let emailSent = false;
   let emailWarning: string | null = null;
-  if (input.sendEmail !== false) {
+  const shouldEmail = shouldSendSubscriptionInvoiceEmail({
+    isTestInvoice: issued.is_test_invoice,
+    sendEmail: input.sendEmail,
+    sendTestInvoiceEmail: input.sendTestInvoiceEmail,
+  });
+  if (issued.is_test_invoice && input.sendTestInvoiceEmail !== true) {
+    emailWarning = "Test invoice was not emailed. No payment is required.";
+  }
+  if (shouldEmail) {
     if (!issued.billing_email) {
-      emailWarning = "No billing email configured.";
+      emailWarning = issued.is_test_invoice
+        ? "Test invoice was not emailed. No billing email configured."
+        : "No billing email configured.";
     } else {
       const sent = await sendSubscriptionInvoiceEmail(issued);
       emailSent = sent.ok;
@@ -788,13 +804,20 @@ export async function voidSubscriptionInvoice(
   if (!allowed.ok) {
     throw new SubscriptionBillingError(allowed.error, "cannot_void");
   }
+  const voidReason = reason?.trim() || "";
+  if (voidReason.length < 3) {
+    throw new SubscriptionBillingError(
+      "Enter a void reason of at least 3 characters.",
+      "void_reason_required"
+    );
+  }
   const { data, error } = await admin
     .from("commercial_subscription_periods")
     .update({
       status: "void",
       voided_at: new Date().toISOString(),
       voided_by: actorUserId,
-      void_reason: reason?.trim() || null,
+      void_reason: voidReason,
     })
     .eq("id", periodId)
     .select(PERIOD_COLUMNS)
@@ -808,7 +831,7 @@ export async function voidSubscriptionInvoice(
 export async function loadSubscriptionRevenueSummary(admin: SupabaseClient) {
   const { data, error } = await admin
     .from("commercial_subscription_periods")
-    .select("status, payment_status, monthly_amount")
+    .select("status, payment_status, monthly_amount, is_test_invoice")
     .limit(2000);
   if (error) throw new Error(error.message || "Could not load subscription revenue.");
   return summariseSubscriptionRevenue(
@@ -816,10 +839,12 @@ export async function loadSubscriptionRevenueSummary(admin: SupabaseClient) {
       status: SubscriptionPeriodRow["status"];
       payment_status: SubscriptionPeriodRow["payment_status"];
       monthly_amount: number;
+      is_test_invoice?: boolean;
     }>).map((row) => ({
       status: row.status,
       payment_status: row.payment_status,
       monthly_amount: Number(row.monthly_amount || 0),
+      is_test_invoice: Boolean(row.is_test_invoice),
     }))
   );
 }
@@ -831,15 +856,27 @@ async function sendSubscriptionInvoiceEmail(
   if (!period.billing_email || !period.invoice_number) return { ok: false };
   const snapshot = period.calculation_snapshot;
   const month = snapshot?.billingMonth || period.billing_month;
-  return sendEmail({
-    to: period.billing_email,
-    subject: `FindMySpace subscription invoice ${period.invoice_number}`,
-    html: `<p>Your FindMySpace subscription invoice is ready.</p>
+  const isTest = period.is_test_invoice;
+  const subject = isTest
+    ? `TEST — NOT FOR PAYMENT: FindMySpace subscription invoice ${period.invoice_number}`
+    : `FindMySpace subscription invoice ${period.invoice_number}`;
+  const html = isTest
+    ? `<p><strong>${TEST_INVOICE_BANNER}</strong></p>
+<p>This invoice was generated for billing workflow testing. No payment is required. Do not pay this invoice.</p>
+<p>Invoice number: <strong>${period.invoice_number}</strong><br />
+Billing month: ${month}<br />
+Amount: R ${Number(period.monthly_amount).toFixed(2)} (not payable)<br />
+Due date: ${period.due_date || "—"}</p>`
+    : `<p>Your FindMySpace subscription invoice is ready.</p>
 <p>Invoice number: <strong>${period.invoice_number}</strong><br />
 Billing month: ${month}<br />
 Amount due: R ${Number(period.monthly_amount).toFixed(2)}<br />
 Due date: ${period.due_date || "—"}</p>
-<p>Download the invoice from your organisation billing page. Transaction fees are not included in this invoice.</p>`,
+<p>Download the invoice from your organisation billing page. Transaction fees are not included in this invoice.</p>`;
+  return sendEmail({
+    to: period.billing_email,
+    subject,
+    html,
   });
 }
 

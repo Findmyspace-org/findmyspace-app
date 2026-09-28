@@ -9,6 +9,9 @@ import {
   formatBillingMonthLabel,
   readFindmyspaceBillingBankDetails,
   subscriptionPaymentInstructions,
+  subscriptionTestInvoicePaymentLines,
+  TEST_INVOICE_BANNER,
+  TEST_INVOICE_EXPLANATION,
   type SubscriptionPeriodRow,
 } from "@/lib/subscription-billing";
 
@@ -32,9 +35,10 @@ function formatDate(value: string | null): string {
 export function renderSubscriptionInvoiceHtml(period: SubscriptionPeriodRow): string {
   const snapshot = period.calculation_snapshot;
   const logo = resolveInvoiceLogoDataUrl();
-  const instructions = subscriptionPaymentInstructions(
-    readFindmyspaceBillingBankDetails()
-  );
+  const isTestInvoice = Boolean(period.is_test_invoice);
+  const instructions = isTestInvoice
+    ? { configured: false, lines: subscriptionTestInvoicePaymentLines() }
+    : subscriptionPaymentInstructions(readFindmyspaceBillingBankDetails());
   const invoiceLines = snapshot?.breakdown
     ? progressiveInvoiceCalculationLines({
         baseAmount: snapshot.baseAmount || 0,
@@ -62,6 +66,17 @@ export function renderSubscriptionInvoiceHtml(period: SubscriptionPeriodRow): st
   ]
     .filter(Boolean)
     .join("<br />");
+  const statusLabel =
+    period.status === "void"
+      ? "Void"
+      : isTestInvoice
+        ? "TEST — NOT FOR PAYMENT"
+        : period.payment_status === "paid"
+          ? "Paid"
+          : "Unpaid";
+  const testBanner = isTestInvoice
+    ? `<div class="test-banner">${escapeHtml(TEST_INVOICE_BANNER)}<p>${escapeHtml(TEST_INVOICE_EXPLANATION)}</p><p>Banking details have not been configured. Do not make payment against this invoice.</p></div>`
+    : "";
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -79,11 +94,24 @@ export function renderSubscriptionInvoiceHtml(period: SubscriptionPeriodRow): st
     td, th { padding: 6px 0; }
     .num { text-align: right; }
     .total { font-size: 16px; font-weight: 700; }
+    .test-banner {
+      background: #7f1d1d;
+      color: #fff;
+      font-weight: 800;
+      font-size: 16px;
+      letter-spacing: 0.03em;
+      padding: 14px 16px;
+      border-radius: 8px;
+      margin: 16px 0 8px;
+      text-align: center;
+    }
+    .test-banner p { margin: 8px 0 0; font-weight: 500; font-size: 12px; letter-spacing: 0; }
   </style>
 </head>
 <body>
   <div class="page">
     ${brandMarkHtml(logo)}
+    ${testBanner}
     <h1>Subscription invoice</h1>
     <p class="muted">FindMySpace · monthly organisation subscription. This is not a renter booking invoice.</p>
     <div class="card">
@@ -91,7 +119,7 @@ export function renderSubscriptionInvoiceHtml(period: SubscriptionPeriodRow): st
         <tr><td>Invoice number</td><td class="num">${escapeHtml(period.invoice_number || "Draft")}</td></tr>
         <tr><td>Invoice date</td><td class="num">${escapeHtml(formatDate(period.invoice_date))}</td></tr>
         <tr><td>Due date</td><td class="num">${escapeHtml(formatDate(period.due_date))}</td></tr>
-        <tr><td>Status</td><td class="num">${escapeHtml(period.payment_status === "paid" ? "Paid" : "Unpaid")}</td></tr>
+        <tr><td>Status</td><td class="num">${escapeHtml(statusLabel)}</td></tr>
       </table>
     </div>
     <div class="card">

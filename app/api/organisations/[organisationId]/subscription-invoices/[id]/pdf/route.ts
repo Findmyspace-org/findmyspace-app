@@ -20,6 +20,9 @@ export async function GET(
     if (period.billed_organisation_id !== organisationId) {
       return NextResponse.json({ error: "Forbidden." }, { status: 403 });
     }
+    if (period.is_test_invoice) {
+      return NextResponse.json({ error: "Not found." }, { status: 404 });
+    }
     if (period.status === "void") {
       return NextResponse.json({ error: "This invoice is void." }, { status: 409 });
     }

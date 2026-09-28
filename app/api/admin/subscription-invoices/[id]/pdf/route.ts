@@ -22,8 +22,8 @@ export async function GET(
   try {
     const { id } = await context.params;
     const period = await getSubscriptionPeriod(admin, id);
-    if (period.status === "void") {
-      return NextResponse.json({ error: "This invoice is void." }, { status: 409 });
+    if (period.status !== "invoiced" && period.status !== "void" && !period.invoice_number) {
+      return NextResponse.json({ error: "Invoice PDF is not available yet." }, { status: 409 });
     }
     const html = renderSubscriptionInvoiceHtml(period);
     const pdf = await renderHtmlToPdf(html);
