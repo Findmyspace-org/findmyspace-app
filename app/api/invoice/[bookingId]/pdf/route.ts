@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import chromium from "@sparticuz/chromium";
-import puppeteer from "puppeteer-core";
 import { renderInvoiceHtml } from "@/lib/invoice-document";
+import { invoicePdfUserMessage, renderHtmlToPdf } from "@/lib/invoice-pdf";
 import { loadInvoiceDocumentForRequest } from "@/lib/invoice-server";
 
 export const runtime = "nodejs";
@@ -42,13 +41,16 @@ export async function GET(
 
   try {
     pdfBuffer = await renderHtmlToPdf(html);
-  } catch (e) {
-    console.error("invoice pdf:", e);
+  } catch (error) {
+    console.error("invoice pdf generation failed", {
+      bookingId,
+      vercel: Boolean(process.env.VERCEL),
+      node: process.version,
+      message: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+    });
     return NextResponse.json(
-      {
-        error:
-          "Could not generate PDF. For local development, install Chrome/Chromium or set CHROME_EXECUTABLE_PATH.",
-      },
+      { error: invoicePdfUserMessage(error) },
       { status: 503 }
     );
   }
@@ -63,53 +65,4 @@ export async function GET(
       "Cache-Control": "private, no-store",
     },
   });
-}
-
-async function renderHtmlToPdf(html: string): Promise<Buffer> {
-  const isServerless = Boolean(process.env.VERCEL);
-
-  const localChrome =
-    process.env.CHROME_EXECUTABLE_PATH ||
-    (process.platform === "darwin"
-      ? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-      : process.platform === "linux"
-        ? "/usr/bin/google-chrome"
-        : undefined);
-
-  const executablePath = isServerless
-    ? await chromium.executablePath()
-    : localChrome;
-
-  if (!executablePath) {
-    throw new Error("No Chromium executable found.");
-  }
-
-  const launchArgs = isServerless
-    ? chromium.args
-    : [
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-dev-shm-usage",
-        "--font-render-hinting=none",
-      ];
-
-  const browser = await puppeteer.launch({
-    args: launchArgs,
-    executablePath,
-    headless: true,
-  });
-
-  try {
-    const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: "networkidle0" });
-    const pdf = await page.pdf({
-      format: "A4",
-      printBackground: true,
-      preferCSSPageSize: true,
-      margin: { top: "12mm", right: "12mm", bottom: "14mm", left: "12mm" },
-    });
-    return Buffer.from(pdf);
-  } finally {
-    await browser.close();
-  }
 }
