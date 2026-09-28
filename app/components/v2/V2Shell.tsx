@@ -30,9 +30,10 @@ export default function V2Shell({ children }: { children: ReactNode }) {
           <V2DesktopNavigation />
 
           <div className="fms-v2-header-actions">
-            <V2Badge tone="brand">
-              {identity.isSuperAdmin ? "Super Admin preview" : "Admin preview"}
-            </V2Badge>
+            <span className="fms-v2-account-label">
+              {identity.email || "Super Admin"}
+            </span>
+            <V2Badge tone="brand">V2 preview</V2Badge>
             <Link
               href={CLASSIC_HOME_HREF}
               className="fms-v2-exit-link"
@@ -48,8 +49,17 @@ export default function V2Shell({ children }: { children: ReactNode }) {
       <main className="fms-v2-main">{children}</main>
 
       <footer className="fms-v2-footer">
-        <V2Container>
-          <p>FindMySpace V2 presentation preview · Classic remains the default.</p>
+        <V2Container className="fms-v2-footer-inner">
+          <div>
+            <V2Logo className="fms-v2-footer-logo" />
+            <p>Find the right space, in the right place.</p>
+          </div>
+          <nav aria-label="V2 footer navigation">
+            <Link href="/spaces">Browse</Link>
+            <Link href="/list-your-space">List your space</Link>
+            <Link href="/contact">Contact</Link>
+            <Link href="/terms">Terms</Link>
+          </nav>
         </V2Container>
       </footer>
 

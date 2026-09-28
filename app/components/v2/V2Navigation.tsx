@@ -3,29 +3,20 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  Building2,
   CalendarCheck,
   Compass,
-  LayoutDashboard,
-  ShieldCheck,
+  Home,
   type LucideIcon,
 } from "lucide-react";
 import { V2_PREVIEW_HREF } from "@/lib/v2/ui-version";
-import { useV2PreviewIdentity } from "./V2PreviewGate";
 
 type V2NavigationItem = {
   label: string;
   href: string;
   icon: LucideIcon;
-  requiresPlatformAdmin?: boolean;
 };
 
-const V2_FOUNDATION_NAV: V2NavigationItem[] = [
-  {
-    label: "Preview",
-    href: V2_PREVIEW_HREF,
-    icon: LayoutDashboard,
-  },
+const V2_DESKTOP_NAV: V2NavigationItem[] = [
   {
     label: "Browse",
     href: "/spaces",
@@ -36,26 +27,16 @@ const V2_FOUNDATION_NAV: V2NavigationItem[] = [
     href: "/dashboard/my-bookings",
     icon: CalendarCheck,
   },
-  {
-    label: "Hosting",
-    href: "/dashboard/owner",
-    icon: Building2,
-    requiresPlatformAdmin: true,
-  },
-  {
-    label: "Platform",
-    href: "/admin",
-    icon: ShieldCheck,
-    requiresPlatformAdmin: true,
-  },
 ];
 
-function useAvailableNavigation() {
-  const identity = useV2PreviewIdentity();
-  return V2_FOUNDATION_NAV.filter(
-    (item) => !item.requiresPlatformAdmin || identity.isPlatformAdmin
-  );
-}
+const V2_MOBILE_NAV: V2NavigationItem[] = [
+  {
+    label: "Home",
+    href: V2_PREVIEW_HREF,
+    icon: Home,
+  },
+  ...V2_DESKTOP_NAV,
+];
 
 function isActiveNavigationItem(pathname: string, href: string) {
   const hrefPath = href.split("?")[0];
@@ -64,11 +45,10 @@ function isActiveNavigationItem(pathname: string, href: string) {
 
 export function V2DesktopNavigation() {
   const pathname = usePathname();
-  const items = useAvailableNavigation();
 
   return (
     <nav className="fms-v2-desktop-nav" aria-label="V2 preview navigation">
-      {items.map((item) => {
+      {V2_DESKTOP_NAV.map((item) => {
         const Icon = item.icon;
         const active = isActiveNavigationItem(pathname, item.href);
         return (
@@ -89,11 +69,10 @@ export function V2DesktopNavigation() {
 
 export function V2MobileNavigation() {
   const pathname = usePathname();
-  const items = useAvailableNavigation();
 
   return (
     <nav className="fms-v2-mobile-nav" aria-label="V2 preview navigation">
-      {items.map((item) => {
+      {V2_MOBILE_NAV.map((item) => {
         const Icon = item.icon;
         const active = isActiveNavigationItem(pathname, item.href);
         return (
