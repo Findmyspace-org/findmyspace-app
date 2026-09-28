@@ -1,4 +1,12 @@
 import {
+  calculateBookingCommercials,
+  type CommercialSplit,
+} from "@/lib/commercial-calculator";
+import {
+  legacyCombinedCommercialTerms,
+  type ResolvedCommercialTerms,
+} from "@/lib/commercial-terms";
+import {
   resolveSpacePriceAmount,
   resolveSpacePriceUnit,
   type SpacePricingInput,
@@ -49,6 +57,8 @@ export type BookingTotalsResult = {
   monthsPaid: number;
   platformFee: number;
   ownerAmount: number;
+  commercialSplit: CommercialSplit;
+  commercialTerms: ResolvedCommercialTerms;
 };
 
 /**
@@ -59,13 +69,16 @@ export function computeBookingTotals(
   space: BookingPriceSpace,
   bookingUnit: string,
   quantity: number,
-  startAt: string
+  startAt: string,
+  commercialTerms?: ResolvedCommercialTerms | null
 ): BookingTotalsResult | null {
   const unit = bookingUnit || space.booking_unit || "day";
   const unitPrice = resolveBookingUnitPrice(space, unit);
   if (unitPrice <= 0) return null;
 
-  const platformFeePercent = Number(space.platform_fee_percent ?? 15);
+  const terms =
+    commercialTerms ??
+    legacyCombinedCommercialTerms(space.platform_fee_percent ?? 15);
   const depositMonths = Number(space.deposit_months ?? 0);
   const monthlyPaymentDay = Number(space.monthly_payment_day ?? 1);
 
@@ -100,8 +113,12 @@ export function computeBookingTotals(
     initialPaymentAmount = totalPrice;
   }
 
-  const platformFee = Number((totalPrice * (platformFeePercent / 100)).toFixed(2));
-  const ownerAmount = Number((totalPrice - platformFee).toFixed(2));
+  const commercialSplit = calculateBookingCommercials(totalPrice, {
+    model: terms.model,
+    commissionPercent: terms.commissionPercent,
+    transactionFeePercent: terms.transactionFeePercent,
+    accountingMode: terms.accountingMode,
+  });
 
   return {
     unitPrice,
@@ -113,7 +130,9 @@ export function computeBookingTotals(
     nextPaymentDate,
     monthsTotal,
     monthsPaid,
-    platformFee,
-    ownerAmount,
+    platformFee: commercialSplit.totalFindmyspaceFee,
+    ownerAmount: commercialSplit.hostEarnings,
+    commercialSplit,
+    commercialTerms: terms,
   };
 }

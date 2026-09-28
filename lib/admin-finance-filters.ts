@@ -78,12 +78,21 @@ export function summarizePaidLines(lines: FinanceLineItem[]) {
   let totalPlatformFees = 0;
   let totalOwnerEarnings = 0;
   let depositsCollected = 0;
+  let totalPlatformCommission = 0;
+  let totalTransactionFees = 0;
+  let legacyCombinedPlatformFees = 0;
 
   for (const t of lines) {
     if (!isChargeLinePaidForReporting(t.status)) continue;
     grossBookingValue += t.gross;
     totalPlatformFees += t.platformFee;
     totalOwnerEarnings += t.netOwner;
+    if (t.feeLegacyCombined) {
+      legacyCombinedPlatformFees += t.platformFee;
+    } else {
+      totalPlatformCommission += t.platformCommission || 0;
+      totalTransactionFees += t.transactionFee || 0;
+    }
     if (t.chargeType === "deposit") {
       depositsCollected += t.gross;
     }
@@ -94,6 +103,9 @@ export function summarizePaidLines(lines: FinanceLineItem[]) {
     totalPlatformFees,
     totalOwnerEarnings,
     depositsCollected,
+    totalPlatformCommission,
+    totalTransactionFees,
+    legacyCombinedPlatformFees,
   };
 }
 

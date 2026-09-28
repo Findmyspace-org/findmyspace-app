@@ -23,6 +23,9 @@ export type FinanceBookingInput = {
   total_price: number | null;
   platform_fee: number | null;
   owner_earnings: number | null;
+  commercial_model?: string | null;
+  platform_commission_amount?: number | string | null;
+  transaction_fee_amount?: number | string | null;
   status: string | null;
   payment_status: string | null;
   /** When set, used for synthetic lines and date filters on legacy paid bookings. */
@@ -61,6 +64,9 @@ export type FinanceLineItem = {
   billingPeriodLabel: string;
   gross: number;
   platformFee: number;
+  platformCommission: number | null;
+  transactionFee: number | null;
+  feeLegacyCombined: boolean;
   netOwner: number;
   status: string;
   paidAt: string | null;
@@ -102,6 +108,12 @@ export function allocateFees(
   };
 }
 
+export function bookingHasSplitFees(b: FinanceBookingInput): boolean {
+  return (
+    b.platform_commission_amount != null || b.transaction_fee_amount != null
+  );
+}
+
 /**
  * Flatten bookings + charges into finance line items (owner + renter labels).
  */
@@ -112,6 +124,13 @@ export function buildFinanceLineItems(bookings: FinanceBookingInput[]): FinanceL
     const tp = Number(b.total_price || 0);
     const pf = Number(b.platform_fee || 0);
     const oe = Number(b.owner_earnings ?? 0);
+    const split = bookingHasSplitFees(b);
+    const commissionTotal = split
+      ? Number(b.platform_commission_amount || 0)
+      : null;
+    const transactionTotal = split
+      ? Number(b.transaction_fee_amount || 0)
+      : null;
     const charges = b.booking_charges || [];
     const propertyTitle = b.space?.title || "Listing";
     const renterLabel = getDisplayName(b.renter);
@@ -133,6 +152,14 @@ export function buildFinanceLineItems(bookings: FinanceBookingInput[]): FinanceL
           pf,
           oe
         );
+        const commissionAlloc =
+          commissionTotal == null
+            ? null
+            : allocateFees(gross, allocationBase, commissionTotal, 0).platformAlloc;
+        const transactionAlloc =
+          transactionTotal == null
+            ? null
+            : allocateFees(gross, allocationBase, transactionTotal, 0).platformAlloc;
         const lineStatus = normalizeChargeLineStatus(c.status);
         rows.push({
           id: c.id,
@@ -144,6 +171,9 @@ export function buildFinanceLineItems(bookings: FinanceBookingInput[]): FinanceL
           billingPeriodLabel: formatChargePeriod(c),
           gross,
           platformFee: platformAlloc,
+          platformCommission: commissionAlloc,
+          transactionFee: transactionAlloc,
+          feeLegacyCombined: !split,
           netOwner: netAlloc,
           status: lineStatus,
           paidAt: c.paid_at,
@@ -162,6 +192,9 @@ export function buildFinanceLineItems(bookings: FinanceBookingInput[]): FinanceL
         billingPeriodLabel: "—",
         gross: tp,
         platformFee: pf,
+        platformCommission: commissionTotal,
+        transactionFee: transactionTotal,
+        feeLegacyCombined: !split,
         netOwner: oe,
         status: "paid",
         paidAt: b.paid_at ?? null,

@@ -103,6 +103,7 @@ export function computeAccess(ctx: AccessContext): ResolvedAccess {
     canManagePeopleAccess: canAdministerOrganisation,
     canAssignOrganisationAdmin: canAdministerOrganisation,
     canAssignManagers: canAdministerOrganisation,
+    canManagePlatformCommercialTerms: isGlobalAdmin,
   };
 }
 

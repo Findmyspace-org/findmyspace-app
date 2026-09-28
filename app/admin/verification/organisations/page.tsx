@@ -22,6 +22,7 @@ import {
 } from "@/lib/organisation-verification-console";
 import { OrganisationProofPreviewModal } from "@/app/components/admin/OrganisationProofPreviewModal";
 import { OrganisationPayoutAdminPanel } from "@/app/components/admin/OrganisationPayoutAdminPanel";
+import { AdminCommercialTermsPanel } from "@/app/components/admin/AdminCommercialTermsPanel";
 
 type DetailBundle = OrganisationCommercialBundle & {
   admin_bank: AdminOrganisationBankDto | null;
@@ -700,6 +701,11 @@ function AdminOrganisationVerificationContent() {
                     </>
                   )}
                 </div>
+                <AdminCommercialTermsPanel
+                  scopeType="organisation"
+                  scopeId={detail.organisation.id}
+                  organisationId={detail.organisation.id}
+                />
                 <OrganisationPayoutAdminPanel organisationId={detail.organisation.id} />
               </>
             )}

@@ -1,9 +1,12 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { buildInitialBookingCharges } from "@/lib/invoice";
+import { computeBookingTotals } from "@/lib/booking-pricing";
+import { loadResolvedCommercialTerms } from "@/lib/commercial-terms-server";
 import {
-  computeBookingTotals,
-  resolveBookingUnitPrice,
-} from "@/lib/booking-pricing";
+  legacyCombinedCommercialTerms,
+  snapshotBookingCommercialInsert,
+  stripForbiddenClientCommercialKeys,
+} from "@/lib/commercial-terms";
 import { bookableSpaceError } from "@/lib/listing-lifecycle";
 import { snapshotBookingOwnership } from "@/lib/access/operational-booking-managers";
 import { resolveOperationalBookingManagers } from "@/lib/access/resolve-operational-booking-managers";
@@ -168,7 +171,9 @@ export async function createBookingRequestServer(
     notes,
     acceptedPropertyTerms,
     requirementAnswers = {},
-  } = payload;
+  } = stripForbiddenClientCommercialKeys(
+    payload as BookingRequestPayload & Record<string, unknown>
+  ) as BookingRequestPayload;
 
   if (!spaceId || !startAt || !endAt) {
     throw new Error("Missing required booking fields.");
@@ -282,7 +287,27 @@ export async function createBookingRequestServer(
     throw new Error("This booking does not meet the minimum duration.");
   }
 
-  const totals = computeBookingTotals(space, unit, quantity, startAt);
+  const commercialLockedAt = new Date();
+  let commercialTerms = legacyCombinedCommercialTerms(space.platform_fee_percent);
+  try {
+    commercialTerms = await loadResolvedCommercialTerms(admin, {
+      organisationId,
+      propertyId: space.property_id,
+      spaceId: space.id,
+      effectiveAt: commercialLockedAt,
+      legacySpacePercent: space.platform_fee_percent,
+    });
+  } catch (err) {
+    console.error("commercial terms resolve failed; using legacy combined fee", err);
+  }
+
+  const totals = computeBookingTotals(
+    space,
+    unit,
+    quantity,
+    startAt,
+    commercialTerms
+  );
   if (!totals) {
     throw new Error("This listing does not have valid pricing yet.");
   }
@@ -297,6 +322,7 @@ export async function createBookingRequestServer(
     monthsPaid,
     platformFee,
     ownerAmount,
+    commercialSplit,
   } = totals;
 
   const payable = validatePayFastPayableAmount(totalPrice);
@@ -343,6 +369,11 @@ export async function createBookingRequestServer(
     total_price: totalPrice,
     platform_fee: platformFee,
     owner_earnings: ownerAmount,
+    ...snapshotBookingCommercialInsert(
+      commercialSplit,
+      totals.commercialTerms,
+      commercialLockedAt
+    ),
     status: "pending_owner",
     payment_status: "unpaid",
     payout_status: "unpaid_to_owner",

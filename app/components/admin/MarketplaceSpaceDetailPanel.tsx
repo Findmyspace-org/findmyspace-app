@@ -11,6 +11,7 @@ import { formatSpacePriceDisplay } from "@/lib/space-pricing";
 import { publicListingModeLabel } from "@/lib/public-listing-mode";
 import { getDisplayName, isValidUuid } from "@/lib/utils";
 import { formatSpaceTypeLabel } from "@/app/data/spaceFeatureConfig";
+import { AdminCommercialTermsPanel } from "@/app/components/admin/AdminCommercialTermsPanel";
 
 type DetailSpace = {
   id: string;
@@ -126,6 +127,9 @@ export function MarketplaceSpaceDetailPanel({
         </DetailRow>
         <DetailRow label="Platform fee">
           {Number(space.platform_fee_percent ?? 15)}%
+          <p className="mt-1 text-xs text-gray-500">
+            Legacy combined rate used only when no commercial terms apply.
+          </p>
         </DetailRow>
         <DetailRow label="Created">
           {space.created_at
@@ -134,6 +138,16 @@ export function MarketplaceSpaceDetailPanel({
         </DetailRow>
         <DetailRow label="Enquiries">{space.enquiry_count ?? 0}</DetailRow>
       </dl>
+      {isValidUuid(space.id) ? (
+        <div className="mt-5">
+          <AdminCommercialTermsPanel
+            scopeType="space"
+            scopeId={space.id}
+            spaceId={space.id}
+            propertyId={space.property_id}
+          />
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -1002,6 +1002,7 @@ export default function AdminSpacesPage() {
                                 <span className="text-sm text-gray-600">%</span>
                                 <span className="text-xs text-gray-500">
                                   Current: {Number(space.platform_fee_percent ?? 15)}%
+                                  {" "}· legacy fallback only
                                 </span>
                                 <div className="ml-auto">
                                   <button

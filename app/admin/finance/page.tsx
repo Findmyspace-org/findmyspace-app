@@ -32,6 +32,9 @@ type AdminFinanceSummary = {
   expiredUnpaid: number;
   paymentFailures: number;
   paymentFailureAmount: number;
+  totalPlatformCommission?: number;
+  totalTransactionFees?: number;
+  legacyCombinedPlatformFees?: number;
 };
 
 type SpaceOption = { id: string; title: string };
@@ -305,9 +308,22 @@ export default function AdminFinancePage() {
                   sub: "Paid lines (filtered)",
                 },
                 {
-                  title: "Platform fees",
+                  title: "Platform commission",
+                  value: formatMoney(summary.totalPlatformCommission || 0),
+                  sub: "Split bookings only",
+                },
+                {
+                  title: "Transaction fees",
+                  value: formatMoney(summary.totalTransactionFees || 0),
+                  sub: "Online payment processing",
+                },
+                {
+                  title: "Total FindMySpace fees",
                   value: formatMoney(summary.totalPlatformFees),
-                  sub: "Allocated",
+                  sub:
+                    (summary.legacyCombinedPlatformFees || 0) > 0
+                      ? `Includes ${formatMoney(summary.legacyCombinedPlatformFees || 0)} legacy combined`
+                      : "Commission + transaction + legacy",
                 },
                 {
                   title: "Owner earnings (liability)",
@@ -451,7 +467,9 @@ export default function AdminFinancePage() {
                     <th className="px-3 py-2">Charge</th>
                     <th className="px-3 py-2">Billing period</th>
                     <th className="px-3 py-2 text-right">Gross</th>
-                    <th className="px-3 py-2 text-right">Fee</th>
+                    <th className="px-3 py-2 text-right">Commission</th>
+                    <th className="px-3 py-2 text-right">Transaction</th>
+                    <th className="px-3 py-2 text-right">Total fee</th>
                     <th className="px-3 py-2 text-right">Net</th>
                     <th className="px-3 py-2">Status</th>
                     <th className="px-3 py-2">Paid at</th>
@@ -461,7 +479,7 @@ export default function AdminFinancePage() {
                 <tbody>
                   {transactions.length === 0 ? (
                     <tr>
-                      <td colSpan={12} className="px-4 py-14 text-center">
+                      <td colSpan={14} className="px-4 py-14 text-center">
                         <p className="text-sm font-medium text-gray-700">No transactions match</p>
                         <p className="mt-1 text-sm text-gray-500">
                           Widen your date range or clear filters to see more rows.
@@ -490,7 +508,22 @@ export default function AdminFinancePage() {
                           {formatMoney(t.gross)}
                         </td>
                         <td className="px-3 py-2 text-right tabular-nums text-gray-700">
+                          {t.feeLegacyCombined
+                            ? "—"
+                            : formatMoney(t.platformCommission || 0)}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums text-gray-700">
+                          {t.feeLegacyCombined
+                            ? "—"
+                            : formatMoney(t.transactionFee || 0)}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums text-gray-700">
                           {formatMoney(t.platformFee)}
+                          {t.feeLegacyCombined ? (
+                            <span className="block text-[10px] uppercase tracking-wide text-gray-400">
+                              Legacy combined
+                            </span>
+                          ) : null}
                         </td>
                         <td className="px-3 py-2 text-right tabular-nums font-medium">
                           {formatMoney(t.netOwner)}

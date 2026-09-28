@@ -11,6 +11,7 @@ import {
   LayoutGrid,
   Link2,
   MessageSquare,
+  Percent,
   Share2,
   ShieldCheck,
   UserCog,
@@ -38,7 +39,8 @@ export type AdminNavKey =
   | "verification"
   | "messages"
   | "finance"
-  | "space-advisors";
+  | "space-advisors"
+  | "commercial";
 
 export type AdminNavItem = {
   key: AdminNavKey;
@@ -185,6 +187,12 @@ export const ADMIN_NAV_SECTIONS: AdminNavSection[] = [
         href: "/admin/finance",
         label: "Finance / Payouts",
         icon: CreditCard,
+      },
+      {
+        key: "commercial",
+        href: "/admin/commercial",
+        label: "Commercial terms",
+        icon: Percent,
       },
     ],
   },

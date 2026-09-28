@@ -31,6 +31,7 @@ import {
   type PropertySpaceRow,
 } from "@/lib/property-space-ops";
 import { ArchivePropertyModal } from "@/app/components/admin/ArchivePropertyModal";
+import { AdminCommercialTermsPanel } from "@/app/components/admin/AdminCommercialTermsPanel";
 
 type PropertyDetail = {
   id: string;
@@ -54,6 +55,7 @@ type PropertyDetail = {
   owner_invited_at: string | null;
   owner_accepted_at: string | null;
   crm_organisation_id: string | null;
+  organisation_id?: string | null;
   crm_organisation: { id: string; name: string } | null;
   terms_title?: string | null;
   terms_text?: string | null;
@@ -447,6 +449,15 @@ function AdminPropertyDetailContent({
             </div>
           </>
         )}
+
+        <div className="mt-6">
+          <AdminCommercialTermsPanel
+            scopeType="property"
+            scopeId={propertyId}
+            propertyId={propertyId}
+            organisationId={property.organisation_id ?? null}
+          />
+        </div>
 
         <div className="mt-6">
           <PropertyTermsSection

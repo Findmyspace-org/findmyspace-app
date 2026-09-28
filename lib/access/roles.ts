@@ -19,6 +19,7 @@ export type AccessCapabilities = {
   canManagePeopleAccess: boolean;
   canAssignOrganisationAdmin: boolean;
   canAssignManagers: boolean;
+  canManagePlatformCommercialTerms: boolean;
 };
 
 export type AccessRoleFlags = {
@@ -67,6 +68,7 @@ export const EMPTY_CAPABILITIES: AccessCapabilities = {
   canManagePeopleAccess: false,
   canAssignOrganisationAdmin: false,
   canAssignManagers: false,
+  canManagePlatformCommercialTerms: false,
 };
 
 export const EMPTY_ROLE_FLAGS: AccessRoleFlags = {

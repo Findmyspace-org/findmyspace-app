@@ -54,6 +54,9 @@ export async function GET(req: NextRequest) {
       total_price,
       platform_fee,
       owner_earnings,
+      commercial_model,
+      platform_commission_amount,
+      transaction_fee_amount,
       status,
       payment_status,
       paid_at,
@@ -97,6 +100,8 @@ export async function GET(req: NextRequest) {
       "charge_type",
       "billing_period",
       "gross",
+      "platform_commission",
+      "transaction_fee",
       "platform_fee",
       "net_owner",
       "status",
@@ -115,6 +120,12 @@ export async function GET(req: NextRequest) {
           csvEscape(t.chargeType),
           csvEscape(t.billingPeriodLabel),
           csvEscape(String(t.gross.toFixed(2))),
+          csvEscape(
+            t.platformCommission == null ? "" : String(t.platformCommission.toFixed(2))
+          ),
+          csvEscape(
+            t.transactionFee == null ? "" : String(t.transactionFee.toFixed(2))
+          ),
           csvEscape(String(t.platformFee.toFixed(2))),
           csvEscape(String(t.netOwner.toFixed(2))),
           csvEscape(t.status),

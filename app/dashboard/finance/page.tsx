@@ -146,6 +146,8 @@ function OwnerFinancePageContent() {
       grossReceived: paid.grossBookingValue,
       deposits: paid.depositsCollected,
       platformFees: paid.totalPlatformFees,
+      platformCommission: paid.totalPlatformCommission,
+      transactionFees: paid.totalTransactionFees,
       netOwner: paid.totalOwnerEarnings,
       outstanding,
       committedFutureIncome,
@@ -238,7 +240,17 @@ function OwnerFinancePageContent() {
                   {
                     title: "Platform fees",
                     value: formatMoney(summary.platformFees),
-                    sub: "Allocated from bookings",
+                    sub: "Total FindMySpace deduction",
+                  },
+                  {
+                    title: "Platform commission",
+                    value: formatMoney(summary.platformCommission),
+                    sub: "Split bookings only",
+                  },
+                  {
+                    title: "Transaction fees",
+                    value: formatMoney(summary.transactionFees),
+                    sub: "Online payment processing",
                   },
                   {
                     title: "Net owner earnings",
@@ -349,7 +361,9 @@ function OwnerFinancePageContent() {
                       <th className="px-3 py-2">Charge type</th>
                       <th className="px-3 py-2">Billing period</th>
                       <th className="px-3 py-2 text-right">Gross</th>
-                      <th className="px-3 py-2 text-right">Platform fee</th>
+                      <th className="px-3 py-2 text-right">Commission</th>
+                      <th className="px-3 py-2 text-right">Transaction</th>
+                      <th className="px-3 py-2 text-right">Total fee</th>
                       <th className="px-3 py-2 text-right">Net</th>
                       <th className="px-3 py-2">Status</th>
                       <th className="px-3 py-2">Paid at</th>
@@ -359,7 +373,7 @@ function OwnerFinancePageContent() {
                   <tbody>
                     {filtered.length === 0 ? (
                       <tr>
-                        <td colSpan={10} className="px-4 py-14 text-center">
+                        <td colSpan={12} className="px-4 py-14 text-center">
                           <p className="text-sm font-medium text-gray-700">
                             {bookings.length === 0
                               ? "No booking payments yet"
@@ -390,7 +404,22 @@ function OwnerFinancePageContent() {
                             {formatMoney(t.gross)}
                           </td>
                           <td className="px-3 py-2 text-right tabular-nums text-gray-700">
+                            {t.feeLegacyCombined
+                              ? "—"
+                              : formatMoney(t.platformCommission || 0)}
+                          </td>
+                          <td className="px-3 py-2 text-right tabular-nums text-gray-700">
+                            {t.feeLegacyCombined
+                              ? "—"
+                              : formatMoney(t.transactionFee || 0)}
+                          </td>
+                          <td className="px-3 py-2 text-right tabular-nums text-gray-700">
                             {formatMoney(t.platformFee)}
+                            {t.feeLegacyCombined ? (
+                              <span className="block text-[10px] uppercase tracking-wide text-gray-400">
+                                Legacy combined
+                              </span>
+                            ) : null}
                           </td>
                           <td className="px-3 py-2 text-right tabular-nums font-medium">
                             {formatMoney(t.netOwner)}
