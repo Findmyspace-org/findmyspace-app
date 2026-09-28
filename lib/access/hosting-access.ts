@@ -37,6 +37,15 @@ export type HostingAccessSummary = {
   primaryOrganisationId: string | null;
 };
 
+/**
+ * Selected Hosting workspace. Capability flags must be derived from this
+ * context, not from the union of every organisation grant.
+ */
+export type HostingCapabilityContext = {
+  kind: "organisation" | "personal" | "unavailable" | "none";
+  organisationId: string | null;
+};
+
 function activeGrants(grants: OrganisationAccessGrant[]): OrganisationAccessGrant[] {
   return grants.filter((grant) => grant.status === "active");
 }
@@ -105,6 +114,94 @@ export function summarizeHostingAccess(
 
 export function hasHostingAccess(input: HostingAccessInput): boolean {
   return summarizeHostingAccess(input).hasHostingAccess;
+}
+
+/**
+ * User-wide identity (organisation membership, personal-host, Global Admin)
+ * plus capability flags for the selected Hosting context only.
+ *
+ * A stronger role in Organisation A must not enable Finance / People /
+ * Organisation commercial UI in Organisation B.
+ */
+export function summarizeHostingAccessForContext(
+  input: HostingAccessInput,
+  context: HostingCapabilityContext
+): HostingAccessSummary {
+  const identity = summarizeHostingAccess(input);
+  const deniedCapabilities: Pick<
+    HostingAccessSummary,
+    | "isOrganisationAdmin"
+    | "isPropertyManager"
+    | "isSpaceManager"
+    | "showProperties"
+    | "showFinance"
+    | "showPeople"
+    | "showOrganisationCommercial"
+    | "showVerification"
+    | "showCreateSpace"
+  > = {
+    isOrganisationAdmin: false,
+    isPropertyManager: false,
+    isSpaceManager: false,
+    showProperties: false,
+    showFinance: false,
+    showPeople: false,
+    showOrganisationCommercial: false,
+    showVerification: false,
+    showCreateSpace: false,
+  };
+
+  if (context.kind === "unavailable" || context.kind === "none") {
+    return { ...identity, ...deniedCapabilities };
+  }
+
+  if (context.kind === "personal") {
+    const showHostTools = identity.isGlobalAdmin || identity.isLegacyHost;
+    return {
+      ...identity,
+      ...deniedCapabilities,
+      showProperties: showHostTools,
+      showFinance: showHostTools,
+      showVerification: showHostTools,
+      showCreateSpace: showHostTools,
+    };
+  }
+
+  const organisationId = context.organisationId;
+  const grants = activeGrants(input.grants).filter(
+    (grant) => grant.organisationId === organisationId
+  );
+  const isOrganisationAdmin = grants.some(
+    (grant) =>
+      grant.role === "org_admin" &&
+      grant.propertyId == null &&
+      grant.spaceId == null
+  );
+  const isPropertyManager = grants.some(
+    (grant) => grant.role === "property_manager"
+  );
+  const isSpaceManager = grants.some((grant) => grant.role === "space_manager");
+  const showPeople = identity.isGlobalAdmin || isOrganisationAdmin;
+  const showOrganisationCommercial = showPeople;
+  const showProperties =
+    identity.isGlobalAdmin || isOrganisationAdmin || isPropertyManager;
+  const showFinance = showProperties;
+  const showVerification = identity.isGlobalAdmin || identity.isLegacyHost;
+  const showCreateSpace =
+    identity.isGlobalAdmin || isOrganisationAdmin || identity.isLegacyHost;
+
+  return {
+    ...identity,
+    isOrganisationAdmin,
+    isPropertyManager,
+    isSpaceManager,
+    showProperties,
+    showFinance,
+    showPeople,
+    showOrganisationCommercial,
+    showVerification,
+    showCreateSpace,
+  };
 }
 
 export function organisationInvitationRedirect(

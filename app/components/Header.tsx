@@ -18,6 +18,7 @@ import AuthModal from "@/app/components/AuthModal";
 import { sanitizeNextPath } from "@/lib/auth-redirect";
 import { isPlatformAdminRole } from "@/lib/admin-roles";
 import type { HostingAccessSummary } from "@/lib/access/hosting-access";
+import { ORGANISATION_QUERY_PARAM } from "@/lib/access/organisation-workspace";
 import { fetchHostingAccessSummary } from "@/lib/hosting-access-client";
 import { hostingNavItems, RENTER_NAV } from "@/lib/dashboard-nav";
 import {
@@ -78,6 +79,7 @@ export default function Header() {
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const requestedOrganisationId = searchParams.get(ORGANISATION_QUERY_PARAM);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const bellRef = useRef<HTMLDivElement | null>(null);
 
@@ -245,7 +247,9 @@ export default function Header() {
         setIsHost(data?.is_host === true);
 
         try {
-          const summary = await fetchHostingAccessSummary();
+          const summary = await fetchHostingAccessSummary(
+            requestedOrganisationId
+          );
           if (!mounted) return;
           setHasHostingAccess(summary.hasHostingAccess);
           setHostingSummary(summary);
@@ -269,7 +273,7 @@ export default function Header() {
     return () => {
       mounted = false;
     };
-  }, [userId]);
+  }, [userId, requestedOrganisationId]);
 
   useEffect(() => {
     let mounted = true;
@@ -871,7 +875,10 @@ export default function Header() {
       title: "Hosting",
       items:
         hasHostingAccess && hostingSummary
-          ? hostingNavItems(hostingSummary).map((item) => ({
+          ? hostingNavItems(
+              hostingSummary,
+              requestedOrganisationId || hostingSummary.primaryOrganisationId
+            ).map((item) => ({
               label: item.label,
               href: item.href,
               icon: item.icon,

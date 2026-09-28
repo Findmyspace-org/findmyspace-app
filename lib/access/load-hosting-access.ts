@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   summarizeHostingAccess,
+  type HostingAccessInput,
   type HostingAccessSummary,
 } from "@/lib/access/hosting-access";
 import type { OrganisationAccessGrant } from "@/lib/access/roles";
@@ -34,10 +35,10 @@ function mapGrants(
   return grants;
 }
 
-export async function loadHostingAccessSummary(
+export async function loadHostingAccessInput(
   admin: SupabaseClient,
   userId: string
-): Promise<HostingAccessSummary> {
+): Promise<HostingAccessInput> {
   const [{ data: profile }, { count: ownedSpaceCount }, { count: ownedPropertyCount }, { data: grantRows }] =
     await Promise.all([
       admin
@@ -66,7 +67,7 @@ export async function loadHostingAccessSummary(
     is_host?: boolean | null;
   } | null;
 
-  return summarizeHostingAccess({
+  return {
     profileRole: row?.role ?? null,
     adminAccessDisabled: Boolean(row?.admin_access_disabled),
     isHostProfile: row?.is_host === true,
@@ -81,7 +82,14 @@ export async function loadHostingAccessSummary(
         status: string;
       }>
     ),
-  });
+  };
+}
+
+export async function loadHostingAccessSummary(
+  admin: SupabaseClient,
+  userId: string
+): Promise<HostingAccessSummary> {
+  return summarizeHostingAccess(await loadHostingAccessInput(admin, userId));
 }
 
 /** Display names only. Does not grant Hosting authority. */

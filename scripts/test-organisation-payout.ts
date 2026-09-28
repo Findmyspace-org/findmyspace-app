@@ -8,7 +8,11 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { computeAccess } from "../lib/access/compute-access";
-import { summarizeHostingAccess } from "../lib/access/hosting-access";
+import {
+  summarizeHostingAccess,
+  summarizeHostingAccessForContext,
+} from "../lib/access/hosting-access";
+import { hostingContextFromSummary } from "../lib/access/hosting-context";
 import { resolveOrganisationPayoutReadiness } from "../lib/access/organisation-payout-readiness";
 import type { AccessContext, OrganisationAccessGrant } from "../lib/access/roles";
 import { summarizePaidLines } from "../lib/admin-finance-filters";
@@ -245,6 +249,55 @@ const personalHosting = summarizeHostingAccess({
     canShowOrganisationPayoutLedger({
       showOrganisationCommercial: personalHosting.showOrganisationCommercial,
       organisationId: null,
+    }),
+    false
+  );
+}
+
+{
+  const mixedInput = {
+    profileRole: "user",
+    isHostProfile: false,
+    ownedSpaceCount: 0,
+    ownedPropertyCount: 0,
+    grants: [
+      grant({
+        organisationId: ORG_A,
+        role: "org_admin",
+        status: "active",
+      }),
+      grant({
+        organisationId: ORG_B,
+        role: "space_manager",
+        status: "active",
+        spaceId: SPACE_A,
+      }),
+    ],
+  };
+  const identity = summarizeHostingAccess(mixedInput);
+  const orgA = summarizeHostingAccessForContext(
+    mixedInput,
+    hostingContextFromSummary(identity, ORG_A)
+  );
+  const orgB = summarizeHostingAccessForContext(
+    mixedInput,
+    hostingContextFromSummary(identity, ORG_B)
+  );
+  assert.equal(orgA.showFinance, true);
+  assert.equal(orgA.showOrganisationCommercial, true);
+  assert.equal(
+    canShowOrganisationPayoutLedger({
+      showOrganisationCommercial: orgA.showOrganisationCommercial,
+      organisationId: ORG_A,
+    }),
+    true
+  );
+  assert.equal(orgB.showFinance, false);
+  assert.equal(orgB.showOrganisationCommercial, false);
+  assert.equal(
+    canShowOrganisationPayoutLedger({
+      showOrganisationCommercial: orgB.showOrganisationCommercial,
+      organisationId: ORG_B,
     }),
     false
   );

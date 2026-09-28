@@ -44,7 +44,7 @@ export function useHostingWorkspace(requestedId?: string | null) {
 
   useEffect(() => {
     let mounted = true;
-    fetchHostingAccessSummary()
+    fetchHostingAccessSummary(requestedOrganisationId)
       .then((next) => {
         if (mounted) setSummary(next);
       })
@@ -57,7 +57,7 @@ export function useHostingWorkspace(requestedId?: string | null) {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [requestedOrganisationId]);
 
   const context: HostingContext = useMemo(
     () => hostingContextFromSummary(summary, requestedOrganisationId),

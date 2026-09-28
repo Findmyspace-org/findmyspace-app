@@ -50,7 +50,7 @@ export function useWorkspaceChrome(kind: WorkspaceKind | null) {
     setOrganisationName(null);
 
     let mounted = true;
-    fetchHostingWorkspaceDisplay()
+    fetchHostingWorkspaceDisplay(requestedOrganisationId)
       .then(({ summary, organisations }) => {
         if (!mounted) return;
         const context = hostingContextFromSummary(

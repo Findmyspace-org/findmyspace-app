@@ -14,9 +14,12 @@ import {
   organisationInvitationRedirect,
   resolveHostingOrganisationId,
   summarizeHostingAccess,
+  summarizeHostingAccessForContext,
   type HostingAccessInput,
 } from "../lib/access/hosting-access";
+import { hostingContextFromSummary } from "../lib/access/hosting-context";
 import { hostingNavItems, RENTER_NAV, HOST_NAV } from "../lib/dashboard-nav";
+import { canShowOrganisationPayoutLedger } from "../lib/organisation-payout";
 import {
   BOOKING_HREF,
   HOSTING_OVERVIEW_PATH,
@@ -340,6 +343,51 @@ function navLabels(summary: ReturnType<typeof summarizeHostingAccess>) {
   assert.equal(navHrefs(legacySummary).includes("/dashboard/listings"), true);
 }
 
+{
+  const orgB = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+  const mixedInput = hostingInput({
+    grants: [
+      grant({ role: "org_admin", status: "active" }),
+      grant({
+        organisationId: orgB,
+        role: "space_manager",
+        status: "active",
+        propertyId: "prop-b",
+        spaceId: "space-b",
+      }),
+    ],
+  });
+  const identity = summarizeHostingAccess(mixedInput);
+  const inA = summarizeHostingAccessForContext(
+    mixedInput,
+    hostingContextFromSummary(identity, ORG)
+  );
+  const inB = summarizeHostingAccessForContext(
+    mixedInput,
+    hostingContextFromSummary(identity, orgB)
+  );
+  assert.equal(inA.showFinance, true);
+  assert.equal(inA.showOrganisationCommercial, true);
+  assert.equal(navHrefs(inA).includes("/dashboard/finance"), true);
+  assert.equal(
+    canShowOrganisationPayoutLedger({
+      showOrganisationCommercial: inA.showOrganisationCommercial,
+      organisationId: ORG,
+    }),
+    true
+  );
+  assert.equal(inB.showFinance, false);
+  assert.equal(inB.showOrganisationCommercial, false);
+  assert.equal(navHrefs(inB).includes("/dashboard/finance"), false);
+  assert.equal(
+    canShowOrganisationPayoutLedger({
+      showOrganisationCommercial: inB.showOrganisationCommercial,
+      organisationId: orgB,
+    }),
+    false
+  );
+}
+
 // L/M editor Classroom #1 allowed, #2 denied via resolver
 {
   const allow = computeAccess(
@@ -654,6 +702,9 @@ function navLabels(summary: ReturnType<typeof summarizeHostingAccess>) {
   assert.doesNotMatch(workspaceChrome, /is_host/);
   assert.match(workspaceSwitchUi, /aria-label="Workspace"/);
   assert.match(accessSummaryRoute, /loadHostingOrganisationNames/);
+  assert.match(accessSummaryRoute, /resolveRequestHostingContext/);
+  assert.match(hostingHelper, /summarizeHostingAccessForContext/);
+  assert.match(header, /requestedOrganisationId/);
   assert.match(loadHosting, /loadHostingOrganisationNames/);
   assert.doesNotMatch(hostingHelper, /organisationNames/);
   assert.match(people, /shouldShowOrganisationSelector/);

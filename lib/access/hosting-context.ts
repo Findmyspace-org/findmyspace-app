@@ -1,9 +1,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   resolveHostingOrganisationId,
+  summarizeHostingAccess,
+  summarizeHostingAccessForContext,
   type HostingAccessSummary,
 } from "@/lib/access/hosting-access";
-import { loadHostingAccessSummary } from "@/lib/access/load-hosting-access";
+import { loadHostingAccessInput } from "@/lib/access/load-hosting-access";
 import { listManagedPropertyIds } from "@/lib/access/list-managed-properties";
 import { listManagedSpaceIds } from "@/lib/access/list-managed-spaces";
 import { isUuid } from "@/lib/access/organisation-access-policy";
@@ -127,10 +129,12 @@ export async function resolveRequestHostingContext(
   userId: string,
   requestedId: string | null | undefined
 ): Promise<{ summary: HostingAccessSummary; context: HostingContext }> {
-  const summary = await loadHostingAccessSummary(admin, userId);
+  const input = await loadHostingAccessInput(admin, userId);
+  const identity = summarizeHostingAccess(input);
+  const context = hostingContextFromSummary(identity, requestedId);
   return {
-    summary,
-    context: hostingContextFromSummary(summary, requestedId),
+    summary: summarizeHostingAccessForContext(input, context),
+    context,
   };
 }
 

@@ -12,6 +12,8 @@ import {
   hostingHref,
   resolveHostingOrganisationId,
   summarizeHostingAccess,
+  summarizeHostingAccessForContext,
+  type HostingAccessInput,
   type HostingAccessSummary,
 } from "../lib/access/hosting-access";
 import {
@@ -24,6 +26,7 @@ import {
   type HostingContext,
 } from "../lib/access/hosting-context";
 import { hostingNavItems } from "../lib/dashboard-nav";
+import { canShowOrganisationPayoutLedger } from "../lib/organisation-payout";
 import type { AccessContext, OrganisationAccessGrant } from "../lib/access/roles";
 
 const ORG_A = "21cf12c3-3235-4cd3-8106-801d120dc7b5";
@@ -457,6 +460,181 @@ const dashboardSrc = readFileSync("app/dashboard/page.tsx", "utf8");
   };
   assert.equal(propertyMatchesHostingContext(null, unavailable), false);
   assert.equal(propertyMatchesHostingContext(ORG_A, unavailable), false);
+}
+
+// Mixed-role: org_admin in A, space_manager in B — flags follow selected context
+{
+  const mixedInput: HostingAccessInput = {
+    profileRole: "user",
+    isHostProfile: false,
+    ownedSpaceCount: 0,
+    ownedPropertyCount: 0,
+    grants: [
+      grant({
+        organisationId: ORG_A,
+        role: "org_admin",
+        status: "active",
+      }),
+      grant({
+        organisationId: ORG_B,
+        role: "space_manager",
+        status: "active",
+        propertyId: "prop-b",
+        spaceId: SPACE_B,
+      }),
+    ],
+  };
+  const identity = summarizeHostingAccess(mixedInput);
+  const orgA = summarizeHostingAccessForContext(
+    mixedInput,
+    hostingContextFromSummary(identity, ORG_A)
+  );
+  const orgB = summarizeHostingAccessForContext(
+    mixedInput,
+    hostingContextFromSummary(identity, ORG_B)
+  );
+  const orgAHrefs = hostingNavItems(orgA, ORG_A).map((item) =>
+    item.href.split("?")[0]
+  );
+  const orgBHrefs = hostingNavItems(orgB, ORG_B).map((item) =>
+    item.href.split("?")[0]
+  );
+
+  assert.equal(orgA.showFinance, true);
+  assert.equal(orgA.showOrganisationCommercial, true);
+  assert.equal(orgA.showPeople, true);
+  assert.equal(orgAHrefs.includes("/dashboard/finance"), true);
+  assert.equal(orgAHrefs.includes("/dashboard/people"), true);
+  assert.equal(orgAHrefs.includes("/dashboard/organisation"), true);
+  assert.equal(
+    canShowOrganisationPayoutLedger({
+      showOrganisationCommercial: orgA.showOrganisationCommercial,
+      organisationId: ORG_A,
+    }),
+    true
+  );
+
+  assert.equal(orgB.showFinance, false);
+  assert.equal(orgB.showOrganisationCommercial, false);
+  assert.equal(orgB.showPeople, false);
+  assert.equal(orgBHrefs.includes("/dashboard/finance"), false);
+  assert.equal(orgBHrefs.includes("/dashboard/people"), false);
+  assert.equal(orgBHrefs.includes("/dashboard/organisation"), false);
+  assert.equal(
+    canShowOrganisationPayoutLedger({
+      showOrganisationCommercial: orgB.showOrganisationCommercial,
+      organisationId: ORG_B,
+    }),
+    false
+  );
+
+  const pmB = summarizeHostingAccessForContext(
+    {
+      ...mixedInput,
+      grants: [
+        grant({
+          organisationId: ORG_A,
+          role: "org_admin",
+          status: "active",
+        }),
+        grant({
+          organisationId: ORG_B,
+          role: "property_manager",
+          status: "active",
+          propertyId: "prop-b",
+        }),
+      ],
+    },
+    { kind: "organisation", organisationId: ORG_B }
+  );
+  assert.equal(pmB.showFinance, true);
+  assert.equal(pmB.showOrganisationCommercial, false);
+  assert.equal(
+    canShowOrganisationPayoutLedger({
+      showOrganisationCommercial: pmB.showOrganisationCommercial,
+      organisationId: ORG_B,
+    }),
+    false
+  );
+
+  const oaB = summarizeHostingAccessForContext(
+    {
+      profileRole: "user",
+      isHostProfile: false,
+      ownedSpaceCount: 0,
+      ownedPropertyCount: 0,
+      grants: [
+        grant({
+          organisationId: ORG_B,
+          role: "org_admin",
+          status: "active",
+        }),
+      ],
+    },
+    { kind: "organisation", organisationId: ORG_B }
+  );
+  assert.equal(oaB.showFinance, true);
+  assert.equal(oaB.showOrganisationCommercial, true);
+  assert.equal(
+    canShowOrganisationPayoutLedger({
+      showOrganisationCommercial: oaB.showOrganisationCommercial,
+      organisationId: ORG_B,
+    }),
+    true
+  );
+
+  const personal = summarizeHostingAccessForContext(
+    {
+      profileRole: "user",
+      isHostProfile: true,
+      ownedSpaceCount: 1,
+      ownedPropertyCount: 0,
+      grants: mixedInput.grants,
+    },
+    { kind: "personal", organisationId: null }
+  );
+  assert.equal(personal.showFinance, true);
+  assert.equal(personal.showOrganisationCommercial, false);
+  assert.equal(personal.showPeople, false);
+  assert.equal(
+    canShowOrganisationPayoutLedger({
+      showOrganisationCommercial: personal.showOrganisationCommercial,
+      organisationId: null,
+    }),
+    false
+  );
+
+  const unknown = summarizeHostingAccessForContext(
+    mixedInput,
+    hostingContextFromSummary(identity, UNAUTH)
+  );
+  assert.equal(hostingContextFromSummary(identity, UNAUTH).kind, "unavailable");
+  assert.equal(unknown.showFinance, false);
+  assert.equal(unknown.showOrganisationCommercial, false);
+  assert.equal(unknown.showPeople, false);
+  assert.equal(
+    canShowOrganisationPayoutLedger({
+      showOrganisationCommercial: unknown.showOrganisationCommercial,
+      organisationId: UNAUTH,
+    }),
+    false
+  );
+}
+
+{
+  assert.match(contextSrc, /summarizeHostingAccessForContext/);
+  assert.match(hookSrc, /fetchHostingAccessSummary\(requestedOrganisationId\)/);
+  const accessSummaryRoute = readFileSync(
+    "app/api/host/access-summary/route.ts",
+    "utf8"
+  );
+  assert.match(accessSummaryRoute, /resolveRequestHostingContext/);
+  assert.match(accessSummaryRoute, /ORGANISATION_QUERY_PARAM/);
+  const clientSrcAccess = readFileSync("lib/hosting-access-client.ts", "utf8");
+  assert.match(clientSrcAccess, /requestedOrganisationId/);
+  const headerSrc = readFileSync("app/components/Header.tsx", "utf8");
+  assert.match(headerSrc, /fetchHostingAccessSummary\(/);
+  assert.match(headerSrc, /requestedOrganisationId/);
 }
 
 console.log("test-hosting-context: ok");
