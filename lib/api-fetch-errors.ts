@@ -8,7 +8,16 @@ export function parseApiFetchError(
     (typeof json.message === "string" && json.message) ||
     null;
 
-  if (jsonError) return jsonError;
+  if (jsonError) {
+    if (
+      /duplicate key|violates unique constraint|commercial_terms_scope_effective_uidx|sqlstate/i.test(
+        jsonError
+      )
+    ) {
+      return "A commercial arrangement already starts on this effective date. Choose a later effective date to create a new version.";
+    }
+    return jsonError;
+  }
 
   const contentType = res.headers.get("content-type") || "";
   const looksLikeHtml =

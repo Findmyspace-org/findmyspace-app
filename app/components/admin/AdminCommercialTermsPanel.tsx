@@ -6,7 +6,14 @@ import {
   DEFAULT_COMMISSION_PERCENT,
   DEFAULT_TRANSACTION_FEE_PERCENT,
 } from "@/lib/commercial-calculator";
-import type { CommercialModel, CommercialScopeType } from "@/lib/commercial-terms";
+import {
+  commercialCalendarDate,
+  commercialEffectiveDateConflictMessage,
+  formatCommercialShortDate,
+  suggestedCommercialEffectiveDate,
+  type CommercialModel,
+  type CommercialScopeType,
+} from "@/lib/commercial-terms";
 import {
   commercialTiersToProgressiveBands,
   isProgressivePricingMode,
@@ -82,9 +89,7 @@ type TierDraft = {
 };
 
 function todayIsoDate(): string {
-  const now = new Date();
-  const tz = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
-  return tz.toISOString().slice(0, 10);
+  return commercialCalendarDate(new Date());
 }
 
 function money(value: number | string | null | undefined): string {
@@ -186,6 +191,7 @@ export function AdminCommercialTermsPanel({
   const [includedUnits, setIncludedUnits] = useState("0");
   const [tiers, setTiers] = useState<TierDraft[]>([emptyTier()]);
   const [effectiveFrom, setEffectiveFrom] = useState(todayIsoDate);
+  const [allowIncompleteSchedule, setAllowIncompleteSchedule] = useState(false);
   const [adminNote, setAdminNote] = useState("");
   const [inventory, setInventory] = useState<{
     propertyCount: number;
@@ -227,13 +233,19 @@ export function AdminCommercialTermsPanel({
       setInventory(json.inventory ?? null);
       setLabels(json.labels ?? null);
       const rows = json.terms ?? [];
-      setHistory(
-        rows.filter((row) =>
-          scopeType === "platform"
-            ? row.scope_type === "platform"
-            : row.scope_type === scopeType && row.scope_id === (scopeId ?? null)
-        )
+      const scopeRows = rows.filter((row) =>
+        scopeType === "platform"
+          ? row.scope_type === "platform"
+          : row.scope_type === scopeType && row.scope_id === (scopeId ?? null)
       );
+      setHistory(scopeRows);
+      setEffectiveFrom(
+        suggestedCommercialEffectiveDate({
+          occupiedFrom: scopeRows.map((row) => row.effective_from),
+          today: todayIsoDate(),
+        })
+      );
+      setAllowIncompleteSchedule(false);
       if (json.resolved?.accountingMode === "split") {
         setModel(json.resolved.model);
         setCommissionPercent(String(json.resolved.commissionPercent));
@@ -266,43 +278,6 @@ export function AdminCommercialTermsPanel({
   useEffect(() => {
     void load();
   }, [load]);
-
-  async function handleSave() {
-    setSaving(true);
-    setMessage("");
-    try {
-      await adminApiFetch("/api/admin/commercial-terms", {
-        method: "POST",
-        body: JSON.stringify({
-          scope_type: scopeType,
-          scope_id: scopeType === "platform" ? null : scopeId,
-          commercial_model: model,
-          commission_percent: Number(commissionPercent),
-          transaction_fee_percent: Number(transactionFeePercent),
-          monthly_subscription_amount: Number(monthlySubscriptionAmount),
-          subscription_pricing_mode: model === "subscription" ? pricingMode : null,
-          subscription_included_units:
-            model === "subscription" && isProgressivePricingMode(pricingMode)
-              ? Number(includedUnits)
-              : null,
-          tiers:
-            model === "subscription" && pricingMode !== "fixed"
-              ? draftsToPayload(tiers, isProgressivePricingMode(pricingMode))
-              : [],
-          effective_from: effectiveFrom,
-          admin_note: adminNote,
-        }),
-      });
-      setMessageTone("success");
-      setMessage("Commercial terms saved. Existing bookings keep their original fees.");
-      await load();
-    } catch (err) {
-      setMessageTone("error");
-      setMessage(err instanceof Error ? err.message : "Could not save commercial terms.");
-    } finally {
-      setSaving(false);
-    }
-  }
 
   const subscription = resolved?.subscription ?? null;
   const saveLabel =
@@ -340,6 +315,86 @@ export function AdminCommercialTermsPanel({
     }
     return subscriptionTierGapWarning(parsedDraftTiers);
   }, [includedUnits, model, parsedDraftTiers, pricingMode]);
+  const effectiveDateConflict = useMemo(() => {
+    const occupiedMatch = history.find(
+      (row) => commercialCalendarDate(row.effective_from) === effectiveFrom
+    );
+    if (!occupiedMatch) return null;
+    return commercialEffectiveDateConflictMessage(
+      occupiedMatch.effective_from,
+      suggestedCommercialEffectiveDate({
+        occupiedFrom: history.map((row) => row.effective_from),
+        today: effectiveFrom,
+      })
+    );
+  }, [effectiveFrom, history]);
+
+  async function handleSave() {
+    setSaving(true);
+    setMessage("");
+    try {
+      const occupiedMatch = history.find(
+        (row) => commercialCalendarDate(row.effective_from) === effectiveFrom
+      );
+      if (occupiedMatch) {
+        setMessageTone("error");
+        setMessage(
+          commercialEffectiveDateConflictMessage(
+            occupiedMatch.effective_from,
+            suggestedCommercialEffectiveDate({
+              occupiedFrom: history.map((row) => row.effective_from),
+              today: effectiveFrom,
+            })
+          )
+        );
+        return;
+      }
+      const progressiveIncomplete =
+        model === "subscription" &&
+        isProgressivePricingMode(pricingMode) &&
+        Boolean(gapWarning);
+      if (progressiveIncomplete && !allowIncompleteSchedule) {
+        setMessageTone("error");
+        setMessage(
+          gapWarning ||
+            "Complete the progressive pricing schedule before saving."
+        );
+        return;
+      }
+      await adminApiFetch("/api/admin/commercial-terms", {
+        method: "POST",
+        body: JSON.stringify({
+          scope_type: scopeType,
+          scope_id: scopeType === "platform" ? null : scopeId,
+          commercial_model: model,
+          commission_percent: Number(commissionPercent),
+          transaction_fee_percent: Number(transactionFeePercent),
+          monthly_subscription_amount: Number(monthlySubscriptionAmount),
+          subscription_pricing_mode: model === "subscription" ? pricingMode : null,
+          subscription_included_units:
+            model === "subscription" && isProgressivePricingMode(pricingMode)
+              ? Number(includedUnits)
+              : null,
+          tiers:
+            model === "subscription" && pricingMode !== "fixed"
+              ? draftsToPayload(tiers, isProgressivePricingMode(pricingMode))
+              : [],
+          effective_from: effectiveFrom,
+          admin_note: adminNote,
+          allow_incomplete_schedule: progressiveIncomplete && allowIncompleteSchedule,
+        }),
+      });
+      setMessageTone("success");
+      setMessage("Commercial terms saved. Existing bookings keep their original fees.");
+      await load();
+    } catch (err) {
+      setMessageTone("error");
+      setMessage(err instanceof Error ? err.message : "Could not save commercial terms.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   const progressivePreview = useMemo(() => {
     if (model !== "subscription" || !isProgressivePricingMode(pricingMode)) {
       return [];
@@ -596,15 +651,46 @@ export function AdminCommercialTermsPanel({
             <option value="free">Free / waived platform fee</option>
           </select>
         </label>
-        <label className="flex flex-col gap-1 text-xs text-gray-600">
-          Effective from
-          <input
-            type="date"
-            value={effectiveFrom}
-            onChange={(event) => setEffectiveFrom(event.target.value)}
-            className="rounded-md border border-gray-300 px-2 py-2 text-sm"
-          />
-        </label>
+        <div className="flex flex-col gap-1 text-xs text-gray-600 sm:col-span-1">
+          {resolved?.effectiveFrom ? (
+            <>
+              <p>
+                <span className="font-medium text-gray-700">
+                  Current version effective from:
+                </span>{" "}
+                {formatCommercialShortDate(resolved.effectiveFrom)}
+              </p>
+              <label className="flex flex-col gap-1">
+                New version effective from
+                <input
+                  type="date"
+                  value={effectiveFrom}
+                  onChange={(event) => setEffectiveFrom(event.target.value)}
+                  className="rounded-md border border-gray-300 px-2 py-2 text-sm"
+                />
+              </label>
+              <p className="text-[11px] leading-4 text-gray-500">
+                Changing commercial terms creates a new version. The previous
+                version remains valid until the new version becomes effective.
+              </p>
+            </>
+          ) : (
+            <label className="flex flex-col gap-1">
+              Effective from
+              <input
+                type="date"
+                value={effectiveFrom}
+                onChange={(event) => setEffectiveFrom(event.target.value)}
+                className="rounded-md border border-gray-300 px-2 py-2 text-sm"
+              />
+            </label>
+          )}
+          {effectiveDateConflict ? (
+            <p className="rounded-md border border-red-200 bg-red-50 px-2 py-1.5 text-xs text-red-800">
+              {effectiveDateConflict}
+            </p>
+          ) : null}
+        </div>
         {model === "commission" ? (
           <label className="flex flex-col gap-1 text-xs text-gray-600">
             Platform commission (%)
@@ -826,15 +912,16 @@ export function AdminCommercialTermsPanel({
                 : "Additional space pricing"}
             </h4>
             <p className="mt-1 text-xs text-gray-500">
-              Each band adds to the base monthly fee. Leave To blank for no upper
-              limit. Only the last band may be open-ended. Ranges cannot overlap.
+              Each band adds to the base monthly fee. Only the last band may be
+              open-ended. Ranges cannot overlap.
             </p>
             <div className="mt-2 space-y-2">
               {tiers.map((tier, index) => {
+                const openEnded = tier.maxCount.trim() === "";
+                const unitNounPlural = progressiveUnitNoun(progressiveUnitType, 2);
                 const band = {
                   minCount: Number(tier.minCount) || 0,
-                  maxCount:
-                    tier.maxCount.trim() === "" ? null : Number(tier.maxCount),
+                  maxCount: openEnded ? null : Number(tier.maxCount),
                   incrementalAmount: Number(tier.incrementalAmount) || 0,
                   label: tier.label || null,
                 };
@@ -853,47 +940,74 @@ export function AdminCommercialTermsPanel({
                 return (
                   <div
                     key={`band-${index}`}
-                    className="rounded-md border border-gray-200 p-2"
+                    className="rounded-md border border-gray-200 p-3"
                   >
-                    <div className="grid gap-2 sm:grid-cols-6">
+                    <div className="flex flex-wrap items-end gap-x-2 gap-y-2 text-sm text-gray-800">
+                      <span className="pb-1.5 capitalize">{unitNounPlural}</span>
                       <label className="flex flex-col gap-1 text-xs text-gray-600">
-                        From {propertyBased ? "property" : "space"}
+                        From
                         <input
                           type="number"
                           min={1}
                           value={tier.minCount}
+                          aria-label={`Band ${index + 1} from ${progressiveUnitNoun(progressiveUnitType, 1)}`}
                           onChange={(event) => {
                             const next = [...tiers];
                             next[index] = { ...tier, minCount: event.target.value };
                             setTiers(next);
                           }}
-                          className="rounded-md border border-gray-300 px-2 py-1.5 text-sm"
+                          className="w-20 rounded-md border border-gray-300 px-2 py-1.5 text-sm"
                         />
                       </label>
+                      {openEnded ? (
+                        <span className="pb-1.5 text-sm text-gray-800">and above</span>
+                      ) : (
+                        <>
+                          <span className="pb-1.5 text-sm text-gray-800">through</span>
+                          <label className="flex flex-col gap-1 text-xs text-gray-600">
+                            To
+                            <input
+                              type="number"
+                              min={1}
+                              value={tier.maxCount}
+                              aria-label={`Band ${index + 1} to ${progressiveUnitNoun(progressiveUnitType, 1)}`}
+                              onChange={(event) => {
+                                const next = [...tiers];
+                                next[index] = { ...tier, maxCount: event.target.value };
+                                setTiers(next);
+                              }}
+                              className="w-20 rounded-md border border-gray-300 px-2 py-1.5 text-sm"
+                            />
+                          </label>
+                        </>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const next = [...tiers];
+                          next[index] = {
+                            ...tier,
+                            maxCount: openEnded ? String(Number(tier.minCount) || 1) : "",
+                          };
+                          setTiers(next);
+                        }}
+                        className="pb-1.5 text-xs font-medium text-[#192a3a]"
+                      >
+                        {openEnded ? "Set upper limit" : "No upper limit"}
+                      </button>
+                    </div>
+                    <div className="mt-2 flex flex-wrap items-end gap-x-2 gap-y-2 text-sm text-gray-800">
+                      <span className="pb-1.5">+ R</span>
                       <label className="flex flex-col gap-1 text-xs text-gray-600">
-                        To {propertyBased ? "property" : "space"}
-                        <input
-                          type="number"
-                          min={1}
-                          value={tier.maxCount}
-                          placeholder="No limit"
-                          onChange={(event) => {
-                            const next = [...tiers];
-                            next[index] = { ...tier, maxCount: event.target.value };
-                            setTiers(next);
-                          }}
-                          className="rounded-md border border-gray-300 px-2 py-1.5 text-sm"
-                        />
-                      </label>
-                      <label className="flex flex-col gap-1 text-xs text-gray-600 sm:col-span-2">
                         {propertyBased
-                          ? "Additional fee per property (ZAR)"
-                          : "Additional fee per space (ZAR)"}
+                          ? "Per additional property"
+                          : "Per additional space"}
                         <input
                           type="number"
                           min={0}
                           step="0.01"
                           value={tier.incrementalAmount}
+                          aria-label={`Band ${index + 1} additional fee`}
                           onChange={(event) => {
                             const next = [...tiers];
                             next[index] = {
@@ -902,9 +1016,12 @@ export function AdminCommercialTermsPanel({
                             };
                             setTiers(next);
                           }}
-                          className="rounded-md border border-gray-300 px-2 py-1.5 text-sm"
+                          className="w-28 rounded-md border border-gray-300 px-2 py-1.5 text-sm"
                         />
                       </label>
+                      <span className="pb-1.5">
+                        per additional {progressiveUnitNoun(progressiveUnitType, 1)}
+                      </span>
                       <label className="flex flex-col gap-1 text-xs text-gray-600">
                         Label
                         <input
@@ -916,10 +1033,10 @@ export function AdminCommercialTermsPanel({
                             setTiers(next);
                           }}
                           placeholder="Optional"
-                          className="rounded-md border border-gray-300 px-2 py-1.5 text-sm"
+                          className="w-40 rounded-md border border-gray-300 px-2 py-1.5 text-sm"
                         />
                       </label>
-                      <div className="flex items-end gap-2 text-xs">
+                      <div className="flex items-end gap-2 pb-1.5 text-xs">
                         <button
                           type="button"
                           disabled={index === 0}
@@ -965,11 +1082,7 @@ export function AdminCommercialTermsPanel({
                         ) : null}
                       </div>
                     </div>
-                    <p className="mt-2 text-xs text-gray-600">
-                      + {money(tier.incrementalAmount || 0)} per additional{" "}
-                      {progressiveUnitNoun(progressiveUnitType, 1)}
-                    </p>
-                    <ul className="mt-1 text-xs text-gray-700">
+                    <ul className="mt-2 text-xs text-gray-700">
                       {milestones.map(({ count, result }) => (
                         <li key={`band-${index}-at-${count}`}>
                           At {count} {progressiveUnitNoun(progressiveUnitType, count)}
@@ -992,7 +1105,24 @@ export function AdminCommercialTermsPanel({
               Add pricing band
             </button>
             {gapWarning ? (
-              <p className="mt-2 text-xs text-amber-800">{gapWarning}</p>
+              <div className="mt-3 rounded-md border border-amber-400 bg-amber-50 p-3">
+                <p className="text-sm font-semibold text-amber-950">{gapWarning}</p>
+                <p className="mt-1 text-xs text-amber-900">
+                  Counts in a gap will not resolve. Complete the schedule before
+                  saving, or explicitly allow an incomplete save.
+                </p>
+                <label className="mt-2 flex items-start gap-2 text-xs text-amber-950">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5"
+                    checked={allowIncompleteSchedule}
+                    onChange={(event) =>
+                      setAllowIncompleteSchedule(event.target.checked)
+                    }
+                  />
+                  Save this incomplete schedule anyway
+                </label>
+              </div>
             ) : null}
           </div>
 
@@ -1086,12 +1216,12 @@ export function AdminCommercialTermsPanel({
               </dd>
             </div>
             <div>
-              <dt className="font-medium text-gray-500">Effective from</dt>
-              <dd>
-                {new Date(`${effectiveFrom}T00:00:00+02:00`).toLocaleDateString(
-                  "en-ZA"
-                )}
-              </dd>
+              <dt className="font-medium text-gray-500">
+                {resolved?.effectiveFrom
+                  ? "New version effective from"
+                  : "Effective from"}
+              </dt>
+              <dd>{formatCommercialShortDate(`${effectiveFrom}T00:00:00+02:00`)}</dd>
             </div>
             <div>
               <dt className="font-medium text-gray-500">Current source</dt>
@@ -1155,7 +1285,15 @@ export function AdminCommercialTermsPanel({
       <button
         type="button"
         onClick={() => void handleSave()}
-        disabled={saving || (scopeType !== "platform" && !scopeId)}
+        disabled={
+          saving ||
+          (scopeType !== "platform" && !scopeId) ||
+          Boolean(effectiveDateConflict) ||
+          (model === "subscription" &&
+            isProgressivePricingMode(pricingMode) &&
+            Boolean(gapWarning) &&
+            !allowIncompleteSchedule)
+        }
         className="mt-4 rounded-md bg-[#192a3a] px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60"
       >
         {saving ? "Saving…" : saveLabel}

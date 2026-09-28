@@ -18,18 +18,26 @@ import {
 import { computeBookingTotals } from "../lib/booking-pricing";
 import {
   canMutateCommercialTerms,
+  commercialCalendarDate,
+  commercialEffectiveDateConflictMessage,
+  COMMERCIAL_TERMS_EFFECTIVE_DATE_CONFLICT,
   formatCommercialArrangement,
+  formatCommercialDisplayDate,
+  friendlyCommercialTermsWriteError,
   hasForbiddenClientCommercialKeys,
   inheritedFromLabel,
+  isCommercialTermsEffectiveDateUniqueConflict,
   legacyCombinedCommercialTerms,
   parseCommercialTermsWriteBody,
   resolveCommercialTerms,
   snapshotBookingCommercialInsert,
   stripForbiddenClientCommercialKeys,
+  suggestedCommercialEffectiveDate,
   withSubscriptionResolution,
   type CommercialTermRow,
   type ResolvedCommercialTerms,
 } from "../lib/commercial-terms";
+import { parseApiFetchError } from "../lib/api-fetch-errors";
 import {
   calculateProgressiveSpaceSubscription,
   calculateProgressiveSubscription,
@@ -1618,7 +1626,17 @@ const spaceTiers: CommercialTermTier[] = [
   assert.match(adminPanel, /progressive_property_pricing/);
   assert.match(adminPanel, /Base monthly fee/);
   assert.match(adminPanel, /Add pricing band/);
-  assert.match(adminPanel, /Additional fee per property/);
+  assert.match(adminPanel, /Per additional property/);
+  assert.match(adminPanel, /Current version effective from/);
+  assert.match(adminPanel, /New version effective from/);
+  assert.match(
+    adminPanel,
+    /Changing commercial terms creates a new version/
+  );
+  assert.match(adminPanel, /Save this incomplete schedule anyway/);
+  assert.match(adminPanel, /allow_incomplete_schedule/);
+  assert.match(adminPanel, /Properties/);
+  assert.match(adminPanel, /and above/);
   assert.match(adminPanel, /Monthly price preview/);
   assert.match(adminPanel, /calculateProgressiveSubscription/);
   assert.match(adminPanel, /FIXED_TIER_HELP/);
@@ -1654,6 +1672,7 @@ const spaceTiers: CommercialTermTier[] = [
 
   assert.equal(amountFor(1).monthlyAmount, 250);
   assert.equal(amountFor(2).monthlyAmount, 300);
+  assert.equal(amountFor(3).monthlyAmount, 350);
   assert.equal(amountFor(5).monthlyAmount, 450);
   assert.equal(amountFor(10).monthlyAmount, 700);
   assert.equal(amountFor(11).monthlyAmount, 725);
@@ -1723,7 +1742,17 @@ const spaceTiers: CommercialTermTier[] = [
   assert.match(String(progressiveBandGapWarning(1, [
     { minCount: 3, maxCount: 10, incrementalAmount: 50, label: null },
     { minCount: 11, maxCount: null, incrementalAmount: 25, label: null },
-  ])), /gap before space 3/);
+  ])), /Pricing gap: space 2 is not covered/);
+  assert.match(
+    String(
+      progressiveBandGapWarning(
+        1,
+        [{ minCount: 2, maxCount: 3, incrementalAmount: 50, label: null }],
+        "property"
+      )
+    ),
+    /Pricing gap: properties 4 and above are not covered/
+  );
 }
 
 {
@@ -2125,6 +2154,138 @@ const spaceTiers: CommercialTermTier[] = [
   });
   assert.equal(fixedMonthly.monthlyAmount, 1800);
   assert.equal(fixedMonthly.unresolvedReason, null);
+}
+
+{
+  assert.equal(
+    commercialCalendarDate("2026-09-27T22:00:00.000Z"),
+    "2026-09-28"
+  );
+  assert.equal(commercialCalendarDate("2026-09-28T00:00:00+02:00"), "2026-09-28");
+  assert.equal(formatCommercialDisplayDate("2026-09-28T00:00:00+02:00"), "28 September 2026");
+  assert.equal(
+    suggestedCommercialEffectiveDate({
+      occupiedFrom: ["2026-09-27T22:00:00.000Z"],
+      today: "2026-09-28",
+    }),
+    "2026-09-29"
+  );
+  assert.equal(
+    suggestedCommercialEffectiveDate({
+      occupiedFrom: ["2026-09-27T00:00:00.000Z"],
+      today: "2026-09-28",
+    }),
+    "2026-09-28"
+  );
+  const conflict = commercialEffectiveDateConflictMessage(
+    "2026-09-27T22:00:00.000Z",
+    "2026-09-29"
+  );
+  assert.match(conflict, /already starts on 28 September 2026/);
+  assert.match(conflict, /Suggested effective date: 29 September 2026/);
+  assert.doesNotMatch(conflict, /commercial_terms_scope_effective_uidx/);
+  assert.doesNotMatch(conflict, /duplicate key/);
+
+  assert.equal(
+    isCommercialTermsEffectiveDateUniqueConflict({
+      code: "23505",
+      message:
+        'duplicate key value violates unique constraint "commercial_terms_scope_effective_uidx"',
+    }),
+    true
+  );
+  const friendly = friendlyCommercialTermsWriteError(
+    'duplicate key value violates unique constraint "commercial_terms_scope_effective_uidx"'
+  );
+  assert.ok(friendly);
+  assert.doesNotMatch(String(friendly), /commercial_terms_scope_effective_uidx/);
+  assert.doesNotMatch(String(friendly), /duplicate key/);
+  assert.equal(COMMERCIAL_TERMS_EFFECTIVE_DATE_CONFLICT, "commercial_terms_effective_date_conflict");
+
+  const fakeRes = {
+    headers: { get: () => "application/json" },
+    status: 500,
+    statusText: "Internal Server Error",
+  } as unknown as Response;
+  const sanitized = parseApiFetchError(
+    fakeRes,
+    'duplicate key value violates unique constraint "commercial_terms_scope_effective_uidx"',
+    {
+      error:
+        'duplicate key value violates unique constraint "commercial_terms_scope_effective_uidx"',
+    }
+  );
+  assert.doesNotMatch(sanitized, /commercial_terms_scope_effective_uidx/);
+  assert.doesNotMatch(sanitized, /duplicate key/);
+  assert.match(sanitized, /already starts on this effective date/);
+
+  const incomplete = parseCommercialTermsWriteBody({
+    scope_type: "organisation",
+    scope_id: ORG,
+    commercial_model: "subscription",
+    commission_percent: 0,
+    transaction_fee_percent: 5,
+    subscription_pricing_mode: "progressive_property_pricing",
+    monthly_subscription_amount: 250,
+    subscription_included_units: 1,
+    tiers: [{ min_count: 2, max_count: 3, incremental_amount: 50, label: "2–3" }],
+    effective_from: "2026-09-28",
+  });
+  assert.equal(incomplete.ok, false);
+  if (!incomplete.ok) {
+    assert.match(incomplete.error, /properties 4 and above are not covered/);
+  }
+
+  const allowedIncomplete = parseCommercialTermsWriteBody({
+    scope_type: "organisation",
+    scope_id: ORG,
+    commercial_model: "subscription",
+    commission_percent: 0,
+    transaction_fee_percent: 5,
+    subscription_pricing_mode: "progressive_property_pricing",
+    monthly_subscription_amount: 250,
+    subscription_included_units: 1,
+    tiers: [{ min_count: 2, max_count: 3, incremental_amount: 50, label: "2–3" }],
+    effective_from: "2026-09-29",
+    allow_incomplete_schedule: true,
+  });
+  assert.equal(allowedIncomplete.ok, true);
+
+  const laterDate = parseCommercialTermsWriteBody({
+    scope_type: "organisation",
+    scope_id: ORG,
+    commercial_model: "subscription",
+    commission_percent: 0,
+    transaction_fee_percent: 5,
+    subscription_pricing_mode: "progressive_property_pricing",
+    monthly_subscription_amount: 250,
+    subscription_included_units: 1,
+    tiers: [
+      { min_count: 2, max_count: 10, incremental_amount: 50, label: "2–10" },
+      { min_count: 11, max_count: null, incremental_amount: 25, label: "11+" },
+    ],
+    effective_from: "2026-09-29",
+  });
+  assert.equal(laterDate.ok, true);
+
+  const termsApi = readFileSync("app/api/admin/commercial-terms/route.ts", "utf8");
+  assert.match(termsApi, /COMMERCIAL_TERMS_EFFECTIVE_DATE_CONFLICT/);
+  assert.match(termsApi, /CommercialTermsWriteError/);
+  const termsLib = readFileSync("lib/commercial-terms.ts", "utf8");
+  assert.match(termsLib, /commercial_terms_effective_date_conflict/);
+  const termsServer = readFileSync("lib/commercial-terms-server.ts", "utf8");
+  assert.match(termsServer, /COMMERCIAL_TERMS_EFFECTIVE_DATE_CONFLICT/);
+  assert.match(termsServer, /isCommercialTermsEffectiveDateUniqueConflict/);
+  assert.doesNotMatch(
+    termsServer,
+    /throw new Error\(error\?\.message \|\| "Could not save commercial terms\."\);[\s\S]*commercial_terms_scope_effective_uidx/
+  );
+
+  const uniqueIndex = readFileSync(
+    "supabase/migrations/071_20260928_platform_commercial_terms.sql",
+    "utf8"
+  );
+  assert.match(uniqueIndex, /commercial_terms_scope_effective_uidx/);
 }
 
 console.log("commercial-terms tests passed");

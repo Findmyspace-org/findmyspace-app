@@ -7,6 +7,7 @@ import {
 } from "@/lib/commercial-calculator";
 import type { BillableInventoryCounts } from "@/lib/commercial-inventory";
 import {
+  commercialTiersToProgressiveBands,
   isProgressivePricingMode,
   normalizeSubscriptionPricingMode,
   parseCommercialTermTiers,
@@ -19,6 +20,7 @@ import {
   type SubscriptionPricingMode,
   type SubscriptionResolution,
 } from "@/lib/commercial-subscription";
+import { progressiveBandGapWarning } from "@/lib/commercial-progressive-pricing";
 
 export type { CommercialModel, CommercialAccountingMode } from "@/lib/commercial-calculator";
 
@@ -111,6 +113,115 @@ export function toEffectiveDate(value: Date | string): Date {
     throw new Error("Invalid commercial effective date.");
   }
   return date;
+}
+
+export const COMMERCIAL_TERMS_EFFECTIVE_DATE_CONFLICT =
+  "commercial_terms_effective_date_conflict" as const;
+
+export class CommercialTermsWriteError extends Error {
+  code: string;
+  status: number;
+
+  constructor(message: string, code: string, status = 400) {
+    super(message);
+    this.name = "CommercialTermsWriteError";
+    this.code = code;
+    this.status = status;
+  }
+}
+
+export function commercialCalendarDate(value: Date | string): string {
+  const date = toEffectiveDate(value);
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Africa/Johannesburg",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const year = parts.find((part) => part.type === "year")?.value;
+  const month = parts.find((part) => part.type === "month")?.value;
+  const day = parts.find((part) => part.type === "day")?.value;
+  if (!year || !month || !day) {
+    throw new Error("Could not resolve commercial calendar date.");
+  }
+  return `${year}-${month}-${day}`;
+}
+
+export function formatCommercialDisplayDate(value: Date | string): string {
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Africa/Johannesburg",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(toEffectiveDate(value));
+}
+
+export function formatCommercialShortDate(value: Date | string): string {
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Africa/Johannesburg",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  }).format(toEffectiveDate(value));
+}
+
+export function addCommercialCalendarDays(yyyyMmDd: string, days: number): string {
+  const [year, month, day] = yyyyMmDd.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+export function suggestedCommercialEffectiveDate(input: {
+  occupiedFrom: Array<string | Date>;
+  today: string;
+}): string {
+  const occupied = new Set(
+    input.occupiedFrom.map((value) => commercialCalendarDate(value))
+  );
+  let candidate = input.today;
+  while (occupied.has(candidate)) {
+    candidate = addCommercialCalendarDays(candidate, 1);
+  }
+  return candidate;
+}
+
+export function commercialEffectiveDateConflictMessage(
+  occupiedFrom: string | Date,
+  suggestedFrom: string
+): string {
+  const occupied = formatCommercialDisplayDate(occupiedFrom);
+  const suggested = formatCommercialDisplayDate(`${suggestedFrom}T00:00:00+02:00`);
+  return `A commercial arrangement already starts on ${occupied}. Choose a later effective date to create a new version. Suggested effective date: ${suggested}.`;
+}
+
+export function isCommercialTermsEffectiveDateUniqueConflict(error: {
+  code?: string | null;
+  message?: string | null;
+} | null | undefined): boolean {
+  if (!error) return false;
+  if (error.code === "23505") return true;
+  const message = (error.message || "").toLowerCase();
+  return (
+    message.includes("duplicate key") ||
+    message.includes("commercial_terms_scope_effective_uidx") ||
+    message.includes("unique constraint")
+  );
+}
+
+export function friendlyCommercialTermsWriteError(
+  error: { code?: string | null; message?: string | null } | Error | string
+): string | null {
+  const raw =
+    typeof error === "string"
+      ? error
+      : error instanceof Error
+        ? error.message
+        : error.message || "";
+  if (isCommercialTermsEffectiveDateUniqueConflict({ message: raw, code: (error as { code?: string }).code })) {
+    return "A commercial arrangement already starts on this effective date. Choose a later effective date to create a new version.";
+  }
+  return null;
 }
 
 export function legacyCombinedCommercialTerms(
@@ -353,6 +464,7 @@ export type CommercialTermsWriteInput = {
   tiers: CommercialTermTier[];
   effectiveFrom: string;
   adminNote: string | null;
+  allowIncompleteSchedule: boolean;
 };
 
 export function parseCommercialTermsWriteBody(
@@ -435,6 +547,7 @@ export function parseCommercialTermsWriteBody(
 
   const adminNote =
     typeof raw.admin_note === "string" ? raw.admin_note.trim() || null : null;
+  const allowIncompleteSchedule = raw.allow_incomplete_schedule === true;
 
   let nextCommission = Number(commissionPercent.toFixed(3));
   let nextMonthly = Number(monthlySubscriptionAmount.toFixed(2));
@@ -494,6 +607,14 @@ export function parseCommercialTermsWriteBody(
       }
       tiers = parsedTiers.value;
       subscriptionIncludedUnits = includedUnits;
+      if (!allowIncompleteSchedule) {
+        const gap = progressiveBandGapWarning(
+          includedUnits,
+          commercialTiersToProgressiveBands(tiers),
+          unitType
+        );
+        if (gap) return { ok: false, error: gap };
+      }
     } else {
       const valid = validateSubscriptionTiers(parsedTiers.value);
       if (!valid.ok) return valid;
@@ -518,6 +639,7 @@ export function parseCommercialTermsWriteBody(
       tiers,
       effectiveFrom: effectiveFromDate.toISOString(),
       adminNote,
+      allowIncompleteSchedule,
     },
   };
 }

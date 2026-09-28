@@ -16,9 +16,15 @@ import {
   type DecoratedCommercialSearchHit,
 } from "@/lib/commercial-admin-display";
 import {
+  CommercialTermsWriteError,
+  COMMERCIAL_TERMS_EFFECTIVE_DATE_CONFLICT,
+  commercialCalendarDate,
+  commercialEffectiveDateConflictMessage,
+  isCommercialTermsEffectiveDateUniqueConflict,
   isCommercialUuid,
   parseCommercialTermsWriteBody,
   resolveCommercialTerms,
+  suggestedCommercialEffectiveDate,
   withSubscriptionResolution,
   type CommercialScopeType,
   type CommercialTermRow,
@@ -395,6 +401,37 @@ export async function createCommercialTerms(
   const value = parsed.value;
   await assertScopeExists(admin, value.scopeType, value.scopeId);
 
+  let existingQuery = admin
+    .from("commercial_terms")
+    .select("id, effective_from")
+    .eq("scope_type", value.scopeType);
+  existingQuery =
+    value.scopeId == null
+      ? existingQuery.is("scope_id", null)
+      : existingQuery.eq("scope_id", value.scopeId);
+  const { data: existingRows, error: existingError } = await existingQuery;
+  if (existingError) {
+    throw new Error(existingError.message || "Could not load commercial terms.");
+  }
+  const occupiedFrom = ((existingRows || []) as Array<{ effective_from: string }>).map(
+    (row) => row.effective_from
+  );
+  const selectedDate = commercialCalendarDate(value.effectiveFrom);
+  const occupiedMatch = occupiedFrom.find(
+    (from) => commercialCalendarDate(from) === selectedDate
+  );
+  if (occupiedMatch) {
+    const suggested = suggestedCommercialEffectiveDate({
+      occupiedFrom,
+      today: selectedDate,
+    });
+    throw new CommercialTermsWriteError(
+      commercialEffectiveDateConflictMessage(occupiedMatch, suggested),
+      COMMERCIAL_TERMS_EFFECTIVE_DATE_CONFLICT,
+      409
+    );
+  }
+
   let supersedeQuery = admin
     .from("commercial_terms")
     .update({ superseded_at: value.effectiveFrom })
@@ -431,6 +468,13 @@ export async function createCommercialTerms(
     .single();
 
   if (error || !data) {
+    if (isCommercialTermsEffectiveDateUniqueConflict(error)) {
+      throw new CommercialTermsWriteError(
+        "A commercial arrangement already starts on this effective date. Choose a later effective date to create a new version.",
+        COMMERCIAL_TERMS_EFFECTIVE_DATE_CONFLICT,
+        409
+      );
+    }
     throw new Error(error?.message || "Could not save commercial terms.");
   }
 

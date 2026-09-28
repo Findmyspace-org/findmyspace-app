@@ -121,7 +121,7 @@ export function validateProgressiveBands(
 }
 
 /**
- * Gaps are allowed to save, but counts in a gap will not resolve.
+ * Gaps must be warned in Admin and rejected on save unless explicitly allowed.
  */
 export function progressiveBandGapWarning(
   includedUnits: number,
@@ -129,23 +129,35 @@ export function progressiveBandGapWarning(
   unitType: ProgressiveUnitType = "space"
 ): string | null {
   const noun = progressiveUnitNoun(unitType, 1);
+  const nouns = progressiveUnitNoun(unitType, 2);
   const sorted = [...bands].sort((a, b) => a.minCount - b.minCount);
   const firstPriced = Math.max(0, Number(includedUnits) || 0) + 1;
   if (sorted.length === 0) {
     return firstPriced > 0
-      ? `No pricing bands. ${noun.charAt(0).toUpperCase()}${noun.slice(1)} ${firstPriced} and above will not resolve.`
+      ? `Pricing gap: ${nouns} ${firstPriced} and above are not covered.`
       : null;
   }
   if (sorted[0].minCount > firstPriced) {
-    return `There is a gap before ${noun} ${sorted[0].minCount}. Counts in that range will not resolve.`;
+    const until = sorted[0].minCount - 1;
+    return until === firstPriced
+      ? `Pricing gap: ${noun} ${firstPriced} is not covered.`
+      : `Pricing gap: ${nouns} ${firstPriced}–${until} are not covered.`;
   }
   for (let i = 1; i < sorted.length; i += 1) {
     const prev = sorted[i - 1];
     const next = sorted[i];
     if (prev.maxCount == null) continue;
     if (prev.maxCount + 1 < next.minCount) {
-      return `There is a gap between ${prev.maxCount} and ${next.minCount}. Counts in that range will not resolve.`;
+      const from = prev.maxCount + 1;
+      const until = next.minCount - 1;
+      return from === until
+        ? `Pricing gap: ${noun} ${from} is not covered.`
+        : `Pricing gap: ${nouns} ${from}–${until} are not covered.`;
     }
+  }
+  const last = sorted[sorted.length - 1];
+  if (last.maxCount != null) {
+    return `Pricing gap: ${nouns} ${last.maxCount + 1} and above are not covered.`;
   }
   return null;
 }

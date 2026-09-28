@@ -3,8 +3,12 @@ import { requireAdminApi } from "@/lib/require-admin-api";
 import { adminAudit } from "@/lib/admin-audit";
 import { createServiceAdminClient } from "@/lib/admin-unclaimed-space";
 import {
+  CommercialTermsWriteError,
+  COMMERCIAL_TERMS_EFFECTIVE_DATE_CONFLICT,
   formatCommercialArrangement,
+  friendlyCommercialTermsWriteError,
   inheritedFromLabel,
+  isCommercialTermsEffectiveDateUniqueConflict,
   resolveCommercialTerms,
   withSubscriptionResolution,
   type CommercialScopeType,
@@ -150,8 +154,29 @@ export async function POST(req: NextRequest) {
     });
     return NextResponse.json({ ok: true, term: created });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Could not save commercial terms.";
-    const status = /not found|must be|required|cannot|invalid|overlap|tier|band|pricing/i.test(
+    if (err instanceof CommercialTermsWriteError) {
+      return NextResponse.json(
+        { error: err.message, code: err.code },
+        { status: err.status }
+      );
+    }
+    const raw = err instanceof Error ? err.message : "Could not save commercial terms.";
+    const friendly = friendlyCommercialTermsWriteError(raw);
+    if (friendly || isCommercialTermsEffectiveDateUniqueConflict({ message: raw })) {
+      return NextResponse.json(
+        {
+          error:
+            friendly ||
+            "A commercial arrangement already starts on this effective date. Choose a later effective date to create a new version.",
+          code: COMMERCIAL_TERMS_EFFECTIVE_DATE_CONFLICT,
+        },
+        { status: 409 }
+      );
+    }
+    const message = /duplicate key|violates unique|constraint|sqlstate/i.test(raw)
+      ? "Could not save commercial terms."
+      : raw;
+    const status = /not found|must be|required|cannot|invalid|overlap|tier|band|pricing|gap/i.test(
       message
     )
       ? 400
