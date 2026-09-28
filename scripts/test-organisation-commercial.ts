@@ -365,6 +365,12 @@ function accessCtx(partial: Partial<AccessContext>): AccessContext {
     "utf8"
   );
   assert.match(sql, /organisation_commercial_profiles/);
+  const billingSql = readFileSync(
+    "supabase/migrations/077_20260928_organisation_billing_contact.sql",
+    "utf8"
+  );
+  assert.match(billingSql, /billing_email/);
+  assert.doesNotMatch(billingSql, /UPDATE public\.commercial_terms/);
   assert.match(sql, /organisation_verification_documents/);
   assert.match(sql, /organisation_bank_accounts/);
   assert.match(sql, /submit_organisation_bank_account/);

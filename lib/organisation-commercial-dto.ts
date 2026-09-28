@@ -49,6 +49,9 @@ export type OrganisationCommercialProfileDto = {
   primary_contact_name: string | null;
   primary_contact_email: string | null;
   primary_contact_phone: string | null;
+  billing_contact_name: string | null;
+  billing_email: string | null;
+  billing_phone: string | null;
   authorised_representative_name: string | null;
   authorised_representative_title: string | null;
   verification_status: "pending" | "verified" | "rejected";

@@ -26,6 +26,7 @@ import {
 } from "@/lib/commercial-subscription";
 import {
   calculateProgressiveSubscription,
+  displayProgressiveBandLabel,
   progressiveBandGapWarning,
   progressiveBandMilestoneCounts,
   progressivePreviewCounts,
@@ -128,7 +129,10 @@ function tiersToDrafts(tiers: CommercialTermTier[] | undefined): TierDraft[] {
   }));
 }
 
-function bandsToDrafts(tiers: CommercialTermTier[] | undefined): TierDraft[] {
+function bandsToDrafts(
+  tiers: CommercialTermTier[] | undefined,
+  unitType: "space" | "property" = "space"
+): TierDraft[] {
   if (!tiers || tiers.length === 0) return [emptyBand()];
   return tiers.map((tier) => ({
     minCount: String(tier.minCount),
@@ -136,7 +140,12 @@ function bandsToDrafts(tiers: CommercialTermTier[] | undefined): TierDraft[] {
     monthlyAmount: "0",
     incrementalAmount:
       tier.incrementalAmount == null ? "" : String(tier.incrementalAmount),
-    label: tier.label || "",
+    label: displayProgressiveBandLabel(
+      unitType,
+      tier.label,
+      tier.minCount,
+      tier.maxCount == null ? null : Number(tier.maxCount)
+    ),
   }));
 }
 
@@ -262,7 +271,10 @@ export function AdminCommercialTermsPanel({
         setPricingMode(json.resolved.subscriptionPricingMode || "fixed");
         setTiers(
           isProgressivePricingMode(json.resolved.subscriptionPricingMode)
-            ? bandsToDrafts(json.resolved.tiers)
+            ? bandsToDrafts(
+                json.resolved.tiers,
+                progressiveUnitTypeForMode(json.resolved.subscriptionPricingMode)
+              )
             : tiersToDrafts(json.resolved.tiers)
         );
         setAdminNote(json.resolved.adminNote || "");
@@ -1032,7 +1044,9 @@ export function AdminCommercialTermsPanel({
                             next[index] = { ...tier, label: event.target.value };
                             setTiers(next);
                           }}
-                          placeholder="Optional"
+                          placeholder={
+                            propertyBased ? "2–10 properties" : "2–10 spaces"
+                          }
                           className="w-40 rounded-md border border-gray-300 px-2 py-1.5 text-sm"
                         />
                       </label>
@@ -1104,6 +1118,35 @@ export function AdminCommercialTermsPanel({
             >
               Add pricing band
             </button>
+            {propertyBased &&
+            tiers.some((tier) => tier.maxCount.trim() !== "") &&
+            tiers.every((tier) => tier.maxCount.trim() !== "") ? (
+              <button
+                type="button"
+                onClick={() => {
+                  const lastMax = Math.max(
+                    ...tiers.map((tier) => Number(tier.maxCount) || 0)
+                  );
+                  setTiers([
+                    ...tiers,
+                    {
+                      ...emptyBand(),
+                      minCount: String(lastMax + 1),
+                      maxCount: "",
+                      label: displayProgressiveBandLabel(
+                        "property",
+                        null,
+                        lastMax + 1,
+                        null
+                      ),
+                    },
+                  ]);
+                }}
+                className="ml-3 mt-2 text-xs font-medium text-[#192a3a]"
+              >
+                Add open-ended properties band
+              </button>
+            ) : null}
             {gapWarning ? (
               <div className="mt-3 rounded-md border border-amber-400 bg-amber-50 p-3">
                 <p className="text-sm font-semibold text-amber-950">{gapWarning}</p>

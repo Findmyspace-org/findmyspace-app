@@ -50,6 +50,29 @@ export function formatProgressiveRand(value: number): string {
   return Number.isInteger(amount) ? `R${amount}` : `R${amount.toFixed(2)}`;
 }
 
+export function defaultProgressiveBandLabel(
+  unitType: ProgressiveUnitType,
+  minCount: number,
+  maxCount: number | null
+): string {
+  const noun = progressiveUnitNoun(unitType, 2);
+  const range = maxCount == null ? `${minCount}+` : `${minCount}–${maxCount}`;
+  return `${range} ${noun}`;
+}
+
+export function displayProgressiveBandLabel(
+  unitType: ProgressiveUnitType,
+  storedLabel: string | null | undefined,
+  minCount: number,
+  maxCount: number | null
+): string {
+  const fallback = defaultProgressiveBandLabel(unitType, minCount, maxCount);
+  const stored = String(storedLabel || "").trim();
+  if (!stored) return fallback;
+  if (unitType === "property" && /\bspaces?\b/i.test(stored)) return fallback;
+  return stored;
+}
+
 function bandCovers(unitNumber: number, band: ProgressiveBand): boolean {
   if (unitNumber < band.minCount) return false;
   if (band.maxCount == null) return true;
@@ -264,12 +287,9 @@ export function calculateProgressiveSubscription(input: {
     const unitCount = unitsByBand[index];
     if (unitCount <= 0) return;
     const rate = roundMoney(band.incrementalAmount);
-    const range =
-      band.maxCount == null ? `${band.minCount}+` : `${band.minCount}–${band.maxCount}`;
-    const noun = progressiveUnitNoun(unitType, 2);
     breakdown.push({
       kind: "band",
-      label: band.label || `${noun.charAt(0).toUpperCase()}${noun.slice(1)} ${range}`,
+      label: displayProgressiveBandLabel(unitType, band.label, band.minCount, band.maxCount),
       unitCount,
       rate,
       subtotal: roundMoney(unitCount * rate),
@@ -316,6 +336,41 @@ export function calculateProgressiveSubscription(input: {
       unitType,
     }),
   };
+}
+
+export function progressiveInvoiceCalculationLines(
+  calc: Pick<
+    ProgressiveCalculation,
+    "baseAmount" | "includedUnits" | "unitType" | "breakdown" | "billableCount"
+  >
+): Array<{ label: string; amount: number }> {
+  const lines: Array<{ label: string; amount: number }> = [];
+  const base = calc.breakdown.find((line) => line.kind === "base");
+  if (base) {
+    lines.push({ label: base.label, amount: base.subtotal });
+  } else if (calc.baseAmount > 0) {
+    lines.push({
+      label:
+        calc.includedUnits > 0
+          ? `Base ${formatProgressiveRand(calc.baseAmount)} (includes ${calc.includedUnits} ${progressiveUnitNoun(calc.unitType, calc.includedUnits)})`
+          : `Base ${formatProgressiveRand(calc.baseAmount)}`,
+      amount: calc.baseAmount,
+    });
+  }
+
+  let nextUnit = Math.max(1, calc.includedUnits + 1);
+  for (const line of calc.breakdown.filter((row) => row.kind === "band")) {
+    for (let i = 0; i < line.unitCount; i += 1) {
+      const noun = progressiveUnitNoun(calc.unitType, 1);
+      const title = noun.charAt(0).toUpperCase() + noun.slice(1);
+      lines.push({
+        label: `${title} ${nextUnit}: +${formatProgressiveRand(line.rate)}`,
+        amount: line.rate,
+      });
+      nextUnit += 1;
+    }
+  }
+  return lines;
 }
 
 /** @deprecated Prefer calculateProgressiveSubscription({ unitType: "space" }). */

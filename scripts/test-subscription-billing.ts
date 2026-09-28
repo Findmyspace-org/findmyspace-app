@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { computeAccess } from "../lib/access/compute-access";
 import type { AccessContext, OrganisationAccessGrant } from "../lib/access/roles";
-import { calculateProgressiveSubscription } from "../lib/commercial-progressive-pricing";
+import { calculateProgressiveSubscription, displayProgressiveBandLabel } from "../lib/commercial-progressive-pricing";
 import {
   billingMonthStart,
   buildSubscriptionPeriodSnapshot,
@@ -34,6 +34,9 @@ import {
   billingMonthEffectiveAt,
   skipReasonMessage,
   summariseSubscriptionRevenue,
+  findmyspaceBillingBankStatus,
+  subscriptionInvoiceReadiness,
+  subscriptionPaymentInstructions,
   type SubscriptionPeriodRow,
 } from "../lib/subscription-billing";
 import { hostingNavItems } from "../lib/dashboard-nav";
@@ -566,11 +569,15 @@ function access(ctx: Partial<AccessContext> = {}): ReturnType<typeof computeAcce
   assert.doesNotMatch(server, /owner_earnings/);
   assert.match(server, /sendEmail/);
   assert.match(server, /No billing email configured/);
+  assert.match(server, /eft_incomplete/);
+  assert.match(server, /allowIncompletePaymentInstructions/);
 
   const api = readFileSync("app/api/admin/subscription-billing/route.ts", "utf8");
   assert.match(api, /requireAdminApi/);
   assert.match(api, /create_month/);
   assert.match(api, /record_payment/);
+  assert.match(api, /save_billing_contact/);
+  assert.match(api, /allow_incomplete_payment_instructions/);
 
   const oaApi = readFileSync(
     "app/api/organisations/[organisationId]/subscription-billing/route.ts",
@@ -590,6 +597,10 @@ function access(ctx: Partial<AccessContext> = {}): ReturnType<typeof computeAcce
   assert.match(adminPage, /Create billing periods/);
   assert.match(adminPage, /Record payment/);
   assert.match(adminPage, /Issue invoice/);
+  assert.match(adminPage, /Billing contact/);
+  assert.match(adminPage, /FMS_BILLING_BANK_NAME/);
+  assert.match(adminPage, /Invoice can be issued. Email cannot be sent/);
+  assert.match(adminPage, /allow_incomplete_payment_instructions/);
 
   const hostPage = readFileSync("app/dashboard/subscription/page.tsx", "utf8");
   assert.match(hostPage, /showOrganisationCommercial/);
@@ -602,6 +613,84 @@ function access(ctx: Partial<AccessContext> = {}): ReturnType<typeof computeAcce
 
   const nextConfig = readFileSync("next.config.ts", "utf8");
   assert.match(nextConfig, /subscription-invoices\/\*\/pdf/);
+}
+
+{
+  assert.equal(
+    displayProgressiveBandLabel("property", "2-10 Spaces", 2, 10),
+    "2–10 properties"
+  );
+  assert.equal(
+    displayProgressiveBandLabel("space", "2-10 Spaces", 2, 10),
+    "2-10 Spaces"
+  );
+  const three = calculateProgressiveSubscription({
+    baseAmount: 250,
+    includedUnits: 1,
+    bands: [
+      { minCount: 2, maxCount: 10, incrementalAmount: 50, label: "2-10 Spaces" },
+    ],
+    unitCount: 3,
+    unitType: "property",
+  });
+  assert.equal(three.monthlyAmount, 350);
+  assert.equal(three.covered, true);
+  assert.doesNotMatch(three.breakdown.map((line) => line.label).join(" "), /space/i);
+  const eleven = calculateProgressiveSubscription({
+    baseAmount: 250,
+    includedUnits: 1,
+    bands: [
+      { minCount: 2, maxCount: 10, incrementalAmount: 50, label: "2-10 Spaces" },
+    ],
+    unitCount: 11,
+    unitType: "property",
+  });
+  assert.equal(eleven.covered, false);
+
+  const eftMissing = findmyspaceBillingBankStatus({
+    bankName: "",
+    accountName: "",
+    accountNumber: "",
+    branchCode: "",
+    accountType: "",
+  });
+  assert.equal(eftMissing.configured, false);
+  assert.ok(eftMissing.missing.includes("bank name"));
+  const eftDetails = {
+    bankName: "Bank",
+    accountName: "FindMySpace",
+    accountNumber: "123",
+    branchCode: "000000",
+    accountType: "cheque",
+  };
+  const eftOk = findmyspaceBillingBankStatus(eftDetails);
+  assert.equal(eftOk.configured, true);
+  const instructions = subscriptionPaymentInstructions(eftDetails);
+  assert.equal(instructions.configured, true);
+  assert.match(instructions.lines.join("\n"), /Account holder: FindMySpace/);
+
+  const readiness = subscriptionInvoiceReadiness({
+    termsResolved: true,
+    amountResolved: true,
+    billedPartyResolved: true,
+    monthlyAmount: 350,
+    hasBillingEmail: false,
+    eftConfigured: false,
+  });
+  assert.equal(readiness.canIssue, false);
+  assert.equal(readiness.canIssueWithoutEft, true);
+  assert.equal(readiness.canEmail, false);
+  assert.equal(readiness.items.find((item) => item.key === "email")?.requiredForIssue, false);
+  assert.equal(readiness.items.find((item) => item.key === "eft")?.requiredForIssue, true);
+
+  const migration077 = readFileSync(
+    "supabase/migrations/077_20260928_organisation_billing_contact.sql",
+    "utf8"
+  );
+  assert.match(migration077, /billing_email/);
+  assert.doesNotMatch(migration077, /INSERT INTO public\.commercial_terms/);
+  assert.doesNotMatch(migration077, /UPDATE public\.commercial_terms/);
+  assert.doesNotMatch(migration077, /UPDATE public\.bookings/);
 }
 
 console.log("subscription-billing tests passed");

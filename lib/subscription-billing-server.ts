@@ -25,11 +25,18 @@ import {
   billingMonthEffectiveAt,
   skipReasonMessage,
   summariseSubscriptionRevenue,
+  findmyspaceBillingBankStatus,
   type SubscriptionCalculationSnapshot,
   type SubscriptionPeriodPreview,
   type SubscriptionPeriodRow,
 } from "@/lib/subscription-billing";
 import { roundMoney } from "@/lib/commercial-calculator";
+import {
+  commercialTiersToProgressiveBands,
+  isProgressivePricingMode,
+  isPropertyCountPricingMode,
+} from "@/lib/commercial-subscription";
+import { progressiveBandGapWarning } from "@/lib/commercial-progressive-pricing";
 
 const PERIOD_COLUMNS =
   "id, billing_month, scope_type, scope_id, billed_organisation_id, billed_party_name, commercial_terms_id, pricing_mode, inventory_count, matched_tier_id, matched_tier_label, monthly_amount, status, payment_status, invoice_number, invoice_date, due_date, paid_at, amount_paid, payment_reference, payment_note, payment_recorded_by, calculation_snapshot, billing_email, email_sent_at, issued_by, voided_at, voided_by, void_reason, created_at";
@@ -100,23 +107,39 @@ async function loadBillingLookups(admin: SupabaseClient): Promise<{
   spaces: SpaceRow[];
   terms: CommercialTermRow[];
   emails: Map<string, string | null>;
+  billingContacts: Map<
+    string,
+    { name: string | null; email: string | null; phone: string | null }
+  >;
 }> {
   const [
     { data: orgData, error: orgError },
     { data: propertyData, error: propertyError },
     { data: spaceData, error: spaceError },
-    { data: emailData },
+    { data: emailData, error: emailError },
   ] = await Promise.all([
     admin.from("organisations").select("id, name, status, archived_at"),
     admin.from("properties").select("id, organisation_id, name, archived_at"),
     admin.from("spaces").select("id, property_id, title"),
     admin
       .from("organisation_commercial_profiles")
-      .select("organisation_id, primary_contact_email"),
+      .select(
+        "organisation_id, billing_email, primary_contact_email, billing_contact_name, billing_phone"
+      ),
   ]);
   if (orgError) throw new Error(orgError.message || "Could not load organisations.");
   if (propertyError) throw new Error(propertyError.message || "Could not load properties.");
   if (spaceError) throw new Error(spaceError.message || "Could not load spaces.");
+  let profileRows: unknown[] | null = emailData;
+  if (emailError) {
+    const fallback = await admin
+      .from("organisation_commercial_profiles")
+      .select("organisation_id, primary_contact_email");
+    if (fallback.error) {
+      throw new Error(emailError.message || "Could not load billing contacts.");
+    }
+    profileRows = fallback.data;
+  }
 
   const organisations = (orgData || []) as OrgRow[];
   const properties = (propertyData || []) as PropertyRow[];
@@ -127,13 +150,26 @@ async function loadBillingLookups(admin: SupabaseClient): Promise<{
     spaceIds: spaces.map((row) => row.id),
   });
   const emails = new Map<string, string | null>();
-  for (const row of (emailData || []) as Array<{
+  const billingContacts = new Map<
+    string,
+    { name: string | null; email: string | null; phone: string | null }
+  >();
+  for (const row of (profileRows || []) as Array<{
     organisation_id: string;
+    billing_email?: string | null;
     primary_contact_email: string | null;
+    billing_contact_name?: string | null;
+    billing_phone?: string | null;
   }>) {
-    emails.set(row.organisation_id, row.primary_contact_email);
+    const email = row.billing_email?.trim() || row.primary_contact_email?.trim() || null;
+    emails.set(row.organisation_id, email);
+    billingContacts.set(row.organisation_id, {
+      name: row.billing_contact_name?.trim() || null,
+      email,
+      phone: row.billing_phone?.trim() || null,
+    });
   }
-  return { organisations, properties, spaces, terms, emails };
+  return { organisations, properties, spaces, terms, emails, billingContacts };
 }
 
 function billedOrganisationIdForScope(
@@ -241,6 +277,8 @@ function toPreview(input: {
       skipReason: "no_billed_scope",
       unresolvedReason: input.resolved.subscription?.unresolvedReason ?? null,
       warning: skipReasonMessage("no_billed_scope"),
+      billingEmail: null,
+      coverageWarning: null,
       snapshot: null,
     };
   }
@@ -283,6 +321,18 @@ function toPreview(input: {
         })
       : null;
 
+  const coverageWarning =
+    eligibility.eligible &&
+    isProgressivePricingMode(input.resolved.subscriptionPricingMode)
+      ? progressiveBandGapWarning(
+          input.resolved.subscriptionIncludedUnits ?? 0,
+          commercialTiersToProgressiveBands(input.resolved.tiers),
+          isPropertyCountPricingMode(input.resolved.subscriptionPricingMode)
+            ? "property"
+            : "space"
+        )
+      : null;
+
   return {
     billingMonth: input.billingMonth,
     billedScopeType: input.billed.scopeType,
@@ -301,7 +351,9 @@ function toPreview(input: {
       ? skipReason === "unresolved"
         ? `Pricing gap or unresolved schedule: ${input.resolved.subscription?.unresolvedReason || "unresolved"}`
         : skipReasonMessage(skipReason)
-      : null,
+      : coverageWarning,
+    billingEmail: null,
+    coverageWarning,
     snapshot,
   };
 }
@@ -396,6 +448,12 @@ export async function previewSubscriptionPeriodsForMonth(
         row.skipReason === "zero_inventory" ||
         row.skipReason === "zero_amount"
     )
+    .map((row) => ({
+      ...row,
+      billingEmail: row.billedOrganisationId
+        ? lookups.emails.get(row.billedOrganisationId) || null
+        : null,
+    }))
     .sort((a, b) => a.billedPartyName.localeCompare(b.billedPartyName, "en"));
 }
 
@@ -428,6 +486,9 @@ export async function createSubscriptionPeriodForMonth(
       "No billed party for this scope.",
       "no_billed_scope"
     );
+  }
+  if (preview.billedOrganisationId) {
+    preview.billingEmail = lookups.emails.get(preview.billedOrganisationId) || null;
   }
   if (preview.skipReason === "unresolved") {
     throw new SubscriptionBillingError(
@@ -585,12 +646,24 @@ export async function issueSubscriptionInvoice(
   admin: SupabaseClient,
   periodId: string,
   actorUserId: string,
-  input: { dueDate?: string | null; sendEmail?: boolean } = {}
+  input: {
+    dueDate?: string | null;
+    sendEmail?: boolean;
+    allowIncompletePaymentInstructions?: boolean;
+  } = {}
 ): Promise<{ period: SubscriptionPeriodRow; emailSent: boolean; emailWarning: string | null }> {
   const period = await getSubscriptionPeriod(admin, periodId);
   const allowed = canIssueSubscriptionInvoice(period);
   if (!allowed.ok) {
     throw new SubscriptionBillingError(allowed.error, "cannot_issue");
+  }
+  const eft = findmyspaceBillingBankStatus();
+  if (!eft.configured && !input.allowIncompletePaymentInstructions) {
+    throw new SubscriptionBillingError(
+      `Payment instructions are incomplete (${eft.missing.join(", ")}). Configure FindMySpace EFT details before issuing a payable invoice.`,
+      "eft_incomplete",
+      409
+    );
   }
 
   const todayParts = new Intl.DateTimeFormat("en-CA", {

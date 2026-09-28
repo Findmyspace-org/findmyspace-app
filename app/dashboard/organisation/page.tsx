@@ -38,6 +38,9 @@ function OrganisationCommercialPageContent() {
   const [tradingName, setTradingName] = useState("");
   const [organisationType, setOrganisationType] = useState("");
   const [registrationNumber, setRegistrationNumber] = useState("");
+  const [billingName, setBillingName] = useState("");
+  const [billingEmail, setBillingEmail] = useState("");
+  const [billingPhone, setBillingPhone] = useState("");
   const [documentKind, setDocumentKind] = useState("registration");
   const [documentFile, setDocumentFile] = useState<File | null>(null);
   const [accountHolder, setAccountHolder] = useState("");
@@ -63,6 +66,9 @@ function OrganisationCommercialPageContent() {
     setTradingName(next.commercial?.trading_name || "");
     setOrganisationType(next.commercial?.organisation_type || "");
     setRegistrationNumber(next.commercial?.registration_number || "");
+    setBillingName(next.commercial?.billing_contact_name || "");
+    setBillingEmail(next.commercial?.billing_email || "");
+    setBillingPhone(next.commercial?.billing_phone || "");
   }, []);
 
   useEffect(() => {
@@ -112,6 +118,9 @@ function OrganisationCommercialPageContent() {
         trading_name: tradingName,
         organisation_type: organisationType || null,
         registration_number: registrationNumber,
+        billing_contact_name: billingName,
+        billing_email: billingEmail,
+        billing_phone: billingPhone,
       });
       await load(organisationId);
       setMessage("Organisation details saved.");
@@ -254,6 +263,25 @@ function OrganisationCommercialPageContent() {
                 onChange={(event) => setRegistrationNumber(event.target.value)}
                 className="w-full rounded-lg border border-[#d4dbe2] px-3 py-2 text-sm"
                 placeholder="Registration number"
+              />
+              <input
+                value={billingName}
+                onChange={(event) => setBillingName(event.target.value)}
+                className="w-full rounded-lg border border-[#d4dbe2] px-3 py-2 text-sm"
+                placeholder="Billing contact name"
+              />
+              <input
+                type="email"
+                value={billingEmail}
+                onChange={(event) => setBillingEmail(event.target.value)}
+                className="w-full rounded-lg border border-[#d4dbe2] px-3 py-2 text-sm"
+                placeholder="Billing email"
+              />
+              <input
+                value={billingPhone}
+                onChange={(event) => setBillingPhone(event.target.value)}
+                className="w-full rounded-lg border border-[#d4dbe2] px-3 py-2 text-sm"
+                placeholder="Billing phone (optional)"
               />
               <button
                 type="submit"

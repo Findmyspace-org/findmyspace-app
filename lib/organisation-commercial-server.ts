@@ -37,7 +37,7 @@ import {
 } from "@/lib/organisation-commercial-storage";
 
 const COMMERCIAL_SELECT =
-  "organisation_id, legal_name, trading_name, organisation_type, registration_number, vat_number, address_line1, suburb, city, province, postal_code, country, primary_contact_name, primary_contact_email, primary_contact_phone, authorised_representative_name, authorised_representative_title, verification_status, verification_method, verification_notes, rejection_reason, submitted_at, verified_at, verified_by, rejected_at, rejected_by";
+  "organisation_id, legal_name, trading_name, organisation_type, registration_number, vat_number, address_line1, suburb, city, province, postal_code, country, primary_contact_name, primary_contact_email, primary_contact_phone, billing_contact_name, billing_email, billing_phone, authorised_representative_name, authorised_representative_title, verification_status, verification_method, verification_notes, rejection_reason, submitted_at, verified_at, verified_by, rejected_at, rejected_by";
 
 const BANK_MASKED_SELECT =
   "id, organisation_id, version_number, is_current, account_holder_name, bank_name, account_type, branch_code, account_number_last4, proof_of_bank_path, status, review_notes, rejection_reason, submitted_at, reviewed_at";
@@ -48,6 +48,10 @@ function trimOrNull(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
   return trimmed === "" ? null : trimmed;
+}
+
+function isSimpleEmail(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 }
 
 type CommercialRow = Omit<
@@ -248,6 +252,9 @@ export async function updateOrganisationCommercialProfile(
     "primary_contact_name",
     "primary_contact_email",
     "primary_contact_phone",
+    "billing_contact_name",
+    "billing_email",
+    "billing_phone",
     "authorised_representative_name",
     "authorised_representative_title",
   ] as const;
@@ -270,13 +277,53 @@ export async function updateOrganisationCommercialProfile(
   if (patch.legal_name !== undefined && !patch.legal_name) {
     throw new OrganisationCommercialError(400, "Legal name is required.", "legal_name_required");
   }
+  if (typeof patch.billing_email === "string" && patch.billing_email && !isSimpleEmail(patch.billing_email)) {
+    throw new OrganisationCommercialError(400, "Enter a valid billing email.", "invalid_billing_email");
+  }
 
-  const { data, error } = await admin
+  const { data: existing } = await admin
     .from("organisation_commercial_profiles")
-    .update(patch)
-    .eq("organisation_id", input.organisationId)
     .select(COMMERCIAL_SELECT)
-    .single();
+    .eq("organisation_id", input.organisationId)
+    .maybeSingle();
+
+  let data: CommercialRow | null = null;
+  let error: { message?: string } | null = null;
+  if (existing) {
+    const updated = await admin
+      .from("organisation_commercial_profiles")
+      .update(patch)
+      .eq("organisation_id", input.organisationId)
+      .select(COMMERCIAL_SELECT)
+      .single();
+    data = (updated.data as CommercialRow | null) ?? null;
+    error = updated.error;
+  } else {
+    const { data: organisation } = await admin
+      .from("organisations")
+      .select("name")
+      .eq("id", input.organisationId)
+      .maybeSingle();
+    const legalName =
+      (patch.legal_name as string | undefined) ||
+      (organisation as { name?: string } | null)?.name?.trim() ||
+      "";
+    if (!legalName) {
+      throw new OrganisationCommercialError(400, "Legal name is required.", "legal_name_required");
+    }
+    const inserted = await admin
+      .from("organisation_commercial_profiles")
+      .insert({
+        organisation_id: input.organisationId,
+        legal_name: legalName,
+        verification_status: "pending",
+        ...patch,
+      })
+      .select(COMMERCIAL_SELECT)
+      .single();
+    data = (inserted.data as CommercialRow | null) ?? null;
+    error = inserted.error;
+  }
 
   if (error || !data) {
     throw new OrganisationCommercialError(

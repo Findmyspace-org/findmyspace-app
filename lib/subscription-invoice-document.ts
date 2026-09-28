@@ -1,7 +1,13 @@
-import { escapeHtml, formatZar, resolveInvoiceLogoDataUrl } from "@/lib/invoice-document";
+import {
+  escapeHtml,
+  formatZar,
+  resolveInvoiceLogoDataUrl,
+} from "@/lib/invoice-document";
 import { subscriptionPricingMethodLabel } from "@/lib/commercial-admin-display";
+import { progressiveInvoiceCalculationLines } from "@/lib/commercial-progressive-pricing";
 import {
   formatBillingMonthLabel,
+  readFindmyspaceBillingBankDetails,
   subscriptionPaymentInstructions,
   type SubscriptionPeriodRow,
 } from "@/lib/subscription-billing";
@@ -26,18 +32,27 @@ function formatDate(value: string | null): string {
 export function renderSubscriptionInvoiceHtml(period: SubscriptionPeriodRow): string {
   const snapshot = period.calculation_snapshot;
   const logo = resolveInvoiceLogoDataUrl();
-  const instructions = subscriptionPaymentInstructions({
-    bankName: process.env.FINDYMYSPACE_SUBSCRIPTION_BANK_NAME,
-    accountHolder: process.env.FINDYMYSPACE_SUBSCRIPTION_ACCOUNT_HOLDER,
-    accountNumber: process.env.FINDYMYSPACE_SUBSCRIPTION_ACCOUNT_NUMBER,
-    branchCode: process.env.FINDYMYSPACE_SUBSCRIPTION_BRANCH_CODE,
-  });
-  const breakdown = (snapshot?.breakdown || [])
-    .map(
-      (line) =>
-        `<tr><td>${escapeHtml(line.label)}</td><td class="num">${escapeHtml(formatZar(line.subtotal))}</td></tr>`
-    )
-    .join("");
+  const instructions = subscriptionPaymentInstructions(
+    readFindmyspaceBillingBankDetails()
+  );
+  const invoiceLines = snapshot?.breakdown
+    ? progressiveInvoiceCalculationLines({
+        baseAmount: snapshot.baseAmount || 0,
+        includedUnits: snapshot.includedUnits || 0,
+        unitType: snapshot.inventoryBasis === "space" ? "space" : "property",
+        billableCount: snapshot.inventoryCount,
+        breakdown: snapshot.breakdown,
+      })
+    : [];
+  const breakdown =
+    invoiceLines.length > 0
+      ? invoiceLines
+          .map(
+            (line) =>
+              `<tr><td>${escapeHtml(line.label)}</td><td class="num">${escapeHtml(formatZar(line.amount))}</td></tr>`
+          )
+          .join("")
+      : "";
   const billedTo = [
     snapshot?.billedPartyName || period.billed_party_name || "—",
     snapshot?.billedOrganisationName &&

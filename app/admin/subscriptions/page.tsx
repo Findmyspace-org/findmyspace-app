@@ -7,6 +7,7 @@ import { getBrowserAccessToken } from "@/lib/supabase-browser-session";
 import {
   formatBillingMonthLabel,
   parseBillingMonthInput,
+  subscriptionInvoiceReadiness,
   type SubscriptionPeriodPreview,
   type SubscriptionPeriodRow,
 } from "@/lib/subscription-billing";
@@ -35,6 +36,13 @@ export default function AdminSubscriptionsPage() {
   const [payNote, setPayNote] = useState("");
   const [payPeriodId, setPayPeriodId] = useState<string | null>(null);
   const [dueDate, setDueDate] = useState("");
+  const [eftConfigured, setEftConfigured] = useState(false);
+  const [eftMissing, setEftMissing] = useState<string[]>([]);
+  const [allowIncompleteEft, setAllowIncompleteEft] = useState(false);
+  const [billingOrgId, setBillingOrgId] = useState("");
+  const [billingName, setBillingName] = useState("");
+  const [billingEmail, setBillingEmail] = useState("");
+  const [billingPhone, setBillingPhone] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -50,9 +58,13 @@ export default function AdminSubscriptionsPage() {
       )) as {
         periods?: SubscriptionPeriodRow[];
         revenue?: { invoiced: number; paid: number; outstanding: number };
+        billingSetup?: { eft?: { configured?: boolean; missing?: string[] } };
       };
       setPeriods(json.periods || []);
       if (json.revenue) setRevenue(json.revenue);
+      const eft = json.billingSetup?.eft;
+      setEftConfigured(Boolean(eft?.configured));
+      setEftMissing(eft?.missing || []);
     } catch (err) {
       setMessageTone("error");
       setMessage(err instanceof Error ? err.message : "Could not load subscription billing.");
@@ -72,8 +84,24 @@ export default function AdminSubscriptionsPage() {
       const json = (await adminApiFetch("/api/admin/subscription-billing", {
         method: "POST",
         body: JSON.stringify({ action: "preview", billing_month: month }),
-      })) as { items?: SubscriptionPeriodPreview[] };
+      })) as {
+        items?: Array<
+          SubscriptionPeriodPreview & {
+            readiness?: ReturnType<typeof subscriptionInvoiceReadiness>;
+          }
+        >;
+        billingSetup?: { eft?: { configured?: boolean; missing?: string[] } };
+      };
       setPreviews(json.items || []);
+      if (json.billingSetup?.eft) {
+        setEftConfigured(Boolean(json.billingSetup.eft.configured));
+        setEftMissing(json.billingSetup.eft.missing || []);
+      }
+      const first = (json.items || []).find((row) => row.eligible || row.billedOrganisationId);
+      if (first?.billedOrganisationId) {
+        setBillingOrgId(first.billedOrganisationId);
+        setBillingEmail(first.billingEmail || "");
+      }
     } catch (err) {
       setMessageTone("error");
       setMessage(err instanceof Error ? err.message : "Could not preview billing month.");
@@ -155,8 +183,44 @@ export default function AdminSubscriptionsPage() {
         map.set(row.billed_organisation_id, row.billed_party_name || row.billed_organisation_id);
       }
     }
+    for (const row of previews) {
+      if (row.billedOrganisationId) {
+        map.set(row.billedOrganisationId, row.billedPartyName || row.billedOrganisationId);
+      }
+    }
     return [...map.entries()];
-  }, [periods]);
+  }, [periods, previews]);
+
+  async function saveBillingContact() {
+    if (!billingOrgId) {
+      setMessageTone("error");
+      setMessage("Choose an organisation first.");
+      return;
+    }
+    setLoading(true);
+    setMessage("");
+    try {
+      await adminApiFetch("/api/admin/subscription-billing", {
+        method: "POST",
+        body: JSON.stringify({
+          action: "save_billing_contact",
+          organisation_id: billingOrgId,
+          billing_contact_name: billingName,
+          billing_email: billingEmail,
+          billing_phone: billingPhone,
+        }),
+      });
+      setMessageTone("success");
+      setMessage("Billing contact saved. Email is not sent until an invoice is issued.");
+      await previewMonth();
+      await load();
+    } catch (err) {
+      setMessageTone("error");
+      setMessage(err instanceof Error ? err.message : "Could not save billing contact.");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
     <main className="min-h-screen bg-[#f4f6f8] px-6 py-10 text-[#192a3a]">
@@ -184,6 +248,77 @@ export default function AdminSubscriptionsPage() {
             <p className="text-xs uppercase tracking-wide text-gray-500">Outstanding</p>
             <p className="mt-1 text-xl font-semibold">{money(revenue.outstanding)}</p>
           </div>
+        </section>
+
+        {!eftConfigured ? (
+          <section className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+            <p className="font-semibold">FindMySpace EFT details are not configured.</p>
+            <p className="mt-1">
+              Set production env vars {`FMS_BILLING_BANK_NAME`}, {`FMS_BILLING_ACCOUNT_NAME`},{" "}
+              {`FMS_BILLING_ACCOUNT_NUMBER`}, and {`FMS_BILLING_BRANCH_CODE`}
+              {eftMissing.length ? ` (missing: ${eftMissing.join(", ")})` : ""}. Optional:{" "}
+              {`FMS_BILLING_ACCOUNT_TYPE`}. Payable invoices stay blocked until these are set.
+            </p>
+          </section>
+        ) : null}
+
+        <section className="rounded-xl border border-gray-200 bg-white p-5">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+            Billing contact
+          </h2>
+          <p className="mt-2 text-sm text-gray-600">
+            Saved on the organisation commercial profile. CRM contacts are not used as
+            invoice addresses unless you copy one here.
+          </p>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <label className="text-xs text-gray-600">
+              Organisation
+              <select
+                value={billingOrgId}
+                onChange={(event) => setBillingOrgId(event.target.value)}
+                className="mt-1 block w-full rounded-md border border-gray-300 px-2 py-2 text-sm"
+              >
+                <option value="">Select organisation</option>
+                {organisations.map(([id, name]) => (
+                  <option key={id} value={id}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="text-xs text-gray-600">
+              Billing contact name
+              <input
+                value={billingName}
+                onChange={(event) => setBillingName(event.target.value)}
+                className="mt-1 block w-full rounded-md border border-gray-300 px-2 py-2 text-sm"
+              />
+            </label>
+            <label className="text-xs text-gray-600">
+              Billing email
+              <input
+                type="email"
+                value={billingEmail}
+                onChange={(event) => setBillingEmail(event.target.value)}
+                className="mt-1 block w-full rounded-md border border-gray-300 px-2 py-2 text-sm"
+              />
+            </label>
+            <label className="text-xs text-gray-600">
+              Billing phone (optional)
+              <input
+                value={billingPhone}
+                onChange={(event) => setBillingPhone(event.target.value)}
+                className="mt-1 block w-full rounded-md border border-gray-300 px-2 py-2 text-sm"
+              />
+            </label>
+          </div>
+          <button
+            type="button"
+            onClick={() => void saveBillingContact()}
+            className="mt-3 rounded-md border border-gray-300 px-3 py-2 text-sm"
+          >
+            Save billing contact
+          </button>
         </section>
 
         <section className="rounded-xl border border-gray-200 bg-white p-5">
@@ -246,7 +381,22 @@ export default function AdminSubscriptionsPage() {
                       <td className="py-2 pr-3">{money(row.monthlyAmount)}</td>
                       <td className="py-2">
                         {row.eligible ? (
-                          <span className="text-emerald-800">Ready</span>
+                          <div>
+                            <span className="text-emerald-800">Ready</span>
+                            {row.snapshot?.calculationText ? (
+                              <div className="text-xs text-gray-500">
+                                {row.snapshot.calculationText}
+                              </div>
+                            ) : null}
+                            {row.coverageWarning ? (
+                              <div className="text-xs text-amber-800">{row.coverageWarning}</div>
+                            ) : null}
+                            {!row.billingEmail ? (
+                              <div className="text-xs text-gray-500">
+                                Invoice can be issued. Email cannot be sent.
+                              </div>
+                            ) : null}
+                          </div>
                         ) : (
                           <span className="text-amber-800">{row.warning}</span>
                         )}
@@ -322,26 +472,66 @@ export default function AdminSubscriptionsPage() {
                     <td className="py-2 pr-3">{row.payment_status}</td>
                     <td className="py-2 space-y-1">
                       {row.status !== "invoiced" && row.status !== "void" ? (
-                        <div className="flex flex-wrap gap-1">
-                          <input
-                            type="date"
-                            value={dueDate}
-                            onChange={(event) => setDueDate(event.target.value)}
-                            className="rounded border border-gray-300 px-1 py-0.5"
-                          />
-                          <button
-                            type="button"
-                            onClick={() =>
-                              void runAction("issue", {
-                                period_id: row.id,
-                                due_date: dueDate || null,
-                              })
-                            }
-                            className="text-[#192a3a] underline"
-                          >
-                            Issue invoice
-                          </button>
-                        </div>
+                        (() => {
+                          const readiness = subscriptionInvoiceReadiness({
+                            termsResolved: Boolean(row.commercial_terms_id),
+                            amountResolved: Number(row.monthly_amount) > 0,
+                            billedPartyResolved: Boolean(row.billed_organisation_id),
+                            monthlyAmount: row.monthly_amount,
+                            hasBillingEmail: Boolean(row.billing_email),
+                            eftConfigured,
+                          });
+                          const canClick =
+                            readiness.canIssue ||
+                            (allowIncompleteEft && readiness.canIssueWithoutEft);
+                          return (
+                            <div className="space-y-1">
+                              <ul className="space-y-0.5 text-[11px] text-gray-600">
+                                {readiness.items.map((item) => (
+                                  <li key={item.key}>
+                                    {item.ok ? "✓" : "○"} {item.label}
+                                    {!item.ok ? ` — ${item.detail}` : ""}
+                                    {item.key === "email" && !item.ok
+                                      ? " Invoice can be issued. Email cannot be sent."
+                                      : ""}
+                                  </li>
+                                ))}
+                              </ul>
+                              <label className="flex items-center gap-1 text-[11px] text-gray-600">
+                                <input
+                                  type="checkbox"
+                                  checked={allowIncompleteEft}
+                                  onChange={(event) =>
+                                    setAllowIncompleteEft(event.target.checked)
+                                  }
+                                />
+                                Issue without complete EFT instructions
+                              </label>
+                              <div className="flex flex-wrap gap-1">
+                                <input
+                                  type="date"
+                                  value={dueDate}
+                                  onChange={(event) => setDueDate(event.target.value)}
+                                  className="rounded border border-gray-300 px-1 py-0.5"
+                                />
+                                <button
+                                  type="button"
+                                  disabled={!canClick || loading}
+                                  onClick={() =>
+                                    void runAction("issue", {
+                                      period_id: row.id,
+                                      due_date: dueDate || null,
+                                      allow_incomplete_payment_instructions: allowIncompleteEft,
+                                    })
+                                  }
+                                  className="text-[#192a3a] underline disabled:cursor-not-allowed disabled:text-gray-400"
+                                >
+                                  Issue invoice
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })()
                       ) : null}
                       {row.status === "invoiced" ? (
                         <button

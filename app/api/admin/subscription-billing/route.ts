@@ -2,7 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdminApi } from "@/lib/require-admin-api";
 import { adminAudit } from "@/lib/admin-audit";
 import { createServiceAdminClient } from "@/lib/admin-unclaimed-space";
-import { SubscriptionBillingError } from "@/lib/subscription-billing";
+import {
+  SubscriptionBillingError,
+  findmyspaceBillingBankStatus,
+  subscriptionInvoiceReadiness,
+} from "@/lib/subscription-billing";
+import { updateOrganisationCommercialProfile } from "@/lib/organisation-commercial-server";
 import {
   createEligibleSubscriptionPeriodsForMonth,
   createSubscriptionPeriodForMonth,
@@ -40,11 +45,24 @@ export async function GET(req: NextRequest) {
   try {
     if (previewMonth) {
       const items = await previewSubscriptionPeriodsForMonth(admin, previewMonth);
+      const eft = findmyspaceBillingBankStatus();
       return NextResponse.json({
         billingMonth: previewMonth,
-        items,
+        items: items.map((row) => ({
+          ...row,
+          readiness: subscriptionInvoiceReadiness({
+            termsResolved:
+              Boolean(row.snapshot?.commercialTermsId) && row.skipReason !== "unresolved",
+            amountResolved: row.eligible,
+            billedPartyResolved: Boolean(row.billedOrganisationId || row.billedScopeId),
+            monthlyAmount: row.monthlyAmount,
+            hasBillingEmail: Boolean(row.billingEmail),
+            eftConfigured: eft.configured,
+          }),
+        })),
         eligible: items.filter((row) => row.eligible),
         skipped: items.filter((row) => !row.eligible),
+        billingSetup: { eft },
       });
     }
     const paymentRaw = searchParams.get("paymentStatus");
@@ -57,7 +75,17 @@ export async function GET(req: NextRequest) {
       }),
       loadSubscriptionRevenueSummary(admin),
     ]);
-    return NextResponse.json({ periods, revenue });
+    const eft = findmyspaceBillingBankStatus();
+    return NextResponse.json({
+      periods,
+      revenue,
+      billingSetup: {
+        eft,
+        issueBlockedReason: eft.configured
+          ? null
+          : `EFT details missing: ${eft.missing.join(", ")}.`,
+      },
+    });
   } catch (err) {
     return jsonError(err);
   }
@@ -78,11 +106,23 @@ export async function POST(req: NextRequest) {
     if (action === "preview") {
       const billingMonth = String(body?.billing_month || "");
       const items = await previewSubscriptionPeriodsForMonth(admin, billingMonth);
+      const eft = findmyspaceBillingBankStatus();
       return NextResponse.json({
         billingMonth,
-        items,
+        items: items.map((row) => ({
+          ...row,
+          readiness: subscriptionInvoiceReadiness({
+            termsResolved: Boolean(row.snapshot?.commercialTermsId) && row.skipReason !== "unresolved",
+            amountResolved: row.eligible,
+            billedPartyResolved: Boolean(row.billedOrganisationId || row.billedScopeId),
+            monthlyAmount: row.monthlyAmount,
+            hasBillingEmail: Boolean(row.billingEmail),
+            eftConfigured: eft.configured,
+          }),
+        })),
         eligible: items.filter((row) => row.eligible),
         skipped: items.filter((row) => !row.eligible),
+        billingSetup: { eft },
       });
     }
 
@@ -126,6 +166,30 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, ...created });
     }
 
+    if (action === "save_billing_contact") {
+      const organisationId = String(body?.organisation_id || "");
+      const commercial = await updateOrganisationCommercialProfile(admin, {
+        organisationId,
+        actorUserId: auth.userId,
+        isGlobalAdmin: true,
+        body: {
+          billing_contact_name: body?.billing_contact_name,
+          billing_email: body?.billing_email,
+          billing_phone: body?.billing_phone,
+        },
+      });
+      await adminAudit({
+        action: "subscription_billing_contact_saved",
+        actorUserId: auth.userId,
+        targetType: "organisation_commercial_profiles",
+        targetId: organisationId,
+        meta: {
+          has_email: Boolean(commercial.billing_email),
+        },
+      });
+      return NextResponse.json({ ok: true, commercial });
+    }
+
     if (action === "issue") {
       const issued = await issueSubscriptionInvoice(
         admin,
@@ -134,6 +198,7 @@ export async function POST(req: NextRequest) {
         {
           dueDate: (body?.due_date as string | null) ?? null,
           sendEmail: body?.send_email !== false,
+          allowIncompletePaymentInstructions: body?.allow_incomplete_payment_instructions === true,
         }
       );
       await adminAudit({

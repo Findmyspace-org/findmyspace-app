@@ -112,6 +112,8 @@ export type SubscriptionPeriodPreview = {
   skipReason: SubscriptionSkipReason | null;
   unresolvedReason: string | null;
   warning: string | null;
+  coverageWarning?: string | null;
+  billingEmail: string | null;
   snapshot: SubscriptionCalculationSnapshot | null;
 };
 
@@ -354,17 +356,164 @@ export function formatSubscriptionArrangement(): string {
   return "Subscription";
 }
 
-export function subscriptionPaymentInstructions(input: {
-  bankName?: string | null;
-  accountHolder?: string | null;
-  accountNumber?: string | null;
-  branchCode?: string | null;
-}): { configured: boolean; lines: string[] } {
-  const bankName = input.bankName?.trim() || "";
-  const accountHolder = input.accountHolder?.trim() || "";
-  const accountNumber = input.accountNumber?.trim() || "";
-  const branchCode = input.branchCode?.trim() || "";
-  if (!bankName && !accountHolder && !accountNumber) {
+export const FMS_BILLING_ENV_KEYS = {
+  bankName: ["FMS_BILLING_BANK_NAME", "FINDYMYSPACE_SUBSCRIPTION_BANK_NAME"],
+  accountName: [
+    "FMS_BILLING_ACCOUNT_NAME",
+    "FINDYMYSPACE_SUBSCRIPTION_ACCOUNT_HOLDER",
+  ],
+  accountNumber: [
+    "FMS_BILLING_ACCOUNT_NUMBER",
+    "FINDYMYSPACE_SUBSCRIPTION_ACCOUNT_NUMBER",
+  ],
+  branchCode: ["FMS_BILLING_BRANCH_CODE", "FINDYMYSPACE_SUBSCRIPTION_BRANCH_CODE"],
+  accountType: ["FMS_BILLING_ACCOUNT_TYPE"],
+} as const;
+
+export type FindmyspaceBillingBankDetails = {
+  bankName: string;
+  accountName: string;
+  accountNumber: string;
+  branchCode: string;
+  accountType: string;
+};
+
+export type FindmyspaceBillingBankStatus = {
+  configured: boolean;
+  missing: string[];
+};
+
+function firstEnvValue(keys: readonly string[]): string {
+  for (const key of keys) {
+    const value = process.env[key]?.trim() || "";
+    if (value) return value;
+  }
+  return "";
+}
+
+export function readFindmyspaceBillingBankDetails(): FindmyspaceBillingBankDetails {
+  return {
+    bankName: firstEnvValue(FMS_BILLING_ENV_KEYS.bankName),
+    accountName: firstEnvValue(FMS_BILLING_ENV_KEYS.accountName),
+    accountNumber: firstEnvValue(FMS_BILLING_ENV_KEYS.accountNumber),
+    branchCode: firstEnvValue(FMS_BILLING_ENV_KEYS.branchCode),
+    accountType: firstEnvValue(FMS_BILLING_ENV_KEYS.accountType),
+  };
+}
+
+export function findmyspaceBillingBankStatus(
+  details: FindmyspaceBillingBankDetails = readFindmyspaceBillingBankDetails()
+): FindmyspaceBillingBankStatus {
+  const missing: string[] = [];
+  if (!details.bankName) missing.push("bank name");
+  if (!details.accountName) missing.push("account name");
+  if (!details.accountNumber) missing.push("account number");
+  if (!details.branchCode) missing.push("branch code");
+  return { configured: missing.length === 0, missing };
+}
+
+export type SubscriptionInvoiceReadinessItem = {
+  key:
+    | "terms"
+    | "amount"
+    | "party"
+    | "email"
+    | "eft"
+    | "positive_amount";
+  ok: boolean;
+  requiredForIssue: boolean;
+  label: string;
+  detail: string;
+};
+
+export function subscriptionInvoiceReadiness(input: {
+  termsResolved: boolean;
+  amountResolved: boolean;
+  billedPartyResolved: boolean;
+  monthlyAmount: number;
+  hasBillingEmail: boolean;
+  eftConfigured: boolean;
+}): {
+  items: SubscriptionInvoiceReadinessItem[];
+  canIssue: boolean;
+  canIssueWithoutEft: boolean;
+  canEmail: boolean;
+} {
+  const items: SubscriptionInvoiceReadinessItem[] = [
+    {
+      key: "terms",
+      ok: input.termsResolved,
+      requiredForIssue: true,
+      label: "Commercial terms resolved",
+      detail: input.termsResolved
+        ? "Effective subscription terms are available for this month."
+        : "Fix the commercial schedule before issuing.",
+    },
+    {
+      key: "amount",
+      ok: input.amountResolved,
+      requiredForIssue: true,
+      label: "Subscription amount resolved",
+      detail: input.amountResolved
+        ? "Monthly amount is calculated."
+        : "Pricing is unresolved or excluded.",
+    },
+    {
+      key: "party",
+      ok: input.billedPartyResolved,
+      requiredForIssue: true,
+      label: "Billing party resolved",
+      detail: input.billedPartyResolved
+        ? "The organisation to bill is known."
+        : "No billed organisation is resolved.",
+    },
+    {
+      key: "positive_amount",
+      ok: roundMoney(input.monthlyAmount) > 0,
+      requiredForIssue: true,
+      label: "Invoice amount > 0",
+      detail:
+        roundMoney(input.monthlyAmount) > 0
+          ? `Amount due is R ${roundMoney(input.monthlyAmount).toFixed(2)}.`
+          : "R0 invoices are not issued.",
+    },
+    {
+      key: "eft",
+      ok: input.eftConfigured,
+      requiredForIssue: true,
+      label: "EFT/payment instructions configured",
+      detail: input.eftConfigured
+        ? "FindMySpace billing bank details are configured."
+        : "Set FMS_BILLING_BANK_NAME, FMS_BILLING_ACCOUNT_NAME, FMS_BILLING_ACCOUNT_NUMBER, and FMS_BILLING_BRANCH_CODE.",
+    },
+    {
+      key: "email",
+      ok: input.hasBillingEmail,
+      requiredForIssue: false,
+      label: "Billing email configured",
+      detail: input.hasBillingEmail
+        ? "Invoice email can be sent."
+        : "Invoice can be issued. Email cannot be sent until a billing email is saved.",
+    },
+  ];
+  const required = items.filter((item) => item.requiredForIssue);
+  const canIssue = required.every((item) => item.ok);
+  const canIssueWithoutEft = required
+    .filter((item) => item.key !== "eft")
+    .every((item) => item.ok);
+  return {
+    items,
+    canIssue,
+    canIssueWithoutEft,
+    canEmail: canIssueWithoutEft && input.hasBillingEmail,
+  };
+}
+
+export function subscriptionPaymentInstructions(
+  details: FindmyspaceBillingBankDetails = readFindmyspaceBillingBankDetails()
+): { configured: boolean; lines: string[] } {
+  const status = findmyspaceBillingBankStatus(details);
+  if (!status.configured) {
     return {
       configured: false,
       lines: [
@@ -373,11 +522,14 @@ export function subscriptionPaymentInstructions(input: {
       ],
     };
   }
-  const lines = ["Pay by EFT to FindMySpace."];
-  if (accountHolder) lines.push(`Account holder: ${accountHolder}`);
-  if (bankName) lines.push(`Bank: ${bankName}`);
-  if (accountNumber) lines.push(`Account number: ${accountNumber}`);
-  if (branchCode) lines.push(`Branch code: ${branchCode}`);
+  const lines = [
+    "Pay by EFT to FindMySpace.",
+    `Account holder: ${details.accountName}`,
+    `Bank: ${details.bankName}`,
+    `Account number: ${details.accountNumber}`,
+    `Branch code: ${details.branchCode}`,
+  ];
+  if (details.accountType) lines.push(`Account type: ${details.accountType}`);
   lines.push("Use the invoice number as the payment reference.");
   return { configured: true, lines };
 }

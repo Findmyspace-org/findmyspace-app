@@ -8,7 +8,12 @@ import {
   type BillableSpaceInput,
 } from "@/lib/commercial-inventory";
 import type { CommercialTermTier } from "@/lib/commercial-subscription";
-import { isProgressivePricingMode, subscriptionBilledScope } from "@/lib/commercial-subscription";
+import {
+  isProgressivePricingMode,
+  isPropertyCountPricingMode,
+  subscriptionBilledScope,
+} from "@/lib/commercial-subscription";
+import { displayProgressiveBandLabel } from "@/lib/commercial-progressive-pricing";
 import {
   decorateCommercialSearchHit,
   type CommercialSearchHit,
@@ -73,7 +78,20 @@ function asTermRow(
     admin_note: (row.admin_note as string | null) ?? null,
     created_by: (row.created_by as string | null) ?? null,
     created_at: String(row.created_at),
-    tiers,
+    tiers: isPropertyCountPricingMode(
+      (row.subscription_pricing_mode as CommercialTermRow["subscription_pricing_mode"]) ??
+        null
+    )
+      ? tiers.map((tier) => ({
+          ...tier,
+          label: displayProgressiveBandLabel(
+            "property",
+            tier.label,
+            tier.minCount,
+            tier.maxCount
+          ),
+        }))
+      : tiers,
   };
 }
 
@@ -497,7 +515,14 @@ export async function createCommercialTerms(
           )
             ? tier.incrementalAmount ?? 0
             : null,
-          label: tier.label,
+          label: isPropertyCountPricingMode(value.subscriptionPricingMode)
+            ? displayProgressiveBandLabel(
+                "property",
+                tier.label,
+                tier.minCount,
+                tier.maxCount
+              )
+            : tier.label,
           sort_order: tier.sortOrder || index,
         }))
       )

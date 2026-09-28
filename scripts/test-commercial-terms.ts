@@ -1625,7 +1625,8 @@ const spaceTiers: CommercialTermTier[] = [
   assert.match(adminPanel, /progressive_space_pricing/);
   assert.match(adminPanel, /progressive_property_pricing/);
   assert.match(adminPanel, /Base monthly fee/);
-  assert.match(adminPanel, /Add pricing band/);
+  assert.match(adminPanel, /Add open-ended properties band/);
+  assert.match(adminPanel, /displayProgressiveBandLabel/);
   assert.match(adminPanel, /Per additional property/);
   assert.match(adminPanel, /Current version effective from/);
   assert.match(adminPanel, /New version effective from/);
@@ -1905,6 +1906,17 @@ const spaceTiers: CommercialTermTier[] = [
   assert.equal(amountFor(2).monthlyAmount, 300);
   assert.equal(amountFor(2).calculationText, "R250 + 1 × R50");
   assert.equal(amountFor(3).monthlyAmount, 350);
+  const spacesLabel = calculateProgressiveSubscription({
+    baseAmount: 250,
+    includedUnits: 1,
+    bands: [
+      { minCount: 2, maxCount: 10, incrementalAmount: 50, label: "2-10 Spaces" },
+    ],
+    unitCount: 3,
+    unitType: "property",
+  });
+  assert.equal(spacesLabel.monthlyAmount, 350);
+  assert.equal(spacesLabel.breakdown[1]?.label, "2–10 properties");
   assert.equal(amountFor(5).monthlyAmount, 450);
   assert.equal(amountFor(5).calculationText, "R250 + 4 × R50");
   assert.equal(amountFor(10).monthlyAmount, 700);
