@@ -22,6 +22,7 @@ import {
   Inbox,
   Landmark,
   LayoutDashboard,
+  Receipt,
   Settings,
   Users,
   Wallet,
@@ -176,6 +177,12 @@ export const HOST_NAV: DashboardNavItem[] = [
     matchPrefix: true,
   },
   {
+    label: "Subscription",
+    href: "/dashboard/subscription",
+    icon: Receipt,
+    matchPrefix: true,
+  },
+  {
     label: "People",
     href: "/dashboard/people",
     icon: Users,
@@ -207,6 +214,8 @@ export function hostingNavItems(
   return HOST_NAV.filter((item) => {
     if (item.href === "/dashboard/properties") return summary.showProperties;
     if (item.href === "/dashboard/finance") return summary.showFinance;
+    if (item.href === "/dashboard/subscription")
+      return summary.showOrganisationCommercial;
     if (item.href === "/dashboard/people") return summary.showPeople;
     if (item.href === "/dashboard/organisation")
       return summary.showOrganisationCommercial;

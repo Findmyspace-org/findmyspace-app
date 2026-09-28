@@ -35,6 +35,9 @@ type AdminFinanceSummary = {
   totalPlatformCommission?: number;
   totalTransactionFees?: number;
   legacyCombinedPlatformFees?: number;
+  subscriptionInvoiced?: number;
+  subscriptionPaid?: number;
+  subscriptionOutstanding?: number;
 };
 
 type SpaceOption = { id: string; title: string };
@@ -271,10 +274,16 @@ export default function AdminFinancePage() {
           Admin — Finance
         </h1>
         <p className="mb-6 max-w-2xl text-sm text-gray-600 sm:text-base">
-          Platform revenue, owner liabilities, deposits, and reconciliation.
+          Marketplace booking revenue stays separate from organisation
+          subscription invoices.
         </p>
 
         <AdminNav current="finance" />
+        <p className="mb-4 text-sm text-gray-600">
+          <Link href="/admin/subscriptions" className="underline">
+            Open subscription billing
+          </Link>
+        </p>
 
         {message && (
           <div
@@ -324,6 +333,21 @@ export default function AdminFinancePage() {
                     (summary.legacyCombinedPlatformFees || 0) > 0
                       ? `Includes ${formatMoney(summary.legacyCombinedPlatformFees || 0)} legacy combined`
                       : "Commission + transaction + legacy",
+                },
+                {
+                  title: "Subscription invoiced",
+                  value: formatMoney(summary.subscriptionInvoiced || 0),
+                  sub: "Organisation monthly fees",
+                },
+                {
+                  title: "Subscription paid",
+                  value: formatMoney(summary.subscriptionPaid || 0),
+                  sub: "Manual EFT recorded",
+                },
+                {
+                  title: "Subscription outstanding",
+                  value: formatMoney(summary.subscriptionOutstanding || 0),
+                  sub: "Invoiced and unpaid",
                 },
                 {
                   title: "Owner earnings (liability)",

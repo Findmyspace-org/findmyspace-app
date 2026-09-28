@@ -55,8 +55,8 @@ export default function AdminCommercialPage() {
           <p className="mt-2 max-w-2xl text-sm text-gray-600">
             Organisation owns properties; each property contains bookable spaces.
             Global Admin sets the platform default and any more specific override.
-            Hosts cannot change the commercial model. Monthly subscription is not
-            invoiced automatically yet.
+            Hosts cannot change the commercial model. Monthly subscription invoices
+            are created from Global Admin → Subscriptions, not from this page.
           </p>
         </div>
 

@@ -8,7 +8,9 @@ const nextConfig: NextConfig = {
   // functions throw: The input directory ".../@sparticuz/chromium/bin" does not exist.
   outputFileTracingIncludes: {
     // Use * not [bookingId]: picomatch treats brackets as a character class.
-    "/api/invoice/*/pdf": chromiumBinTrace,
+        "/api/invoice/*/pdf": chromiumBinTrace,
+        "/api/admin/subscription-invoices/*/pdf": chromiumBinTrace,
+        "/api/organisations/*/subscription-invoices/*/pdf": chromiumBinTrace,
   },
   images: {
     remotePatterns: [

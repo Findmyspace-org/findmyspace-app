@@ -267,6 +267,7 @@ function navLabels(summary: ReturnType<typeof summarizeHostingAccess>) {
   assert.equal(hrefs.includes("/dashboard/organisation"), false);
   assert.equal(hrefs.includes("/dashboard/properties"), false);
   assert.equal(hrefs.includes("/dashboard/finance"), false);
+  assert.equal(hrefs.includes("/dashboard/subscription"), false);
   assert.equal(smSummary.showPeople, false);
   assert.equal(smSummary.showOrganisationCommercial, false);
   assert.equal(smSummary.showProperties, false);
@@ -333,6 +334,7 @@ function navLabels(summary: ReturnType<typeof summarizeHostingAccess>) {
   assert.equal(oaSummary.showCreateSpace, true);
   assert.equal(navHrefs(oaSummary).includes("/dashboard/people"), true);
   assert.equal(navHrefs(oaSummary).includes("/dashboard/organisation"), true);
+  assert.equal(navHrefs(oaSummary).includes("/dashboard/subscription"), true);
   assert.equal(navLabels(oaSummary).includes("My spaces"), true);
   assert.equal(navLabels(oaSummary).includes("Finance"), true);
 
@@ -345,6 +347,7 @@ function navLabels(summary: ReturnType<typeof summarizeHostingAccess>) {
   assert.equal(navHrefs(pmSummary).includes("/dashboard/organisation"), false);
   assert.equal(navHrefs(pmSummary).includes("/dashboard/properties"), true);
   assert.equal(navHrefs(pmSummary).includes("/dashboard/finance"), true);
+  assert.equal(navHrefs(pmSummary).includes("/dashboard/subscription"), false);
   assert.equal(navLabels(pmSummary).includes("Managed spaces"), true);
   assert.equal(navLabels(pmSummary).includes("Managed properties"), true);
 

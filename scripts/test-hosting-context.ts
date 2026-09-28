@@ -394,6 +394,7 @@ const dashboardSrc = readFileSync("app/dashboard/page.tsx", "utf8");
   });
   const hrefs = hostingNavItems(smSummary, ORG_A).map((item) => item.href.split("?")[0]);
   assert.equal(hrefs.includes("/dashboard/finance"), false);
+  assert.equal(hrefs.includes("/dashboard/subscription"), false);
   assert.equal(hrefs.includes("/dashboard/people"), false);
   assert.equal(hrefs.includes("/dashboard/organisation"), false);
   const smAccess = computeAccess({

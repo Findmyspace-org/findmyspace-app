@@ -13,6 +13,7 @@ import {
 } from "@/lib/admin-finance-filters";
 import { FINANCE_BOOKINGS_QUERY_LIMIT } from "@/lib/finance-query-limits";
 import { sumCommittedFutureIncomeGross } from "@/lib/monthly-contract-finance";
+import { loadSubscriptionRevenueSummary } from "@/lib/subscription-billing-server";
 
 export async function GET(req: NextRequest) {
   try {
@@ -161,6 +162,10 @@ export async function GET(req: NextRequest) {
       ).values()
     ).sort((a, b) => (a.title || "").localeCompare(b.title || ""));
 
+    const subscriptionRevenue = await loadSubscriptionRevenueSummary(admin).catch(
+      () => ({ invoiced: 0, paid: 0, outstanding: 0 })
+    );
+
     return NextResponse.json({
       summary: {
         grossBookingValue: paidSummary.grossBookingValue,
@@ -174,6 +179,9 @@ export async function GET(req: NextRequest) {
         totalPlatformCommission: paidSummary.totalPlatformCommission,
         totalTransactionFees: paidSummary.totalTransactionFees,
         legacyCombinedPlatformFees: paidSummary.legacyCombinedPlatformFees,
+        subscriptionInvoiced: subscriptionRevenue.invoiced,
+        subscriptionPaid: subscriptionRevenue.paid,
+        subscriptionOutstanding: subscriptionRevenue.outstanding,
       },
       filters: {
         chargeTypes,

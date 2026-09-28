@@ -16,6 +16,7 @@ import {
   ShieldCheck,
   UserCog,
   Users,
+  Receipt,
 } from "lucide-react";
 
 export type AdminNavKey =
@@ -40,7 +41,8 @@ export type AdminNavKey =
   | "messages"
   | "finance"
   | "space-advisors"
-  | "commercial";
+  | "commercial"
+  | "subscriptions";
 
 export type AdminNavItem = {
   key: AdminNavKey;
@@ -193,6 +195,12 @@ export const ADMIN_NAV_SECTIONS: AdminNavSection[] = [
         href: "/admin/commercial",
         label: "Commercial terms",
         icon: Percent,
+      },
+      {
+        key: "subscriptions",
+        href: "/admin/subscriptions",
+        label: "Subscriptions",
+        icon: Receipt,
       },
     ],
   },
