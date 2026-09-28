@@ -139,7 +139,9 @@ export default function Header() {
   const hideHeader =
     pathname === "/login" ||
     pathname === "/signup" ||
-    pathname?.startsWith("/admin");
+    pathname?.startsWith("/admin") ||
+    pathname === "/v2" ||
+    pathname?.startsWith("/v2/");
 
   useEffect(() => {
     if (hideHeader) {

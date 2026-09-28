@@ -4,7 +4,13 @@ import { usePathname } from "next/navigation";
 
 export function ConditionalSiteFooter() {
   const pathname = usePathname();
-  if (pathname?.startsWith("/admin")) return null;
+  if (
+    pathname?.startsWith("/admin") ||
+    pathname === "/v2" ||
+    pathname?.startsWith("/v2/")
+  ) {
+    return null;
+  }
 
   return (
     <footer className="mt-16 border-t border-gray-200 bg-white">
