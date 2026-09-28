@@ -11,6 +11,7 @@ import {
   parseCommercialTermTiers,
   resolveSubscriptionAmount,
   subscriptionBilledScope,
+  validateProgressiveSubscriptionTiers,
   validateSubscriptionTiers,
   type CommercialTermTier,
   type SubscriptionPricingMode,
@@ -40,6 +41,7 @@ export const FORBIDDEN_CLIENT_COMMERCIAL_KEYS = [
   "transaction_fee_percent",
   "monthly_subscription_amount",
   "subscription_pricing_mode",
+  "subscription_included_units",
   "tiers",
   "platform_fee",
   "owner_earnings",
@@ -59,6 +61,7 @@ export type CommercialTermRow = {
   transaction_fee_percent: number | string;
   monthly_subscription_amount: number | string;
   subscription_pricing_mode: SubscriptionPricingMode | null;
+  subscription_included_units: number | string | null;
   effective_from: string;
   superseded_at: string | null;
   admin_note: string | null;
@@ -74,6 +77,8 @@ export type ResolvedCommercialTerms = {
   transactionFeePercent: number;
   monthlySubscriptionAmount: number;
   subscriptionPricingMode: SubscriptionPricingMode | null;
+  subscriptionIncludedUnits: number | null;
+  subscriptionBaseAmount: number | null;
   tiers: CommercialTermTier[];
   subscription: SubscriptionResolution | null;
   effectiveFrom: string | null;
@@ -117,6 +122,8 @@ export function legacyCombinedCommercialTerms(
     transactionFeePercent: 0,
     monthlySubscriptionAmount: 0,
     subscriptionPricingMode: null,
+    subscriptionIncludedUnits: null,
+    subscriptionBaseAmount: null,
     tiers: [],
     subscription: null,
     effectiveFrom: null,
@@ -137,6 +144,9 @@ export function rowToResolved(
   );
   const tiers = row.tiers ?? [];
   const fixedMonthly = Number(row.monthly_subscription_amount) || 0;
+  const includedRaw = row.subscription_included_units;
+  const includedParsed =
+    includedRaw == null || includedRaw === "" ? Number.NaN : Number(includedRaw);
   return {
     termsId: row.id,
     model,
@@ -144,6 +154,9 @@ export function rowToResolved(
     transactionFeePercent: Number(row.transaction_fee_percent) || 0,
     monthlySubscriptionAmount: fixedMonthly,
     subscriptionPricingMode: pricingMode,
+    subscriptionIncludedUnits: Number.isFinite(includedParsed) ? includedParsed : null,
+    subscriptionBaseAmount:
+      pricingMode === "progressive_space_pricing" ? fixedMonthly : null,
     tiers,
     subscription: null,
     effectiveFrom: row.effective_from,
@@ -168,10 +181,15 @@ export function withSubscriptionResolution(
     propertyId: input.propertyId,
     spaceId: input.spaceId,
   });
+  const storedBase =
+    terms.subscriptionPricingMode === "progressive_space_pricing"
+      ? terms.subscriptionBaseAmount ?? terms.monthlySubscriptionAmount
+      : terms.monthlySubscriptionAmount;
   const subscription = resolveSubscriptionAmount({
     model: terms.model,
     pricingMode: terms.subscriptionPricingMode,
-    fixedMonthlyAmount: terms.monthlySubscriptionAmount,
+    fixedMonthlyAmount: storedBase,
+    includedUnits: terms.subscriptionIncludedUnits,
     tiers: terms.tiers,
     inventory: input.inventory ?? null,
     billedScope,
@@ -180,6 +198,10 @@ export function withSubscriptionResolution(
     ...terms,
     monthlySubscriptionAmount:
       terms.model === "subscription" ? subscription.monthlyAmount : 0,
+    subscriptionBaseAmount:
+      terms.subscriptionPricingMode === "progressive_space_pricing"
+        ? storedBase
+        : null,
     subscription,
   };
 }
@@ -285,6 +307,9 @@ export function formatCommercialArrangement(
     if (mode === "by_property_count") {
       return `Subscription by properties · R${monthly}/month + ${tx}% transaction`;
     }
+    if (mode === "progressive_space_pricing") {
+      return `Progressive per-space · R${monthly}/month + ${tx}% transaction`;
+    }
     return `R${monthly}/month + ${tx}% transaction`;
   }
   if (terms.model === "free") {
@@ -320,6 +345,7 @@ export type CommercialTermsWriteInput = {
   transactionFeePercent: number;
   monthlySubscriptionAmount: number;
   subscriptionPricingMode: SubscriptionPricingMode | null;
+  subscriptionIncludedUnits: number | null;
   tiers: CommercialTermTier[];
   effectiveFrom: string;
   adminNote: string | null;
@@ -414,6 +440,7 @@ export function parseCommercialTermsWriteBody(
 
   let subscriptionPricingMode: SubscriptionPricingMode | null = null;
   let tiers: CommercialTermTier[] = [];
+  let subscriptionIncludedUnits: number | null = null;
 
   if (model === "free") {
     nextCommission = 0;
@@ -428,6 +455,36 @@ export function parseCommercialTermsWriteBody(
     );
     if (subscriptionPricingMode === "fixed") {
       tiers = [];
+    } else if (subscriptionPricingMode === "progressive_space_pricing") {
+      const includedRaw =
+        raw.subscription_included_units ?? raw.subscriptionIncludedUnits ?? 0;
+      const includedUnits = Number(includedRaw);
+      if (
+        !Number.isFinite(includedUnits) ||
+        includedUnits < 0 ||
+        !Number.isInteger(includedUnits)
+      ) {
+        return {
+          ok: false,
+          error: "Spaces included must be a whole number of 0 or more.",
+        };
+      }
+      const valid = validateProgressiveSubscriptionTiers(parsedTiers.value);
+      if (!valid.ok) return valid;
+      if (
+        parsedTiers.value.some(
+          (tier) =>
+            tier.incrementalAmount == null ||
+            !Number.isFinite(tier.incrementalAmount)
+        )
+      ) {
+        return {
+          ok: false,
+          error: "Each pricing band needs a price per additional space.",
+        };
+      }
+      tiers = parsedTiers.value;
+      subscriptionIncludedUnits = includedUnits;
     } else {
       const valid = validateSubscriptionTiers(parsedTiers.value);
       if (!valid.ok) return valid;
@@ -448,6 +505,7 @@ export function parseCommercialTermsWriteBody(
       transactionFeePercent: nextTx,
       monthlySubscriptionAmount: nextMonthly,
       subscriptionPricingMode,
+      subscriptionIncludedUnits,
       tiers,
       effectiveFrom: effectiveFromDate.toISOString(),
       adminNote,

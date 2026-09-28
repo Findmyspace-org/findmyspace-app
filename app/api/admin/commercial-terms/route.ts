@@ -50,7 +50,7 @@ export async function GET(req: NextRequest) {
       const { data, error } = await admin
         .from("commercial_terms")
         .select(
-          "id, scope_type, scope_id, commercial_model, commission_percent, transaction_fee_percent, monthly_subscription_amount, subscription_pricing_mode, effective_from, superseded_at, admin_note, created_by, created_at"
+          "id, scope_type, scope_id, commercial_model, commission_percent, transaction_fee_percent, monthly_subscription_amount, subscription_pricing_mode, subscription_included_units, effective_from, superseded_at, admin_note, created_by, created_at"
         )
         .order("effective_from", { ascending: false })
         .limit(300);
@@ -143,6 +143,7 @@ export async function POST(req: NextRequest) {
         transaction_fee_percent: created.transaction_fee_percent,
         monthly_subscription_amount: created.monthly_subscription_amount,
         subscription_pricing_mode: created.subscription_pricing_mode,
+        subscription_included_units: created.subscription_included_units,
         tier_count: created.tiers.length,
         effective_from: created.effective_from,
       },
@@ -150,7 +151,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, term: created });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Could not save commercial terms.";
-    const status = /not found|must be|required|cannot|invalid|overlap|tier/i.test(
+    const status = /not found|must be|required|cannot|invalid|overlap|tier|band|pricing/i.test(
       message
     )
       ? 400

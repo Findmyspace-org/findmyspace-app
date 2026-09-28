@@ -145,6 +145,15 @@ export function subscriptionTierGapWarning(
   return null;
 }
 
+export function subscriptionPricingMethodLabel(
+  mode: string | null | undefined
+): string {
+  if (mode === "by_space_count") return "Fixed tiers by space count";
+  if (mode === "by_property_count") return "Fixed tiers by property count";
+  if (mode === "progressive_space_pricing") return "Progressive pricing by space count";
+  return "Fixed monthly";
+}
+
 /**
  * Distinguishes an uncovered inventory count from a configured R0 monthly fee.
  * Returns null when the current count matches a tier.
@@ -164,10 +173,10 @@ export function subscriptionUncoveredInventoryWarning(input: {
     .filter((value): value is number => value != null);
   const highestMax = finiteMaxes.length > 0 ? Math.max(...finiteMaxes) : null;
   if (count != null && highestMax != null && count > highestMax) {
-    return `No subscription tier covers ${highestMax + 1}+ ${basis}`;
+    return `No subscription pricing covers ${highestMax + 1}+ ${basis}`;
   }
   if (count != null) {
-    return `No matching tier for ${count} ${basis}`;
+    return `No matching subscription pricing for ${count} ${basis}`;
   }
-  return "No matching subscription tier";
+  return "No matching subscription pricing";
 }

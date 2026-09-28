@@ -3,6 +3,12 @@ import type {
   BillableInventoryCounts,
   BillableInventoryScope,
 } from "@/lib/commercial-inventory";
+import {
+  calculateProgressiveSpaceSubscription,
+  validateProgressiveBands,
+  type ProgressiveBand,
+  type ProgressiveBreakdownLine,
+} from "@/lib/commercial-progressive-pricing";
 
 type SubscriptionSource =
   | "platform"
@@ -17,6 +23,7 @@ export const SUBSCRIPTION_PRICING_MODES = [
   "fixed",
   "by_property_count",
   "by_space_count",
+  "progressive_space_pricing",
 ] as const;
 
 export type SubscriptionPricingMode = (typeof SUBSCRIPTION_PRICING_MODES)[number];
@@ -26,6 +33,7 @@ export type CommercialTermTier = {
   minCount: number;
   maxCount: number | null;
   monthlyAmount: number;
+  incrementalAmount?: number | null;
   label: string | null;
   sortOrder: number;
 };
@@ -39,6 +47,7 @@ export type SubscriptionResolution = {
   matchedTier: CommercialTermTier | null;
   monthlyAmount: number;
   unresolvedReason: string | null;
+  breakdown?: ProgressiveBreakdownLine[] | null;
 };
 
 export type CommercialSubscriptionPeriodPreview = {
@@ -124,10 +133,31 @@ export function inventoryCountForMode(
   return mode === "by_property_count" ? counts.propertyCount : counts.spaceCount;
 }
 
+export function inventoryBasisForMode(
+  mode: SubscriptionPricingMode | null
+): "fixed" | "property" | "space" | null {
+  if (!mode) return null;
+  if (mode === "fixed") return "fixed";
+  if (mode === "by_property_count") return "property";
+  return "space";
+}
+
+export function commercialTiersToProgressiveBands(
+  tiers: CommercialTermTier[]
+): ProgressiveBand[] {
+  return tiers.map((tier) => ({
+    minCount: tier.minCount,
+    maxCount: tier.maxCount,
+    incrementalAmount: Number(tier.incrementalAmount) || 0,
+    label: tier.label,
+  }));
+}
+
 export function resolveSubscriptionAmount(input: {
   model: CommercialModel;
   pricingMode: SubscriptionPricingMode | null;
   fixedMonthlyAmount: number;
+  includedUnits?: number | null;
   tiers: CommercialTermTier[];
   inventory: BillableInventoryCounts | null;
   billedScope: { scopeType: BillableInventoryScope; scopeId: string } | null;
@@ -142,6 +172,7 @@ export function resolveSubscriptionAmount(input: {
       matchedTier: null,
       monthlyAmount: 0,
       unresolvedReason: null,
+      breakdown: null,
     };
   }
 
@@ -156,19 +187,23 @@ export function resolveSubscriptionAmount(input: {
       matchedTier: null,
       monthlyAmount: Number(input.fixedMonthlyAmount) || 0,
       unresolvedReason: null,
+      breakdown: null,
     };
   }
+
+  const inventoryBasis = inventoryBasisForMode(mode);
 
   if (!input.billedScope) {
     return {
       billedScopeType: null,
       billedScopeId: null,
       pricingMode: mode,
-      inventoryBasis: mode === "by_property_count" ? "property" : "space",
+      inventoryBasis,
       inventoryCount: null,
       matchedTier: null,
       monthlyAmount: 0,
       unresolvedReason: "platform_default_needs_scope",
+      breakdown: null,
     };
   }
 
@@ -178,11 +213,32 @@ export function resolveSubscriptionAmount(input: {
       billedScopeType: input.billedScope.scopeType,
       billedScopeId: input.billedScope.scopeId,
       pricingMode: mode,
-      inventoryBasis: mode === "by_property_count" ? "property" : "space",
+      inventoryBasis,
       inventoryCount: null,
       matchedTier: null,
       monthlyAmount: 0,
       unresolvedReason: "inventory_unavailable",
+      breakdown: null,
+    };
+  }
+
+  if (mode === "progressive_space_pricing") {
+    const calculated = calculateProgressiveSpaceSubscription({
+      baseAmount: input.fixedMonthlyAmount,
+      includedUnits: input.includedUnits ?? 0,
+      bands: commercialTiersToProgressiveBands(input.tiers),
+      billableCount: count,
+    });
+    return {
+      billedScopeType: input.billedScope.scopeType,
+      billedScopeId: input.billedScope.scopeId,
+      pricingMode: mode,
+      inventoryBasis,
+      inventoryCount: count,
+      matchedTier: null,
+      monthlyAmount: calculated.monthlyAmount,
+      unresolvedReason: calculated.unresolvedReason,
+      breakdown: calculated.breakdown,
     };
   }
 
@@ -192,11 +248,12 @@ export function resolveSubscriptionAmount(input: {
       billedScopeType: input.billedScope.scopeType,
       billedScopeId: input.billedScope.scopeId,
       pricingMode: mode,
-      inventoryBasis: mode === "by_property_count" ? "property" : "space",
+      inventoryBasis,
       inventoryCount: count,
       matchedTier: null,
       monthlyAmount: 0,
       unresolvedReason: "ambiguous_overlapping_tiers",
+      breakdown: null,
     };
   }
   const matchedTier = matches[0] ?? null;
@@ -204,11 +261,12 @@ export function resolveSubscriptionAmount(input: {
     billedScopeType: input.billedScope.scopeType,
     billedScopeId: input.billedScope.scopeId,
     pricingMode: mode,
-    inventoryBasis: mode === "by_property_count" ? "property" : "space",
+    inventoryBasis,
     inventoryCount: count,
     matchedTier,
     monthlyAmount: matchedTier ? matchedTier.monthlyAmount : 0,
     unresolvedReason: matchedTier ? null : "no_matching_tier",
+    breakdown: null,
   };
 }
 
@@ -269,6 +327,23 @@ export function buildSubscriptionPeriodSnapshot(input: {
   };
 }
 
+export function validateProgressiveSubscriptionTiers(
+  tiers: CommercialTermTier[]
+): { ok: true } | { ok: false; error: string } {
+  if (
+    tiers.some(
+      (tier) =>
+        tier.incrementalAmount == null || !Number.isFinite(tier.incrementalAmount)
+    )
+  ) {
+    return {
+      ok: false,
+      error: "Each pricing band needs a price per additional space.",
+    };
+  }
+  return validateProgressiveBands(commercialTiersToProgressiveBands(tiers));
+}
+
 export function validateSubscriptionTiers(
   tiers: CommercialTermTier[]
 ): { ok: true } | { ok: false; error: string } {
@@ -325,7 +400,16 @@ export function parseCommercialTermTiers(
     const maxRaw = item.max_count ?? item.maxCount;
     const maxCount =
       maxRaw == null || maxRaw === "" ? null : Number(maxRaw);
-    const monthlyAmount = Number(item.monthly_amount ?? item.monthlyAmount);
+    const incrementalRaw = item.incremental_amount ?? item.incrementalAmount;
+    const hasIncremental = incrementalRaw != null && incrementalRaw !== "";
+    const incrementalAmount = hasIncremental ? Number(incrementalRaw) : null;
+    const monthlyRaw = item.monthly_amount ?? item.monthlyAmount;
+    const monthlyAmount =
+      monthlyRaw == null || monthlyRaw === ""
+        ? hasIncremental
+          ? 0
+          : Number.NaN
+        : Number(monthlyRaw);
     const label =
       typeof item.label === "string" ? item.label.trim() || null : null;
     const sortOrder = Number(item.sort_order ?? item.sortOrder ?? i);
@@ -341,12 +425,20 @@ export function parseCommercialTermTiers(
     if (!Number.isFinite(monthlyAmount)) {
       return { ok: false, error: `Tier ${i + 1} needs a monthly amount.` };
     }
+    if (hasIncremental && (incrementalAmount == null || !Number.isFinite(incrementalAmount))) {
+      return {
+        ok: false,
+        error: `Pricing band ${i + 1} needs a price per additional space.`,
+      };
+    }
 
     value.push({
       id,
       minCount,
       maxCount,
       monthlyAmount: Number(monthlyAmount.toFixed(2)),
+      incrementalAmount:
+        incrementalAmount == null ? null : Number(incrementalAmount.toFixed(2)),
       label,
       sortOrder: Number.isFinite(sortOrder) ? sortOrder : i,
     });

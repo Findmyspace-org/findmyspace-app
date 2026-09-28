@@ -40,6 +40,12 @@ import {
   type CommercialTermTier,
 } from "../lib/commercial-subscription";
 import {
+  calculateProgressiveSpaceSubscription,
+  progressiveBandGapWarning,
+  progressivePreviewCounts,
+  validateProgressiveBands,
+} from "../lib/commercial-progressive-pricing";
+import {
   buildCommercialPrecedencePath,
   commercialParentContext,
   decorateCommercialSearchHit,
@@ -113,6 +119,7 @@ function term(
     transaction_fee_percent: partial.transaction_fee_percent ?? 5,
     monthly_subscription_amount: partial.monthly_subscription_amount ?? 0,
     subscription_pricing_mode: partial.subscription_pricing_mode ?? null,
+    subscription_included_units: partial.subscription_included_units ?? null,
     tiers: partial.tiers ?? [],
     superseded_at: partial.superseded_at ?? null,
     admin_note: partial.admin_note ?? null,
@@ -129,6 +136,8 @@ const splitCommission: ResolvedCommercialTerms = {
   transactionFeePercent: DEFAULT_TRANSACTION_FEE_PERCENT,
   monthlySubscriptionAmount: 0,
   subscriptionPricingMode: null,
+  subscriptionIncludedUnits: null,
+  subscriptionBaseAmount: null,
   tiers: [],
   subscription: null,
   effectiveFrom: "2026-01-01T00:00:00.000Z",
@@ -396,6 +405,8 @@ const splitCommission: ResolvedCommercialTerms = {
       transactionFeePercent: 0,
       monthlySubscriptionAmount: 0,
       subscriptionPricingMode: null,
+      subscriptionIncludedUnits: null,
+      subscriptionBaseAmount: null,
       tiers: [],
       subscription: null,
       effectiveFrom: null,
@@ -609,6 +620,13 @@ const splitCommission: ResolvedCommercialTerms = {
     hasForbiddenClientCommercialKeys({
       spaceId: SPACE,
       subscription_pricing_mode: "by_space_count",
+    }),
+    true
+  );
+  assert.equal(
+    hasForbiddenClientCommercialKeys({
+      spaceId: SPACE,
+      subscription_included_units: 1,
     }),
     true
   );
@@ -1454,7 +1472,7 @@ const spaceTiers: CommercialTermTier[] = [
   assert.equal(hostDto.monthlyAmount, null);
   assert.equal(
     hostDto.subscriptionUnresolvedMessage,
-    "No subscription tier covers 4+ spaces"
+    "No subscription pricing covers 4+ spaces"
   );
 }
 
@@ -1474,7 +1492,7 @@ const spaceTiers: CommercialTermTier[] = [
       },
     ],
   });
-  assert.equal(uncovered, "No subscription tier covers 4+ spaces");
+  assert.equal(uncovered, "No subscription pricing covers 4+ spaces");
   assert.equal(
     subscriptionUncoveredInventoryWarning({
       unresolvedReason: null,
@@ -1577,6 +1595,343 @@ const spaceTiers: CommercialTermTier[] = [
   assert.match(migration073, /Legacy bookings cannot be backfilled/);
   assert.doesNotMatch(migration073, /UPDATE public\.bookings\s+SET/i);
   assert.doesNotMatch(migration073, /INSERT INTO public\.bookings/i);
+
+  const migration074 = readFileSync(
+    "supabase/migrations/074_20260928_progressive_space_subscription_pricing.sql",
+    "utf8"
+  );
+  assert.match(migration074, /progressive_space_pricing/);
+  assert.match(migration074, /subscription_included_units/);
+  assert.match(migration074, /incremental_amount/);
+  assert.doesNotMatch(migration074, /INSERT INTO public\.commercial_terms/);
+  assert.doesNotMatch(migration074, /INSERT INTO public\.commercial_term_tiers/);
+  assert.doesNotMatch(migration074, /UPDATE public\.commercial_terms\s+SET/i);
+  assert.doesNotMatch(migration074, /UPDATE public\.bookings\s+SET/i);
+
+  const adminPanel = readFileSync(
+    "app/components/admin/AdminCommercialTermsPanel.tsx",
+    "utf8"
+  );
+  assert.match(adminPanel, /progressive_space_pricing/);
+  assert.match(adminPanel, /Base monthly fee/);
+  assert.match(adminPanel, /Add pricing band/);
+  assert.match(adminPanel, /calculateProgressiveSpaceSubscription/);
+}
+
+{
+  const exampleBands = [
+    { minCount: 2, maxCount: 10, incrementalAmount: 50, label: "2–10" },
+    { minCount: 11, maxCount: null, incrementalAmount: 25, label: "11+" },
+  ];
+  const amountFor = (count: number) =>
+    calculateProgressiveSpaceSubscription({
+      baseAmount: 250,
+      includedUnits: 1,
+      bands: exampleBands,
+      billableCount: count,
+    });
+
+  const zero = amountFor(0);
+  assert.equal(zero.monthlyAmount, 0);
+  assert.equal(zero.covered, true);
+  assert.equal(zero.unresolvedReason, null);
+
+  assert.equal(amountFor(1).monthlyAmount, 250);
+  assert.equal(amountFor(2).monthlyAmount, 300);
+  assert.equal(amountFor(5).monthlyAmount, 450);
+  assert.equal(amountFor(10).monthlyAmount, 700);
+  assert.equal(amountFor(11).monthlyAmount, 725);
+  assert.equal(amountFor(20).monthlyAmount, 950);
+  assert.equal(amountFor(50).monthlyAmount, 1700);
+
+  const twenty = amountFor(20);
+  assert.equal(twenty.breakdown[0].subtotal, 250);
+  assert.equal(twenty.breakdown[1].unitCount, 9);
+  assert.equal(twenty.breakdown[1].subtotal, 450);
+  assert.equal(twenty.breakdown[2].unitCount, 10);
+  assert.equal(twenty.breakdown[2].subtotal, 250);
+  assert.ok(progressivePreviewCounts(1, exampleBands).includes(11));
+}
+
+{
+  const custom = calculateProgressiveSpaceSubscription({
+    baseAmount: 100,
+    includedUnits: 0,
+    bands: [
+      { minCount: 1, maxCount: 1, incrementalAmount: 40, label: "1" },
+      { minCount: 2, maxCount: 5, incrementalAmount: 30, label: "2–5" },
+      { minCount: 6, maxCount: 10, incrementalAmount: 20, label: "6–10" },
+      { minCount: 11, maxCount: 20, incrementalAmount: 10, label: "11–20" },
+      { minCount: 21, maxCount: null, incrementalAmount: 5, label: "21+" },
+    ],
+    billableCount: 21,
+  });
+  assert.equal(custom.covered, true);
+  assert.equal(custom.monthlyAmount, 100 + 40 + 4 * 30 + 5 * 20 + 10 * 10 + 1 * 5);
+}
+
+{
+  const overlap = validateProgressiveBands([
+    { minCount: 2, maxCount: 10, incrementalAmount: 50, label: null },
+    { minCount: 8, maxCount: null, incrementalAmount: 25, label: null },
+  ]);
+  assert.equal(overlap.ok, false);
+
+  const openEndedMiddle = validateProgressiveBands([
+    { minCount: 2, maxCount: null, incrementalAmount: 50, label: null },
+    { minCount: 11, maxCount: 20, incrementalAmount: 25, label: null },
+  ]);
+  assert.equal(openEndedMiddle.ok, false);
+
+  const duplicateMin = validateProgressiveBands([
+    { minCount: 2, maxCount: 5, incrementalAmount: 50, label: null },
+    { minCount: 2, maxCount: 10, incrementalAmount: 25, label: null },
+  ]);
+  assert.equal(duplicateMin.ok, false);
+}
+
+{
+  const gapped = calculateProgressiveSpaceSubscription({
+    baseAmount: 250,
+    includedUnits: 1,
+    bands: [
+      { minCount: 3, maxCount: 10, incrementalAmount: 50, label: "3–10" },
+      { minCount: 11, maxCount: null, incrementalAmount: 25, label: "11+" },
+    ],
+    billableCount: 5,
+  });
+  assert.equal(gapped.covered, false);
+  assert.equal(gapped.monthlyAmount, 0);
+  assert.equal(gapped.unresolvedReason, "no_matching_tier");
+  assert.equal(gapped.uncoveredCount, 1);
+  assert.match(String(progressiveBandGapWarning(1, [
+    { minCount: 3, maxCount: 10, incrementalAmount: 50, label: null },
+    { minCount: 11, maxCount: null, incrementalAmount: 25, label: null },
+  ])), /gap before space 3/);
+}
+
+{
+  const parsed = parseCommercialTermsWriteBody({
+    scope_type: "platform",
+    commercial_model: "subscription",
+    commission_percent: 0,
+    transaction_fee_percent: 5,
+    subscription_pricing_mode: "progressive_space_pricing",
+    monthly_subscription_amount: 250,
+    subscription_included_units: 1,
+    tiers: [
+      { min_count: 2, max_count: 10, incremental_amount: 50, label: "2–10" },
+      { min_count: 11, max_count: null, incremental_amount: 25, label: "11+" },
+    ],
+    effective_from: "2026-11-01",
+  });
+  assert.equal(parsed.ok, true);
+  if (parsed.ok) {
+    assert.equal(parsed.value.monthlySubscriptionAmount, 250);
+    assert.equal(parsed.value.subscriptionIncludedUnits, 1);
+    assert.equal(parsed.value.subscriptionPricingMode, "progressive_space_pricing");
+    assert.equal(parsed.value.tiers[0].incrementalAmount, 50);
+  }
+
+  const overlapWrite = parseCommercialTermsWriteBody({
+    scope_type: "platform",
+    commercial_model: "subscription",
+    commission_percent: 0,
+    transaction_fee_percent: 5,
+    subscription_pricing_mode: "progressive_space_pricing",
+    monthly_subscription_amount: 250,
+    subscription_included_units: 1,
+    tiers: [
+      { min_count: 2, max_count: 10, incremental_amount: 50 },
+      { min_count: 8, max_count: null, incremental_amount: 25 },
+    ],
+    effective_from: "2026-11-01",
+  });
+  assert.equal(overlapWrite.ok, false);
+}
+
+{
+  const progressiveTiers: CommercialTermTier[] = [
+    {
+      id: "b1",
+      minCount: 2,
+      maxCount: 10,
+      monthlyAmount: 0,
+      incrementalAmount: 50,
+      label: "2–10",
+      sortOrder: 0,
+    },
+    {
+      id: "b2",
+      minCount: 11,
+      maxCount: null,
+      monthlyAmount: 0,
+      incrementalAmount: 25,
+      label: "11+",
+      sortOrder: 1,
+    },
+  ];
+  const v1 = term({
+    id: "prog-v1",
+    scope_type: "platform",
+    commercial_model: "subscription",
+    commission_percent: 0,
+    transaction_fee_percent: 5,
+    subscription_pricing_mode: "progressive_space_pricing",
+    monthly_subscription_amount: 250,
+    subscription_included_units: 1,
+    tiers: progressiveTiers,
+    effective_from: "2026-01-01T00:00:00.000Z",
+    superseded_at: "2026-06-01T00:00:00.000Z",
+  });
+  const v2 = term({
+    id: "prog-v2",
+    scope_type: "platform",
+    commercial_model: "subscription",
+    commission_percent: 0,
+    transaction_fee_percent: 5,
+    subscription_pricing_mode: "progressive_space_pricing",
+    monthly_subscription_amount: 400,
+    subscription_included_units: 1,
+    tiers: progressiveTiers,
+    effective_from: "2026-06-01T00:00:00.000Z",
+  });
+  const jan = withSubscriptionResolution(
+    resolveCommercialTerms({
+      organisationId: ORG,
+      effectiveAt: "2026-03-15T00:00:00.000Z",
+      rows: [v1, v2],
+    }),
+    {
+      organisationId: ORG,
+      inventory: {
+        scopeType: "organisation",
+        scopeId: ORG,
+        propertyCount: 1,
+        spaceCount: 5,
+        organisationBillable: true,
+      },
+    }
+  );
+  const jul = withSubscriptionResolution(
+    resolveCommercialTerms({
+      organisationId: ORG,
+      effectiveAt: "2026-07-15T00:00:00.000Z",
+      rows: [v1, v2],
+    }),
+    {
+      organisationId: ORG,
+      inventory: {
+        scopeType: "organisation",
+        scopeId: ORG,
+        propertyCount: 1,
+        spaceCount: 5,
+        organisationBillable: true,
+      },
+    }
+  );
+  assert.equal(jan.termsId, "prog-v1");
+  assert.equal(jan.monthlySubscriptionAmount, 450);
+  assert.equal(jan.subscriptionBaseAmount, 250);
+  assert.equal(jul.termsId, "prog-v2");
+  assert.equal(jul.monthlySubscriptionAmount, 600);
+  assert.equal(jul.subscriptionBaseAmount, 400);
+}
+
+{
+  const DRAKENSTEIN = "384246ab-50b2-430e-b53c-475b574b6fa6";
+  const PGH = "21cf12c3-3235-4cd3-8106-801d120dc7b5";
+  const platform = term({
+    id: "fb73f905-f560-4c25-bff8-548508904afa",
+    scope_type: "platform",
+    commercial_model: "commission",
+    commission_percent: 10,
+    transaction_fee_percent: 5,
+    monthly_subscription_amount: 0,
+    effective_from: "2026-09-27T22:00:00.000Z",
+  });
+  const pgh = term({
+    id: "10dbeb16-a5d1-4bd6-8c66-09b5a064748e",
+    scope_type: "organisation",
+    scope_id: PGH,
+    commercial_model: "free",
+    commission_percent: 0,
+    transaction_fee_percent: 5,
+    monthly_subscription_amount: 0,
+    effective_from: "2026-09-27T22:00:00.000Z",
+  });
+  const drakenstein = term({
+    id: "2486aade-6746-44e3-bbf5-4e0478a81345",
+    scope_type: "organisation",
+    scope_id: DRAKENSTEIN,
+    commercial_model: "subscription",
+    commission_percent: 0,
+    transaction_fee_percent: 5,
+    subscription_pricing_mode: "by_space_count",
+    monthly_subscription_amount: 0,
+    tiers: [
+      {
+        id: "f7bbef2e-d29c-46a4-a7ca-993de2820604",
+        minCount: 1,
+        maxCount: 3,
+        monthlyAmount: 250,
+        label: "1-3 Spaces",
+        sortOrder: 0,
+      },
+    ],
+    effective_from: "2026-09-27T22:00:00.000Z",
+  });
+  const rows = [platform, pgh, drakenstein];
+
+  const platformResolved = resolveCommercialTerms({
+    effectiveAt: "2026-09-28T12:00:00.000Z",
+    rows,
+  });
+  assert.equal(platformResolved.model, "commission");
+  assert.equal(platformResolved.commissionPercent, 10);
+  assert.equal(platformResolved.transactionFeePercent, 5);
+
+  const pghResolved = resolveCommercialTerms({
+    organisationId: PGH,
+    effectiveAt: "2026-09-28T12:00:00.000Z",
+    rows,
+  });
+  assert.equal(pghResolved.model, "free");
+  assert.equal(pghResolved.commissionPercent, 0);
+  assert.equal(pghResolved.transactionFeePercent, 5);
+
+  const drakensteinResolved = withSubscriptionResolution(
+    resolveCommercialTerms({
+      organisationId: DRAKENSTEIN,
+      effectiveAt: "2026-09-28T12:00:00.000Z",
+      rows,
+    }),
+    {
+      organisationId: DRAKENSTEIN,
+      inventory: {
+        scopeType: "organisation",
+        scopeId: DRAKENSTEIN,
+        propertyCount: 3,
+        spaceCount: 2,
+        organisationBillable: true,
+      },
+    }
+  );
+  assert.equal(drakensteinResolved.model, "subscription");
+  assert.equal(drakensteinResolved.subscriptionPricingMode, "by_space_count");
+  assert.equal(drakensteinResolved.monthlySubscriptionAmount, 250);
+  assert.equal(drakensteinResolved.subscription?.unresolvedReason, null);
+
+  const fixedMonthly = resolveSubscriptionAmount({
+    model: "subscription",
+    pricingMode: "fixed",
+    fixedMonthlyAmount: 1800,
+    tiers: [],
+    inventory: null,
+    billedScope: { scopeType: "organisation", scopeId: ORG },
+  });
+  assert.equal(fixedMonthly.monthlyAmount, 1800);
+  assert.equal(fixedMonthly.unresolvedReason, null);
 }
 
 console.log("commercial-terms tests passed");

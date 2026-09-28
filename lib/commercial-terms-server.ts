@@ -26,7 +26,7 @@ import {
 } from "@/lib/commercial-terms";
 
 const TERM_COLUMNS =
-  "id, scope_type, scope_id, commercial_model, commission_percent, transaction_fee_percent, monthly_subscription_amount, subscription_pricing_mode, effective_from, superseded_at, admin_note, created_by, created_at";
+  "id, scope_type, scope_id, commercial_model, commission_percent, transaction_fee_percent, monthly_subscription_amount, subscription_pricing_mode, subscription_included_units, effective_from, superseded_at, admin_note, created_by, created_at";
 
 function uniqueUuids(values: Array<string | null | undefined>): string[] {
   return [...new Set(values.filter((value) => isCommercialUuid(value)))] as string[];
@@ -38,6 +38,8 @@ function asTier(row: Record<string, unknown>): CommercialTermTier {
     minCount: Number(row.min_count),
     maxCount: row.max_count == null ? null : Number(row.max_count),
     monthlyAmount: Number(row.monthly_amount) || 0,
+    incrementalAmount:
+      row.incremental_amount == null ? null : Number(row.incremental_amount),
     label: (row.label as string | null) ?? null,
     sortOrder: Number(row.sort_order) || 0,
   };
@@ -58,6 +60,8 @@ function asTermRow(
     subscription_pricing_mode:
       (row.subscription_pricing_mode as CommercialTermRow["subscription_pricing_mode"]) ??
       null,
+    subscription_included_units:
+      (row.subscription_included_units as number | string | null) ?? null,
     effective_from: String(row.effective_from),
     superseded_at: (row.superseded_at as string | null) ?? null,
     admin_note: (row.admin_note as string | null) ?? null,
@@ -77,7 +81,7 @@ async function loadTiersForTerms(
   const { data, error } = await admin
     .from("commercial_term_tiers")
     .select(
-      "id, commercial_terms_id, min_count, max_count, monthly_amount, label, sort_order"
+      "id, commercial_terms_id, min_count, max_count, monthly_amount, incremental_amount, label, sort_order"
     )
     .in("commercial_terms_id", termIds)
     .order("sort_order", { ascending: true });
@@ -418,6 +422,7 @@ export async function createCommercialTerms(
       transaction_fee_percent: value.transactionFeePercent,
       monthly_subscription_amount: value.monthlySubscriptionAmount,
       subscription_pricing_mode: value.subscriptionPricingMode,
+      subscription_included_units: value.subscriptionIncludedUnits,
       effective_from: value.effectiveFrom,
       admin_note: value.adminNote,
       created_by: actorUserId,
@@ -439,13 +444,20 @@ export async function createCommercialTerms(
           commercial_terms_id: termId,
           min_count: tier.minCount,
           max_count: tier.maxCount,
-          monthly_amount: tier.monthlyAmount,
+          monthly_amount:
+            value.subscriptionPricingMode === "progressive_space_pricing"
+              ? 0
+              : tier.monthlyAmount,
+          incremental_amount:
+            value.subscriptionPricingMode === "progressive_space_pricing"
+              ? tier.incrementalAmount ?? 0
+              : null,
           label: tier.label,
           sort_order: tier.sortOrder || index,
         }))
       )
       .select(
-        "id, commercial_terms_id, min_count, max_count, monthly_amount, label, sort_order"
+        "id, commercial_terms_id, min_count, max_count, monthly_amount, incremental_amount, label, sort_order"
       );
 
     if (tierError) {
