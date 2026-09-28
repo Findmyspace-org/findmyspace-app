@@ -7,8 +7,10 @@ import {
 } from "@/lib/commercial-calculator";
 import type { BillableInventoryCounts } from "@/lib/commercial-inventory";
 import {
+  isProgressivePricingMode,
   normalizeSubscriptionPricingMode,
   parseCommercialTermTiers,
+  progressiveUnitTypeForMode,
   resolveSubscriptionAmount,
   subscriptionBilledScope,
   validateProgressiveSubscriptionTiers,
@@ -155,8 +157,9 @@ export function rowToResolved(
     monthlySubscriptionAmount: fixedMonthly,
     subscriptionPricingMode: pricingMode,
     subscriptionIncludedUnits: Number.isFinite(includedParsed) ? includedParsed : null,
-    subscriptionBaseAmount:
-      pricingMode === "progressive_space_pricing" ? fixedMonthly : null,
+    subscriptionBaseAmount: isProgressivePricingMode(pricingMode)
+      ? fixedMonthly
+      : null,
     tiers,
     subscription: null,
     effectiveFrom: row.effective_from,
@@ -181,10 +184,9 @@ export function withSubscriptionResolution(
     propertyId: input.propertyId,
     spaceId: input.spaceId,
   });
-  const storedBase =
-    terms.subscriptionPricingMode === "progressive_space_pricing"
-      ? terms.subscriptionBaseAmount ?? terms.monthlySubscriptionAmount
-      : terms.monthlySubscriptionAmount;
+  const storedBase = isProgressivePricingMode(terms.subscriptionPricingMode)
+    ? terms.subscriptionBaseAmount ?? terms.monthlySubscriptionAmount
+    : terms.monthlySubscriptionAmount;
   const subscription = resolveSubscriptionAmount({
     model: terms.model,
     pricingMode: terms.subscriptionPricingMode,
@@ -198,10 +200,9 @@ export function withSubscriptionResolution(
     ...terms,
     monthlySubscriptionAmount:
       terms.model === "subscription" ? subscription.monthlyAmount : 0,
-    subscriptionBaseAmount:
-      terms.subscriptionPricingMode === "progressive_space_pricing"
-        ? storedBase
-        : null,
+    subscriptionBaseAmount: isProgressivePricingMode(terms.subscriptionPricingMode)
+      ? storedBase
+      : null,
     subscription,
   };
 }
@@ -309,6 +310,9 @@ export function formatCommercialArrangement(
     }
     if (mode === "progressive_space_pricing") {
       return `Progressive per-space · R${monthly}/month + ${tx}% transaction`;
+    }
+    if (mode === "progressive_property_pricing") {
+      return `Progressive per-property · R${monthly}/month + ${tx}% transaction`;
     }
     return `R${monthly}/month + ${tx}% transaction`;
   }
@@ -455,7 +459,9 @@ export function parseCommercialTermsWriteBody(
     );
     if (subscriptionPricingMode === "fixed") {
       tiers = [];
-    } else if (subscriptionPricingMode === "progressive_space_pricing") {
+    } else if (isProgressivePricingMode(subscriptionPricingMode)) {
+      const unitType = progressiveUnitTypeForMode(subscriptionPricingMode);
+      const noun = unitType === "property" ? "Properties" : "Spaces";
       const includedRaw =
         raw.subscription_included_units ?? raw.subscriptionIncludedUnits ?? 0;
       const includedUnits = Number(includedRaw);
@@ -466,10 +472,13 @@ export function parseCommercialTermsWriteBody(
       ) {
         return {
           ok: false,
-          error: "Spaces included must be a whole number of 0 or more.",
+          error: `${noun} included must be a whole number of 0 or more.`,
         };
       }
-      const valid = validateProgressiveSubscriptionTiers(parsedTiers.value);
+      const valid = validateProgressiveSubscriptionTiers(
+        parsedTiers.value,
+        unitType
+      );
       if (!valid.ok) return valid;
       if (
         parsedTiers.value.some(
@@ -480,7 +489,7 @@ export function parseCommercialTermsWriteBody(
       ) {
         return {
           ok: false,
-          error: "Each pricing band needs a price per additional space.",
+          error: `Each pricing band needs a price per additional ${unitType}.`,
         };
       }
       tiers = parsedTiers.value;

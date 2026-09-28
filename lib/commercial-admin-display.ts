@@ -16,7 +16,16 @@ export const COMMERCIAL_KIND_LABELS: Record<CommercialSearchKind, string> = {
 };
 
 export const BILLABLE_INVENTORY_HELP =
-  "Billable inventory is currently managed stock: active, paused, pending, pending verification, owner claimed, needs changes, draft, and approved listings. Deleted, archived, unclaimed, and rejected listings are excluded. Spaces on archived properties do not count. Pausing a listing does not drop a subscription tier; archiving or deleting can.";
+  "Billable spaces are currently managed stock: active, paused, pending, pending verification, owner claimed, needs changes, draft, and approved listings. Deleted, archived, unclaimed, and rejected listings are excluded. Spaces on archived properties do not count. Pausing a listing does not drop a subscription tier; archiving or deleting can.";
+
+export const BILLABLE_PROPERTY_HELP =
+  "Billable properties are currently managed properties that are not archived. Properties on an archived organisation do not count. Archiving or deleting a property can change the monthly amount; pausing a listing on that property does not.";
+
+export const FIXED_TIER_HELP =
+  "Each range has one total monthly subscription amount. Example: 2–10 properties = R500/month total.";
+
+export const PROGRESSIVE_PRICING_HELP =
+  "Each additional unit is charged at the rate for its band, added to the base monthly fee. Example: base R250 + R50 for each property from 2–10. The band amount is not the total monthly fee.";
 
 export const PLATFORM_DEFAULT_UNCONFIGURED_TITLE =
   "No platform commercial terms configured.";
@@ -151,6 +160,8 @@ export function subscriptionPricingMethodLabel(
   if (mode === "by_space_count") return "Fixed tiers by space count";
   if (mode === "by_property_count") return "Fixed tiers by property count";
   if (mode === "progressive_space_pricing") return "Progressive pricing by space count";
+  if (mode === "progressive_property_pricing")
+    return "Progressive pricing by property count";
   return "Fixed monthly";
 }
 

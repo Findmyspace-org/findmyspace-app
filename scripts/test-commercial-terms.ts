@@ -31,20 +31,22 @@ import {
   type ResolvedCommercialTerms,
 } from "../lib/commercial-terms";
 import {
+  calculateProgressiveSpaceSubscription,
+  calculateProgressiveSubscription,
+  progressiveBandGapWarning,
+  progressivePreviewCounts,
+  validateProgressiveBands,
+} from "../lib/commercial-progressive-pricing";
+import {
   assertBillableSubscriptionResolution,
   buildSubscriptionPeriodSnapshot,
+  inventoryCountForMode,
   matchSubscriptionTier,
   matchingSubscriptionTiers,
   resolveSubscriptionAmount,
   subscriptionBilledScope,
   type CommercialTermTier,
 } from "../lib/commercial-subscription";
-import {
-  calculateProgressiveSpaceSubscription,
-  progressiveBandGapWarning,
-  progressivePreviewCounts,
-  validateProgressiveBands,
-} from "../lib/commercial-progressive-pricing";
 import {
   buildCommercialPrecedencePath,
   commercialParentContext,
@@ -1613,9 +1615,23 @@ const spaceTiers: CommercialTermTier[] = [
     "utf8"
   );
   assert.match(adminPanel, /progressive_space_pricing/);
+  assert.match(adminPanel, /progressive_property_pricing/);
   assert.match(adminPanel, /Base monthly fee/);
   assert.match(adminPanel, /Add pricing band/);
-  assert.match(adminPanel, /calculateProgressiveSpaceSubscription/);
+  assert.match(adminPanel, /Additional fee per property/);
+  assert.match(adminPanel, /Monthly price preview/);
+  assert.match(adminPanel, /calculateProgressiveSubscription/);
+  assert.match(adminPanel, /FIXED_TIER_HELP/);
+  assert.match(adminPanel, /PROGRESSIVE_PRICING_HELP/);
+
+  const migration075 = readFileSync(
+    "supabase/migrations/075_20260928_progressive_property_subscription_pricing.sql",
+    "utf8"
+  );
+  assert.match(migration075, /progressive_property_pricing/);
+  assert.doesNotMatch(migration075, /INSERT INTO public\.commercial_terms/);
+  assert.doesNotMatch(migration075, /UPDATE public\.commercial_terms\s+SET/i);
+  assert.doesNotMatch(migration075, /UPDATE public\.bookings\s+SET/i);
 }
 
 {
@@ -1836,6 +1852,183 @@ const spaceTiers: CommercialTermTier[] = [
   assert.equal(jul.termsId, "prog-v2");
   assert.equal(jul.monthlySubscriptionAmount, 600);
   assert.equal(jul.subscriptionBaseAmount, 400);
+}
+
+{
+  const propertyBands = [
+    { minCount: 2, maxCount: 10, incrementalAmount: 50, label: "2–10" },
+    { minCount: 11, maxCount: null, incrementalAmount: 25, label: "11+" },
+  ];
+  const amountFor = (count: number) =>
+    calculateProgressiveSubscription({
+      baseAmount: 250,
+      includedUnits: 1,
+      bands: propertyBands,
+      unitCount: count,
+      unitType: "property",
+    });
+
+  assert.equal(amountFor(0).monthlyAmount, 0);
+  assert.equal(amountFor(0).covered, true);
+  assert.equal(amountFor(0).calculationText, "No billable properties");
+  assert.equal(amountFor(1).monthlyAmount, 250);
+  assert.equal(amountFor(1).calculationText, "Base");
+  assert.equal(amountFor(2).monthlyAmount, 300);
+  assert.equal(amountFor(2).calculationText, "R250 + 1 × R50");
+  assert.equal(amountFor(3).monthlyAmount, 350);
+  assert.equal(amountFor(5).monthlyAmount, 450);
+  assert.equal(amountFor(5).calculationText, "R250 + 4 × R50");
+  assert.equal(amountFor(10).monthlyAmount, 700);
+  assert.equal(amountFor(11).monthlyAmount, 725);
+  assert.equal(amountFor(11).calculationText, "R700 + 1 × R25");
+  assert.equal(amountFor(20).monthlyAmount, 950);
+  assert.equal(amountFor(20).calculationText, "R700 + 10 × R25");
+  assert.equal(amountFor(50).monthlyAmount, 1700);
+  assert.ok(progressivePreviewCounts(1, propertyBands, "property").includes(3));
+
+  const overlap = validateProgressiveBands(
+    [
+      { minCount: 2, maxCount: 10, incrementalAmount: 50, label: null },
+      { minCount: 8, maxCount: null, incrementalAmount: 25, label: null },
+    ],
+    "property"
+  );
+  assert.equal(overlap.ok, false);
+
+  const gapCalc = calculateProgressiveSubscription({
+    baseAmount: 250,
+    includedUnits: 1,
+    bands: [
+      { minCount: 3, maxCount: 10, incrementalAmount: 50, label: "3–10" },
+      { minCount: 11, maxCount: null, incrementalAmount: 25, label: "11+" },
+    ],
+    unitCount: 5,
+    unitType: "property",
+  });
+  assert.equal(gapCalc.covered, false);
+  assert.equal(gapCalc.monthlyAmount, 0);
+  assert.equal(gapCalc.unresolvedReason, "no_matching_tier");
+
+  const parsedProperty = parseCommercialTermsWriteBody({
+    scope_type: "platform",
+    commercial_model: "subscription",
+    commission_percent: 0,
+    transaction_fee_percent: 5,
+    subscription_pricing_mode: "progressive_property_pricing",
+    monthly_subscription_amount: 250,
+    subscription_included_units: 1,
+    tiers: [
+      { min_count: 2, max_count: 10, incremental_amount: 50, label: "2–10" },
+      { min_count: 11, max_count: null, incremental_amount: 25, label: "11+" },
+    ],
+    effective_from: "2026-11-01",
+  });
+  assert.equal(parsedProperty.ok, true);
+  if (parsedProperty.ok) {
+    assert.equal(parsedProperty.value.subscriptionPricingMode, "progressive_property_pricing");
+    assert.equal(parsedProperty.value.monthlySubscriptionAmount, 250);
+    assert.equal(parsedProperty.value.subscriptionIncludedUnits, 1);
+  }
+
+  const inventory = {
+    scopeType: "organisation" as const,
+    scopeId: ORG,
+    propertyCount: 3,
+    spaceCount: 20,
+    organisationBillable: true,
+  };
+  assert.equal(
+    inventoryCountForMode("progressive_property_pricing", inventory),
+    3
+  );
+  assert.equal(inventoryCountForMode("progressive_space_pricing", inventory), 20);
+  assert.equal(inventoryCountForMode("by_property_count", inventory), 3);
+
+  const propertyResolved = resolveSubscriptionAmount({
+    model: "subscription",
+    pricingMode: "progressive_property_pricing",
+    fixedMonthlyAmount: 250,
+    includedUnits: 1,
+    tiers: [
+      {
+        id: "p1",
+        minCount: 2,
+        maxCount: 10,
+        monthlyAmount: 0,
+        incrementalAmount: 50,
+        label: "2–10",
+        sortOrder: 0,
+      },
+      {
+        id: "p2",
+        minCount: 11,
+        maxCount: null,
+        monthlyAmount: 0,
+        incrementalAmount: 25,
+        label: "11+",
+        sortOrder: 1,
+      },
+    ],
+    inventory,
+    billedScope: { scopeType: "organisation", scopeId: ORG },
+  });
+  assert.equal(propertyResolved.inventoryBasis, "property");
+  assert.equal(propertyResolved.inventoryCount, 3);
+  assert.equal(propertyResolved.monthlyAmount, 350);
+  assert.equal(propertyResolved.unresolvedReason, null);
+
+  const spaceStillUsesSpaces = resolveSubscriptionAmount({
+    model: "subscription",
+    pricingMode: "progressive_space_pricing",
+    fixedMonthlyAmount: 250,
+    includedUnits: 1,
+    tiers: [
+      {
+        id: "s1",
+        minCount: 2,
+        maxCount: 10,
+        monthlyAmount: 0,
+        incrementalAmount: 50,
+        label: "2–10",
+        sortOrder: 0,
+      },
+      {
+        id: "s2",
+        minCount: 11,
+        maxCount: null,
+        monthlyAmount: 0,
+        incrementalAmount: 25,
+        label: "11+",
+        sortOrder: 1,
+      },
+    ],
+    inventory,
+    billedScope: { scopeType: "organisation", scopeId: ORG },
+  });
+  assert.equal(spaceStillUsesSpaces.inventoryBasis, "space");
+  assert.equal(spaceStillUsesSpaces.inventoryCount, 20);
+  assert.equal(spaceStillUsesSpaces.monthlyAmount, 950);
+
+  const fixedPropertyTier = resolveSubscriptionAmount({
+    model: "subscription",
+    pricingMode: "by_property_count",
+    fixedMonthlyAmount: 0,
+    tiers: [
+      {
+        id: "fp",
+        minCount: 1,
+        maxCount: 5,
+        monthlyAmount: 400,
+        label: "1–5 properties",
+        sortOrder: 0,
+      },
+    ],
+    inventory,
+    billedScope: { scopeType: "organisation", scopeId: ORG },
+  });
+  assert.equal(fixedPropertyTier.inventoryCount, 3);
+  assert.equal(fixedPropertyTier.monthlyAmount, 400);
+  assert.equal(fixedPropertyTier.unresolvedReason, null);
 }
 
 {

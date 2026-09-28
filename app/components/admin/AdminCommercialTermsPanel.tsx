@@ -9,20 +9,28 @@ import {
 import type { CommercialModel, CommercialScopeType } from "@/lib/commercial-terms";
 import {
   commercialTiersToProgressiveBands,
+  isProgressivePricingMode,
+  isPropertyCountPricingMode,
+  progressiveUnitTypeForMode,
   resolveSubscriptionAmount,
   type CommercialTermTier,
   type SubscriptionPricingMode,
   type SubscriptionResolution,
 } from "@/lib/commercial-subscription";
 import {
-  calculateProgressiveSpaceSubscription,
+  calculateProgressiveSubscription,
   progressiveBandGapWarning,
+  progressiveBandMilestoneCounts,
   progressivePreviewCounts,
+  progressiveUnitNoun,
 } from "@/lib/commercial-progressive-pricing";
 import {
   BILLABLE_INVENTORY_HELP,
+  BILLABLE_PROPERTY_HELP,
+  FIXED_TIER_HELP,
   PLATFORM_DEFAULT_UNCONFIGURED_BODY,
   PLATFORM_DEFAULT_UNCONFIGURED_TITLE,
+  PROGRESSIVE_PRICING_HELP,
   subscriptionPricingMethodLabel,
   subscriptionTierGapWarning,
   subscriptionUncoveredInventoryWarning,
@@ -232,7 +240,7 @@ export function AdminCommercialTermsPanel({
         setTransactionFeePercent(String(json.resolved.transactionFeePercent));
         setMonthlySubscriptionAmount(
           String(
-            json.resolved.subscriptionPricingMode === "progressive_space_pricing"
+            isProgressivePricingMode(json.resolved.subscriptionPricingMode)
               ? json.resolved.subscriptionBaseAmount ??
                   json.resolved.monthlySubscriptionAmount
               : json.resolved.monthlySubscriptionAmount
@@ -241,7 +249,7 @@ export function AdminCommercialTermsPanel({
         setIncludedUnits(String(json.resolved.subscriptionIncludedUnits ?? 0));
         setPricingMode(json.resolved.subscriptionPricingMode || "fixed");
         setTiers(
-          json.resolved.subscriptionPricingMode === "progressive_space_pricing"
+          isProgressivePricingMode(json.resolved.subscriptionPricingMode)
             ? bandsToDrafts(json.resolved.tiers)
             : tiersToDrafts(json.resolved.tiers)
         );
@@ -274,15 +282,12 @@ export function AdminCommercialTermsPanel({
           monthly_subscription_amount: Number(monthlySubscriptionAmount),
           subscription_pricing_mode: model === "subscription" ? pricingMode : null,
           subscription_included_units:
-            model === "subscription" && pricingMode === "progressive_space_pricing"
+            model === "subscription" && isProgressivePricingMode(pricingMode)
               ? Number(includedUnits)
               : null,
           tiers:
             model === "subscription" && pricingMode !== "fixed"
-              ? draftsToPayload(
-                  tiers,
-                  pricingMode === "progressive_space_pricing"
-                )
+              ? draftsToPayload(tiers, isProgressivePricingMode(pricingMode))
               : [],
           effective_from: effectiveFrom,
           admin_note: adminNote,
@@ -322,29 +327,38 @@ export function AdminCommercialTermsPanel({
       })),
     [tiers]
   );
+  const progressiveUnitType = progressiveUnitTypeForMode(pricingMode);
+  const propertyBased = isPropertyCountPricingMode(pricingMode);
   const gapWarning = useMemo(() => {
     if (model !== "subscription" || pricingMode === "fixed") return null;
-    if (pricingMode === "progressive_space_pricing") {
+    if (isProgressivePricingMode(pricingMode)) {
       return progressiveBandGapWarning(
         Number(includedUnits) || 0,
-        commercialTiersToProgressiveBands(parsedDraftTiers)
+        commercialTiersToProgressiveBands(parsedDraftTiers),
+        progressiveUnitTypeForMode(pricingMode)
       );
     }
     return subscriptionTierGapWarning(parsedDraftTiers);
   }, [includedUnits, model, parsedDraftTiers, pricingMode]);
   const progressivePreview = useMemo(() => {
-    if (model !== "subscription" || pricingMode !== "progressive_space_pricing") {
+    if (model !== "subscription" || !isProgressivePricingMode(pricingMode)) {
       return [];
     }
+    const unitType = progressiveUnitTypeForMode(pricingMode);
     const bands = commercialTiersToProgressiveBands(parsedDraftTiers);
-    const counts = progressivePreviewCounts(Number(includedUnits) || 0, bands);
+    const counts = progressivePreviewCounts(
+      Number(includedUnits) || 0,
+      bands,
+      unitType
+    );
     return counts.map((count) => ({
       count,
-      result: calculateProgressiveSpaceSubscription({
+      result: calculateProgressiveSubscription({
         baseAmount: Number(monthlySubscriptionAmount) || 0,
         includedUnits: Number(includedUnits) || 0,
         bands,
-        billableCount: count,
+        unitCount: count,
+        unitType,
       }),
     }));
   }, [
@@ -475,7 +489,11 @@ export function AdminCommercialTermsPanel({
                   </div>
                   {subscription?.inventoryCount != null ? (
                     <div>
-                      <dt className="font-medium text-gray-500">Billable inventory</dt>
+                      <dt className="font-medium text-gray-500">
+                        {subscription.inventoryBasis === "property"
+                          ? "Current billable properties"
+                          : "Current billable spaces"}
+                      </dt>
                       <dd>
                         {subscription.inventoryCount}{" "}
                         {subscription.inventoryBasis === "property"
@@ -496,8 +514,10 @@ export function AdminCommercialTermsPanel({
                   ) : null}
                   {resolved.subscriptionPricingMode &&
                   resolved.subscriptionPricingMode !== "fixed" ? (
-                    <p className="sm:col-span-2 text-gray-500" title={BILLABLE_INVENTORY_HELP}>
-                      {BILLABLE_INVENTORY_HELP}
+                    <p className="sm:col-span-2 text-gray-500">
+                      {isPropertyCountPricingMode(resolved.subscriptionPricingMode)
+                        ? BILLABLE_PROPERTY_HELP
+                        : BILLABLE_INVENTORY_HELP}
                     </p>
                   ) : null}
                   {subscription?.unresolvedReason === "platform_default_needs_scope" ? (
@@ -619,7 +639,7 @@ export function AdminCommercialTermsPanel({
               onChange={(event) => {
                 const next = event.target.value as SubscriptionPricingMode;
                 setPricingMode(next);
-                if (next === "progressive_space_pricing") {
+                if (isProgressivePricingMode(next)) {
                   setTiers((current) =>
                     current.length > 0 ? current : [emptyBand()]
                   );
@@ -630,39 +650,24 @@ export function AdminCommercialTermsPanel({
               <option value="fixed">Fixed monthly</option>
               <option value="by_property_count">Fixed tiers by property count</option>
               <option value="by_space_count">Fixed tiers by space count</option>
+              <option value="progressive_property_pricing">
+                Progressive pricing by property count
+              </option>
               <option value="progressive_space_pricing">
                 Progressive pricing by space count
               </option>
             </select>
           </label>
         ) : null}
-        {model === "subscription" &&
-        (pricingMode === "fixed" ||
-          pricingMode === "progressive_space_pricing") ? (
+        {model === "subscription" && pricingMode === "fixed" ? (
           <label className="flex flex-col gap-1 text-xs text-gray-600">
-            {pricingMode === "progressive_space_pricing"
-              ? "Base monthly fee (ZAR)"
-              : "Monthly subscription (ZAR)"}
+            Monthly subscription (ZAR)
             <input
               type="number"
               min={0}
               step="0.01"
               value={monthlySubscriptionAmount}
               onChange={(event) => setMonthlySubscriptionAmount(event.target.value)}
-              className="rounded-md border border-gray-300 px-2 py-2 text-sm"
-            />
-          </label>
-        ) : null}
-        {model === "subscription" &&
-        pricingMode === "progressive_space_pricing" ? (
-          <label className="flex flex-col gap-1 text-xs text-gray-600">
-            Spaces included
-            <input
-              type="number"
-              min={0}
-              step="1"
-              value={includedUnits}
-              onChange={(event) => setIncludedUnits(event.target.value)}
               className="rounded-md border border-gray-300 px-2 py-2 text-sm"
             />
           </label>
@@ -684,8 +689,9 @@ export function AdminCommercialTermsPanel({
         pricingMode === "by_space_count") ? (
         <div className="mt-4">
           <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-            Subscription tiers
+            Subscription pricing structure
           </h3>
+          <p className="mt-1 text-xs text-gray-600">{FIXED_TIER_HELP}</p>
           <p className="mt-1 text-xs text-gray-500">
             Leave maximum blank for an open-ended highest tier. Ranges cannot
             overlap. Gaps are allowed but those counts will not match a tier.
@@ -697,7 +703,7 @@ export function AdminCommercialTermsPanel({
                 className="grid gap-2 sm:grid-cols-5 rounded-md border border-gray-200 p-2"
               >
                 <label className="flex flex-col gap-1 text-xs text-gray-600">
-                  Min count
+                  From {propertyBased ? "property" : "space"}
                   <input
                     type="number"
                     min={0}
@@ -711,7 +717,7 @@ export function AdminCommercialTermsPanel({
                   />
                 </label>
                 <label className="flex flex-col gap-1 text-xs text-gray-600">
-                  Max count
+                  To {propertyBased ? "property" : "space"}
                   <input
                     type="number"
                     min={0}
@@ -726,7 +732,7 @@ export function AdminCommercialTermsPanel({
                   />
                 </label>
                 <label className="flex flex-col gap-1 text-xs text-gray-600">
-                  Monthly (ZAR)
+                  Total monthly amount (ZAR)
                   <input
                     type="number"
                     min={0}
@@ -751,7 +757,7 @@ export function AdminCommercialTermsPanel({
                         next[index] = { ...tier, label: event.target.value };
                         setTiers(next);
                       }}
-                      placeholder="4–10 spaces"
+                      placeholder={propertyBased ? "4–10 properties" : "4–10 spaces"}
                       className="flex-1 rounded-md border border-gray-300 px-2 py-1.5 text-sm"
                     />
                     {tiers.length > 1 ? (
@@ -781,157 +787,248 @@ export function AdminCommercialTermsPanel({
         </div>
       ) : null}
 
-      {model === "subscription" && pricingMode === "progressive_space_pricing" ? (
-        <div className="mt-4">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-            Additional space pricing
-          </h3>
-          <p className="mt-1 text-xs text-gray-500">
-            Each band adds to the base monthly fee. Leave To blank for no upper
-            limit. Only the last band may be open-ended. Ranges cannot overlap.
-          </p>
-          <div className="mt-2 space-y-2">
-            {tiers.map((tier, index) => (
-              <div
-                key={`band-${index}`}
-                className="grid gap-2 sm:grid-cols-6 rounded-md border border-gray-200 p-2"
-              >
-                <label className="flex flex-col gap-1 text-xs text-gray-600">
-                  From space #
-                  <input
-                    type="number"
-                    min={1}
-                    value={tier.minCount}
-                    onChange={(event) => {
-                      const next = [...tiers];
-                      next[index] = { ...tier, minCount: event.target.value };
-                      setTiers(next);
-                    }}
-                    className="rounded-md border border-gray-300 px-2 py-1.5 text-sm"
-                  />
-                </label>
-                <label className="flex flex-col gap-1 text-xs text-gray-600">
-                  To space #
-                  <input
-                    type="number"
-                    min={1}
-                    value={tier.maxCount}
-                    placeholder="No limit"
-                    onChange={(event) => {
-                      const next = [...tiers];
-                      next[index] = { ...tier, maxCount: event.target.value };
-                      setTiers(next);
-                    }}
-                    className="rounded-md border border-gray-300 px-2 py-1.5 text-sm"
-                  />
-                </label>
-                <label className="flex flex-col gap-1 text-xs text-gray-600">
-                  Price per additional space
-                  <input
-                    type="number"
-                    min={0}
-                    step="0.01"
-                    value={tier.incrementalAmount}
-                    onChange={(event) => {
-                      const next = [...tiers];
-                      next[index] = {
-                        ...tier,
-                        incrementalAmount: event.target.value,
-                      };
-                      setTiers(next);
-                    }}
-                    className="rounded-md border border-gray-300 px-2 py-1.5 text-sm"
-                  />
-                </label>
-                <label className="flex flex-col gap-1 text-xs text-gray-600 sm:col-span-2">
-                  Label
-                  <input
-                    type="text"
-                    value={tier.label}
-                    onChange={(event) => {
-                      const next = [...tiers];
-                      next[index] = { ...tier, label: event.target.value };
-                      setTiers(next);
-                    }}
-                    placeholder="Optional"
-                    className="rounded-md border border-gray-300 px-2 py-1.5 text-sm"
-                  />
-                </label>
-                <div className="flex items-end gap-2 text-xs">
-                  <button
-                    type="button"
-                    disabled={index === 0}
-                    onClick={() => {
-                      if (index === 0) return;
-                      const next = [...tiers];
-                      [next[index - 1], next[index]] = [next[index], next[index - 1]];
-                      setTiers(next);
-                    }}
-                    className="text-[#192a3a] disabled:text-gray-300"
-                  >
-                    Up
-                  </button>
-                  <button
-                    type="button"
-                    disabled={index === tiers.length - 1}
-                    onClick={() => {
-                      if (index >= tiers.length - 1) return;
-                      const next = [...tiers];
-                      [next[index + 1], next[index]] = [next[index], next[index + 1]];
-                      setTiers(next);
-                    }}
-                    className="text-[#192a3a] disabled:text-gray-300"
-                  >
-                    Down
-                  </button>
-                  {tiers.length > 1 ? (
-                    <button
-                      type="button"
-                      onClick={() => setTiers(tiers.filter((_, i) => i !== index))}
-                      className="text-red-700"
-                    >
-                      Remove
-                    </button>
-                  ) : null}
-                </div>
-              </div>
-            ))}
+      {model === "subscription" && isProgressivePricingMode(pricingMode) ? (
+        <div className="mt-4 space-y-4">
+          <div>
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+              Subscription pricing structure
+            </h3>
+            <p className="mt-1 text-xs text-gray-600">{PROGRESSIVE_PRICING_HELP}</p>
           </div>
-          <button
-            type="button"
-            onClick={() => setTiers([...tiers, emptyBand()])}
-            className="mt-2 text-xs font-medium text-[#192a3a]"
-          >
-            Add pricing band
-          </button>
-          {gapWarning ? (
-            <p className="mt-2 text-xs text-amber-800">{gapWarning}</p>
-          ) : null}
-
-          <div className="mt-4 rounded-md border border-slate-200 bg-slate-50 p-3">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="flex flex-col gap-1 text-xs text-gray-600">
+              Base monthly fee
+              <input
+                type="number"
+                min={0}
+                step="0.01"
+                value={monthlySubscriptionAmount}
+                onChange={(event) => setMonthlySubscriptionAmount(event.target.value)}
+                className="rounded-md border border-gray-300 px-2 py-2 text-sm"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-gray-600">
+              {propertyBased ? "Properties included" : "Spaces included"}
+              <input
+                type="number"
+                min={0}
+                step="1"
+                value={includedUnits}
+                onChange={(event) => setIncludedUnits(event.target.value)}
+                className="rounded-md border border-gray-300 px-2 py-2 text-sm"
+              />
+            </label>
+          </div>
+          <div>
             <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-              Preview
+              {propertyBased
+                ? "Additional property pricing"
+                : "Additional space pricing"}
+            </h4>
+            <p className="mt-1 text-xs text-gray-500">
+              Each band adds to the base monthly fee. Leave To blank for no upper
+              limit. Only the last band may be open-ended. Ranges cannot overlap.
+            </p>
+            <div className="mt-2 space-y-2">
+              {tiers.map((tier, index) => {
+                const band = {
+                  minCount: Number(tier.minCount) || 0,
+                  maxCount:
+                    tier.maxCount.trim() === "" ? null : Number(tier.maxCount),
+                  incrementalAmount: Number(tier.incrementalAmount) || 0,
+                  label: tier.label || null,
+                };
+                const milestones = progressiveBandMilestoneCounts(band).map(
+                  (count) => ({
+                    count,
+                    result: calculateProgressiveSubscription({
+                      baseAmount: Number(monthlySubscriptionAmount) || 0,
+                      includedUnits: Number(includedUnits) || 0,
+                      bands: commercialTiersToProgressiveBands(parsedDraftTiers),
+                      unitCount: count,
+                      unitType: progressiveUnitType,
+                    }),
+                  })
+                );
+                return (
+                  <div
+                    key={`band-${index}`}
+                    className="rounded-md border border-gray-200 p-2"
+                  >
+                    <div className="grid gap-2 sm:grid-cols-6">
+                      <label className="flex flex-col gap-1 text-xs text-gray-600">
+                        From {propertyBased ? "property" : "space"}
+                        <input
+                          type="number"
+                          min={1}
+                          value={tier.minCount}
+                          onChange={(event) => {
+                            const next = [...tiers];
+                            next[index] = { ...tier, minCount: event.target.value };
+                            setTiers(next);
+                          }}
+                          className="rounded-md border border-gray-300 px-2 py-1.5 text-sm"
+                        />
+                      </label>
+                      <label className="flex flex-col gap-1 text-xs text-gray-600">
+                        To {propertyBased ? "property" : "space"}
+                        <input
+                          type="number"
+                          min={1}
+                          value={tier.maxCount}
+                          placeholder="No limit"
+                          onChange={(event) => {
+                            const next = [...tiers];
+                            next[index] = { ...tier, maxCount: event.target.value };
+                            setTiers(next);
+                          }}
+                          className="rounded-md border border-gray-300 px-2 py-1.5 text-sm"
+                        />
+                      </label>
+                      <label className="flex flex-col gap-1 text-xs text-gray-600 sm:col-span-2">
+                        {propertyBased
+                          ? "Additional fee per property (ZAR)"
+                          : "Additional fee per space (ZAR)"}
+                        <input
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          value={tier.incrementalAmount}
+                          onChange={(event) => {
+                            const next = [...tiers];
+                            next[index] = {
+                              ...tier,
+                              incrementalAmount: event.target.value,
+                            };
+                            setTiers(next);
+                          }}
+                          className="rounded-md border border-gray-300 px-2 py-1.5 text-sm"
+                        />
+                      </label>
+                      <label className="flex flex-col gap-1 text-xs text-gray-600">
+                        Label
+                        <input
+                          type="text"
+                          value={tier.label}
+                          onChange={(event) => {
+                            const next = [...tiers];
+                            next[index] = { ...tier, label: event.target.value };
+                            setTiers(next);
+                          }}
+                          placeholder="Optional"
+                          className="rounded-md border border-gray-300 px-2 py-1.5 text-sm"
+                        />
+                      </label>
+                      <div className="flex items-end gap-2 text-xs">
+                        <button
+                          type="button"
+                          disabled={index === 0}
+                          onClick={() => {
+                            if (index === 0) return;
+                            const next = [...tiers];
+                            [next[index - 1], next[index]] = [
+                              next[index],
+                              next[index - 1],
+                            ];
+                            setTiers(next);
+                          }}
+                          className="text-[#192a3a] disabled:text-gray-300"
+                        >
+                          Up
+                        </button>
+                        <button
+                          type="button"
+                          disabled={index === tiers.length - 1}
+                          onClick={() => {
+                            if (index >= tiers.length - 1) return;
+                            const next = [...tiers];
+                            [next[index + 1], next[index]] = [
+                              next[index],
+                              next[index + 1],
+                            ];
+                            setTiers(next);
+                          }}
+                          className="text-[#192a3a] disabled:text-gray-300"
+                        >
+                          Down
+                        </button>
+                        {tiers.length > 1 ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setTiers(tiers.filter((_, i) => i !== index))
+                            }
+                            className="text-red-700"
+                          >
+                            Remove
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+                    <p className="mt-2 text-xs text-gray-600">
+                      + {money(tier.incrementalAmount || 0)} per additional{" "}
+                      {progressiveUnitNoun(progressiveUnitType, 1)}
+                    </p>
+                    <ul className="mt-1 text-xs text-gray-700">
+                      {milestones.map(({ count, result }) => (
+                        <li key={`band-${index}-at-${count}`}>
+                          At {count} {progressiveUnitNoun(progressiveUnitType, count)}
+                          :{" "}
+                          {result.covered
+                            ? `${money(result.monthlyAmount)}/month total`
+                            : "Unresolved — not R0"}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                );
+              })}
+            </div>
+            <button
+              type="button"
+              onClick={() => setTiers([...tiers, emptyBand()])}
+              className="mt-2 text-xs font-medium text-[#192a3a]"
+            >
+              Add pricing band
+            </button>
+            {gapWarning ? (
+              <p className="mt-2 text-xs text-amber-800">{gapWarning}</p>
+            ) : null}
+          </div>
+
+          <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+            <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+              Monthly price preview
             </h4>
             <p className="mt-1 text-xs text-gray-500">
               Uses the values above, before you save.
             </p>
-            <dl className="mt-2 grid gap-1 text-sm text-gray-800">
-              {progressivePreview.map(({ count, result }) => (
-                <div
-                  key={`preview-${count}`}
-                  className="flex justify-between gap-4"
-                >
-                  <dt>
-                    {count} {count === 1 ? "space" : "spaces"}
-                  </dt>
-                  <dd>
-                    {result.covered
-                      ? money(result.monthlyAmount)
-                      : "Unresolved — not R0"}
-                  </dd>
-                </div>
-              ))}
-            </dl>
+            <table className="mt-2 w-full text-left text-xs text-gray-800">
+              <thead className="text-gray-500">
+                <tr>
+                  <th className="py-1 pr-3">
+                    {propertyBased ? "Property count" : "Space count"}
+                  </th>
+                  <th className="py-1 pr-3">Calculation</th>
+                  <th className="py-1">Monthly total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {progressivePreview.map(({ count, result }) => (
+                  <tr key={`preview-${count}`} className="border-t border-slate-200">
+                    <td className="py-1 pr-3">
+                      {count} {progressiveUnitNoun(progressiveUnitType, count)}
+                    </td>
+                    <td className="py-1 pr-3">{result.calculationText}</td>
+                    <td className="py-1">
+                      {result.covered
+                        ? money(result.monthlyAmount)
+                        : "Unresolved — not R0"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       ) : null}
@@ -946,40 +1043,18 @@ export function AdminCommercialTermsPanel({
           ) : null}
           <dl className="mt-2 grid gap-2 sm:grid-cols-2 text-xs">
             <div>
-              <dt className="font-medium text-gray-500">Current version</dt>
+              <dt className="font-medium text-gray-500">Current arrangement</dt>
               <dd>
-                {resolved?.effectiveFrom
-                  ? new Date(resolved.effectiveFrom).toLocaleDateString("en-ZA")
-                  : "None at this scope"}
+                {subscriptionPricingMethodLabel(resolved?.subscriptionPricingMode)}
                 {resolved?.inherited ? " · inherited" : ""}
-              </dd>
-            </div>
-            <div>
-              <dt className="font-medium text-gray-500">Proposed version</dt>
-              <dd>
-                New version from{" "}
-                {new Date(`${effectiveFrom}T00:00:00+02:00`).toLocaleDateString(
-                  "en-ZA"
-                )}
-              </dd>
-            </div>
-            <div>
-              <dt className="font-medium text-gray-500">Billable inventory</dt>
-              <dd>
-                {inventory
-                  ? `${
-                      pricingMode === "by_property_count"
-                        ? inventory.propertyCount
-                        : inventory.spaceCount
-                    } ${
-                      pricingMode === "by_property_count" ? "properties" : "spaces"
+                {subscription?.inventoryCount != null
+                  ? ` · ${subscription.inventoryCount} ${
+                      subscription.inventoryBasis === "property"
+                        ? "properties"
+                        : "spaces"
                     }`
-                  : "Select an organisation, property, or space to see inventory"}
-              </dd>
-            </div>
-            <div>
-              <dt className="font-medium text-gray-500">Current monthly amount</dt>
-              <dd>
+                  : ""}
+                {" · "}
                 {subscriptionUnresolved
                   ? "Unresolved — not a R0 subscription"
                   : money(
@@ -987,15 +1062,60 @@ export function AdminCommercialTermsPanel({
                         resolved?.monthlySubscriptionAmount ??
                         0
                     )}
+                /month
               </dd>
             </div>
             <div>
-              <dt className="font-medium text-gray-500">Proposed monthly amount</dt>
+              <dt className="font-medium text-gray-500">Proposed arrangement</dt>
               <dd>
+                {subscriptionPricingMethodLabel(pricingMode)}
+                {inventory
+                  ? ` · ${
+                      propertyBased
+                        ? inventory.propertyCount
+                        : inventory.spaceCount
+                    } billable ${
+                      propertyBased ? "properties" : "spaces"
+                    }`
+                  : ""}
+                {" · "}
                 {proposedResolution?.unresolvedReason
                   ? "Unresolved — not a R0 subscription"
                   : money(proposedResolution?.monthlyAmount ?? 0)}
+                /month
               </dd>
+            </div>
+            <div>
+              <dt className="font-medium text-gray-500">Effective from</dt>
+              <dd>
+                {new Date(`${effectiveFrom}T00:00:00+02:00`).toLocaleDateString(
+                  "en-ZA"
+                )}
+              </dd>
+            </div>
+            <div>
+              <dt className="font-medium text-gray-500">Current source</dt>
+              <dd>{resolved?.inheritedFrom || "—"}</dd>
+            </div>
+            <div>
+              <dt className="font-medium text-gray-500">
+                {propertyBased
+                  ? "Current billable properties"
+                  : "Current billable spaces"}
+              </dt>
+              <dd>
+                {inventory
+                  ? `${
+                      propertyBased
+                        ? inventory.propertyCount
+                        : inventory.spaceCount
+                    } ${propertyBased ? "properties" : "spaces"}`
+                  : "Select an organisation, property, or space to see inventory"}
+              </dd>
+            </div>
+            <div>
+              <dt className="font-medium text-gray-500">Transaction fee</dt>
+              <dd>{Number(transactionFeePercent || 0).toFixed(2)}%</dd>
             </div>
           </dl>
           <p className="mt-2 text-xs text-gray-500">
@@ -1011,9 +1131,9 @@ export function AdminCommercialTermsPanel({
           : model === "subscription"
             ? pricingMode === "fixed"
               ? `${money(monthlySubscriptionAmount)}/month + ${Number(transactionFeePercent || 0).toFixed(2)}% transaction`
-              : pricingMode === "progressive_space_pricing"
-                ? `Progressive per-space + ${Number(transactionFeePercent || 0).toFixed(2)}% transaction`
-                : `Tiered ${pricingMode === "by_space_count" ? "by spaces" : "by properties"} + ${Number(transactionFeePercent || 0).toFixed(2)}% transaction`
+              : isProgressivePricingMode(pricingMode)
+                ? `Progressive per-${progressiveUnitNoun(progressiveUnitType, 1)} + ${Number(transactionFeePercent || 0).toFixed(2)}% transaction`
+                : `Tiered ${propertyBased ? "by properties" : "by spaces"} + ${Number(transactionFeePercent || 0).toFixed(2)}% transaction`
             : `0% platform + ${Number(transactionFeePercent || 0).toFixed(2)}% transaction`}
         . Transaction fee applies to each online payment. Monthly subscription is not
         billed automatically in this pass.

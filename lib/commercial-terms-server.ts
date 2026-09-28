@@ -8,7 +8,7 @@ import {
   type BillableSpaceInput,
 } from "@/lib/commercial-inventory";
 import type { CommercialTermTier } from "@/lib/commercial-subscription";
-import { subscriptionBilledScope } from "@/lib/commercial-subscription";
+import { isProgressivePricingMode, subscriptionBilledScope } from "@/lib/commercial-subscription";
 import {
   decorateCommercialSearchHit,
   type CommercialSearchHit,
@@ -445,13 +445,14 @@ export async function createCommercialTerms(
           min_count: tier.minCount,
           max_count: tier.maxCount,
           monthly_amount:
-            value.subscriptionPricingMode === "progressive_space_pricing"
+            isProgressivePricingMode(value.subscriptionPricingMode)
               ? 0
               : tier.monthlyAmount,
-          incremental_amount:
-            value.subscriptionPricingMode === "progressive_space_pricing"
-              ? tier.incrementalAmount ?? 0
-              : null,
+          incremental_amount: isProgressivePricingMode(
+            value.subscriptionPricingMode
+          )
+            ? tier.incrementalAmount ?? 0
+            : null,
           label: tier.label,
           sort_order: tier.sortOrder || index,
         }))

@@ -4,10 +4,11 @@ import type {
   BillableInventoryScope,
 } from "@/lib/commercial-inventory";
 import {
-  calculateProgressiveSpaceSubscription,
+  calculateProgressiveSubscription,
   validateProgressiveBands,
   type ProgressiveBand,
   type ProgressiveBreakdownLine,
+  type ProgressiveUnitType,
 } from "@/lib/commercial-progressive-pricing";
 
 type SubscriptionSource =
@@ -24,6 +25,7 @@ export const SUBSCRIPTION_PRICING_MODES = [
   "by_property_count",
   "by_space_count",
   "progressive_space_pricing",
+  "progressive_property_pricing",
 ] as const;
 
 export type SubscriptionPricingMode = (typeof SUBSCRIPTION_PRICING_MODES)[number];
@@ -124,13 +126,38 @@ export function subscriptionBilledScope(input: {
   return null;
 }
 
+export function isProgressivePricingMode(
+  mode: SubscriptionPricingMode | null | undefined
+): mode is "progressive_space_pricing" | "progressive_property_pricing" {
+  return (
+    mode === "progressive_space_pricing" ||
+    mode === "progressive_property_pricing"
+  );
+}
+
+export function isPropertyCountPricingMode(
+  mode: SubscriptionPricingMode | null | undefined
+): boolean {
+  return (
+    mode === "by_property_count" || mode === "progressive_property_pricing"
+  );
+}
+
+export function progressiveUnitTypeForMode(
+  mode: SubscriptionPricingMode | null | undefined
+): ProgressiveUnitType {
+  return mode === "progressive_property_pricing" ? "property" : "space";
+}
+
 export function inventoryCountForMode(
   mode: SubscriptionPricingMode | null,
   counts: BillableInventoryCounts | null
 ): number | null {
   if (!mode || mode === "fixed") return null;
   if (!counts) return null;
-  return mode === "by_property_count" ? counts.propertyCount : counts.spaceCount;
+  return isPropertyCountPricingMode(mode)
+    ? counts.propertyCount
+    : counts.spaceCount;
 }
 
 export function inventoryBasisForMode(
@@ -138,7 +165,7 @@ export function inventoryBasisForMode(
 ): "fixed" | "property" | "space" | null {
   if (!mode) return null;
   if (mode === "fixed") return "fixed";
-  if (mode === "by_property_count") return "property";
+  if (isPropertyCountPricingMode(mode)) return "property";
   return "space";
 }
 
@@ -222,12 +249,13 @@ export function resolveSubscriptionAmount(input: {
     };
   }
 
-  if (mode === "progressive_space_pricing") {
-    const calculated = calculateProgressiveSpaceSubscription({
+  if (isProgressivePricingMode(mode)) {
+    const calculated = calculateProgressiveSubscription({
       baseAmount: input.fixedMonthlyAmount,
       includedUnits: input.includedUnits ?? 0,
       bands: commercialTiersToProgressiveBands(input.tiers),
-      billableCount: count,
+      unitCount: count,
+      unitType: progressiveUnitTypeForMode(mode),
     });
     return {
       billedScopeType: input.billedScope.scopeType,
@@ -328,8 +356,10 @@ export function buildSubscriptionPeriodSnapshot(input: {
 }
 
 export function validateProgressiveSubscriptionTiers(
-  tiers: CommercialTermTier[]
+  tiers: CommercialTermTier[],
+  unitType: ProgressiveUnitType = "space"
 ): { ok: true } | { ok: false; error: string } {
+  const noun = unitType === "property" ? "property" : "space";
   if (
     tiers.some(
       (tier) =>
@@ -338,10 +368,13 @@ export function validateProgressiveSubscriptionTiers(
   ) {
     return {
       ok: false,
-      error: "Each pricing band needs a price per additional space.",
+      error: `Each pricing band needs a price per additional ${noun}.`,
     };
   }
-  return validateProgressiveBands(commercialTiersToProgressiveBands(tiers));
+  return validateProgressiveBands(
+    commercialTiersToProgressiveBands(tiers),
+    unitType
+  );
 }
 
 export function validateSubscriptionTiers(
@@ -428,7 +461,7 @@ export function parseCommercialTermTiers(
     if (hasIncremental && (incrementalAmount == null || !Number.isFinite(incrementalAmount))) {
       return {
         ok: false,
-        error: `Pricing band ${i + 1} needs a price per additional space.`,
+        error: `Pricing band ${i + 1} needs a price per additional unit.`,
       };
     }
 

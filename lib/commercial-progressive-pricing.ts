@@ -1,9 +1,11 @@
 /**
- * Authoritative progressive per-space subscription arithmetic.
+ * Authoritative progressive subscription arithmetic for space or property units.
  * Used by Admin preview, the commercial resolver, and period snapshots.
  */
 
 import { roundMoney } from "@/lib/commercial-calculator";
+
+export type ProgressiveUnitType = "space" | "property";
 
 export type ProgressiveBand = {
   minCount: number;
@@ -30,25 +32,42 @@ export type ProgressiveCalculation = {
   covered: boolean;
   uncoveredCount: number;
   unresolvedReason: string | null;
+  unitType: ProgressiveUnitType;
   breakdown: ProgressiveBreakdownLine[];
+  calculationText: string;
 };
 
-function bandCovers(spaceNumber: number, band: ProgressiveBand): boolean {
-  if (spaceNumber < band.minCount) return false;
+export function progressiveUnitNoun(
+  unitType: ProgressiveUnitType,
+  count = 1
+): string {
+  if (unitType === "property") return count === 1 ? "property" : "properties";
+  return count === 1 ? "space" : "spaces";
+}
+
+export function formatProgressiveRand(value: number): string {
+  const amount = roundMoney(Number(value) || 0);
+  return Number.isInteger(amount) ? `R${amount}` : `R${amount.toFixed(2)}`;
+}
+
+function bandCovers(unitNumber: number, band: ProgressiveBand): boolean {
+  if (unitNumber < band.minCount) return false;
   if (band.maxCount == null) return true;
-  return spaceNumber <= band.maxCount;
+  return unitNumber <= band.maxCount;
 }
 
 function matchingProgressiveBands(
-  spaceNumber: number,
+  unitNumber: number,
   bands: ProgressiveBand[]
 ): ProgressiveBand[] {
-  return bands.filter((band) => bandCovers(spaceNumber, band));
+  return bands.filter((band) => bandCovers(unitNumber, band));
 }
 
 export function validateProgressiveBands(
-  bands: ProgressiveBand[]
+  bands: ProgressiveBand[],
+  unitType: ProgressiveUnitType = "space"
 ): { ok: true } | { ok: false; error: string } {
+  const noun = progressiveUnitNoun(unitType, 1);
   const sorted = [...bands].sort((a, b) => a.minCount - b.minCount);
   const mins = new Set<number>();
 
@@ -57,11 +76,14 @@ export function validateProgressiveBands(
     if (!Number.isInteger(band.minCount) || band.minCount < 1) {
       return {
         ok: false,
-        error: "Each pricing band must start at a whole space number of 1 or more.",
+        error: `Each pricing band must start at a whole ${noun} number of 1 or more.`,
       };
     }
     if (mins.has(band.minCount)) {
-      return { ok: false, error: "Pricing bands cannot share the same starting space." };
+      return {
+        ok: false,
+        error: `Pricing bands cannot share the same starting ${noun}.`,
+      };
     }
     mins.add(band.minCount);
     if (
@@ -70,13 +92,13 @@ export function validateProgressiveBands(
     ) {
       return {
         ok: false,
-        error: "Band maximum must be empty or at least the starting space.",
+        error: `Band maximum must be empty or at least the starting ${noun}.`,
       };
     }
     if (!Number.isFinite(band.incrementalAmount) || band.incrementalAmount < 0) {
       return {
         ok: false,
-        error: "Price per additional space must be 0 or greater.",
+        error: `Additional fee per ${noun} must be 0 or greater.`,
       };
     }
     const isLast = i === sorted.length - 1;
@@ -103,17 +125,19 @@ export function validateProgressiveBands(
  */
 export function progressiveBandGapWarning(
   includedUnits: number,
-  bands: ProgressiveBand[]
+  bands: ProgressiveBand[],
+  unitType: ProgressiveUnitType = "space"
 ): string | null {
+  const noun = progressiveUnitNoun(unitType, 1);
   const sorted = [...bands].sort((a, b) => a.minCount - b.minCount);
   const firstPriced = Math.max(0, Number(includedUnits) || 0) + 1;
   if (sorted.length === 0) {
     return firstPriced > 0
-      ? `No pricing bands. Space ${firstPriced} and above will not resolve.`
+      ? `No pricing bands. ${noun.charAt(0).toUpperCase()}${noun.slice(1)} ${firstPriced} and above will not resolve.`
       : null;
   }
   if (sorted[0].minCount > firstPriced) {
-    return `There is a gap before space ${sorted[0].minCount}. Counts in that range will not resolve.`;
+    return `There is a gap before ${noun} ${sorted[0].minCount}. Counts in that range will not resolve.`;
   }
   for (let i = 1; i < sorted.length; i += 1) {
     const prev = sorted[i - 1];
@@ -126,16 +150,42 @@ export function progressiveBandGapWarning(
   return null;
 }
 
-export function calculateProgressiveSpaceSubscription(input: {
+function formatCalculationText(input: {
+  covered: boolean;
+  billableCount: number;
+  includedUnits: number;
+  monthlyAmount: number;
+  breakdown: ProgressiveBreakdownLine[];
+  unitType: ProgressiveUnitType;
+}): string {
+  const noun = progressiveUnitNoun(input.unitType, 2);
+  if (input.billableCount <= 0) return `No billable ${noun}`;
+  if (!input.covered) return "Not covered by this schedule";
+  const bandLines = input.breakdown.filter((line) => line.kind === "band");
+  if (bandLines.length === 0) return "Base";
+  if (bandLines.length === 1) {
+    const band = bandLines[0];
+    return `${formatProgressiveRand(input.breakdown[0]?.subtotal ?? 0)} + ${band.unitCount} × ${formatProgressiveRand(band.rate)}`;
+  }
+  const last = bandLines[bandLines.length - 1];
+  const previousTotal = roundMoney(input.monthlyAmount - last.subtotal);
+  return `${formatProgressiveRand(previousTotal)} + ${last.unitCount} × ${formatProgressiveRand(last.rate)}`;
+}
+
+export function calculateProgressiveSubscription(input: {
   baseAmount: number;
   includedUnits: number;
   bands: ProgressiveBand[];
-  billableCount: number;
+  unitCount?: number;
+  billableCount?: number;
+  unitType?: ProgressiveUnitType;
 }): ProgressiveCalculation {
+  const unitType = input.unitType ?? "space";
   const baseAmount = roundMoney(Number(input.baseAmount) || 0);
   const includedUnits = Math.max(0, Math.floor(Number(input.includedUnits) || 0));
-  const count = Math.floor(Number(input.billableCount) || 0);
+  const count = Math.floor(Number(input.unitCount ?? input.billableCount) || 0);
   const bands = [...input.bands].sort((a, b) => a.minCount - b.minCount);
+  const nounPlural = progressiveUnitNoun(unitType, 2);
 
   if (count <= 0) {
     return {
@@ -146,11 +196,15 @@ export function calculateProgressiveSpaceSubscription(input: {
       covered: true,
       uncoveredCount: 0,
       unresolvedReason: null,
+      unitType,
       breakdown: [],
+      calculationText: `No billable ${nounPlural}`,
     };
   }
 
-  const overlap = bands.some((band) => matchingProgressiveBands(band.minCount, bands).length > 1);
+  const overlap = bands.some(
+    (band) => matchingProgressiveBands(band.minCount, bands).length > 1
+  );
   if (overlap) {
     return {
       billableCount: count,
@@ -160,7 +214,9 @@ export function calculateProgressiveSpaceSubscription(input: {
       covered: false,
       uncoveredCount: 0,
       unresolvedReason: "ambiguous_overlapping_tiers",
+      unitType,
       breakdown: [],
+      calculationText: "Not covered by this schedule",
     };
   }
 
@@ -169,7 +225,7 @@ export function calculateProgressiveSpaceSubscription(input: {
       kind: "base",
       label:
         includedUnits > 0
-          ? `Base monthly fee (includes ${includedUnits} space${includedUnits === 1 ? "" : "s"})`
+          ? `Base monthly fee (includes ${includedUnits} ${progressiveUnitNoun(unitType, includedUnits)})`
           : "Base monthly fee",
       unitCount: Math.min(count, includedUnits),
       rate: baseAmount,
@@ -182,8 +238,8 @@ export function calculateProgressiveSpaceSubscription(input: {
   const unitsByBand = bands.map(() => 0);
   let uncoveredCount = 0;
 
-  for (let spaceNumber = includedUnits + 1; spaceNumber <= count; spaceNumber += 1) {
-    const matches = matchingProgressiveBands(spaceNumber, bands);
+  for (let unitNumber = includedUnits + 1; unitNumber <= count; unitNumber += 1) {
+    const matches = matchingProgressiveBands(unitNumber, bands);
     if (matches.length !== 1) {
       uncoveredCount += 1;
       continue;
@@ -198,9 +254,10 @@ export function calculateProgressiveSpaceSubscription(input: {
     const rate = roundMoney(band.incrementalAmount);
     const range =
       band.maxCount == null ? `${band.minCount}+` : `${band.minCount}–${band.maxCount}`;
+    const noun = progressiveUnitNoun(unitType, 2);
     breakdown.push({
       kind: "band",
-      label: band.label || `Spaces ${range}`,
+      label: band.label || `${noun.charAt(0).toUpperCase()}${noun.slice(1)} ${range}`,
       unitCount,
       rate,
       subtotal: roundMoney(unitCount * rate),
@@ -218,7 +275,9 @@ export function calculateProgressiveSpaceSubscription(input: {
       covered: false,
       uncoveredCount,
       unresolvedReason: "no_matching_tier",
+      unitType,
       breakdown,
+      calculationText: "Not covered by this schedule",
     };
   }
 
@@ -234,15 +293,39 @@ export function calculateProgressiveSpaceSubscription(input: {
     covered: true,
     uncoveredCount: 0,
     unresolvedReason: null,
+    unitType,
     breakdown,
+    calculationText: formatCalculationText({
+      covered: true,
+      billableCount: count,
+      includedUnits,
+      monthlyAmount,
+      breakdown,
+      unitType,
+    }),
   };
+}
+
+/** @deprecated Prefer calculateProgressiveSubscription({ unitType: "space" }). */
+export function calculateProgressiveSpaceSubscription(input: {
+  baseAmount: number;
+  includedUnits: number;
+  bands: ProgressiveBand[];
+  billableCount: number;
+}): ProgressiveCalculation {
+  return calculateProgressiveSubscription({
+    ...input,
+    unitCount: input.billableCount,
+    unitType: "space",
+  });
 }
 
 export function progressivePreviewCounts(
   includedUnits: number,
-  bands: ProgressiveBand[]
+  bands: ProgressiveBand[],
+  unitType: ProgressiveUnitType = "space"
 ): number[] {
-  const defaults = [1, 2, 5, 10, 11, 20, 50];
+  const defaults = [1, 2, 3, 5, 10, 11, 20, 50];
   const boundaries = new Set<number>(defaults);
   const included = Math.max(0, Math.floor(Number(includedUnits) || 0));
   if (included > 0) {
@@ -256,5 +339,17 @@ export function progressivePreviewCounts(
       boundaries.add(band.maxCount + 1);
     }
   }
+  void unitType;
   return [...boundaries].filter((count) => count > 0).sort((a, b) => a - b);
+}
+
+export function progressiveBandMilestoneCounts(band: ProgressiveBand): number[] {
+  const counts = new Set<number>();
+  if (band.minCount > 0) counts.add(band.minCount);
+  if (band.maxCount != null && band.maxCount > 0) counts.add(band.maxCount);
+  if (band.maxCount == null) {
+    counts.add(band.minCount);
+    if (20 >= band.minCount) counts.add(20);
+  }
+  return [...counts].sort((a, b) => a - b);
 }
