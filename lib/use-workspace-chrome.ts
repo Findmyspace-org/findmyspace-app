@@ -2,12 +2,17 @@
 
 import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { hostingContextFromSummary } from "@/lib/access/hosting-context";
+import {
+  hostingContextFromSummary,
+  hostingContextHrefOrganisationId,
+} from "@/lib/access/hosting-context";
 import { ORGANISATION_QUERY_PARAM } from "@/lib/access/organisation-workspace";
 import { fetchHostingWorkspaceDisplay } from "@/lib/hosting-access-client";
 import {
-  hostingOrganisationContextName,
+  hostingWorkspaceContextLabel,
+  hostingWorkspaceSelectorModel,
   workspaceSelector,
+  type HostingWorkspaceSelectorModel,
   type WorkspaceKind,
   type WorkspaceSelectorModel,
 } from "@/lib/workspace-switch";
@@ -30,11 +35,14 @@ export function useWorkspaceChrome(kind: WorkspaceKind | null) {
       : null
   );
   const [organisationName, setOrganisationName] = useState<string | null>(null);
+  const [hostingWorkspace, setHostingWorkspace] =
+    useState<HostingWorkspaceSelectorModel | null>(null);
 
   useEffect(() => {
     if (!kind) {
       setSelector(null);
       setOrganisationName(null);
+      setHostingWorkspace(null);
       return;
     }
 
@@ -48,6 +56,7 @@ export function useWorkspaceChrome(kind: WorkspaceKind | null) {
       )
     );
     setOrganisationName(null);
+    setHostingWorkspace(null);
 
     let mounted = true;
     fetchHostingWorkspaceDisplay(requestedOrganisationId)
@@ -57,22 +66,34 @@ export function useWorkspaceChrome(kind: WorkspaceKind | null) {
           summary,
           requestedOrganisationId
         );
-        const organisationId =
-          context.kind === "organisation" ? context.organisationId : null;
+        const hrefOrganisationId = hostingContextHrefOrganisationId(
+          context,
+          requestedOrganisationId
+        );
         setSelector(
           selectorOrNull(
             workspaceSelector({
               kind,
               hasHostingAccess: summary.hasHostingAccess,
-              organisationId,
+              organisationId: hrefOrganisationId,
             })
           )
         );
         setOrganisationName(
           kind === "hosting"
-            ? hostingOrganisationContextName({
-                organisationId,
+            ? hostingWorkspaceContextLabel({
+                context,
                 organisations,
+              })
+            : null
+        );
+        setHostingWorkspace(
+          kind === "hosting"
+            ? hostingWorkspaceSelectorModel({
+                summary,
+                context,
+                organisations,
+                hrefOrganisationId,
               })
             : null
         );
@@ -89,6 +110,7 @@ export function useWorkspaceChrome(kind: WorkspaceKind | null) {
             : null
         );
         setOrganisationName(null);
+        setHostingWorkspace(null);
       });
 
     return () => {
@@ -96,5 +118,5 @@ export function useWorkspaceChrome(kind: WorkspaceKind | null) {
     };
   }, [kind, requestedOrganisationId]);
 
-  return { selector, organisationName };
+  return { selector, organisationName, hostingWorkspace };
 }

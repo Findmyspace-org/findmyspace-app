@@ -25,8 +25,18 @@ import {
   resolveHostingContext,
   type HostingContext,
 } from "../lib/access/hosting-context";
+import {
+  organisationUuidFromQueryValue,
+  PERSONAL_HOSTING_LABEL,
+  PERSONAL_HOSTING_QUERY_VALUE,
+} from "../lib/access/organisation-workspace";
 import { hostingNavItems } from "../lib/dashboard-nav";
 import { canShowOrganisationPayoutLedger } from "../lib/organisation-payout";
+import {
+  hostingWorkspaceOptions,
+  hostingWorkspaceSelectorModel,
+  isHostingDashboardPath,
+} from "../lib/workspace-switch";
 import type { AccessContext, OrganisationAccessGrant } from "../lib/access/roles";
 
 const ORG_A = "21cf12c3-3235-4cd3-8106-801d120dc7b5";
@@ -633,8 +643,161 @@ const dashboardSrc = readFileSync("app/dashboard/page.tsx", "utf8");
   const clientSrcAccess = readFileSync("lib/hosting-access-client.ts", "utf8");
   assert.match(clientSrcAccess, /requestedOrganisationId/);
   const headerSrc = readFileSync("app/components/Header.tsx", "utf8");
-  assert.match(headerSrc, /fetchHostingAccessSummary\(/);
+  assert.match(headerSrc, /fetchHostingWorkspaceDisplay\(/);
   assert.match(headerSrc, /requestedOrganisationId/);
+  assert.match(headerSrc, /hostingContextHrefOrganisationId/);
+  assert.match(headerSrc, /HostingWorkspaceSelector/);
+}
+
+{
+  assert.equal(organisationUuidFromQueryValue(PERSONAL_HOSTING_QUERY_VALUE), null);
+  assert.equal(organisationUuidFromQueryValue(ORG_A), ORG_A);
+  assert.equal(isHostingDashboardPath("/dashboard"), false);
+  assert.equal(isHostingDashboardPath("/dashboard/finance"), true);
+  assert.equal(
+    isHostingDashboardPath("/dashboard/comms", "view=bookings"),
+    false
+  );
+  assert.equal(
+    isHostingDashboardPath("/dashboard/comms", "view=hosting"),
+    true
+  );
+
+  const dualHost = resolveHostingContext({
+    requestedId: PERSONAL_HOSTING_QUERY_VALUE,
+    organisationIds: [ORG_A, ORG_B],
+    primaryOrganisationId: ORG_A,
+    isLegacyHost: true,
+  });
+  assert.equal(dualHost.kind, "personal");
+  assert.equal(dualHost.organisationId, null);
+  assert.equal(
+    hostingContextHrefOrganisationId(dualHost, PERSONAL_HOSTING_QUERY_VALUE),
+    PERSONAL_HOSTING_QUERY_VALUE
+  );
+  assert.deepEqual(scopedIds(inventory, dualHost), [SPACE_PERSONAL]);
+  const personalHrefs = hostingNavItems(
+    oaSummary([ORG_A]),
+    PERSONAL_HOSTING_QUERY_VALUE
+  ).map((item) => item.href);
+  for (const href of personalHrefs) {
+    assert.match(href, /[?&]organisation=personal/);
+    assert.equal(href.includes(ORG_A), false);
+  }
+  assert.equal(
+    hostingHref("/dashboard/finance", PERSONAL_HOSTING_QUERY_VALUE),
+    "/dashboard/finance?organisation=personal"
+  );
+
+  const omittedStillDefaultsToOrg = resolveHostingContext({
+    requestedId: null,
+    organisationIds: [ORG_A],
+    primaryOrganisationId: ORG_A,
+    isLegacyHost: true,
+  });
+  assert.equal(omittedStillDefaultsToOrg.kind, "organisation");
+  assert.equal(omittedStillDefaultsToOrg.organisationId, ORG_A);
+
+  const orgOnlyPersonal = summarizeHostingAccessForContext(
+    {
+      profileRole: "user",
+      isHostProfile: false,
+      ownedSpaceCount: 0,
+      ownedPropertyCount: 0,
+      grants: [
+        grant({
+          organisationId: ORG_A,
+          role: "org_admin",
+          status: "active",
+        }),
+      ],
+    },
+    hostingContextFromSummary(
+      summarizeHostingAccess({
+        profileRole: "user",
+        isHostProfile: false,
+        ownedSpaceCount: 0,
+        ownedPropertyCount: 0,
+        grants: [
+          grant({
+            organisationId: ORG_A,
+            role: "org_admin",
+            status: "active",
+          }),
+        ],
+      }),
+      PERSONAL_HOSTING_QUERY_VALUE
+    )
+  );
+  assert.equal(orgOnlyPersonal.showFinance, false);
+  assert.equal(orgOnlyPersonal.showPeople, false);
+  assert.equal(orgOnlyPersonal.showOrganisationCommercial, false);
+
+  const personalHostFinance = summarizeHostingAccessForContext(
+    {
+      profileRole: "user",
+      isHostProfile: true,
+      ownedSpaceCount: 1,
+      ownedPropertyCount: 0,
+      grants: [
+        grant({
+          organisationId: ORG_A,
+          role: "org_admin",
+          status: "active",
+        }),
+      ],
+    },
+    { kind: "personal", organisationId: null }
+  );
+  assert.equal(personalHostFinance.showFinance, true);
+  assert.equal(
+    canShowOrganisationPayoutLedger({
+      showOrganisationCommercial: personalHostFinance.showOrganisationCommercial,
+      organisationId: null,
+    }),
+    false
+  );
+
+  const options = hostingWorkspaceOptions({
+    summary: oaSummary([ORG_A, ORG_B]),
+    organisations: [
+      { id: ORG_A, name: "FindMySpace V1 Acceptance Test" },
+      { id: ORG_B, name: "Paarl Girls' High" },
+    ],
+  });
+  assert.equal(options[0].value, PERSONAL_HOSTING_QUERY_VALUE);
+  assert.equal(options[0].label, PERSONAL_HOSTING_LABEL);
+  assert.equal(options.some((option) => option.value === ORG_A), true);
+  const orgOnlyOptions = hostingWorkspaceOptions({
+    summary: summarizeHostingAccess({
+      profileRole: "user",
+      isHostProfile: false,
+      ownedSpaceCount: 0,
+      ownedPropertyCount: 0,
+      grants: [
+        grant({
+          organisationId: ORG_A,
+          role: "org_admin",
+          status: "active",
+        }),
+      ],
+    }),
+    organisations: [{ id: ORG_A, name: "FindMySpace V1 Acceptance Test" }],
+  });
+  assert.equal(
+    orgOnlyOptions.some((option) => option.value === PERSONAL_HOSTING_QUERY_VALUE),
+    false
+  );
+
+  const selector = hostingWorkspaceSelectorModel({
+    summary: oaSummary([ORG_A]),
+    context: dualHost,
+    organisations: [{ id: ORG_A, name: "FindMySpace V1 Acceptance Test" }],
+    hrefOrganisationId: PERSONAL_HOSTING_QUERY_VALUE,
+  });
+  assert.equal(selector?.selectedValue, PERSONAL_HOSTING_QUERY_VALUE);
+  assert.equal(selector?.selectedLabel, PERSONAL_HOSTING_LABEL);
+  assert.equal(selector?.showSelector, true);
 }
 
 console.log("test-hosting-context: ok");

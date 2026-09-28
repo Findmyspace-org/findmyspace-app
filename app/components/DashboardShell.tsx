@@ -18,9 +18,12 @@
  */
 
 import { GuardedLink, UnsavedChangesProvider } from "@/app/components/UnsavedChangesProvider";
+import HostingWorkspaceSelector from "@/app/components/HostingWorkspaceSelector";
 import WorkspaceSwitch from "@/app/components/WorkspaceSwitch";
+import { dashboardNavItemIsActive } from "@/lib/dashboard-nav";
 import { useWorkspaceChrome } from "@/lib/use-workspace-chrome";
 import { workspaceKindFromLabel } from "@/lib/workspace-switch";
+import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 
 export type DashboardNavItem = {
@@ -84,16 +87,36 @@ export default function DashboardShell({
   const workspaceKind = workspaceKindFromLabel(workspaceLabel);
   const chrome = useWorkspaceChrome(workspaceKind);
   const hosting = workspaceKind === "hosting";
+  const [hash, setHash] = useState("");
+
+  useEffect(() => {
+    const syncHash = () => setHash(window.location.hash.replace(/^#/, ""));
+    syncHash();
+    window.addEventListener("hashchange", syncHash);
+    return () => window.removeEventListener("hashchange", syncHash);
+  }, [pathname]);
 
   function isActive(item: DashboardNavItem): boolean {
-    const itemPath = item.href.split("?")[0];
-    if (activeHref) return activeHref.split("?")[0] === itemPath;
-    if (!pathname) return false;
-    if (item.matchPrefix) {
-      return pathname === itemPath || pathname.startsWith(`${itemPath}/`);
-    }
-    return pathname === itemPath;
+    return dashboardNavItemIsActive(item, {
+      pathname,
+      hash,
+      activeHref,
+      items: navItems,
+    });
   }
+
+  const hostingContext =
+    hosting && chrome.hostingWorkspace ? (
+      <HostingWorkspaceSelector model={chrome.hostingWorkspace} />
+    ) : null;
+  const contextBelowTitle = hostingContext ? (
+    <>
+      {hostingContext}
+      {pageContext}
+    </>
+  ) : (
+    pageContext
+  );
 
   return (
     <UnsavedChangesProvider>
@@ -135,7 +158,9 @@ export default function DashboardShell({
               >
                 {pageTitle}
               </h1>
-              {pageContext ? <div className="mt-1 sm:mt-1.5">{pageContext}</div> : null}
+              {contextBelowTitle ? (
+                <div className="mt-1 sm:mt-1.5">{contextBelowTitle}</div>
+              ) : null}
               {pageSubtitle ? (
                 <p
                   className={`mt-1 max-w-2xl leading-relaxed text-gray-600 ${

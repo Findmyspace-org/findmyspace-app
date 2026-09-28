@@ -24,7 +24,7 @@ import { supabase } from "@/lib/supabase";
 import RequireAuth from "@/app/components/RequireAuth";
 import OwnerVerificationAlerts from "@/app/components/OwnerVerificationAlerts";
 import DashboardShell from "@/app/components/DashboardShell";
-import { RENTER_NAV } from "@/lib/dashboard-nav";
+import { RENTER_NAV, RENTER_PAYMENTS_HREF } from "@/lib/dashboard-nav";
 import {
   ArrowRight,
   Bell,
@@ -281,7 +281,7 @@ function RenterDashboardPageContent() {
                   pendingPaymentCount === 1 ? "" : "s"
                 } awaiting payment`}
                 description="Pay now to confirm your booking before it expires."
-                href="/dashboard/my-bookings"
+                href={RENTER_PAYMENTS_HREF}
                 ctaLabel="Pay now"
               />
             ) : null}
@@ -319,7 +319,7 @@ function RenterDashboardPageContent() {
                       : "Nothing needs your attention right now."
                   }
                   icon={<CreditCard className="h-6 w-6" aria-hidden />}
-                  href="/dashboard/my-bookings"
+                  href={RENTER_PAYMENTS_HREF}
                   highlight={pendingPaymentCount > 0}
                 />
                 <SummaryCard
@@ -470,7 +470,7 @@ function RenterDashboardPageContent() {
               </h2>
               <div className="flex flex-wrap gap-2">
                 <QuickLinkChip
-                  href="/dashboard/my-bookings"
+                  href={RENTER_PAYMENTS_HREF}
                   icon={<CreditCard className="h-3.5 w-3.5" aria-hidden />}
                 >
                   Payments

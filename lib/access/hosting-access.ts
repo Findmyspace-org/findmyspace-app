@@ -1,5 +1,6 @@
 import { isPlatformAdminRole } from "@/lib/admin-roles";
 import {
+  isPersonalHostingQueryValue,
   ORGANISATION_QUERY_PARAM,
   organisationWorkspaceHref,
 } from "@/lib/access/organisation-workspace";
@@ -236,6 +237,7 @@ export function resolveHostingOrganisationId(input: {
   // must not silently substitute another organisation.
   const requested = input.requestedId?.trim() || "";
   if (requested) {
+    if (isPersonalHostingQueryValue(requested)) return null;
     if (input.organisationIds.includes(requested)) return requested;
     if (input.isGlobalAdmin) {
       const uuid =

@@ -24,11 +24,91 @@ import {
   LayoutDashboard,
   Settings,
   Users,
+  Wallet,
 } from "lucide-react";
 
 import type { DashboardNavItem } from "@/app/components/DashboardShell";
 import type { HostingAccessSummary } from "@/lib/access/hosting-access";
 import { hostingHref } from "@/lib/access/hosting-access";
+
+export const RENTER_PAYMENTS_HREF = "/dashboard/my-bookings#payments";
+export const RENTER_PAYMENTS_HASH = "payments";
+
+export function splitDashboardNavHref(href: string): {
+  pathname: string;
+  hash: string;
+} {
+  const [beforeHash, hash = ""] = href.split("#");
+  return {
+    pathname: beforeHash.split("?")[0] || "",
+    hash,
+  };
+}
+
+export function dashboardNavItemIsActive(
+  item: Pick<DashboardNavItem, "href" | "matchPrefix">,
+  input: {
+    pathname: string | null;
+    hash?: string;
+    activeHref?: string;
+    items?: Array<Pick<DashboardNavItem, "href">>;
+  }
+): boolean {
+  const active = splitDashboardNavHref(input.activeHref || "");
+  const currentPathname = active.pathname || input.pathname || "";
+  const currentHash = (
+    active.hash ||
+    (input.hash || "").replace(/^#/, "")
+  ).replace(/^#/, "");
+  const itemLoc = splitDashboardNavHref(item.href);
+
+  if (itemLoc.hash) {
+    return currentPathname === itemLoc.pathname && currentHash === itemLoc.hash;
+  }
+
+  if (!currentPathname) return false;
+  const pathMatches = item.matchPrefix
+    ? currentPathname === itemLoc.pathname ||
+      currentPathname.startsWith(`${itemLoc.pathname}/`)
+    : currentPathname === itemLoc.pathname;
+  if (!pathMatches) return false;
+
+  if (currentHash && currentPathname === itemLoc.pathname) {
+    const hashClaimed = (input.items || []).some((other) => {
+      const otherLoc = splitDashboardNavHref(other.href);
+      return (
+        otherLoc.pathname === itemLoc.pathname && otherLoc.hash === currentHash
+      );
+    });
+    if (hashClaimed) return false;
+  }
+  return true;
+}
+
+function hostingNavLabel(
+  item: DashboardNavItem,
+  summary: HostingAccessSummary
+): string {
+  const spaceManagerOnly =
+    summary.isSpaceManager &&
+    !summary.isOrganisationAdmin &&
+    !summary.isPropertyManager &&
+    !summary.isLegacyHost &&
+    !summary.isGlobalAdmin;
+  const propertyManagerView =
+    summary.isPropertyManager &&
+    !summary.isOrganisationAdmin &&
+    !summary.isGlobalAdmin;
+
+  if (item.href === "/dashboard/listings") {
+    if (spaceManagerOnly) return "Managed space";
+    if (propertyManagerView) return "Managed spaces";
+  }
+  if (item.href === "/dashboard/properties" && propertyManagerView) {
+    return "Managed properties";
+  }
+  return item.label;
+}
 
 export const RENTER_NAV: DashboardNavItem[] = [
   {
@@ -49,7 +129,7 @@ export const RENTER_NAV: DashboardNavItem[] = [
   },
   {
     label: "Payments",
-    href: "/dashboard/my-bookings#payments",
+    href: RENTER_PAYMENTS_HREF,
     icon: CreditCard,
   },
 ];
@@ -92,7 +172,7 @@ export const HOST_NAV: DashboardNavItem[] = [
   {
     label: "Finance",
     href: "/dashboard/finance",
-    icon: Landmark,
+    icon: Wallet,
     matchPrefix: true,
   },
   {
@@ -134,6 +214,7 @@ export function hostingNavItems(
     return true;
   }).map((item) => ({
     ...item,
+    label: hostingNavLabel(item, summary),
     href: hostingHref(item.href, organisationId),
   }));
 }

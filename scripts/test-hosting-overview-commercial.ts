@@ -450,7 +450,7 @@ const commercialApi = readFileSync(
     financeHref: "/dashboard/finance",
     listingsHref: "/dashboard/listings",
   });
-  assert.equal(smSummary.some((item) => item.label === "Revenue"), false);
+  assert.equal(smSummary.some((item) => item.label === "Finance"), false);
   assert.equal(smSummary.some((item) => item.label === "Requests"), true);
 
   const oaOps = hostingOverviewOpsItems({

@@ -9,7 +9,11 @@ import { loadHostingAccessInput } from "@/lib/access/load-hosting-access";
 import { listManagedPropertyIds } from "@/lib/access/list-managed-properties";
 import { listManagedSpaceIds } from "@/lib/access/list-managed-spaces";
 import { isUuid } from "@/lib/access/organisation-access-policy";
-import { ORGANISATION_QUERY_PARAM } from "@/lib/access/organisation-workspace";
+import {
+  isPersonalHostingQueryValue,
+  ORGANISATION_QUERY_PARAM,
+  PERSONAL_HOSTING_QUERY_VALUE,
+} from "@/lib/access/organisation-workspace";
 
 /**
  * Resolved Hosting workspace context.
@@ -51,6 +55,9 @@ export function resolveHostingContext(
   input: ResolveHostingContextInput
 ): HostingContext {
   const requested = input.requestedId?.trim() || "";
+  if (isPersonalHostingQueryValue(requested)) {
+    return { kind: "personal", organisationId: null };
+  }
   if (requested) {
     if (
       requestedOrganisationIsAuthorised({
@@ -265,6 +272,7 @@ export function hostingContextHrefOrganisationId(
   requestedId?: string | null
 ): string | null {
   if (context.kind === "organisation") return context.organisationId;
+  if (context.kind === "personal") return PERSONAL_HOSTING_QUERY_VALUE;
   if (context.kind === "unavailable") {
     const requested = requestedId?.trim() || "";
     return requested || null;

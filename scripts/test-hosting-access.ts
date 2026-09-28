@@ -211,7 +211,7 @@ function navLabels(summary: ReturnType<typeof summarizeHostingAccess>) {
   assert.doesNotMatch(header, /Account settings/);
   assert.match(header, /Become a host/);
   assert.match(header, /\/dashboard\/become-host/);
-  assert.match(header, /fetchHostingAccessSummary/);
+  assert.match(header, /fetchHostingWorkspaceDisplay/);
   assert.doesNotMatch(header, /Host dashboard/);
   assert.doesNotMatch(header, /My dashboard/);
   assert.doesNotMatch(header, /title: "My account"/);
@@ -225,7 +225,8 @@ function navLabels(summary: ReturnType<typeof summarizeHostingAccess>) {
   const labels = navLabels(smSummary);
   const hrefs = navHrefs(smSummary);
   assert.equal(labels.includes("Overview"), true);
-  assert.equal(labels.includes("My spaces"), true);
+  assert.equal(labels.includes("Managed space"), true);
+  assert.equal(labels.includes("My spaces"), false);
   assert.equal(labels.includes("Booking requests"), true);
   assert.equal(labels.includes("Calendar"), true);
   assert.equal(labels.includes("Comms"), true);
@@ -240,6 +241,10 @@ function navLabels(summary: ReturnType<typeof summarizeHostingAccess>) {
   assert.equal(
     RENTER_NAV.map((item) => item.label).join(","),
     "Overview,My bookings,Comms,Payments"
+  );
+  assert.equal(
+    RENTER_NAV.find((item) => item.label === "Payments")?.href,
+    "/dashboard/my-bookings#payments"
   );
   assert.equal(
     RENTER_NAV.some((item) => item.href === "/dashboard/verification"),
@@ -328,6 +333,8 @@ function navLabels(summary: ReturnType<typeof summarizeHostingAccess>) {
   assert.equal(oaSummary.showCreateSpace, true);
   assert.equal(navHrefs(oaSummary).includes("/dashboard/people"), true);
   assert.equal(navHrefs(oaSummary).includes("/dashboard/organisation"), true);
+  assert.equal(navLabels(oaSummary).includes("My spaces"), true);
+  assert.equal(navLabels(oaSummary).includes("Finance"), true);
 
   assert.equal(pmSummary.showPeople, false);
   assert.equal(pmSummary.showOrganisationCommercial, false);
@@ -337,6 +344,9 @@ function navLabels(summary: ReturnType<typeof summarizeHostingAccess>) {
   assert.equal(navHrefs(pmSummary).includes("/dashboard/people"), false);
   assert.equal(navHrefs(pmSummary).includes("/dashboard/organisation"), false);
   assert.equal(navHrefs(pmSummary).includes("/dashboard/properties"), true);
+  assert.equal(navHrefs(pmSummary).includes("/dashboard/finance"), true);
+  assert.equal(navLabels(pmSummary).includes("Managed spaces"), true);
+  assert.equal(navLabels(pmSummary).includes("Managed properties"), true);
 
   assert.equal(legacySummary.showProperties, true);
   assert.equal(legacySummary.showFinance, true);
@@ -614,6 +624,13 @@ function navLabels(summary: ReturnType<typeof summarizeHostingAccess>) {
     }),
     "Paarl Girls' High"
   );
+  assert.equal(
+    hostingOrganisationContextName({
+      organisationId: "personal",
+      organisations: [{ id: ORG, name: "Paarl Girls' High" }],
+    }),
+    "Personal hosting"
+  );
 
   const renterBooking = workspaceSwitch({
     kind: "booking",
@@ -698,7 +715,7 @@ function navLabels(summary: ReturnType<typeof summarizeHostingAccess>) {
   assert.match(dashboardShell, /WorkspaceSwitch/);
   assert.match(workspaceChrome, /fetchHostingWorkspaceDisplay/);
   assert.match(workspaceChrome, /hostingContextFromSummary/);
-  assert.match(workspaceChrome, /hostingOrganisationContextName/);
+  assert.match(workspaceChrome, /hostingWorkspaceContextLabel/);
   assert.doesNotMatch(workspaceChrome, /is_host/);
   assert.match(workspaceSwitchUi, /aria-label="Workspace"/);
   assert.match(accessSummaryRoute, /loadHostingOrganisationNames/);
@@ -707,7 +724,8 @@ function navLabels(summary: ReturnType<typeof summarizeHostingAccess>) {
   assert.match(header, /requestedOrganisationId/);
   assert.match(loadHosting, /loadHostingOrganisationNames/);
   assert.doesNotMatch(hostingHelper, /organisationNames/);
-  assert.match(people, /shouldShowOrganisationSelector/);
+  assert.match(dashboardShell, /HostingWorkspaceSelector/);
+  assert.match(header, /HostingWorkspaceSelector/);
   assert.doesNotMatch(dashboard, /Switch to Hosting/);
   assert.doesNotMatch(dashboardShell, /Switch to Hosting/);
   assert.doesNotMatch(dashboardShell, /Switch to Booking/);

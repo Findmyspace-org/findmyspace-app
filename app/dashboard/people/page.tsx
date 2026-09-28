@@ -12,7 +12,6 @@ import {
 import { useRouter, useSearchParams } from "next/navigation";
 import RequireAuth from "@/app/components/RequireAuth";
 import DashboardShell from "@/app/components/DashboardShell";
-import OrganisationWorkspaceContext from "@/app/components/OrganisationWorkspaceContext";
 import { useHostingWorkspace } from "@/lib/use-hosting-workspace";
 import type { PublicAccessGrantView } from "@/lib/access/organisation-access-policy";
 import {
@@ -29,7 +28,6 @@ import {
   ORGANISATION_QUERY_PARAM,
   organisationWorkspaceHref,
   resolveOrganisationWorkspaceSelection,
-  shouldShowOrganisationSelector,
   type ManageableOrganisation,
 } from "@/lib/access/organisation-workspace";
 import {
@@ -174,15 +172,6 @@ function PeoplePageContent() {
     void loadAccess(organisationId);
   }, [loadAccess, organisationId]);
 
-  function selectOrganisation(nextId: string) {
-    accessRequestRef.current += 1;
-    setGrants([]);
-    setProperties([]);
-    setSpaces([]);
-    setFilter("all");
-    router.push(organisationWorkspaceHref("/dashboard/people", nextId));
-  }
-
   const filteredGrants = useMemo(
     () => filterPeopleAccessGrants(grants, filter),
     [filter, grants]
@@ -265,30 +254,11 @@ function PeoplePageContent() {
   }
 
   const loading = organisationsLoading || accessLoading;
-  const contextOrganisation =
-    selection.kind === "ready" || selection.kind === "archived"
-      ? selection.organisation
-      : null;
-  const selectable =
-    selection.kind === "empty" ? [] : selection.selectable;
 
   return (
     <DashboardShell
       workspaceLabel="Hosting"
       pageTitle="People & access"
-      pageContext={
-        contextOrganisation &&
-        (shouldShowOrganisationSelector(selectable.length) ||
-          selection.kind === "archived") ? (
-          <OrganisationWorkspaceContext
-            name={contextOrganisation.name}
-            selectedId={contextOrganisation.id}
-            organisations={selectable}
-            archived={selection.kind === "archived"}
-            onSelect={selectOrganisation}
-          />
-        ) : null
-      }
       pageSubtitle="Manage who has access to this organisation, its properties and spaces."
       navItems={hosting.navItems}
       activeHref="/dashboard/people"

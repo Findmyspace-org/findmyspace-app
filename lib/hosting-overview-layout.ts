@@ -29,7 +29,7 @@ export function hostingOverviewSummaryItems(input: {
   ];
   if (input.showFinance) {
     items.push({
-      label: "Revenue",
+      label: "Finance",
       value: input.monthlyIncomeLabel,
       href: input.financeHref,
     });

@@ -6,7 +6,12 @@
 
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { hostingNavItems } from "../lib/dashboard-nav";
+import {
+  dashboardNavItemIsActive,
+  hostingNavItems,
+  RENTER_NAV,
+  RENTER_PAYMENTS_HREF,
+} from "../lib/dashboard-nav";
 import { summarizeHostingAccess } from "../lib/access/hosting-access";
 import type { OrganisationAccessGrant } from "../lib/access/roles";
 import {
@@ -92,7 +97,7 @@ const ui = readFileSync("app/components/hosting/hosting-ui.tsx", "utf8");
     financeHref: "/f",
     listingsHref: "/l",
   });
-  assert.equal(summary.some((item) => item.label === "Revenue"), false);
+  assert.equal(summary.some((item) => item.label === "Finance"), false);
   const ops = hostingOverviewOpsItems({
     awaitingPaymentCount: 0,
     confirmedBookingsCount: 0,
@@ -102,6 +107,92 @@ const ui = readFileSync("app/components/hosting/hosting-ui.tsx", "utf8");
     personalVerification: null,
   });
   assert.equal(ops.some((item) => item.label === "Organisation"), false);
+}
+
+{
+  const oa = summarizeHostingAccess({
+    profileRole: "user",
+    isHostProfile: false,
+    ownedSpaceCount: 0,
+    ownedPropertyCount: 0,
+    grants: [
+      {
+        organisationId: ORG,
+        role: "org_admin",
+        propertyId: null,
+        spaceId: null,
+        status: "active",
+      } satisfies OrganisationAccessGrant,
+    ],
+  });
+  const financeTile = hostingOverviewSummaryItems({
+    pendingRequestsCount: 0,
+    pendingQuestionsCount: 0,
+    monthlyIncomeLabel: "R 85",
+    activeListingsCount: 1,
+    pendingListingApprovalCount: 0,
+    showFinance: oa.showFinance,
+    requestsHref: "/r",
+    commsHref: "/c",
+    financeHref: "/dashboard/finance?organisation=" + ORG,
+    listingsHref: "/l",
+  }).find((item) => item.label === "Finance");
+  assert.ok(financeTile);
+  assert.equal(financeTile?.value, "R 85");
+  assert.match(String(financeTile?.href), /organisation=/);
+}
+
+{
+  assert.equal(RENTER_PAYMENTS_HREF, "/dashboard/my-bookings#payments");
+  assert.equal(
+    RENTER_NAV.some((item) => item.href === RENTER_PAYMENTS_HREF),
+    true
+  );
+  assert.equal(
+    dashboardNavItemIsActive(
+      { href: "/dashboard/my-bookings", matchPrefix: true },
+      {
+        pathname: "/dashboard/my-bookings",
+        hash: "payments",
+        items: RENTER_NAV,
+      }
+    ),
+    false
+  );
+  assert.equal(
+    dashboardNavItemIsActive(
+      { href: RENTER_PAYMENTS_HREF },
+      {
+        pathname: "/dashboard/my-bookings",
+        hash: "payments",
+        activeHref: "/dashboard/my-bookings",
+        items: RENTER_NAV,
+      }
+    ),
+    true
+  );
+  assert.equal(
+    dashboardNavItemIsActive(
+      { href: "/dashboard/my-bookings", matchPrefix: true },
+      {
+        pathname: "/dashboard/my-bookings",
+        hash: "",
+        activeHref: "/dashboard/my-bookings",
+        items: RENTER_NAV,
+      }
+    ),
+    true
+  );
+
+  const bookings = readFileSync("app/dashboard/my-bookings/page.tsx", "utf8");
+  const dashboard = readFileSync("app/dashboard/page.tsx", "utf8");
+  assert.match(bookings, /id="payments"/);
+  assert.match(bookings, /View invoice/);
+  assert.match(dashboard, /RENTER_PAYMENTS_HREF/);
+  assert.match(shell, /dashboardNavItemIsActive/);
+  assert.match(shell, /HostingWorkspaceSelector/);
+  assert.match(header, /HostingWorkspaceSelector/);
+  assert.match(header, /hostingContextHrefOrganisationId/);
 }
 
 console.log("test-hosting-workspace-ui: ok");

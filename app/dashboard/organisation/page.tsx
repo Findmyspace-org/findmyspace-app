@@ -1,15 +1,13 @@
 "use client";
 
 import { FormEvent, Suspense, useCallback, useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import RequireAuth from "@/app/components/RequireAuth";
 import DashboardShell from "@/app/components/DashboardShell";
-import OrganisationWorkspaceContext from "@/app/components/OrganisationWorkspaceContext";
 import { useHostingWorkspace } from "@/lib/use-hosting-workspace";
 import { fetchManageableOrganisations } from "@/lib/access/organisation-access-client";
 import {
   ORGANISATION_QUERY_PARAM,
-  organisationWorkspaceHref,
   resolveOrganisationWorkspaceSelection,
   type ManageableOrganisation,
 } from "@/lib/access/organisation-workspace";
@@ -28,7 +26,6 @@ import {
 } from "@/lib/organisation-commercial-dto";
 
 function OrganisationCommercialPageContent() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const hosting = useHostingWorkspace();
   const requestedId = searchParams.get(ORGANISATION_QUERY_PARAM);
@@ -188,28 +185,10 @@ function OrganisationCommercialPageContent() {
     }
   }
 
-  const contextOrganisation =
-    selection.kind === "ready" || selection.kind === "archived"
-      ? selection.organisation
-      : null;
-
   return (
     <DashboardShell
       workspaceLabel="Hosting"
       pageTitle="Organisation"
-      pageContext={
-        contextOrganisation ? (
-          <OrganisationWorkspaceContext
-            name={contextOrganisation.name}
-            selectedId={contextOrganisation.id}
-            organisations={organisations}
-            archived={selection.kind === "archived"}
-            onSelect={(id) =>
-              router.push(organisationWorkspaceHref("/dashboard/organisation", id))
-            }
-          />
-        ) : null
-      }
       pageSubtitle="Verification, evidence, and bank details for payout readiness."
       navItems={hosting.navItems}
       activeHref="/dashboard/organisation"

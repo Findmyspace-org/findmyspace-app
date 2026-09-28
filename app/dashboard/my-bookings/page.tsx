@@ -343,6 +343,16 @@ function MyBookingsPageContent({
     };
   }, [communicationOpenBookingId]);
 
+  useEffect(() => {
+    if (loading) return;
+    if (typeof window === "undefined") return;
+    if (window.location.hash !== "#payments") return;
+    document.getElementById("payments")?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
+  }, [loading]);
+
   async function openInvoiceModal(bookingId: string) {
     setInvoiceError(null);
     setInvoiceHtml(null);
@@ -992,7 +1002,10 @@ function MyBookingsPageContent({
       >
         <>
           <div className="rounded-2xl border border-gray-200 bg-white p-3 shadow-sm sm:p-5">
-            <div className="mb-4 grid grid-cols-2 gap-2 lg:grid-cols-4">
+            <div
+              id="payments"
+              className="mb-4 grid scroll-mt-24 grid-cols-2 gap-2 lg:grid-cols-4"
+            >
               {[
                 {
                   key: "spent",
@@ -1242,6 +1255,20 @@ function MyBookingsPageContent({
                             <p>Your booking is only confirmed once payment is complete.</p>
                           </div>
                         )}
+
+                        {showInvoice ? (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void openInvoiceModal(booking.id);
+                            }}
+                            className="inline-flex w-full items-center justify-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-xs font-medium text-[#192a3a] hover:bg-gray-50"
+                          >
+                            <FileText className="h-3.5 w-3.5 shrink-0" />
+                            View invoice
+                          </button>
+                        ) : null}
 
                         <div className="flex w-full justify-end">
                           <div className="flex items-center gap-0.5 sm:gap-1">

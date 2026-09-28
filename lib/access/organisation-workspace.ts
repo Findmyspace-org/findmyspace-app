@@ -13,6 +13,28 @@ import { isUuid } from "@/lib/access/organisation-access-policy";
 
 export const ORGANISATION_QUERY_PARAM = "organisation";
 
+/** Explicit personal Hosting ledger. Omit still defaults to primary organisation. */
+export const PERSONAL_HOSTING_QUERY_VALUE = "personal";
+export const PERSONAL_HOSTING_LABEL = "Personal hosting";
+
+export function isPersonalHostingQueryValue(
+  value: string | null | undefined
+): boolean {
+  return (value?.trim().toLowerCase() || "") === PERSONAL_HOSTING_QUERY_VALUE;
+}
+
+/**
+ * UUID for database filters. Never returns the personal sentinel or other
+ * non-UUID query values.
+ */
+export function organisationUuidFromQueryValue(
+  value: string | null | undefined
+): string | null {
+  const trimmed = value?.trim() || "";
+  if (!trimmed || isPersonalHostingQueryValue(trimmed)) return null;
+  return isUuid(trimmed) ? trimmed : null;
+}
+
 export type ManageableOrganisation = {
   id: string;
   name: string;

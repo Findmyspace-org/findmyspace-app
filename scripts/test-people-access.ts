@@ -941,8 +941,11 @@ function wsOrg(
     assert.equal(shouldShowOrganisationSelector(selection.selectable.length), false);
   }
   assert.match(orgWorkspaceContext, /shouldShowOrganisationSelector/);
-  assert.match(peoplePage, /OrganisationWorkspaceContext/);
-  assert.match(peoplePage, /contextOrganisation\.name/);
+  assert.doesNotMatch(peoplePage, /OrganisationWorkspaceContext/);
+  assert.match(
+    readFileSync("app/components/DashboardShell.tsx", "utf8"),
+    /HostingWorkspaceSelector/
+  );
 }
 
 // B multiple manageable Organisations — selector and switching
@@ -971,8 +974,12 @@ function wsOrg(
     organisationWorkspaceHref("/dashboard/people", ORG_WS_B),
     `/dashboard/people?${ORGANISATION_QUERY_PARAM}=${ORG_WS_B}`
   );
-  assert.match(peoplePage, /router\.push\(\s*organisationWorkspaceHref/);
-  assert.match(orgWorkspaceContext, /aria-label="Organisation"/);
+  assert.match(orgWorkspaceContext, /selectLabel = "Organisation"/);
+  assert.match(orgWorkspaceContext, /aria-label=\{selectLabel\}/);
+  assert.match(
+    readFileSync("app/components/DashboardShell.tsx", "utf8"),
+    /HostingWorkspaceSelector/
+  );
 }
 
 // C Global Admin receives organisations from existing authorised endpoint

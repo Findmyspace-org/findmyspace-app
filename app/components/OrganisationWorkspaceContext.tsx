@@ -9,6 +9,9 @@ type OrganisationWorkspaceContextProps = {
   selectedId: string;
   organisations: ManageableOrganisation[];
   archived?: boolean;
+  size?: "page" | "compact";
+  selectId?: string;
+  selectLabel?: string;
   onSelect: (organisationId: string) => void;
 };
 
@@ -17,28 +20,36 @@ export default function OrganisationWorkspaceContext({
   selectedId,
   organisations,
   archived = false,
+  size = "page",
+  selectId = "organisation-workspace-select",
+  selectLabel = "Organisation",
   onSelect,
 }: OrganisationWorkspaceContextProps) {
   const showSelector = shouldShowOrganisationSelector(organisations.length);
   const selectedIsSelectable = organisations.some(
     (organisation) => organisation.id === selectedId
   );
+  const compact = size === "compact";
 
   return (
     <div>
       {showSelector ? (
-        <div className="relative max-w-xl">
-          <label className="sr-only" htmlFor="organisation-workspace-select">
-            Organisation
+        <div className={`relative ${compact ? "w-full" : "max-w-xl"}`}>
+          <label className="sr-only" htmlFor={selectId}>
+            {selectLabel}
           </label>
           <select
-            id="organisation-workspace-select"
-            aria-label="Organisation"
+            id={selectId}
+            aria-label={selectLabel}
             value={selectedIsSelectable ? selectedId : ""}
             onChange={(event) => {
               if (event.target.value) onSelect(event.target.value);
             }}
-            className="w-full appearance-none rounded-lg border border-gray-200 bg-white py-1.5 pl-3 pr-10 text-lg font-semibold tracking-tight text-[#0c1d2f] shadow-sm sm:text-2xl"
+            className={
+              compact
+                ? "w-full appearance-none rounded-md border border-gray-200 bg-white py-1.5 pl-3 pr-9 text-sm font-medium text-[#0c1d2f]"
+                : "w-full appearance-none rounded-lg border border-gray-200 bg-white py-1.5 pl-3 pr-10 text-lg font-semibold tracking-tight text-[#0c1d2f] shadow-sm sm:text-2xl"
+            }
           >
             {selectedIsSelectable ? null : (
               <option value="" disabled>
@@ -57,7 +68,13 @@ export default function OrganisationWorkspaceContext({
           />
         </div>
       ) : (
-        <p className="text-lg font-semibold tracking-tight text-[#0c1d2f] sm:text-2xl">
+        <p
+          className={
+            compact
+              ? "truncate text-sm font-medium text-[#0c1d2f]"
+              : "text-lg font-semibold tracking-tight text-[#0c1d2f] sm:text-2xl"
+          }
+        >
           {name}
         </p>
       )}

@@ -18,9 +18,18 @@ import AuthModal from "@/app/components/AuthModal";
 import { sanitizeNextPath } from "@/lib/auth-redirect";
 import { isPlatformAdminRole } from "@/lib/admin-roles";
 import type { HostingAccessSummary } from "@/lib/access/hosting-access";
+import {
+  hostingContextFromSummary,
+  hostingContextHrefOrganisationId,
+} from "@/lib/access/hosting-context";
 import { ORGANISATION_QUERY_PARAM } from "@/lib/access/organisation-workspace";
-import { fetchHostingAccessSummary } from "@/lib/hosting-access-client";
+import { fetchHostingWorkspaceDisplay } from "@/lib/hosting-access-client";
 import { hostingNavItems, RENTER_NAV } from "@/lib/dashboard-nav";
+import HostingWorkspaceSelector from "@/app/components/HostingWorkspaceSelector";
+import {
+  hostingWorkspaceSelectorModel,
+  type HostingWorkspaceSelectorModel,
+} from "@/lib/workspace-switch";
 import {
   Home,
   Search,
@@ -91,6 +100,11 @@ export default function Header() {
   const [hostingSummary, setHostingSummary] = useState<HostingAccessSummary | null>(
     null
   );
+  const [hostingWorkspace, setHostingWorkspace] =
+    useState<HostingWorkspaceSelectorModel | null>(null);
+  const [hostingHrefOrganisationId, setHostingHrefOrganisationId] = useState<
+    string | null
+  >(null);
   const [loading, setLoading] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
   const [bellOpen, setBellOpen] = useState(false);
@@ -211,6 +225,8 @@ export default function Header() {
         setIsHost(false);
         setHasHostingAccess(false);
         setHostingSummary(null);
+        setHostingWorkspace(null);
+        setHostingHrefOrganisationId(null);
         return;
       }
 
@@ -234,6 +250,8 @@ export default function Header() {
           setIsHost(false);
           setHasHostingAccess(false);
           setHostingSummary(null);
+          setHostingWorkspace(null);
+          setHostingHrefOrganisationId(null);
           return;
         }
 
@@ -247,16 +265,35 @@ export default function Header() {
         setIsHost(data?.is_host === true);
 
         try {
-          const summary = await fetchHostingAccessSummary(
+          const { summary, organisations } = await fetchHostingWorkspaceDisplay(
             requestedOrganisationId
           );
           if (!mounted) return;
+          const context = hostingContextFromSummary(
+            summary,
+            requestedOrganisationId
+          );
+          const hrefOrganisationId = hostingContextHrefOrganisationId(
+            context,
+            requestedOrganisationId
+          );
           setHasHostingAccess(summary.hasHostingAccess);
           setHostingSummary(summary);
+          setHostingHrefOrganisationId(hrefOrganisationId);
+          setHostingWorkspace(
+            hostingWorkspaceSelectorModel({
+              summary,
+              context,
+              organisations,
+              hrefOrganisationId,
+            })
+          );
         } catch {
           if (!mounted) return;
           setHasHostingAccess(false);
           setHostingSummary(null);
+          setHostingWorkspace(null);
+          setHostingHrefOrganisationId(null);
         }
       } catch (error) {
         console.error("Profile load failed:", error);
@@ -265,6 +302,8 @@ export default function Header() {
         setIsHost(false);
         setHasHostingAccess(false);
         setHostingSummary(null);
+        setHostingWorkspace(null);
+        setHostingHrefOrganisationId(null);
       }
     }
 
@@ -877,7 +916,9 @@ export default function Header() {
         hasHostingAccess && hostingSummary
           ? hostingNavItems(
               hostingSummary,
-              requestedOrganisationId || hostingSummary.primaryOrganisationId
+              hostingHrefOrganisationId ||
+                requestedOrganisationId ||
+                hostingSummary.primaryOrganisationId
             ).map((item) => ({
               label: item.label,
               href: item.href,
@@ -1133,6 +1174,17 @@ export default function Header() {
                         <div className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500">
                           {section.title}
                         </div>
+
+                        {section.title === "Hosting" &&
+                        hostingWorkspace?.showSelector ? (
+                          <div className="mb-1 px-2 pb-1">
+                            <HostingWorkspaceSelector
+                              model={hostingWorkspace}
+                              size="compact"
+                              selectId="header-hosting-workspace-select"
+                            />
+                          </div>
+                        ) : null}
 
                         <div className="space-y-0.5">
                           {section.items.map((item) => {
