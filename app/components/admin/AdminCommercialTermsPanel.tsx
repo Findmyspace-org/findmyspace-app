@@ -7,17 +7,27 @@ import {
   DEFAULT_TRANSACTION_FEE_PERCENT,
 } from "@/lib/commercial-calculator";
 import type { CommercialModel, CommercialScopeType } from "@/lib/commercial-terms";
+import type {
+  CommercialTermTier,
+  SubscriptionPricingMode,
+  SubscriptionResolution,
+} from "@/lib/commercial-subscription";
 
 type ResolvedDto = {
   model: CommercialModel;
   commissionPercent: number;
   transactionFeePercent: number;
   monthlySubscriptionAmount: number;
+  subscriptionPricingMode: SubscriptionPricingMode | null;
+  tiers: CommercialTermTier[];
+  subscription: SubscriptionResolution | null;
   effectiveFrom: string | null;
   adminNote: string | null;
   source: string;
   accountingMode: string;
   inheritedFrom: string;
+  inherited?: boolean;
+  isOverride?: boolean;
   summary: string;
 };
 
@@ -29,9 +39,18 @@ type TermRow = {
   commission_percent: number | string;
   transaction_fee_percent: number | string;
   monthly_subscription_amount: number | string;
+  subscription_pricing_mode?: SubscriptionPricingMode | null;
   effective_from: string;
   superseded_at: string | null;
   admin_note: string | null;
+  tiers?: CommercialTermTier[];
+};
+
+type TierDraft = {
+  minCount: string;
+  maxCount: string;
+  monthlyAmount: string;
+  label: string;
 };
 
 function todayIsoDate(): string {
@@ -42,6 +61,35 @@ function todayIsoDate(): string {
 
 function money(value: number | string | null | undefined): string {
   return `R ${Number(value || 0).toFixed(2)}`;
+}
+
+function emptyTier(): TierDraft {
+  return { minCount: "1", maxCount: "", monthlyAmount: "0", label: "" };
+}
+
+function tiersToDrafts(tiers: CommercialTermTier[] | undefined): TierDraft[] {
+  if (!tiers || tiers.length === 0) return [emptyTier()];
+  return tiers.map((tier) => ({
+    minCount: String(tier.minCount),
+    maxCount: tier.maxCount == null ? "" : String(tier.maxCount),
+    monthlyAmount: String(tier.monthlyAmount),
+    label: tier.label || "",
+  }));
+}
+
+function draftsToPayload(drafts: TierDraft[]) {
+  return drafts.map((tier, index) => ({
+    min_count: Number(tier.minCount),
+    max_count: tier.maxCount.trim() === "" ? null : Number(tier.maxCount),
+    monthly_amount: Number(tier.monthlyAmount),
+    label: tier.label.trim() || null,
+    sort_order: index,
+  }));
+}
+
+function formatTierRange(tier: CommercialTermTier): string {
+  if (tier.maxCount == null) return `${tier.minCount}+`;
+  return `${tier.minCount}–${tier.maxCount}`;
 }
 
 export function AdminCommercialTermsPanel({
@@ -73,7 +121,9 @@ export function AdminCommercialTermsPanel({
   const [transactionFeePercent, setTransactionFeePercent] = useState(
     String(DEFAULT_TRANSACTION_FEE_PERCENT)
   );
+  const [pricingMode, setPricingMode] = useState<SubscriptionPricingMode>("fixed");
   const [monthlySubscriptionAmount, setMonthlySubscriptionAmount] = useState("0");
+  const [tiers, setTiers] = useState<TierDraft[]>([emptyTier()]);
   const [effectiveFrom, setEffectiveFrom] = useState(todayIsoDate);
   const [adminNote, setAdminNote] = useState("");
 
@@ -111,6 +161,8 @@ export function AdminCommercialTermsPanel({
         setMonthlySubscriptionAmount(
           String(json.resolved.monthlySubscriptionAmount)
         );
+        setPricingMode(json.resolved.subscriptionPricingMode || "fixed");
+        setTiers(tiersToDrafts(json.resolved.tiers));
         setAdminNote(json.resolved.adminNote || "");
       }
     } catch (err) {
@@ -138,6 +190,11 @@ export function AdminCommercialTermsPanel({
           commission_percent: Number(commissionPercent),
           transaction_fee_percent: Number(transactionFeePercent),
           monthly_subscription_amount: Number(monthlySubscriptionAmount),
+          subscription_pricing_mode: model === "subscription" ? pricingMode : null,
+          tiers:
+            model === "subscription" && pricingMode !== "fixed"
+              ? draftsToPayload(tiers)
+              : [],
           effective_from: effectiveFrom,
           admin_note: adminNote,
         }),
@@ -153,15 +210,22 @@ export function AdminCommercialTermsPanel({
     }
   }
 
+  const subscription = resolved?.subscription ?? null;
+  const saveLabel =
+    scopeType === "platform"
+      ? "Save platform default from effective date"
+      : `Save ${scopeType} override from effective date`;
+
   return (
     <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
       <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
         {title}
       </h2>
       <p className="mt-2 text-sm text-gray-600">
-        Global Admin only. Hosts cannot change these terms. New bookings use the
-        arrangement in force on the booking date; historical bookings are never
-        recalculated.
+        Global Admin only. Hosts, organisation admins, and managers cannot change
+        these terms. A more specific override may use a completely different model
+        from the platform default. Historical bookings and monthly snapshots are
+        never rewritten.
       </p>
 
       {loading ? (
@@ -169,17 +233,72 @@ export function AdminCommercialTermsPanel({
       ) : resolved ? (
         <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
           <p>
-            <span className="font-medium text-[#192a3a]">Current effective:</span>{" "}
+            <span className="font-medium text-[#192a3a]">Effective commercial terms:</span>{" "}
             {resolved.summary}
           </p>
           <p className="mt-1 text-gray-600">
-            Inherited from {resolved.inheritedFrom}
+            Source: {resolved.inheritedFrom}
+            {resolved.inherited ? " · inherited" : " · override at this scope"}
             {resolved.effectiveFrom
               ? ` · effective ${new Date(resolved.effectiveFrom).toLocaleDateString("en-ZA")}`
               : ""}
           </p>
+          {resolved.model === "subscription" ? (
+            <dl className="mt-3 grid gap-2 sm:grid-cols-2 text-xs text-gray-700">
+              <div>
+                <dt className="font-medium text-gray-500">Subscription basis</dt>
+                <dd>
+                  {resolved.subscriptionPricingMode === "by_space_count"
+                    ? "Number of spaces"
+                    : resolved.subscriptionPricingMode === "by_property_count"
+                      ? "Number of properties"
+                      : "Fixed monthly amount"}
+                </dd>
+              </div>
+              <div>
+                <dt className="font-medium text-gray-500">Current monthly fee</dt>
+                <dd>{money(subscription?.monthlyAmount ?? resolved.monthlySubscriptionAmount)}</dd>
+              </div>
+              {subscription?.inventoryCount != null ? (
+                <div>
+                  <dt className="font-medium text-gray-500">Current count</dt>
+                  <dd>
+                    {subscription.inventoryCount}{" "}
+                    {subscription.inventoryBasis === "property" ? "properties" : "spaces"}
+                  </dd>
+                </div>
+              ) : null}
+              {subscription?.matchedTier ? (
+                <div>
+                  <dt className="font-medium text-gray-500">Current tier</dt>
+                  <dd>
+                    {subscription.matchedTier.label ||
+                      formatTierRange(subscription.matchedTier)}{" "}
+                    · {money(subscription.matchedTier.monthlyAmount)}
+                  </dd>
+                </div>
+              ) : null}
+              {subscription?.unresolvedReason === "platform_default_needs_scope" ? (
+                <p className="sm:col-span-2 text-gray-500">
+                  Select an organisation, property, or space to see the inventory
+                  count and matched tier for this default.
+                </p>
+              ) : null}
+              {subscription?.unresolvedReason === "no_matching_tier" ? (
+                <p className="sm:col-span-2 text-amber-800">
+                  No tier matches the current inventory count.
+                </p>
+              ) : null}
+              {subscription?.unresolvedReason === "ambiguous_overlapping_tiers" ? (
+                <p className="sm:col-span-2 text-amber-800">
+                  Overlapping tiers match this inventory count. Save a new terms
+                  version with non-overlapping ranges.
+                </p>
+              ) : null}
+            </dl>
+          ) : null}
           {resolved.adminNote ? (
-            <p className="mt-1 text-xs text-gray-500">Internal note: {resolved.adminNote}</p>
+            <p className="mt-2 text-xs text-gray-500">Internal note: {resolved.adminNote}</p>
           ) : null}
         </div>
       ) : null}
@@ -234,6 +353,22 @@ export function AdminCommercialTermsPanel({
         </label>
         {model === "subscription" ? (
           <label className="flex flex-col gap-1 text-xs text-gray-600">
+            Subscription pricing
+            <select
+              value={pricingMode}
+              onChange={(event) =>
+                setPricingMode(event.target.value as SubscriptionPricingMode)
+              }
+              className="rounded-md border border-gray-300 px-2 py-2 text-sm"
+            >
+              <option value="fixed">Fixed monthly amount</option>
+              <option value="by_property_count">By property count</option>
+              <option value="by_space_count">By space count</option>
+            </select>
+          </label>
+        ) : null}
+        {model === "subscription" && pricingMode === "fixed" ? (
+          <label className="flex flex-col gap-1 text-xs text-gray-600">
             Monthly subscription (ZAR)
             <input
               type="number"
@@ -257,14 +392,112 @@ export function AdminCommercialTermsPanel({
         </label>
       </div>
 
+      {model === "subscription" && pricingMode !== "fixed" ? (
+        <div className="mt-4">
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+            Subscription tiers
+          </h3>
+          <p className="mt-1 text-xs text-gray-500">
+            Leave maximum blank for an open-ended highest tier. Ranges cannot overlap.
+          </p>
+          <div className="mt-2 space-y-2">
+            {tiers.map((tier, index) => (
+              <div
+                key={`tier-${index}`}
+                className="grid gap-2 sm:grid-cols-5 rounded-md border border-gray-200 p-2"
+              >
+                <label className="flex flex-col gap-1 text-xs text-gray-600">
+                  Min count
+                  <input
+                    type="number"
+                    min={0}
+                    value={tier.minCount}
+                    onChange={(event) => {
+                      const next = [...tiers];
+                      next[index] = { ...tier, minCount: event.target.value };
+                      setTiers(next);
+                    }}
+                    className="rounded-md border border-gray-300 px-2 py-1.5 text-sm"
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-xs text-gray-600">
+                  Max count
+                  <input
+                    type="number"
+                    min={0}
+                    value={tier.maxCount}
+                    placeholder="open"
+                    onChange={(event) => {
+                      const next = [...tiers];
+                      next[index] = { ...tier, maxCount: event.target.value };
+                      setTiers(next);
+                    }}
+                    className="rounded-md border border-gray-300 px-2 py-1.5 text-sm"
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-xs text-gray-600">
+                  Monthly (ZAR)
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={tier.monthlyAmount}
+                    onChange={(event) => {
+                      const next = [...tiers];
+                      next[index] = { ...tier, monthlyAmount: event.target.value };
+                      setTiers(next);
+                    }}
+                    className="rounded-md border border-gray-300 px-2 py-1.5 text-sm"
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-xs text-gray-600 sm:col-span-2">
+                  Label
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={tier.label}
+                      onChange={(event) => {
+                        const next = [...tiers];
+                        next[index] = { ...tier, label: event.target.value };
+                        setTiers(next);
+                      }}
+                      placeholder="4–10 spaces"
+                      className="flex-1 rounded-md border border-gray-300 px-2 py-1.5 text-sm"
+                    />
+                    {tiers.length > 1 ? (
+                      <button
+                        type="button"
+                        onClick={() => setTiers(tiers.filter((_, i) => i !== index))}
+                        className="text-xs text-red-700"
+                      >
+                        Remove
+                      </button>
+                    ) : null}
+                  </div>
+                </label>
+              </div>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={() => setTiers([...tiers, emptyTier()])}
+            className="mt-2 text-xs font-medium text-[#192a3a]"
+          >
+            Add tier
+          </button>
+        </div>
+      ) : null}
+
       <p className="mt-3 text-xs text-gray-500">
         {model === "commission"
           ? `${Number(commissionPercent || 0).toFixed(2)}% platform + ${Number(transactionFeePercent || 0).toFixed(2)}% transaction`
           : model === "subscription"
-            ? `${money(monthlySubscriptionAmount)}/month + ${Number(transactionFeePercent || 0).toFixed(2)}% transaction`
+            ? pricingMode === "fixed"
+              ? `${money(monthlySubscriptionAmount)}/month + ${Number(transactionFeePercent || 0).toFixed(2)}% transaction`
+              : `Tiered ${pricingMode === "by_space_count" ? "by spaces" : "by properties"} + ${Number(transactionFeePercent || 0).toFixed(2)}% transaction`
             : `0% platform + ${Number(transactionFeePercent || 0).toFixed(2)}% transaction`}
-        . Transaction fee applies to each online payment. Subscription is not billed
-        automatically in this pass.
+        . Transaction fee applies to each online payment. Monthly subscription is not
+        billed automatically in this pass.
       </p>
 
       {message ? (
@@ -286,7 +519,7 @@ export function AdminCommercialTermsPanel({
         disabled={saving || (scopeType !== "platform" && !scopeId)}
         className="mt-4 rounded-md bg-[#192a3a] px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60"
       >
-        {saving ? "Saving…" : "Save terms from effective date"}
+        {saving ? "Saving…" : saveLabel}
       </button>
 
       {history.length > 0 ? (
@@ -299,6 +532,7 @@ export function AdminCommercialTermsPanel({
               <tr>
                 <th className="py-1 pr-3">From</th>
                 <th className="py-1 pr-3">Model</th>
+                <th className="py-1 pr-3">Pricing</th>
                 <th className="py-1 pr-3">Commission</th>
                 <th className="py-1 pr-3">Transaction</th>
                 <th className="py-1 pr-3">Monthly</th>
@@ -315,6 +549,9 @@ export function AdminCommercialTermsPanel({
                       : " – open"}
                   </td>
                   <td className="py-1 pr-3 capitalize">{row.commercial_model}</td>
+                  <td className="py-1 pr-3">
+                    {row.subscription_pricing_mode || "—"}
+                  </td>
                   <td className="py-1 pr-3">{Number(row.commission_percent).toFixed(2)}%</td>
                   <td className="py-1 pr-3">
                     {Number(row.transaction_fee_percent).toFixed(2)}%

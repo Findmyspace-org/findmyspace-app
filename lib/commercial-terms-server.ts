@@ -1,14 +1,42 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
+  countBillableInventory,
+  type BillableInventoryCounts,
+  type BillableInventoryScope,
+  type BillableOrganisationInput,
+  type BillablePropertyInput,
+  type BillableSpaceInput,
+} from "@/lib/commercial-inventory";
+import type { CommercialTermTier } from "@/lib/commercial-subscription";
+import { subscriptionBilledScope } from "@/lib/commercial-subscription";
+import {
   isCommercialUuid,
   parseCommercialTermsWriteBody,
   resolveCommercialTerms,
+  withSubscriptionResolution,
   type CommercialScopeType,
   type CommercialTermRow,
   type ResolvedCommercialTerms,
 } from "@/lib/commercial-terms";
 
-function asTermRow(row: Record<string, unknown>): CommercialTermRow {
+const TERM_COLUMNS =
+  "id, scope_type, scope_id, commercial_model, commission_percent, transaction_fee_percent, monthly_subscription_amount, subscription_pricing_mode, effective_from, superseded_at, admin_note, created_by, created_at";
+
+function asTier(row: Record<string, unknown>): CommercialTermTier {
+  return {
+    id: String(row.id),
+    minCount: Number(row.min_count),
+    maxCount: row.max_count == null ? null : Number(row.max_count),
+    monthlyAmount: Number(row.monthly_amount) || 0,
+    label: (row.label as string | null) ?? null,
+    sortOrder: Number(row.sort_order) || 0,
+  };
+}
+
+function asTermRow(
+  row: Record<string, unknown>,
+  tiers: CommercialTermTier[] = []
+): CommercialTermRow {
   return {
     id: String(row.id),
     scope_type: row.scope_type as CommercialTermRow["scope_type"],
@@ -17,12 +45,44 @@ function asTermRow(row: Record<string, unknown>): CommercialTermRow {
     commission_percent: row.commission_percent as number | string,
     transaction_fee_percent: row.transaction_fee_percent as number | string,
     monthly_subscription_amount: row.monthly_subscription_amount as number | string,
+    subscription_pricing_mode:
+      (row.subscription_pricing_mode as CommercialTermRow["subscription_pricing_mode"]) ??
+      null,
     effective_from: String(row.effective_from),
     superseded_at: (row.superseded_at as string | null) ?? null,
     admin_note: (row.admin_note as string | null) ?? null,
     created_by: (row.created_by as string | null) ?? null,
     created_at: String(row.created_at),
+    tiers,
   };
+}
+
+async function loadTiersForTerms(
+  admin: SupabaseClient,
+  termIds: string[]
+): Promise<Map<string, CommercialTermTier[]>> {
+  const byTerm = new Map<string, CommercialTermTier[]>();
+  if (termIds.length === 0) return byTerm;
+
+  const { data, error } = await admin
+    .from("commercial_term_tiers")
+    .select(
+      "id, commercial_terms_id, min_count, max_count, monthly_amount, label, sort_order"
+    )
+    .in("commercial_terms_id", termIds)
+    .order("sort_order", { ascending: true });
+
+  if (error) {
+    throw new Error(error.message || "Could not load commercial term tiers.");
+  }
+
+  for (const row of (data || []) as Record<string, unknown>[]) {
+    const termId = String(row.commercial_terms_id);
+    const list = byTerm.get(termId) ?? [];
+    list.push(asTier(row));
+    byTerm.set(termId, list);
+  }
+  return byTerm;
 }
 
 export async function loadCommercialTermRows(
@@ -48,9 +108,7 @@ export async function loadCommercialTermRows(
 
   const { data, error } = await admin
     .from("commercial_terms")
-    .select(
-      "id, scope_type, scope_id, commercial_model, commission_percent, transaction_fee_percent, monthly_subscription_amount, effective_from, superseded_at, admin_note, created_by, created_at"
-    )
+    .select(TERM_COLUMNS)
     .or(filters.join(","))
     .order("effective_from", { ascending: false });
 
@@ -58,7 +116,12 @@ export async function loadCommercialTermRows(
     throw new Error(error.message || "Could not load commercial terms.");
   }
 
-  return ((data || []) as Record<string, unknown>[]).map(asTermRow);
+  const raw = (data || []) as Record<string, unknown>[];
+  const tiers = await loadTiersForTerms(
+    admin,
+    raw.map((row) => String(row.id))
+  );
+  return raw.map((row) => asTermRow(row, tiers.get(String(row.id)) ?? []));
 }
 
 export async function resolveListingScopeIds(
@@ -117,6 +180,90 @@ export async function resolveListingScopeIds(
   return { organisationId, propertyId, spaceId, legacySpacePercent };
 }
 
+export async function loadBillableInventoryCounts(
+  admin: SupabaseClient,
+  billedScope: { scopeType: BillableInventoryScope; scopeId: string }
+): Promise<BillableInventoryCounts> {
+  let organisationId: string | null =
+    billedScope.scopeType === "organisation" ? billedScope.scopeId : null;
+  let propertyId: string | null =
+    billedScope.scopeType === "property" ? billedScope.scopeId : null;
+  const spaceId =
+    billedScope.scopeType === "space" ? billedScope.scopeId : null;
+
+  let organisation: BillableOrganisationInput | null = null;
+  let properties: BillablePropertyInput[] = [];
+  let spaces: BillableSpaceInput[] = [];
+
+  if (spaceId) {
+    const { data: space } = await admin
+      .from("spaces")
+      .select("id, property_id, status, archived_at")
+      .eq("id", spaceId)
+      .maybeSingle();
+    const row = space as BillableSpaceInput | null;
+    if (row) {
+      spaces = [row];
+      propertyId = row.property_id ?? propertyId;
+    }
+  }
+
+  if (propertyId) {
+    const { data: property } = await admin
+      .from("properties")
+      .select("id, organisation_id, archived_at")
+      .eq("id", propertyId)
+      .maybeSingle();
+    const row = property as BillablePropertyInput | null;
+    if (row) {
+      properties = [row];
+      organisationId = row.organisation_id ?? organisationId;
+    }
+    if (billedScope.scopeType === "property") {
+      const { data: propertySpaces } = await admin
+        .from("spaces")
+        .select("id, property_id, status, archived_at")
+        .eq("property_id", propertyId);
+      spaces = (propertySpaces || []) as BillableSpaceInput[];
+    }
+  }
+
+  if (organisationId) {
+    const { data: org } = await admin
+      .from("organisations")
+      .select("id, status, archived_at")
+      .eq("id", organisationId)
+      .maybeSingle();
+    organisation = (org as BillableOrganisationInput | null) ?? {
+      id: organisationId,
+    };
+
+    if (billedScope.scopeType === "organisation") {
+      const { data: orgProperties } = await admin
+        .from("properties")
+        .select("id, organisation_id, archived_at")
+        .eq("organisation_id", organisationId);
+      properties = (orgProperties || []) as BillablePropertyInput[];
+      const propertyIds = properties.map((property) => property.id);
+      if (propertyIds.length > 0) {
+        const { data: orgSpaces } = await admin
+          .from("spaces")
+          .select("id, property_id, status, archived_at")
+          .in("property_id", propertyIds);
+        spaces = (orgSpaces || []) as BillableSpaceInput[];
+      }
+    }
+  }
+
+  return countBillableInventory({
+    scopeType: billedScope.scopeType,
+    scopeId: billedScope.scopeId,
+    organisation,
+    properties,
+    spaces,
+  });
+}
+
 export async function loadResolvedCommercialTerms(
   admin: SupabaseClient,
   input: {
@@ -130,7 +277,7 @@ export async function loadResolvedCommercialTerms(
   const effectiveAt = input.effectiveAt ?? new Date();
   const scope = await resolveListingScopeIds(admin, input);
   const rows = await loadCommercialTermRows(admin, scope);
-  return resolveCommercialTerms({
+  const resolved = resolveCommercialTerms({
     organisationId: scope.organisationId,
     propertyId: scope.propertyId,
     spaceId: scope.spaceId,
@@ -139,6 +286,19 @@ export async function loadResolvedCommercialTerms(
     legacySpacePercent:
       input.legacySpacePercent ?? scope.legacySpacePercent,
   });
+
+  const billed =
+    resolved.model === "subscription"
+      ? subscriptionBilledScope({
+          source: resolved.source,
+          ...scope,
+        })
+      : null;
+  const inventory = billed
+    ? await loadBillableInventoryCounts(admin, billed)
+    : null;
+
+  return withSubscriptionResolution(resolved, { ...scope, inventory });
 }
 
 async function assertScopeExists(
@@ -210,18 +370,149 @@ export async function createCommercialTerms(
       commission_percent: value.commissionPercent,
       transaction_fee_percent: value.transactionFeePercent,
       monthly_subscription_amount: value.monthlySubscriptionAmount,
+      subscription_pricing_mode: value.subscriptionPricingMode,
       effective_from: value.effectiveFrom,
       admin_note: value.adminNote,
       created_by: actorUserId,
     })
-    .select(
-      "id, scope_type, scope_id, commercial_model, commission_percent, transaction_fee_percent, monthly_subscription_amount, effective_from, superseded_at, admin_note, created_by, created_at"
-    )
+    .select(TERM_COLUMNS)
     .single();
 
   if (error || !data) {
     throw new Error(error?.message || "Could not save commercial terms.");
   }
 
-  return asTermRow(data as Record<string, unknown>);
+  const termId = String((data as { id: string }).id);
+  let tiers: CommercialTermTier[] = [];
+  if (value.tiers.length > 0) {
+    const { data: tierRows, error: tierError } = await admin
+      .from("commercial_term_tiers")
+      .insert(
+        value.tiers.map((tier, index) => ({
+          commercial_terms_id: termId,
+          min_count: tier.minCount,
+          max_count: tier.maxCount,
+          monthly_amount: tier.monthlyAmount,
+          label: tier.label,
+          sort_order: tier.sortOrder || index,
+        }))
+      )
+      .select(
+        "id, commercial_terms_id, min_count, max_count, monthly_amount, label, sort_order"
+      );
+
+    if (tierError) {
+      throw new Error(tierError.message || "Could not save subscription tiers.");
+    }
+    tiers = ((tierRows || []) as Record<string, unknown>[]).map(asTier);
+  }
+
+  return asTermRow(data as Record<string, unknown>, tiers);
+}
+
+export type CommercialScopeSearchHit = {
+  kind: "organisation" | "property" | "space";
+  id: string;
+  name: string;
+  subtitle: string | null;
+  organisationId: string | null;
+  propertyId: string | null;
+  spaceId: string | null;
+};
+
+export async function searchCommercialScopes(
+  admin: SupabaseClient,
+  input: {
+    kind: "organisation" | "property" | "space";
+    query: string;
+  }
+): Promise<CommercialScopeSearchHit[]> {
+  const q = input.query.trim().slice(0, 80);
+  if (q.length < 2) return [];
+
+  if (input.kind === "organisation") {
+    const { data, error } = await admin
+      .from("organisations")
+      .select("id, name, status")
+      .ilike("name", `%${q}%`)
+      .is("archived_at", null)
+      .order("name")
+      .limit(20);
+    if (error) throw new Error(error.message);
+    return ((data || []) as Array<{ id: string; name: string }>).map((row) => ({
+      kind: "organisation",
+      id: row.id,
+      name: row.name,
+      subtitle: null,
+      organisationId: row.id,
+      propertyId: null,
+      spaceId: null,
+    }));
+  }
+
+  if (input.kind === "property") {
+    const { data, error } = await admin
+      .from("properties")
+      .select("id, name, organisation_id, organisations(name)")
+      .ilike("name", `%${q}%`)
+      .is("archived_at", null)
+      .order("name")
+      .limit(20);
+    if (error) throw new Error(error.message);
+    return (
+      (data || []) as Array<{
+        id: string;
+        name: string;
+        organisation_id: string | null;
+        organisations?: { name?: string | null } | { name?: string | null }[] | null;
+      }>
+    ).map((row) => {
+      const org = Array.isArray(row.organisations)
+        ? row.organisations[0]
+        : row.organisations;
+      return {
+        kind: "property" as const,
+        id: row.id,
+        name: row.name,
+        subtitle: org?.name ?? null,
+        organisationId: row.organisation_id,
+        propertyId: row.id,
+        spaceId: null,
+      };
+    });
+  }
+
+  const { data, error } = await admin
+    .from("spaces")
+    .select("id, title, property_id, properties(name, organisation_id)")
+    .ilike("title", `%${q}%`)
+    .neq("status", "deleted")
+    .is("archived_at", null)
+    .order("title")
+    .limit(20);
+  if (error) throw new Error(error.message);
+  return (
+    (data || []) as Array<{
+      id: string;
+      title: string | null;
+      property_id: string | null;
+      properties?:
+        | { name?: string | null; organisation_id?: string | null }
+        | { name?: string | null; organisation_id?: string | null }[]
+        | null;
+    }>
+  ).map((row) => {
+    const property = Array.isArray(row.properties)
+      ? row.properties[0]
+      : row.properties;
+    return {
+      kind: "space" as const,
+      id: row.id,
+      name: row.title || "Untitled space",
+      subtitle: property?.name ?? null,
+      organisationId: property?.organisation_id ?? null,
+      propertyId: row.property_id,
+      spaceId: row.id,
+    };
+  });
 }

@@ -25,9 +25,25 @@ import {
   resolveCommercialTerms,
   snapshotBookingCommercialInsert,
   stripForbiddenClientCommercialKeys,
+  withSubscriptionResolution,
   type CommercialTermRow,
   type ResolvedCommercialTerms,
 } from "../lib/commercial-terms";
+import {
+  buildSubscriptionPeriodSnapshot,
+  matchSubscriptionTier,
+  matchingSubscriptionTiers,
+  resolveSubscriptionAmount,
+  subscriptionBilledScope,
+  type CommercialTermTier,
+} from "../lib/commercial-subscription";
+import {
+  countBillableInventory,
+  isBillableSpace,
+  BILLABLE_SPACE_EXCLUDED_STATUSES,
+  BILLABLE_SPACE_INCLUDED_STATUSES,
+  SPACE_STATUS_CHECK_VALUES,
+} from "../lib/commercial-inventory";
 import {
   buildFinanceLineItems,
   type FinanceBookingInput,
@@ -78,6 +94,8 @@ function term(
     commission_percent: partial.commission_percent ?? 10,
     transaction_fee_percent: partial.transaction_fee_percent ?? 5,
     monthly_subscription_amount: partial.monthly_subscription_amount ?? 0,
+    subscription_pricing_mode: partial.subscription_pricing_mode ?? null,
+    tiers: partial.tiers ?? [],
     superseded_at: partial.superseded_at ?? null,
     admin_note: partial.admin_note ?? null,
     created_by: partial.created_by ?? GA,
@@ -92,6 +110,9 @@ const splitCommission: ResolvedCommercialTerms = {
   commissionPercent: DEFAULT_COMMISSION_PERCENT,
   transactionFeePercent: DEFAULT_TRANSACTION_FEE_PERCENT,
   monthlySubscriptionAmount: 0,
+  subscriptionPricingMode: null,
+  tiers: [],
+  subscription: null,
   effectiveFrom: "2026-01-01T00:00:00.000Z",
   adminNote: null,
   source: "platform",
@@ -356,6 +377,9 @@ const splitCommission: ResolvedCommercialTerms = {
       commissionPercent: 15,
       transactionFeePercent: 0,
       monthlySubscriptionAmount: 0,
+      subscriptionPricingMode: null,
+      tiers: [],
+      subscription: null,
       effectiveFrom: null,
       adminNote: null,
       source: "legacy_space_percent",
@@ -509,6 +533,13 @@ const splitCommission: ResolvedCommercialTerms = {
     }),
     true
   );
+  assert.equal(
+    hasForbiddenClientCommercialKeys({
+      spaceId: SPACE,
+      subscription_pricing_mode: "by_space_count",
+    }),
+    true
+  );
   const stripped = stripForbiddenClientCommercialKeys({
     spaceId: SPACE,
     platform_fee: 15,
@@ -555,6 +586,477 @@ const splitCommission: ResolvedCommercialTerms = {
   assert.equal(inheritedFromLabel("space"), "Space");
 }
 
+const spaceTiers: CommercialTermTier[] = [
+  {
+    id: "tier-a",
+    minCount: 1,
+    maxCount: 3,
+    monthlyAmount: 500,
+    label: "1–3 spaces",
+    sortOrder: 0,
+  },
+  {
+    id: "tier-b",
+    minCount: 4,
+    maxCount: 10,
+    monthlyAmount: 1000,
+    label: "4–10 spaces",
+    sortOrder: 1,
+  },
+  {
+    id: "tier-c",
+    minCount: 11,
+    maxCount: 30,
+    monthlyAmount: 1500,
+    label: "11–30 spaces",
+    sortOrder: 2,
+  },
+];
+
+{
+  assert.equal(matchSubscriptionTier(1, spaceTiers)?.id, "tier-a");
+  assert.equal(matchSubscriptionTier(5, spaceTiers)?.id, "tier-b");
+  assert.equal(matchSubscriptionTier(15, spaceTiers)?.id, "tier-c");
+  assert.equal(matchSubscriptionTier(0, spaceTiers), null);
+
+  const one = resolveSubscriptionAmount({
+    model: "subscription",
+    pricingMode: "by_space_count",
+    fixedMonthlyAmount: 0,
+    tiers: spaceTiers,
+    inventory: {
+      scopeType: "organisation",
+      scopeId: ORG,
+      propertyCount: 1,
+      spaceCount: 1,
+      organisationBillable: true,
+    },
+    billedScope: { scopeType: "organisation", scopeId: ORG },
+  });
+  const five = resolveSubscriptionAmount({
+    model: "subscription",
+    pricingMode: "by_space_count",
+    fixedMonthlyAmount: 0,
+    tiers: spaceTiers,
+    inventory: {
+      scopeType: "organisation",
+      scopeId: ORG,
+      propertyCount: 1,
+      spaceCount: 5,
+      organisationBillable: true,
+    },
+    billedScope: { scopeType: "organisation", scopeId: ORG },
+  });
+  const fifteen = resolveSubscriptionAmount({
+    model: "subscription",
+    pricingMode: "by_space_count",
+    fixedMonthlyAmount: 0,
+    tiers: spaceTiers,
+    inventory: {
+      scopeType: "organisation",
+      scopeId: ORG,
+      propertyCount: 2,
+      spaceCount: 15,
+      organisationBillable: true,
+    },
+    billedScope: { scopeType: "organisation", scopeId: ORG },
+  });
+  assert.equal(one.monthlyAmount, 500);
+  assert.equal(five.monthlyAmount, 1000);
+  assert.equal(fifteen.monthlyAmount, 1500);
+}
+
+{
+  const platform = term({
+    id: "plat-sub",
+    scope_type: "platform",
+    commercial_model: "subscription",
+    commission_percent: 0,
+    transaction_fee_percent: 5,
+    subscription_pricing_mode: "by_space_count",
+    monthly_subscription_amount: 0,
+    tiers: spaceTiers,
+    effective_from: "2026-01-01T00:00:00.000Z",
+  });
+  const orgCommission = term({
+    id: "org-comm",
+    scope_type: "organisation",
+    scope_id: ORG,
+    commercial_model: "commission",
+    commission_percent: 8,
+    transaction_fee_percent: 5,
+    effective_from: "2026-02-01T00:00:00.000Z",
+  });
+  const propertyFree = term({
+    id: "prop-free",
+    scope_type: "property",
+    scope_id: PROP,
+    commercial_model: "free",
+    commission_percent: 0,
+    transaction_fee_percent: 5,
+    effective_from: "2026-03-01T00:00:00.000Z",
+  });
+  const spaceCommission = term({
+    id: "space-comm",
+    scope_type: "space",
+    scope_id: SPACE,
+    commercial_model: "commission",
+    commission_percent: 12,
+    transaction_fee_percent: 5,
+    effective_from: "2026-04-01T00:00:00.000Z",
+  });
+  const rows = [platform, orgCommission, propertyFree, spaceCommission];
+  const at = "2026-06-01T00:00:00.000Z";
+
+  const otherOrg = resolveCommercialTerms({
+    organisationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa7",
+    effectiveAt: at,
+    rows,
+  });
+  assert.equal(otherOrg.source, "platform");
+  assert.equal(otherOrg.model, "subscription");
+  assert.equal(otherOrg.subscriptionPricingMode, "by_space_count");
+
+  const orgOverride = resolveCommercialTerms({
+    organisationId: ORG,
+    effectiveAt: at,
+    rows,
+  });
+  assert.equal(orgOverride.source, "organisation");
+  assert.equal(orgOverride.model, "commission");
+  assert.equal(orgOverride.commissionPercent, 8);
+
+  const propertyOverride = resolveCommercialTerms({
+    organisationId: ORG,
+    propertyId: PROP,
+    spaceId: null,
+    effectiveAt: at,
+    rows,
+  });
+  assert.equal(propertyOverride.source, "property");
+  assert.equal(propertyOverride.model, "free");
+
+  const spaceOverride = resolveCommercialTerms({
+    organisationId: ORG,
+    propertyId: PROP,
+    spaceId: SPACE,
+    effectiveAt: at,
+    rows,
+  });
+  assert.equal(spaceOverride.source, "space");
+  assert.equal(spaceOverride.model, "commission");
+  assert.equal(spaceOverride.commissionPercent, 12);
+}
+
+{
+  const covered = new Set<string>([
+    ...BILLABLE_SPACE_INCLUDED_STATUSES,
+    ...BILLABLE_SPACE_EXCLUDED_STATUSES,
+  ]);
+  for (const status of SPACE_STATUS_CHECK_VALUES) {
+    assert.equal(covered.has(status), true, `unclassified space status: ${status}`);
+  }
+  for (const status of BILLABLE_SPACE_INCLUDED_STATUSES) {
+    assert.equal(isBillableSpace({ id: "x", status, archived_at: null }), true, status);
+  }
+  for (const status of BILLABLE_SPACE_EXCLUDED_STATUSES) {
+    assert.equal(isBillableSpace({ id: "x", status, archived_at: null }), false, status);
+  }
+  assert.equal(
+    isBillableSpace({ id: "x", status: "active", archived_at: "2026-01-01T00:00:00.000Z" }),
+    false
+  );
+
+  const PROP_B = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa10";
+  const includedSpaces = BILLABLE_SPACE_INCLUDED_STATUSES.map((status, index) => ({
+    id: `aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaa${String(20 + index).padStart(2, "0")}`,
+    property_id: PROP,
+    status,
+    archived_at: null,
+  }));
+  const excludedSpaces = BILLABLE_SPACE_EXCLUDED_STATUSES.map((status, index) => ({
+    id: `aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaa${String(40 + index).padStart(2, "0")}`,
+    property_id: PROP,
+    status,
+    archived_at: status === "deleted" ? "2026-01-02T00:00:00.000Z" : null,
+  }));
+  const counts = countBillableInventory({
+    scopeType: "organisation",
+    scopeId: ORG,
+    organisation: { id: ORG, status: "active", archived_at: null },
+    properties: [
+      { id: PROP, organisation_id: ORG, archived_at: null },
+      { id: PROP_B, organisation_id: ORG, archived_at: "2026-01-01T00:00:00.000Z" },
+    ],
+    spaces: [
+      ...includedSpaces,
+      ...excludedSpaces,
+      {
+        id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa50",
+        property_id: PROP_B,
+        status: "active",
+        archived_at: null,
+      },
+    ],
+  });
+  assert.equal(counts.propertyCount, 1);
+  assert.equal(counts.spaceCount, BILLABLE_SPACE_INCLUDED_STATUSES.length);
+
+  const archivedOrg = countBillableInventory({
+    scopeType: "organisation",
+    scopeId: ORG,
+    organisation: { id: ORG, status: "archived", archived_at: "2026-01-01T00:00:00.000Z" },
+    properties: [{ id: PROP, organisation_id: ORG, archived_at: null }],
+    spaces: [{ id: SPACE, property_id: PROP, status: "active", archived_at: null }],
+  });
+  assert.equal(archivedOrg.propertyCount, 0);
+  assert.equal(archivedOrg.spaceCount, 0);
+
+  const propertyScope = countBillableInventory({
+    scopeType: "property",
+    scopeId: PROP,
+    organisation: { id: ORG, status: "active", archived_at: null },
+    properties: [{ id: PROP, organisation_id: ORG, archived_at: null }],
+    spaces: [
+      { id: SPACE, property_id: PROP, status: "active", archived_at: null },
+      {
+        id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa51",
+        property_id: PROP,
+        status: "paused",
+        archived_at: null,
+      },
+    ],
+  });
+  assert.equal(propertyScope.propertyCount, 1);
+  assert.equal(propertyScope.spaceCount, 2);
+
+  const spaceBillable = countBillableInventory({
+    scopeType: "space",
+    scopeId: SPACE,
+    organisation: { id: ORG, status: "active", archived_at: null },
+    properties: [{ id: PROP, organisation_id: ORG, archived_at: null }],
+    spaces: [{ id: SPACE, property_id: PROP, status: "active", archived_at: null }],
+  });
+  assert.equal(spaceBillable.spaceCount, 1);
+  const spaceUnclaimed = countBillableInventory({
+    scopeType: "space",
+    scopeId: SPACE,
+    organisation: { id: ORG, status: "active", archived_at: null },
+    properties: [{ id: PROP, organisation_id: ORG, archived_at: null }],
+    spaces: [{ id: SPACE, property_id: PROP, status: "unclaimed", archived_at: null }],
+  });
+  assert.equal(spaceUnclaimed.spaceCount, 0);
+}
+
+{
+  assert.deepEqual(
+    subscriptionBilledScope({
+      source: "platform",
+      organisationId: ORG,
+      propertyId: PROP,
+      spaceId: SPACE,
+    }),
+    { scopeType: "organisation", scopeId: ORG }
+  );
+  assert.deepEqual(
+    subscriptionBilledScope({
+      source: "organisation",
+      organisationId: ORG,
+      propertyId: PROP,
+      spaceId: SPACE,
+    }),
+    { scopeType: "organisation", scopeId: ORG }
+  );
+  assert.deepEqual(
+    subscriptionBilledScope({
+      source: "property",
+      organisationId: ORG,
+      propertyId: PROP,
+      spaceId: SPACE,
+    }),
+    { scopeType: "property", scopeId: PROP }
+  );
+  assert.deepEqual(
+    subscriptionBilledScope({
+      source: "space",
+      organisationId: ORG,
+      propertyId: PROP,
+      spaceId: SPACE,
+    }),
+    { scopeType: "space", scopeId: SPACE }
+  );
+  assert.equal(
+    subscriptionBilledScope({
+      source: "platform",
+      organisationId: null,
+    }),
+    null
+  );
+}
+
+{
+  const overlapping = [
+    {
+      id: "o1",
+      minCount: 1,
+      maxCount: 10,
+      monthlyAmount: 500,
+      label: "1–10",
+      sortOrder: 0,
+    },
+    {
+      id: "o2",
+      minCount: 5,
+      maxCount: 20,
+      monthlyAmount: 1000,
+      label: "5–20",
+      sortOrder: 1,
+    },
+  ];
+  assert.equal(matchingSubscriptionTiers(7, overlapping).length, 2);
+  assert.equal(matchSubscriptionTier(7, overlapping), null);
+  const ambiguous = resolveSubscriptionAmount({
+    model: "subscription",
+    pricingMode: "by_space_count",
+    fixedMonthlyAmount: 0,
+    tiers: overlapping,
+    inventory: {
+      scopeType: "organisation",
+      scopeId: ORG,
+      propertyCount: 1,
+      spaceCount: 7,
+      organisationBillable: true,
+    },
+    billedScope: { scopeType: "organisation", scopeId: ORG },
+  });
+  assert.equal(ambiguous.unresolvedReason, "ambiguous_overlapping_tiers");
+  assert.equal(ambiguous.matchedTier, null);
+  assert.equal(ambiguous.monthlyAmount, 0);
+}
+
+{
+  const jan = resolveSubscriptionAmount({
+    model: "subscription",
+    pricingMode: "by_space_count",
+    fixedMonthlyAmount: 0,
+    tiers: spaceTiers,
+    inventory: {
+      scopeType: "organisation",
+      scopeId: ORG,
+      propertyCount: 1,
+      spaceCount: 4,
+      organisationBillable: true,
+    },
+    billedScope: { scopeType: "organisation", scopeId: ORG },
+  });
+  const feb = resolveSubscriptionAmount({
+    model: "subscription",
+    pricingMode: "by_space_count",
+    fixedMonthlyAmount: 0,
+    tiers: spaceTiers,
+    inventory: {
+      scopeType: "organisation",
+      scopeId: ORG,
+      propertyCount: 1,
+      spaceCount: 11,
+      organisationBillable: true,
+    },
+    billedScope: { scopeType: "organisation", scopeId: ORG },
+  });
+  const janSnap = buildSubscriptionPeriodSnapshot({
+    billingAt: "2026-01-15T10:00:00+02:00",
+    billedScope: { scopeType: "organisation", scopeId: ORG },
+    commercialTermsId: "plat-sub",
+    resolution: jan,
+  });
+  const febSnap = buildSubscriptionPeriodSnapshot({
+    billingAt: "2026-02-15T10:00:00+02:00",
+    billedScope: { scopeType: "organisation", scopeId: ORG },
+    commercialTermsId: "plat-sub",
+    resolution: feb,
+  });
+  assert.equal(janSnap.billingMonth, "2026-01-01");
+  assert.equal(janSnap.inventoryCount, 4);
+  assert.equal(janSnap.monthlyAmount, 1000);
+  assert.equal(febSnap.billingMonth, "2026-02-01");
+  assert.equal(febSnap.inventoryCount, 11);
+  assert.equal(febSnap.monthlyAmount, 1500);
+  assert.equal(janSnap.monthlyAmount, 1000);
+}
+
+{
+  const parsed = parseCommercialTermsWriteBody({
+    scope_type: "platform",
+    commercial_model: "subscription",
+    commission_percent: 10,
+    transaction_fee_percent: 5,
+    subscription_pricing_mode: "by_space_count",
+    monthly_subscription_amount: 99,
+    tiers: spaceTiers.map((tier) => ({
+      min_count: tier.minCount,
+      max_count: tier.maxCount,
+      monthly_amount: tier.monthlyAmount,
+      label: tier.label,
+      sort_order: tier.sortOrder,
+    })),
+    effective_from: "2026-11-01",
+  });
+  assert.equal(parsed.ok, true);
+  if (parsed.ok) {
+    assert.equal(parsed.value.model, "subscription");
+    assert.equal(parsed.value.commissionPercent, 0);
+    assert.equal(parsed.value.monthlySubscriptionAmount, 0);
+    assert.equal(parsed.value.subscriptionPricingMode, "by_space_count");
+    assert.equal(parsed.value.tiers.length, 3);
+  }
+
+  const overlap = parseCommercialTermsWriteBody({
+    scope_type: "platform",
+    commercial_model: "subscription",
+    commission_percent: 0,
+    transaction_fee_percent: 5,
+    subscription_pricing_mode: "by_space_count",
+    tiers: [
+      { min_count: 1, max_count: 10, monthly_amount: 500 },
+      { min_count: 5, max_count: 20, monthly_amount: 1000 },
+    ],
+    effective_from: "2026-11-01",
+  });
+  assert.equal(overlap.ok, false);
+
+  const platformSub = term({
+    id: "plat-sub-2",
+    scope_type: "platform",
+    commercial_model: "subscription",
+    commission_percent: 0,
+    transaction_fee_percent: 5,
+    subscription_pricing_mode: "by_space_count",
+    tiers: spaceTiers,
+    effective_from: "2026-01-01T00:00:00.000Z",
+  });
+  const resolved = withSubscriptionResolution(
+    resolveCommercialTerms({
+      organisationId: ORG,
+      effectiveAt: "2026-06-01T00:00:00.000Z",
+      rows: [platformSub],
+    }),
+    {
+      organisationId: ORG,
+      inventory: {
+        scopeType: "organisation",
+        scopeId: ORG,
+        propertyCount: 1,
+        spaceCount: 8,
+        organisationBillable: true,
+      },
+    }
+  );
+  assert.equal(resolved.source, "platform");
+  assert.equal(resolved.monthlySubscriptionAmount, 1000);
+  assert.equal(resolved.subscription?.inventoryCount, 8);
+  assert.equal(resolved.subscription?.matchedTier?.id, "tier-b");
+}
+
 {
   const migration = readFileSync(
     "supabase/migrations/071_20260928_platform_commercial_terms.sql",
@@ -567,9 +1069,39 @@ const splitCommission: ResolvedCommercialTerms = {
   assert.doesNotMatch(migration, /UPDATE public\.bookings\s+SET/i);
   assert.doesNotMatch(migration, /INSERT INTO public\.commercial_terms/);
 
+  const migration072 = readFileSync(
+    "supabase/migrations/072_20260928_commercial_subscription_tiers.sql",
+    "utf8"
+  );
+  assert.match(migration072, /CREATE TABLE IF NOT EXISTS public\.commercial_term_tiers/);
+  assert.match(
+    migration072,
+    /CREATE TABLE IF NOT EXISTS public\.commercial_subscription_periods/
+  );
+  assert.match(migration072, /subscription_pricing_mode/);
+  assert.match(
+    migration072,
+    /REVOKE ALL ON TABLE public\.commercial_term_tiers FROM authenticated/
+  );
+  assert.match(
+    migration072,
+    /REVOKE ALL ON TABLE public\.commercial_subscription_periods FROM authenticated/
+  );
+  assert.doesNotMatch(migration072, /INSERT INTO public\.commercial_terms/);
+  assert.doesNotMatch(migration072, /INSERT INTO public\.commercial_term_tiers/);
+  assert.doesNotMatch(migration072, /INSERT INTO public\.commercial_subscription_periods/);
+  assert.doesNotMatch(migration072, /UPDATE public\.bookings\s+SET/i);
+
   const api = readFileSync("app/api/admin/commercial-terms/route.ts", "utf8");
   assert.match(api, /requireAdminApi/);
   assert.match(api, /createCommercialTerms/);
+
+  const searchApi = readFileSync(
+    "app/api/admin/commercial-terms/search/route.ts",
+    "utf8"
+  );
+  assert.match(searchApi, /requireAdminApi/);
+  assert.match(searchApi, /searchCommercialScopes/);
 
   const bookingServer = readFileSync("lib/booking-request-server.ts", "utf8");
   assert.match(bookingServer, /loadResolvedCommercialTerms/);
@@ -585,6 +1117,11 @@ const splitCommission: ResolvedCommercialTerms = {
 
   const requestApi = readFileSync("app/api/bookings/request/route.ts", "utf8");
   assert.doesNotMatch(requestApi, /commission_percent/);
+
+  const termsServer = readFileSync("lib/commercial-terms-server.ts", "utf8");
+  assert.doesNotMatch(termsServer, /commercial_subscription_periods/);
+  const bookingCharges = readFileSync("lib/invoice.ts", "utf8");
+  assert.doesNotMatch(bookingCharges, /commercial_subscription_periods/);
 }
 
 console.log("commercial-terms tests passed");

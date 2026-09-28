@@ -5,6 +5,17 @@ import {
   type CommercialModel,
   type CommercialSplit,
 } from "@/lib/commercial-calculator";
+import type { BillableInventoryCounts } from "@/lib/commercial-inventory";
+import {
+  normalizeSubscriptionPricingMode,
+  parseCommercialTermTiers,
+  resolveSubscriptionAmount,
+  subscriptionBilledScope,
+  validateSubscriptionTiers,
+  type CommercialTermTier,
+  type SubscriptionPricingMode,
+  type SubscriptionResolution,
+} from "@/lib/commercial-subscription";
 
 export type { CommercialModel, CommercialAccountingMode } from "@/lib/commercial-calculator";
 
@@ -28,6 +39,8 @@ export const FORBIDDEN_CLIENT_COMMERCIAL_KEYS = [
   "commission_percent",
   "transaction_fee_percent",
   "monthly_subscription_amount",
+  "subscription_pricing_mode",
+  "tiers",
   "platform_fee",
   "owner_earnings",
   "platform_fee_percent",
@@ -45,11 +58,13 @@ export type CommercialTermRow = {
   commission_percent: number | string;
   transaction_fee_percent: number | string;
   monthly_subscription_amount: number | string;
+  subscription_pricing_mode: SubscriptionPricingMode | null;
   effective_from: string;
   superseded_at: string | null;
   admin_note: string | null;
   created_by: string | null;
   created_at: string;
+  tiers: CommercialTermTier[];
 };
 
 export type ResolvedCommercialTerms = {
@@ -58,6 +73,9 @@ export type ResolvedCommercialTerms = {
   commissionPercent: number;
   transactionFeePercent: number;
   monthlySubscriptionAmount: number;
+  subscriptionPricingMode: SubscriptionPricingMode | null;
+  tiers: CommercialTermTier[];
+  subscription: SubscriptionResolution | null;
   effectiveFrom: string | null;
   adminNote: string | null;
   source: CommercialTermsSource;
@@ -98,6 +116,9 @@ export function legacyCombinedCommercialTerms(
     commissionPercent: Number.isFinite(percent) ? percent : LEGACY_COMBINED_PERCENT,
     transactionFeePercent: 0,
     monthlySubscriptionAmount: 0,
+    subscriptionPricingMode: null,
+    tiers: [],
+    subscription: null,
     effectiveFrom: null,
     adminNote: null,
     source: "legacy_space_percent",
@@ -109,16 +130,57 @@ export function rowToResolved(
   row: CommercialTermRow,
   source: CommercialScopeType
 ): ResolvedCommercialTerms {
+  const model = row.commercial_model;
+  const pricingMode = normalizeSubscriptionPricingMode(
+    model,
+    row.subscription_pricing_mode
+  );
+  const tiers = row.tiers ?? [];
+  const fixedMonthly = Number(row.monthly_subscription_amount) || 0;
   return {
     termsId: row.id,
-    model: row.commercial_model,
+    model,
     commissionPercent: Number(row.commission_percent) || 0,
     transactionFeePercent: Number(row.transaction_fee_percent) || 0,
-    monthlySubscriptionAmount: Number(row.monthly_subscription_amount) || 0,
+    monthlySubscriptionAmount: fixedMonthly,
+    subscriptionPricingMode: pricingMode,
+    tiers,
+    subscription: null,
     effectiveFrom: row.effective_from,
     adminNote: row.admin_note,
     source,
     accountingMode: "split",
+  };
+}
+
+export function withSubscriptionResolution(
+  terms: ResolvedCommercialTerms,
+  input: {
+    organisationId?: string | null;
+    propertyId?: string | null;
+    spaceId?: string | null;
+    inventory?: BillableInventoryCounts | null;
+  }
+): ResolvedCommercialTerms {
+  const billedScope = subscriptionBilledScope({
+    source: terms.source,
+    organisationId: input.organisationId,
+    propertyId: input.propertyId,
+    spaceId: input.spaceId,
+  });
+  const subscription = resolveSubscriptionAmount({
+    model: terms.model,
+    pricingMode: terms.subscriptionPricingMode,
+    fixedMonthlyAmount: terms.monthlySubscriptionAmount,
+    tiers: terms.tiers,
+    inventory: input.inventory ?? null,
+    billedScope,
+  });
+  return {
+    ...terms,
+    monthlySubscriptionAmount:
+      terms.model === "subscription" ? subscription.monthlyAmount : 0,
+    subscription,
   };
 }
 
@@ -210,7 +272,16 @@ export function formatCommercialArrangement(
     return `Legacy combined ${Number(terms.commissionPercent).toFixed(2)}% FindMySpace fee`;
   }
   if (terms.model === "subscription") {
-    const monthly = Number(terms.monthlySubscriptionAmount).toFixed(2);
+    const monthly = Number(
+      terms.subscription?.monthlyAmount ?? terms.monthlySubscriptionAmount
+    ).toFixed(2);
+    const mode = terms.subscriptionPricingMode;
+    if (mode === "by_space_count") {
+      return `Subscription by spaces · R${monthly}/month + ${tx}% transaction`;
+    }
+    if (mode === "by_property_count") {
+      return `Subscription by properties · R${monthly}/month + ${tx}% transaction`;
+    }
     return `R${monthly}/month + ${tx}% transaction`;
   }
   if (terms.model === "free") {
@@ -245,6 +316,8 @@ export type CommercialTermsWriteInput = {
   commissionPercent: number;
   transactionFeePercent: number;
   monthlySubscriptionAmount: number;
+  subscriptionPricingMode: SubscriptionPricingMode | null;
+  tiers: CommercialTermTier[];
   effectiveFrom: string;
   adminNote: string | null;
 };
@@ -333,12 +406,31 @@ export function parseCommercialTermsWriteBody(
   let nextCommission = Number(commissionPercent.toFixed(3));
   let nextMonthly = Number(monthlySubscriptionAmount.toFixed(2));
   const nextTx = Number(transactionFeePercent.toFixed(3));
+  const parsedTiers = parseCommercialTermTiers(raw.tiers);
+  if (!parsedTiers.ok) return parsedTiers;
+
+  let subscriptionPricingMode: SubscriptionPricingMode | null = null;
+  let tiers: CommercialTermTier[] = [];
 
   if (model === "free") {
     nextCommission = 0;
     nextMonthly = 0;
   } else if (model === "subscription") {
     nextCommission = 0;
+    subscriptionPricingMode = normalizeSubscriptionPricingMode(
+      model,
+      typeof raw.subscription_pricing_mode === "string"
+        ? raw.subscription_pricing_mode
+        : null
+    );
+    if (subscriptionPricingMode === "fixed") {
+      tiers = [];
+    } else {
+      const valid = validateSubscriptionTiers(parsedTiers.value);
+      if (!valid.ok) return valid;
+      tiers = parsedTiers.value;
+      nextMonthly = 0;
+    }
   } else {
     nextMonthly = 0;
   }
@@ -352,6 +444,8 @@ export function parseCommercialTermsWriteBody(
       commissionPercent: nextCommission,
       transactionFeePercent: nextTx,
       monthlySubscriptionAmount: nextMonthly,
+      subscriptionPricingMode,
+      tiers,
       effectiveFrom: effectiveFromDate.toISOString(),
       adminNote,
     },

@@ -6,12 +6,27 @@ import {
   formatCommercialArrangement,
   inheritedFromLabel,
   resolveCommercialTerms,
+  withSubscriptionResolution,
+  type CommercialScopeType,
 } from "@/lib/commercial-terms";
+import { subscriptionBilledScope } from "@/lib/commercial-subscription";
 import {
   createCommercialTerms,
+  loadBillableInventoryCounts,
   loadCommercialTermRows,
   resolveListingScopeIds,
 } from "@/lib/commercial-terms-server";
+
+function viewScope(input: {
+  organisationId?: string | null;
+  propertyId?: string | null;
+  spaceId?: string | null;
+}): CommercialScopeType {
+  if (input.spaceId) return "space";
+  if (input.propertyId) return "property";
+  if (input.organisationId) return "organisation";
+  return "platform";
+}
 
 export async function GET(req: NextRequest) {
   const auth = await requireAdminApi(req);
@@ -34,7 +49,7 @@ export async function GET(req: NextRequest) {
       const { data, error } = await admin
         .from("commercial_terms")
         .select(
-          "id, scope_type, scope_id, commercial_model, commission_percent, transaction_fee_percent, monthly_subscription_amount, effective_from, superseded_at, admin_note, created_by, created_at"
+          "id, scope_type, scope_id, commercial_model, commission_percent, transaction_fee_percent, monthly_subscription_amount, subscription_pricing_mode, effective_from, superseded_at, admin_note, created_by, created_at"
         )
         .order("effective_from", { ascending: false })
         .limit(300);
@@ -50,18 +65,36 @@ export async function GET(req: NextRequest) {
       spaceId,
     });
     const rows = await loadCommercialTermRows(admin, scope);
-    const resolved = resolveCommercialTerms({
+    const resolvedBase = resolveCommercialTerms({
       ...scope,
       effectiveAt,
       rows,
       legacySpacePercent: scope.legacySpacePercent,
     });
+    const billed =
+      resolvedBase.model === "subscription"
+        ? subscriptionBilledScope({
+            source: resolvedBase.source,
+            ...scope,
+          })
+        : null;
+    const inventory = billed
+      ? await loadBillableInventoryCounts(admin, billed)
+      : null;
+    const resolved = withSubscriptionResolution(resolvedBase, {
+      ...scope,
+      inventory,
+    });
+    const scopeType = viewScope(scope);
 
     return NextResponse.json({
       scope,
+      inventory,
       resolved: {
         ...resolved,
         inheritedFrom: inheritedFromLabel(resolved.source),
+        inherited: resolved.source !== scopeType,
+        isOverride: resolved.source === scopeType,
         summary: formatCommercialArrangement(resolved),
       },
       terms: rows,
@@ -96,13 +129,19 @@ export async function POST(req: NextRequest) {
         commission_percent: created.commission_percent,
         transaction_fee_percent: created.transaction_fee_percent,
         monthly_subscription_amount: created.monthly_subscription_amount,
+        subscription_pricing_mode: created.subscription_pricing_mode,
+        tier_count: created.tiers.length,
         effective_from: created.effective_from,
       },
     });
     return NextResponse.json({ ok: true, term: created });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Could not save commercial terms.";
-    const status = /not found|must be|required|cannot/i.test(message) ? 400 : 500;
+    const status = /not found|must be|required|cannot|invalid|overlap|tier/i.test(
+      message
+    )
+      ? 400
+      : 500;
     return NextResponse.json({ error: message }, { status });
   }
 }
