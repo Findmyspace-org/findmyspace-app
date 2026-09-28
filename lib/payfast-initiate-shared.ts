@@ -1,4 +1,5 @@
 import { isAwaitingGatewayPayment } from "@/lib/finance-status";
+import { validatePayFastPayableAmount } from "@/lib/payfast-amount";
 import {
   buildPayFastInitiatePaymentData,
   generatePayFastSignature,
@@ -44,10 +45,11 @@ export function validateBookingForPayFastInitiate(
       status: 400,
     };
   }
-  if (!booking.total_price || booking.total_price <= 0) {
+  const amountCheck = validatePayFastPayableAmount(booking.total_price);
+  if (!amountCheck.ok) {
     return {
       ok: false,
-      error: "Invalid booking amount.",
+      error: amountCheck.error,
       status: 400,
     };
   }

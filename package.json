@@ -46,6 +46,7 @@
     "test:access-resolver": "tsx scripts/test-access-resolver.ts",
     "test:booking-authority": "tsx scripts/test-booking-authority.ts",
     "test:invoice-pdf": "tsx scripts/test-invoice-pdf.ts",
+    "test:payfast-hardening": "tsx scripts/test-payfast-hardening.ts",
     "test:space-bookable": "tsx scripts/test-space-bookable.ts",
     "test:people-access": "tsx scripts/test-people-access.ts",
     "test:hosting-access": "tsx scripts/test-hosting-access.ts",

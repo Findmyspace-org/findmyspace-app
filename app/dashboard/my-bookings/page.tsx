@@ -37,6 +37,7 @@ import { renterPaymentStatusLabel } from "@/lib/booking-ui-labels";
 import { resolveRenterMyBookingsUi } from "@/lib/renter-my-bookings-status";
 import { shouldShowBookingRequestNotes } from "@/lib/booking-notes-visibility";
 import { broadcastInboxRefresh } from "@/lib/inbox-refresh";
+import { validatePayFastPayableAmount } from "@/lib/payfast-amount";
 import BookingRequestDetailsPanel from "@/app/components/BookingRequestDetailsPanel";
 import { BookingRequirementResponsesLoader } from "@/app/components/BookingRequirementResponsesLoader";
 import {
@@ -810,6 +811,13 @@ function MyBookingsPageContent({
 
       if (!session?.access_token) {
         setMessage("Please log in first.");
+        setPayingBookingId(null);
+        return;
+      }
+
+      const payable = validatePayFastPayableAmount(booking.total_price);
+      if (!payable.ok) {
+        setMessage(payable.error);
         setPayingBookingId(null);
         return;
       }

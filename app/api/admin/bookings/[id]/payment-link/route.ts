@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireAdminApi } from "@/lib/require-admin-api";
 import { adminAudit } from "@/lib/admin-audit";
-import { getPublicSiteUrlFromEnv } from "@/lib/site-url";
+import { getPayFastCallbackBaseUrl } from "@/lib/site-url";
 import {
   buildSignedPayFastCheckoutPayload,
   readPayFastMerchantSecrets,
@@ -64,12 +64,12 @@ export async function POST(
       );
     }
 
-    const appBaseUrl = getPublicSiteUrlFromEnv();
+    const appBaseUrl = getPayFastCallbackBaseUrl();
     if (!appBaseUrl) {
       return NextResponse.json(
         {
           error:
-            "Could not determine application base URL. Set NEXT_PUBLIC_SITE_URL.",
+            "PayFast checkout is not available on this environment. Production uses https://findmyspace.co.za; local/dev must set NEXT_PUBLIC_SITE_URL.",
         },
         { status: 500 }
       );

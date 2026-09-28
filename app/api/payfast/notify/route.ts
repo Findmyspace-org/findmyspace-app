@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
-import crypto from "crypto";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { markBookingChargesPaid } from "@/lib/invoice-payments";
 import { isAwaitingGatewayPayment } from "@/lib/finance-status";
 import { notifyBookingEvent } from "@/lib/booking-event-notify";
+import { amountsMatchForPayFast } from "@/lib/payfast-amount";
+import { generatePayFastItnSignature } from "@/lib/payfast-encoding";
 
 /** Revert booking to payable state if charge lines could not be marked paid (keeps row + charges in sync). */
 async function revertBookingToAwaitingPayment(
@@ -24,32 +25,6 @@ async function revertBookingToAwaitingPayment(
     return { error: new Error(error.message) };
   }
   return { error: null };
-}
-
-function amountsMatchForPayFast(expectedTotal: unknown, amountGross: number): boolean {
-  const expected = Number(expectedTotal ?? 0);
-  const actual = Number(amountGross ?? 0);
-  if (!Number.isFinite(expected) || !Number.isFinite(actual)) return false;
-  const roundedExpected = Math.round(expected * 100) / 100;
-  const roundedActual = Math.round(actual * 100) / 100;
-  return Math.abs(roundedExpected - roundedActual) < 0.005;
-}
-
-function generateNotifySignatureFromRawBody(
-  rawBody: string,
-  passphrase?: string
-) {
-  const pieces = rawBody
-    .split("&")
-    .filter((part) => !part.startsWith("signature="));
-
-  let signatureString = pieces.join("&");
-
-  if (passphrase && passphrase.trim() !== "") {
-    signatureString += `&passphrase=${encodeURIComponent(passphrase.trim()).replace(/%20/g, "+")}`;
-  }
-
-  return crypto.createHash("md5").update(signatureString).digest("hex");
 }
 
 export async function GET() {
@@ -79,7 +54,7 @@ export async function POST(req: Request) {
     });
 
     const receivedSignature = data.signature || "";
-    const calculatedSignature = generateNotifySignatureFromRawBody(
+    const calculatedSignature = generatePayFastItnSignature(
       rawBody,
       PAYFAST_PASSPHRASE
     );

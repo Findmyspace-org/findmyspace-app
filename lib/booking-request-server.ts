@@ -15,6 +15,7 @@ import {
 import { resolveOrganisationBookingReadiness } from "@/lib/access/organisation-booking-readiness";
 import { isLegacyOwnerSelfBooking } from "@/lib/booking-self-booking";
 import { isArchivedProperty } from "@/lib/property-archive";
+import { validatePayFastPayableAmount } from "@/lib/payfast-amount";
 import {
   buildBookingTermsAcceptancePayload,
   normalizePropertyTermsRow,
@@ -297,6 +298,11 @@ export async function createBookingRequestServer(
     platformFee,
     ownerAmount,
   } = totals;
+
+  const payable = validatePayFastPayableAmount(totalPrice);
+  if (!payable.ok) {
+    throw new Error(payable.error);
+  }
 
   const { propertyTerms, fields } = await loadSpaceBookingPrerequisites(admin, spaceId);
   const requiresPropertyTerms = propertyRequiresTermsAcceptance(propertyTerms);

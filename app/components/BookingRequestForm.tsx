@@ -20,6 +20,7 @@ import {
   writeBookingDraft,
 } from "@/lib/bookingDraftStorage";
 import { isSpaceBookable } from "@/lib/listing-lifecycle";
+import { validatePayFastPayableAmount } from "@/lib/payfast-amount";
 import {
   formatSpacePriceWithMinBooking,
   resolveSpacePriceAmount,
@@ -1032,6 +1033,13 @@ export default function BookingRequestForm({
         setLoading(false);
         return;
       }
+
+      const payable = validatePayFastPayableAmount(bookingSummary.totalPrice);
+      if (!payable.ok) {
+        setStatusMessage(payable.error);
+        setLoading(false);
+        return;
+      }
       const {
         data: { user },
       } = await supabase.auth.getUser();
@@ -1384,6 +1392,14 @@ export default function BookingRequestForm({
                 </p>
               </>
             )}
+            {(() => {
+              const payableNotice = validatePayFastPayableAmount(
+                bookingSummary.totalPrice
+              );
+              return !payableNotice.ok && bookingSummary.totalPrice > 0 ? (
+                <p className="mt-2 text-sm text-red-700">{payableNotice.error}</p>
+              ) : null;
+            })()}
           </div>
         )}
 

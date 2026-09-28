@@ -1,43 +1,4 @@
-import crypto from "crypto";
-
-/**
- * PayFast Onsite / redirect field ordering and signature (MD5) — shared with initiate route.
- */
-export function generatePayFastSignature(
-  data: Record<string, string>,
-  passphrase?: string
-) {
-  const orderedKeys = [
-    "merchant_id",
-    "merchant_key",
-    "return_url",
-    "cancel_url",
-    "notify_url",
-    "name_first",
-    "name_last",
-    "email_address",
-    "m_payment_id",
-    "amount",
-    "item_name",
-    "custom_str1",
-    "custom_str2",
-  ];
-
-  const paramString = orderedKeys
-    .filter((key) => data[key] !== undefined && data[key] !== null && data[key] !== "")
-    .map((key) => {
-      const value = String(data[key]).trim();
-      return `${key}=${encodeURIComponent(value).replace(/%20/g, "+")}`;
-    })
-    .join("&");
-
-  const finalString =
-    passphrase && passphrase.trim() !== ""
-      ? `${paramString}&passphrase=${encodeURIComponent(passphrase.trim()).replace(/%20/g, "+")}`
-      : paramString;
-
-  return crypto.createHash("md5").update(finalString).digest("hex");
-}
+export { generatePayFastSignature } from "@/lib/payfast-encoding";
 
 export type PayFastInitiatePaymentDataInput = {
   appBaseUrl: string;

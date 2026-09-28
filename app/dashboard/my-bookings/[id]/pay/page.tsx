@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabase";
 import RequireAuth from "@/app/components/RequireAuth";
 import { shouldShowBookingRequestNotes } from "@/lib/booking-notes-visibility";
 import { bookingAllowsManualMvpPayment } from "@/lib/manual-mvp-payment";
+import { validatePayFastPayableAmount } from "@/lib/payfast-amount";
 
 type PageProps = {
   params: Promise<{ id: string }>;
@@ -182,6 +183,13 @@ export default function BookingPaymentPage({ params }: PageProps) {
 
       if (!canPay) {
         setMessage("This booking is not ready for payment.");
+        setPaying(false);
+        return;
+      }
+
+      const payable = validatePayFastPayableAmount(booking.total_price);
+      if (!payable.ok) {
+        setMessage(payable.error);
         setPaying(false);
         return;
       }

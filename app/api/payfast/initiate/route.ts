@@ -1,9 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import {
-  getCanonicalPublicSiteUrl,
-  getPublicSiteUrlFromEnv,
-} from "@/lib/site-url";
+import { getPayFastCallbackBaseUrl } from "@/lib/site-url";
 import {
   buildSignedPayFastCheckoutPayload,
   readPayFastMerchantSecrets,
@@ -24,53 +21,6 @@ type SpaceRow = {
   id: string;
   title: string | null;
 };
-
-function resolveAppBaseUrl(req: NextRequest): string | null {
-  const envBase = getPublicSiteUrlFromEnv();
-  const canonicalBase = getCanonicalPublicSiteUrl();
-  const forwardedProto = req.headers.get("x-forwarded-proto")?.trim();
-  const forwardedHost = req.headers.get("x-forwarded-host")?.trim();
-  const origin = req.headers.get("origin")?.trim();
-
-  const isSafe = (url: string) => {
-    try {
-      const u = new URL(url);
-      const host = u.hostname.toLowerCase();
-      if (process.env.NODE_ENV === "production") {
-        if (
-          host.includes("localhost") ||
-          host.includes("127.0.0.1") ||
-          host.includes("ngrok") ||
-          host.includes(".vercel.app")
-        ) {
-          return false;
-        }
-      }
-      return u.protocol === "https:" || process.env.NODE_ENV !== "production";
-    } catch {
-      return false;
-    }
-  };
-
-  if (forwardedHost) {
-    const proto =
-      forwardedProto === "http" || forwardedProto === "https"
-        ? forwardedProto
-        : process.env.NODE_ENV === "production"
-          ? "https"
-          : "http";
-    const candidate = `${proto}://${forwardedHost}`;
-    if (isSafe(candidate)) {
-      return candidate.replace(/\/+$/, "");
-    }
-  }
-
-  if (origin && isSafe(origin)) {
-    return origin.replace(/\/+$/, "");
-  }
-
-  return envBase || canonicalBase || null;
-}
 
 export async function POST(req: NextRequest) {
   try {
@@ -169,13 +119,13 @@ export async function POST(req: NextRequest) {
       }
     );
 
-    const appBaseUrl = resolveAppBaseUrl(req);
+    const appBaseUrl = getPayFastCallbackBaseUrl();
 
     if (!appBaseUrl) {
       return NextResponse.json(
         {
           error:
-            "Could not determine application base URL. Set NEXT_PUBLIC_SITE_URL to your public origin.",
+            "PayFast checkout is not available on this environment. Production uses https://findmyspace.co.za; local/dev must set NEXT_PUBLIC_SITE_URL.",
         },
         { status: 500 }
       );

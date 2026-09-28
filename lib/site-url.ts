@@ -26,15 +26,79 @@ export function getPublicSiteUrlFromEnv(): string | null {
   return normalized;
 }
 
+export const FIND_MYSPACE_PRODUCTION_ORIGIN = "https://findmyspace.co.za";
+
+function hostnameOf(url: string): string | null {
+  try {
+    return new URL(url).hostname.toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+function isProductionFindMySpaceHost(hostname: string): boolean {
+  return hostname === "findmyspace.co.za" || hostname === "www.findmyspace.co.za";
+}
+
 /**
  * Canonical URL used for outbound links (emails, payment redirects).
  * In production, always falls back to live domain if env is missing/unsafe.
  */
 export function getCanonicalPublicSiteUrl(): string {
   const envUrl = getPublicSiteUrlFromEnv();
-  if (envUrl) return envUrl;
-  if (process.env.NODE_ENV === "production") {
-    return "https://findmyspace.co.za";
+  if (envUrl) {
+    const host = hostnameOf(envUrl);
+    if (host && isProductionFindMySpaceHost(host)) {
+      return FIND_MYSPACE_PRODUCTION_ORIGIN;
+    }
+    return envUrl;
   }
+  if (process.env.NODE_ENV === "production") {
+    return FIND_MYSPACE_PRODUCTION_ORIGIN;
+  }
+  return "http://localhost:3000";
+}
+
+/**
+ * PayFast return/cancel/notify origin. Never derived from Host / X-Forwarded-Host.
+ * Preview deployments must not point sandbox ITNs at production.
+ */
+export function getPayFastCallbackBaseUrl(): string | null {
+  const vercelEnv = process.env.VERCEL_ENV?.trim();
+
+  if (vercelEnv === "preview") {
+    return null;
+  }
+
+  if (vercelEnv === "production") {
+    return FIND_MYSPACE_PRODUCTION_ORIGIN;
+  }
+
+  if (process.env.VERCEL && process.env.NODE_ENV === "production") {
+    return FIND_MYSPACE_PRODUCTION_ORIGIN;
+  }
+
+  const raw = process.env.NEXT_PUBLIC_SITE_URL?.trim();
+  if (raw) {
+    try {
+      const normalized = normalizeSiteUrl(raw);
+      const parsed = new URL(normalized);
+      const host = parsed.hostname.toLowerCase();
+      if (isProductionFindMySpaceHost(host)) {
+        if (parsed.protocol !== "https:") return null;
+        return FIND_MYSPACE_PRODUCTION_ORIGIN;
+      }
+      if (host.includes(".vercel.app")) {
+        return null;
+      }
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+        return null;
+      }
+      return parsed.origin.replace(/\/+$/, "");
+    } catch {
+      return null;
+    }
+  }
+
   return "http://localhost:3000";
 }
