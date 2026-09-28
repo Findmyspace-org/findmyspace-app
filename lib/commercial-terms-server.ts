@@ -10,6 +10,12 @@ import {
 import type { CommercialTermTier } from "@/lib/commercial-subscription";
 import { subscriptionBilledScope } from "@/lib/commercial-subscription";
 import {
+  decorateCommercialSearchHit,
+  type CommercialSearchHit,
+  type CommercialSearchKind,
+  type DecoratedCommercialSearchHit,
+} from "@/lib/commercial-admin-display";
+import {
   isCommercialUuid,
   parseCommercialTermsWriteBody,
   resolveCommercialTerms,
@@ -21,6 +27,10 @@ import {
 
 const TERM_COLUMNS =
   "id, scope_type, scope_id, commercial_model, commission_percent, transaction_fee_percent, monthly_subscription_amount, subscription_pricing_mode, effective_from, superseded_at, admin_note, created_by, created_at";
+
+function uniqueUuids(values: Array<string | null | undefined>): string[] {
+  return [...new Set(values.filter((value) => isCommercialUuid(value)))] as string[];
+}
 
 function asTier(row: Record<string, unknown>): CommercialTermTier {
   return {
@@ -91,19 +101,26 @@ export async function loadCommercialTermRows(
     organisationId?: string | null;
     propertyId?: string | null;
     spaceId?: string | null;
+    organisationIds?: Array<string | null | undefined>;
+    propertyIds?: Array<string | null | undefined>;
+    spaceIds?: Array<string | null | undefined>;
   }
 ): Promise<CommercialTermRow[]> {
   const filters = ["and(scope_type.eq.platform,scope_id.is.null)"];
-  if (isCommercialUuid(input.organisationId)) {
-    filters.push(
-      `and(scope_type.eq.organisation,scope_id.eq.${input.organisationId})`
-    );
+  const organisationIds = uniqueUuids([
+    input.organisationId,
+    ...(input.organisationIds || []),
+  ]);
+  const propertyIds = uniqueUuids([input.propertyId, ...(input.propertyIds || [])]);
+  const spaceIds = uniqueUuids([input.spaceId, ...(input.spaceIds || [])]);
+  for (const id of organisationIds) {
+    filters.push(`and(scope_type.eq.organisation,scope_id.eq.${id})`);
   }
-  if (isCommercialUuid(input.propertyId)) {
-    filters.push(`and(scope_type.eq.property,scope_id.eq.${input.propertyId})`);
+  for (const id of propertyIds) {
+    filters.push(`and(scope_type.eq.property,scope_id.eq.${id})`);
   }
-  if (isCommercialUuid(input.spaceId)) {
-    filters.push(`and(scope_type.eq.space,scope_id.eq.${input.spaceId})`);
+  for (const id of spaceIds) {
+    filters.push(`and(scope_type.eq.space,scope_id.eq.${id})`);
   }
 
   const { data, error } = await admin
@@ -136,6 +153,9 @@ export async function resolveListingScopeIds(
   propertyId: string | null;
   spaceId: string | null;
   legacySpacePercent: number | null;
+  organisationName: string | null;
+  propertyName: string | null;
+  spaceName: string | null;
 }> {
   const spaceId = isCommercialUuid(input.spaceId) ? input.spaceId! : null;
   let propertyId = isCommercialUuid(input.propertyId) ? input.propertyId! : null;
@@ -143,20 +163,25 @@ export async function resolveListingScopeIds(
     ? input.organisationId!
     : null;
   let legacySpacePercent: number | null = null;
+  let spaceName: string | null = null;
+  let propertyName: string | null = null;
+  let organisationName: string | null = null;
 
   if (spaceId) {
     const { data: space } = await admin
       .from("spaces")
-      .select("id, property_id, platform_fee_percent")
+      .select("id, property_id, platform_fee_percent, title")
       .eq("id", spaceId)
       .maybeSingle();
     const row = space as {
       property_id?: string | null;
       platform_fee_percent?: number | null;
+      title?: string | null;
     } | null;
     if (!row) {
       throw new Error("Space not found.");
     }
+    spaceName = row.title || "Untitled space";
     legacySpacePercent =
       row.platform_fee_percent == null ? null : Number(row.platform_fee_percent);
     if (!propertyId && row.property_id) propertyId = row.property_id;
@@ -165,19 +190,41 @@ export async function resolveListingScopeIds(
   if (propertyId) {
     const { data: property } = await admin
       .from("properties")
-      .select("id, organisation_id")
+      .select("id, organisation_id, name")
       .eq("id", propertyId)
       .maybeSingle();
-    const row = property as { organisation_id?: string | null } | null;
+    const row = property as {
+      organisation_id?: string | null;
+      name?: string | null;
+    } | null;
     if (!row) {
       throw new Error("Property not found.");
     }
+    propertyName = row.name || null;
     if (!organisationId && row.organisation_id) {
       organisationId = row.organisation_id;
     }
   }
 
-  return { organisationId, propertyId, spaceId, legacySpacePercent };
+  if (organisationId) {
+    const { data: organisation } = await admin
+      .from("organisations")
+      .select("id, name")
+      .eq("id", organisationId)
+      .maybeSingle();
+    organisationName =
+      (organisation as { name?: string | null } | null)?.name ?? null;
+  }
+
+  return {
+    organisationId,
+    propertyId,
+    spaceId,
+    legacySpacePercent,
+    organisationName,
+    propertyName,
+    spaceName,
+  };
 }
 
 export async function loadBillableInventoryCounts(
@@ -410,78 +457,72 @@ export async function createCommercialTerms(
   return asTermRow(data as Record<string, unknown>, tiers);
 }
 
-export type CommercialScopeSearchHit = {
-  kind: "organisation" | "property" | "space";
-  id: string;
-  name: string;
-  subtitle: string | null;
-  organisationId: string | null;
-  propertyId: string | null;
-  spaceId: string | null;
-};
+export type CommercialScopeSearchHit = CommercialSearchHit;
 
-export async function searchCommercialScopes(
+async function searchOrganisations(
   admin: SupabaseClient,
-  input: {
-    kind: "organisation" | "property" | "space";
-    query: string;
-  }
-): Promise<CommercialScopeSearchHit[]> {
-  const q = input.query.trim().slice(0, 80);
-  if (q.length < 2) return [];
+  q: string
+): Promise<CommercialSearchHit[]> {
+  const { data, error } = await admin
+    .from("organisations")
+    .select("id, name")
+    .ilike("name", `%${q}%`)
+    .is("archived_at", null)
+    .order("name")
+    .limit(20);
+  if (error) throw new Error(error.message);
+  return ((data || []) as Array<{ id: string; name: string }>).map((row) => ({
+    kind: "organisation" as const,
+    id: row.id,
+    name: row.name,
+    organisationId: row.id,
+    propertyId: null,
+    spaceId: null,
+    organisationName: row.name,
+    propertyName: null,
+  }));
+}
 
-  if (input.kind === "organisation") {
-    const { data, error } = await admin
-      .from("organisations")
-      .select("id, name, status")
-      .ilike("name", `%${q}%`)
-      .is("archived_at", null)
-      .order("name")
-      .limit(20);
-    if (error) throw new Error(error.message);
-    return ((data || []) as Array<{ id: string; name: string }>).map((row) => ({
-      kind: "organisation",
+async function searchProperties(
+  admin: SupabaseClient,
+  q: string
+): Promise<CommercialSearchHit[]> {
+  const { data, error } = await admin
+    .from("properties")
+    .select("id, name, organisation_id, organisations(name)")
+    .ilike("name", `%${q}%`)
+    .is("archived_at", null)
+    .order("name")
+    .limit(20);
+  if (error) throw new Error(error.message);
+  return (
+    (data || []) as Array<{
+      id: string;
+      name: string;
+      organisation_id: string | null;
+      organisations?: { name?: string | null } | { name?: string | null }[] | null;
+    }>
+  ).map((row) => {
+    const org = Array.isArray(row.organisations)
+      ? row.organisations[0]
+      : row.organisations;
+    return {
+      kind: "property" as const,
       id: row.id,
       name: row.name,
-      subtitle: null,
-      organisationId: row.id,
-      propertyId: null,
+      organisationId: row.organisation_id,
+      propertyId: row.id,
       spaceId: null,
-    }));
-  }
+      organisationName: org?.name ?? null,
+      propertyName: row.name,
+    };
+  });
+}
 
-  if (input.kind === "property") {
-    const { data, error } = await admin
-      .from("properties")
-      .select("id, name, organisation_id, organisations(name)")
-      .ilike("name", `%${q}%`)
-      .is("archived_at", null)
-      .order("name")
-      .limit(20);
-    if (error) throw new Error(error.message);
-    return (
-      (data || []) as Array<{
-        id: string;
-        name: string;
-        organisation_id: string | null;
-        organisations?: { name?: string | null } | { name?: string | null }[] | null;
-      }>
-    ).map((row) => {
-      const org = Array.isArray(row.organisations)
-        ? row.organisations[0]
-        : row.organisations;
-      return {
-        kind: "property" as const,
-        id: row.id,
-        name: row.name,
-        subtitle: org?.name ?? null,
-        organisationId: row.organisation_id,
-        propertyId: row.id,
-        spaceId: null,
-      };
-    });
-  }
-
+async function searchSpaces(
+  admin: SupabaseClient,
+  q: string
+): Promise<CommercialSearchHit[]> {
   const { data, error } = await admin
     .from("spaces")
     .select("id, title, property_id, properties(name, organisation_id)")
@@ -491,7 +532,7 @@ export async function searchCommercialScopes(
     .order("title")
     .limit(20);
   if (error) throw new Error(error.message);
-  return (
+  const hits = (
     (data || []) as Array<{
       id: string;
       title: string | null;
@@ -509,10 +550,78 @@ export async function searchCommercialScopes(
       kind: "space" as const,
       id: row.id,
       name: row.title || "Untitled space",
-      subtitle: property?.name ?? null,
       organisationId: property?.organisation_id ?? null,
       propertyId: row.property_id,
       spaceId: row.id,
+      organisationName: null as string | null,
+      propertyName: property?.name ?? null,
     };
   });
+
+  const orgIds = uniqueUuids(hits.map((hit) => hit.organisationId));
+  if (orgIds.length === 0) return hits;
+  const { data: orgs } = await admin
+    .from("organisations")
+    .select("id, name")
+    .in("id", orgIds);
+  const names = new Map(
+    ((orgs || []) as Array<{ id: string; name: string }>).map((row) => [
+      row.id,
+      row.name,
+    ])
+  );
+  return hits.map((hit) => ({
+    ...hit,
+    organisationName: hit.organisationId
+      ? names.get(hit.organisationId) ?? null
+      : null,
+  }));
+}
+
+export async function searchCommercialScopes(
+  admin: SupabaseClient,
+  input: {
+    kind: CommercialSearchKind | "all";
+    query: string;
+  }
+): Promise<CommercialSearchHit[]> {
+  const q = input.query.trim().slice(0, 80);
+  if (q.length < 2) return [];
+
+  if (input.kind === "all") {
+    const [organisations, properties, spaces] = await Promise.all([
+      searchOrganisations(admin, q),
+      searchProperties(admin, q),
+      searchSpaces(admin, q),
+    ]);
+    return [...organisations, ...properties, ...spaces];
+  }
+  if (input.kind === "organisation") return searchOrganisations(admin, q);
+  if (input.kind === "property") return searchProperties(admin, q);
+  return searchSpaces(admin, q);
+}
+
+export async function decorateCommercialSearchHits(
+  admin: SupabaseClient,
+  hits: CommercialSearchHit[]
+): Promise<DecoratedCommercialSearchHit[]> {
+  if (hits.length === 0) return [];
+  const rows = await loadCommercialTermRows(admin, {
+    organisationIds: hits.map((hit) => hit.organisationId),
+    propertyIds: hits.map((hit) => hit.propertyId),
+    spaceIds: hits.map((hit) => hit.spaceId),
+  });
+  const effectiveAt = new Date();
+  return hits.map((hit) =>
+    decorateCommercialSearchHit(
+      hit,
+      resolveCommercialTerms({
+        organisationId: hit.organisationId,
+        propertyId: hit.propertyId,
+        spaceId: hit.spaceId,
+        effectiveAt,
+        rows,
+      })
+    )
+  );
 }

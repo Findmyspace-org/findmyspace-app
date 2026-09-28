@@ -10,6 +10,7 @@ import {
   type CommercialScopeType,
 } from "@/lib/commercial-terms";
 import { subscriptionBilledScope } from "@/lib/commercial-subscription";
+import { buildCommercialPrecedencePath } from "@/lib/commercial-admin-display";
 import {
   createCommercialTerms,
   loadBillableInventoryCounts,
@@ -90,6 +91,18 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       scope,
       inventory,
+      labels: {
+        organisationName: scope.organisationName,
+        propertyName: scope.propertyName,
+        spaceName: scope.spaceName,
+      },
+      precedence: buildCommercialPrecedencePath({
+        viewScope: scopeType,
+        spaceName: scope.spaceName,
+        propertyName: scope.propertyName,
+        organisationName: scope.organisationName,
+        source: resolved.source,
+      }),
       resolved: {
         ...resolved,
         inheritedFrom: inheritedFromLabel(resolved.source),

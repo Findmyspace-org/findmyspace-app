@@ -1,62 +1,34 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { AdminNav } from "@/app/components/AdminNav";
 import { AdminCommercialTermsPanel } from "@/app/components/admin/AdminCommercialTermsPanel";
 import { adminApiFetch } from "@/lib/admin-api-client";
 import type { CommercialScopeType } from "@/lib/commercial-terms";
+import type { DecoratedCommercialSearchHit } from "@/lib/commercial-admin-display";
 
-type SearchKind = "organisation" | "property" | "space";
-
-type SearchHit = {
-  kind: SearchKind;
-  id: string;
-  name: string;
-  subtitle: string | null;
-  organisationId: string | null;
-  propertyId: string | null;
-  spaceId: string | null;
-};
+type SearchKind = "all" | "organisation" | "property" | "space";
 
 export default function AdminCommercialPage() {
-  const [kind, setKind] = useState<SearchKind>("organisation");
+  const [kind, setKind] = useState<SearchKind>("all");
   const [query, setQuery] = useState("");
-  const [hits, setHits] = useState<SearchHit[]>([]);
+  const [hits, setHits] = useState<DecoratedCommercialSearchHit[]>([]);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState("");
-  const [selected, setSelected] = useState<SearchHit | null>(null);
+  const [selected, setSelected] = useState<DecoratedCommercialSearchHit | null>(
+    null
+  );
 
-  const selectedScope = useMemo(() => {
-    if (!selected) return null;
-    if (selected.kind === "organisation") {
-      return {
-        scopeType: "organisation" as CommercialScopeType,
-        scopeId: selected.id,
-        organisationId: selected.id,
-        propertyId: null as string | null,
-        spaceId: null as string | null,
-        title: `Organisation override · ${selected.name}`,
-      };
-    }
-    if (selected.kind === "property") {
-      return {
-        scopeType: "property" as CommercialScopeType,
+  const selectedScope = selected
+    ? {
+        scopeType: selected.kind as CommercialScopeType,
         scopeId: selected.id,
         organisationId: selected.organisationId,
-        propertyId: selected.id,
-        spaceId: null as string | null,
-        title: `Property override · ${selected.name}`,
-      };
-    }
-    return {
-      scopeType: "space" as CommercialScopeType,
-      scopeId: selected.id,
-      organisationId: selected.organisationId,
-      propertyId: selected.propertyId,
-      spaceId: selected.id,
-      title: `Space override · ${selected.name}`,
-    };
-  }, [selected]);
+        propertyId: selected.propertyId,
+        spaceId: selected.spaceId,
+        title: `${selected.kindLabel} · ${selected.name}`,
+      }
+    : null;
 
   async function handleSearch() {
     setSearching(true);
@@ -64,7 +36,7 @@ export default function AdminCommercialPage() {
     try {
       const json = (await adminApiFetch(
         `/api/admin/commercial-terms/search?kind=${kind}&q=${encodeURIComponent(query)}`
-      )) as { items?: SearchHit[] };
+      )) as { items?: DecoratedCommercialSearchHit[] };
       setHits(json.items ?? []);
     } catch (err) {
       setSearchError(err instanceof Error ? err.message : "Could not search.");
@@ -81,10 +53,10 @@ export default function AdminCommercialPage() {
         <div>
           <h1 className="text-3xl font-bold">Commercial terms</h1>
           <p className="mt-2 max-w-2xl text-sm text-gray-600">
-            Global Admin defines the platform default and any organisation,
-            property, or space override. Hosts cannot change the commercial model.
-            Existing paid bookings stay on the fees snapshotted when they were
-            created. Monthly subscription is not invoiced automatically yet.
+            Organisation owns properties; each property contains bookable spaces.
+            Global Admin sets the platform default and any more specific override.
+            Hosts cannot change the commercial model. Monthly subscription is not
+            invoiced automatically yet.
           </p>
         </div>
 
@@ -98,8 +70,8 @@ export default function AdminCommercialPage() {
             Specific overrides
           </h2>
           <p className="mt-2 text-sm text-gray-600">
-            Search for an organisation, property, or space to inspect inherited
-            terms and save a more specific Global Admin override.
+            Search organisations, properties or spaces. Results show the entity
+            type, parent context, and where current terms come from.
           </p>
           <div className="mt-4 flex flex-col gap-2 sm:flex-row">
             <select
@@ -109,10 +81,12 @@ export default function AdminCommercialPage() {
                 setHits([]);
               }}
               className="rounded-md border border-gray-300 px-2 py-2 text-sm"
+              aria-label="Search scope"
             >
-              <option value="organisation">Organisation</option>
-              <option value="property">Property</option>
-              <option value="space">Space</option>
+              <option value="all">Organisations, properties and spaces</option>
+              <option value="organisation">Organisations only</option>
+              <option value="property">Properties only</option>
+              <option value="space">Spaces only</option>
             </select>
             <input
               type="search"
@@ -121,7 +95,7 @@ export default function AdminCommercialPage() {
               onKeyDown={(event) => {
                 if (event.key === "Enter") void handleSearch();
               }}
-              placeholder={`Search ${kind}s`}
+              placeholder="Search organisations, properties or spaces"
               className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm"
             />
             <button
@@ -144,13 +118,23 @@ export default function AdminCommercialPage() {
                     type="button"
                     onClick={() => setSelected(hit)}
                     className={`flex w-full flex-col items-start px-3 py-2 text-left text-sm hover:bg-slate-50 ${
-                      selected?.id === hit.id ? "bg-slate-100" : ""
+                      selected?.id === hit.id && selected.kind === hit.kind
+                        ? "bg-slate-100"
+                        : ""
                     }`}
                   >
+                    <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+                      {hit.kindLabel}
+                    </span>
                     <span className="font-medium">{hit.name}</span>
-                    {hit.subtitle ? (
-                      <span className="text-xs text-gray-500">{hit.subtitle}</span>
+                    {hit.parentContext ? (
+                      <span className="text-xs text-gray-500">{hit.parentContext}</span>
                     ) : null}
+                    <span className="mt-1 text-xs text-gray-600">
+                      {hit.commercialSummary}
+                      {" · "}
+                      {hit.isLegacy ? "Legacy fallback" : hit.inheritedFrom}
+                    </span>
                   </button>
                 </li>
               ))}

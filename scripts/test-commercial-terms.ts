@@ -21,6 +21,7 @@ import {
   formatCommercialArrangement,
   hasForbiddenClientCommercialKeys,
   inheritedFromLabel,
+  legacyCombinedCommercialTerms,
   parseCommercialTermsWriteBody,
   resolveCommercialTerms,
   snapshotBookingCommercialInsert,
@@ -37,6 +38,12 @@ import {
   subscriptionBilledScope,
   type CommercialTermTier,
 } from "../lib/commercial-subscription";
+import {
+  buildCommercialPrecedencePath,
+  commercialParentContext,
+  decorateCommercialSearchHit,
+  subscriptionTierGapWarning,
+} from "../lib/commercial-admin-display";
 import {
   countBillableInventory,
   isBillableSpace,
@@ -586,6 +593,135 @@ const splitCommission: ResolvedCommercialTerms = {
   assert.equal(inheritedFromLabel("space"), "Space");
 }
 
+{
+  const orgHit = decorateCommercialSearchHit(
+    {
+      kind: "organisation",
+      id: ORG,
+      name: "Drakenstein Municipality",
+      organisationId: ORG,
+      propertyId: null,
+      spaceId: null,
+      organisationName: "Drakenstein Municipality",
+      propertyName: null,
+    },
+    legacyCombinedCommercialTerms(15)
+  );
+  assert.equal(orgHit.kindLabel, "Organisation");
+  assert.equal(orgHit.parentContext, null);
+  assert.equal(orgHit.isLegacy, true);
+  assert.match(orgHit.commercialSummary, /Legacy combined 15\.00%/);
+
+  const propertyHit = decorateCommercialSearchHit(
+    {
+      kind: "property",
+      id: PROP,
+      name: "Paarl Town Hall",
+      organisationId: ORG,
+      propertyId: PROP,
+      spaceId: null,
+      organisationName: "Drakenstein Municipality",
+      propertyName: "Paarl Town Hall",
+    },
+    splitCommission
+  );
+  assert.equal(propertyHit.kindLabel, "Property");
+  assert.equal(propertyHit.parentContext, "Drakenstein Municipality");
+  assert.equal(propertyHit.inheritedFrom, "Platform default");
+
+  const spaceHit = {
+    kind: "space" as const,
+    id: SPACE,
+    name: "Main Hall",
+    organisationId: ORG,
+    propertyId: PROP,
+    spaceId: SPACE,
+    organisationName: "Drakenstein Municipality",
+    propertyName: "Paarl Town Hall",
+  };
+  assert.equal(
+    commercialParentContext(spaceHit),
+    "Paarl Town Hall · Drakenstein Municipality"
+  );
+  const spaceResolved = decorateCommercialSearchHit(spaceHit, {
+    ...splitCommission,
+    source: "organisation",
+    model: "subscription",
+    commissionPercent: 0,
+    monthlySubscriptionAmount: 1000,
+    subscriptionPricingMode: "by_space_count",
+  });
+  assert.equal(spaceResolved.inheritedFrom, "Organisation");
+  assert.match(spaceResolved.commercialSummary, /Subscription by spaces/);
+
+  const unlinkedProperty = commercialParentContext({
+    kind: "property",
+    id: PROP,
+    name: "Drakenstein Municipality",
+    organisationId: null,
+    propertyId: PROP,
+    spaceId: null,
+    organisationName: null,
+    propertyName: "Drakenstein Municipality",
+  });
+  assert.equal(unlinkedProperty, "No organisation linked");
+
+  const path = buildCommercialPrecedencePath({
+    viewScope: "space",
+    spaceName: "Main Hall",
+    propertyName: "Paarl Town Hall",
+    organisationName: "Drakenstein Municipality",
+    source: "organisation",
+  });
+  assert.equal(path[0].scopeType, "space");
+  assert.equal(path[0].isEffective, false);
+  assert.equal(path[1].scopeType, "property");
+  assert.equal(path[2].isEffective, true);
+  assert.equal(path[2].hasOverride, true);
+  assert.equal(path[path.length - 1].scopeType, "legacy");
+
+  const gap = subscriptionTierGapWarning([
+    {
+      id: "a",
+      minCount: 1,
+      maxCount: 3,
+      monthlyAmount: 500,
+      label: "1–3",
+      sortOrder: 0,
+    },
+    {
+      id: "b",
+      minCount: 5,
+      maxCount: 10,
+      monthlyAmount: 1000,
+      label: "5–10",
+      sortOrder: 1,
+    },
+  ]);
+  assert.match(String(gap), /gap between 3 and 5/);
+  assert.equal(
+    subscriptionTierGapWarning([
+      {
+        id: "a",
+        minCount: 1,
+        maxCount: 3,
+        monthlyAmount: 500,
+        label: null,
+        sortOrder: 0,
+      },
+      {
+        id: "b",
+        minCount: 4,
+        maxCount: null,
+        monthlyAmount: 1000,
+        label: null,
+        sortOrder: 1,
+      },
+    ]),
+    null
+  );
+}
+
 const spaceTiers: CommercialTermTier[] = [
   {
     id: "tier-a",
@@ -1101,7 +1237,8 @@ const spaceTiers: CommercialTermTier[] = [
     "utf8"
   );
   assert.match(searchApi, /requireAdminApi/);
-  assert.match(searchApi, /searchCommercialScopes/);
+  assert.match(searchApi, /decorateCommercialSearchHits/);
+  assert.match(searchApi, /kindRaw !== "all"/);
 
   const bookingServer = readFileSync("lib/booking-request-server.ts", "utf8");
   assert.match(bookingServer, /loadResolvedCommercialTerms/);

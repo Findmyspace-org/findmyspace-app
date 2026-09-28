@@ -12,6 +12,13 @@ import type {
   SubscriptionPricingMode,
   SubscriptionResolution,
 } from "@/lib/commercial-subscription";
+import {
+  BILLABLE_INVENTORY_HELP,
+  PLATFORM_DEFAULT_UNCONFIGURED_BODY,
+  PLATFORM_DEFAULT_UNCONFIGURED_TITLE,
+  subscriptionTierGapWarning,
+  type CommercialPrecedenceStep,
+} from "@/lib/commercial-admin-display";
 
 type ResolvedDto = {
   model: CommercialModel;
@@ -113,6 +120,7 @@ export function AdminCommercialTermsPanel({
   const [messageTone, setMessageTone] = useState<"success" | "error">("success");
   const [resolved, setResolved] = useState<ResolvedDto | null>(null);
   const [history, setHistory] = useState<TermRow[]>([]);
+  const [precedence, setPrecedence] = useState<CommercialPrecedenceStep[]>([]);
 
   const [model, setModel] = useState<CommercialModel>("commission");
   const [commissionPercent, setCommissionPercent] = useState(
@@ -144,8 +152,10 @@ export function AdminCommercialTermsPanel({
       )) as {
         resolved?: ResolvedDto;
         terms?: TermRow[];
+        precedence?: CommercialPrecedenceStep[];
       };
       setResolved(json.resolved ?? null);
+      setPrecedence(json.precedence ?? []);
       const rows = json.terms ?? [];
       setHistory(
         rows.filter((row) =>
@@ -214,7 +224,24 @@ export function AdminCommercialTermsPanel({
   const saveLabel =
     scopeType === "platform"
       ? "Save platform default from effective date"
-      : `Save ${scopeType} override from effective date`;
+      : resolved?.inherited
+        ? `Create ${scopeType} override from effective date`
+        : `Save ${scopeType} override from effective date`;
+  const gapWarning = useMemo(() => {
+    if (model !== "subscription" || pricingMode === "fixed") return null;
+    return subscriptionTierGapWarning(
+      tiers.map((tier, index) => ({
+        id: null,
+        minCount: Number(tier.minCount),
+        maxCount: tier.maxCount.trim() === "" ? null : Number(tier.maxCount),
+        monthlyAmount: Number(tier.monthlyAmount),
+        label: tier.label || null,
+        sortOrder: index,
+      }))
+    );
+  }, [model, pricingMode, tiers]);
+  const unconfiguredPlatform =
+    scopeType === "platform" && resolved?.accountingMode === "legacy_combined";
 
   return (
     <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
@@ -231,74 +258,132 @@ export function AdminCommercialTermsPanel({
       {loading ? (
         <p className="mt-4 text-sm text-gray-500">Loading commercial terms…</p>
       ) : resolved ? (
-        <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
-          <p>
-            <span className="font-medium text-[#192a3a]">Effective commercial terms:</span>{" "}
-            {resolved.summary}
-          </p>
-          <p className="mt-1 text-gray-600">
-            Source: {resolved.inheritedFrom}
-            {resolved.inherited ? " · inherited" : " · override at this scope"}
-            {resolved.effectiveFrom
-              ? ` · effective ${new Date(resolved.effectiveFrom).toLocaleDateString("en-ZA")}`
-              : ""}
-          </p>
-          {resolved.model === "subscription" ? (
-            <dl className="mt-3 grid gap-2 sm:grid-cols-2 text-xs text-gray-700">
-              <div>
-                <dt className="font-medium text-gray-500">Subscription basis</dt>
-                <dd>
-                  {resolved.subscriptionPricingMode === "by_space_count"
-                    ? "Number of spaces"
-                    : resolved.subscriptionPricingMode === "by_property_count"
-                      ? "Number of properties"
-                      : "Fixed monthly amount"}
-                </dd>
-              </div>
-              <div>
-                <dt className="font-medium text-gray-500">Current monthly fee</dt>
-                <dd>{money(subscription?.monthlyAmount ?? resolved.monthlySubscriptionAmount)}</dd>
-              </div>
-              {subscription?.inventoryCount != null ? (
-                <div>
-                  <dt className="font-medium text-gray-500">Current count</dt>
-                  <dd>
-                    {subscription.inventoryCount}{" "}
-                    {subscription.inventoryBasis === "property" ? "properties" : "spaces"}
-                  </dd>
-                </div>
+        <div className="mt-4 space-y-3">
+          {unconfiguredPlatform ? (
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
+              <p className="font-medium text-[#192a3a]">
+                {PLATFORM_DEFAULT_UNCONFIGURED_TITLE}
+              </p>
+              <p className="mt-1 text-gray-600">{PLATFORM_DEFAULT_UNCONFIGURED_BODY}</p>
+              <p className="mt-2 text-gray-700">
+                Current fallback: {resolved.summary}
+              </p>
+            </div>
+          ) : (
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
+              <p>
+                <span className="font-medium text-[#192a3a]">
+                  Effective commercial terms:
+                </span>{" "}
+                {resolved.summary}
+              </p>
+              <p className="mt-1 text-gray-600">
+                Source: {resolved.inheritedFrom}
+                {resolved.inherited ? " · inherited" : " · override at this scope"}
+                {resolved.effectiveFrom
+                  ? ` · effective ${new Date(resolved.effectiveFrom).toLocaleDateString("en-ZA")}`
+                  : ""}
+              </p>
+              {resolved.model === "subscription" ? (
+                <dl className="mt-3 grid gap-2 sm:grid-cols-2 text-xs text-gray-700">
+                  <div>
+                    <dt className="font-medium text-gray-500">Subscription basis</dt>
+                    <dd>
+                      {resolved.subscriptionPricingMode === "by_space_count"
+                        ? "Number of spaces"
+                        : resolved.subscriptionPricingMode === "by_property_count"
+                          ? "Number of properties"
+                          : "Fixed monthly amount"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="font-medium text-gray-500">Resolved monthly fee</dt>
+                    <dd>
+                      {money(
+                        subscription?.monthlyAmount ?? resolved.monthlySubscriptionAmount
+                      )}
+                    </dd>
+                  </div>
+                  {subscription?.inventoryCount != null ? (
+                    <div>
+                      <dt className="font-medium text-gray-500">Billable inventory</dt>
+                      <dd>
+                        {subscription.inventoryCount}{" "}
+                        {subscription.inventoryBasis === "property"
+                          ? "properties"
+                          : "spaces"}
+                      </dd>
+                    </div>
+                  ) : null}
+                  {subscription?.matchedTier ? (
+                    <div>
+                      <dt className="font-medium text-gray-500">Matched tier</dt>
+                      <dd>
+                        {subscription.matchedTier.label ||
+                          formatTierRange(subscription.matchedTier)}{" "}
+                        · {money(subscription.matchedTier.monthlyAmount)}
+                      </dd>
+                    </div>
+                  ) : null}
+                  {resolved.subscriptionPricingMode &&
+                  resolved.subscriptionPricingMode !== "fixed" ? (
+                    <p className="sm:col-span-2 text-gray-500" title={BILLABLE_INVENTORY_HELP}>
+                      {BILLABLE_INVENTORY_HELP}
+                    </p>
+                  ) : null}
+                  {subscription?.unresolvedReason === "platform_default_needs_scope" ? (
+                    <p className="sm:col-span-2 text-gray-500">
+                      Select an organisation, property, or space to see the inventory
+                      count and matched tier for this default.
+                    </p>
+                  ) : null}
+                  {subscription?.unresolvedReason === "no_matching_tier" ? (
+                    <p className="sm:col-span-2 text-amber-800">
+                      No matching subscription tier
+                    </p>
+                  ) : null}
+                  {subscription?.unresolvedReason === "ambiguous_overlapping_tiers" ? (
+                    <p className="sm:col-span-2 text-amber-800">
+                      Overlapping tiers match this inventory count. Save a new terms
+                      version with non-overlapping ranges.
+                    </p>
+                  ) : null}
+                </dl>
               ) : null}
-              {subscription?.matchedTier ? (
-                <div>
-                  <dt className="font-medium text-gray-500">Current tier</dt>
-                  <dd>
-                    {subscription.matchedTier.label ||
-                      formatTierRange(subscription.matchedTier)}{" "}
-                    · {money(subscription.matchedTier.monthlyAmount)}
-                  </dd>
-                </div>
-              ) : null}
-              {subscription?.unresolvedReason === "platform_default_needs_scope" ? (
-                <p className="sm:col-span-2 text-gray-500">
-                  Select an organisation, property, or space to see the inventory
-                  count and matched tier for this default.
+              {resolved.adminNote ? (
+                <p className="mt-2 text-xs text-gray-500">
+                  Internal note: {resolved.adminNote}
                 </p>
               ) : null}
-              {subscription?.unresolvedReason === "no_matching_tier" ? (
-                <p className="sm:col-span-2 text-amber-800">
-                  No tier matches the current inventory count.
-                </p>
-              ) : null}
-              {subscription?.unresolvedReason === "ambiguous_overlapping_tiers" ? (
-                <p className="sm:col-span-2 text-amber-800">
-                  Overlapping tiers match this inventory count. Save a new terms
-                  version with non-overlapping ranges.
-                </p>
-              ) : null}
-            </dl>
-          ) : null}
-          {resolved.adminNote ? (
-            <p className="mt-2 text-xs text-gray-500">Internal note: {resolved.adminNote}</p>
+            </div>
+          )}
+
+          {precedence.length > 0 ? (
+            <ol className="rounded-lg border border-slate-200 bg-white p-3 text-xs text-gray-700">
+              <li className="mb-2 font-semibold uppercase tracking-wide text-gray-500">
+                Resolution path
+              </li>
+              {precedence.map((step, index) => (
+                <li
+                  key={`${step.scopeType}-${index}`}
+                  className={`flex flex-col gap-0.5 py-1 ${
+                    step.isEffective ? "font-medium text-[#192a3a]" : ""
+                  }`}
+                >
+                  <span>
+                    {step.title}: {step.detail}
+                    {step.isEffective
+                      ? " → effective terms"
+                      : step.hasOverride
+                        ? " · override"
+                        : " · no override"}
+                  </span>
+                  {index < precedence.length - 1 ? (
+                    <span className="text-gray-400">↓</span>
+                  ) : null}
+                </li>
+              ))}
+            </ol>
           ) : null}
         </div>
       ) : null}
@@ -398,7 +483,9 @@ export function AdminCommercialTermsPanel({
             Subscription tiers
           </h3>
           <p className="mt-1 text-xs text-gray-500">
-            Leave maximum blank for an open-ended highest tier. Ranges cannot overlap.
+            Leave maximum blank for an open-ended highest tier (for example 31+).
+            Ranges cannot overlap. Gaps are allowed but those counts will not match
+            a tier.
           </p>
           <div className="mt-2 space-y-2">
             {tiers.map((tier, index) => (
@@ -485,6 +572,9 @@ export function AdminCommercialTermsPanel({
           >
             Add tier
           </button>
+          {gapWarning ? (
+            <p className="mt-2 text-xs text-amber-800">{gapWarning}</p>
+          ) : null}
         </div>
       ) : null}
 
