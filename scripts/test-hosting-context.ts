@@ -441,6 +441,7 @@ const dashboardSrc = readFileSync("app/dashboard/page.tsx", "utf8");
   assert.match(requestsSrc, /requestedOrganisationId/);
   assert.match(calendarSrc, /requestedOrganisationId/);
   assert.match(financeSrc, /requestedOrganisationId/);
+  assert.match(financeSrc, /fetchHostFinance\(requestedOrganisationId\)/);
   assert.match(commsSrc, /hostingHref\("\/api\/listing-questions\?role=owner"/);
   assert.match(commsSrc, /hostingHref\("\/api\/bookings\/message-threads"/);
   assert.match(peopleSrc, /selection\.kind === "unavailable"/);

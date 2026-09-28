@@ -55,6 +55,7 @@ export async function loadInvoiceDocumentForRequest(params: {
       id,
       renter_id,
       owner_id,
+      organisation_id,
       space_id,
       booking_unit,
       start_at,
@@ -99,6 +100,7 @@ export async function loadInvoiceDocumentForRequest(params: {
     renter_id: string;
     owner_id: string | null;
     space_id: string;
+    organisation_id: string | null;
   };
 
   let canView = row.renter_id === user.id || row.owner_id === user.id;
@@ -130,8 +132,15 @@ export async function loadInvoiceDocumentForRequest(params: {
 
   const charges = (chargeRows || []) as InvoiceChargeRow[];
 
+  let hostName: string | null = null;
+  if (row.organisation_id) {
+    const { data: organisation } = await supabase.from("organisations")
+      .select("name").eq("id", row.organisation_id).maybeSingle();
+    hostName = organisation?.name || null;
+  }
+
   const doc = buildInvoiceDocument(
-    booking as unknown as InvoiceBookingRow,
+    { ...booking, hostName } as unknown as InvoiceBookingRow,
     charges
   );
 

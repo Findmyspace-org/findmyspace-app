@@ -537,6 +537,10 @@ function grant(
   assert.match(sql, /REVOKE UPDATE ON TABLE public\.bookings FROM authenticated/);
   assert.doesNotMatch(sql, /CREATE POLICY bookings_update_legacy_owner/);
   const myBookings = readFileSync("app/dashboard/my-bookings/page.tsx", "utf8");
+  assert.match(myBookings, /\/api\/bookings\/host-labels/);
+  const hostLabels = readFileSync("app/api/bookings/host-labels/route.ts", "utf8");
+  assert.match(hostLabels, /eq\("renter_id", user\.id\)/);
+  assert.doesNotMatch(hostLabels, /NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY/);
   assert.match(myBookings, /\/api\/bookings\/\$\{booking\.id\}\/renter-cancel/);
   assert.doesNotMatch(
     myBookings,

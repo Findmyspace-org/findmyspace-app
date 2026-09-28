@@ -102,6 +102,7 @@ type Profile = {
 };
 
 type EnrichedBooking = Booking & {
+  hostName?: string;
   space?: Space;
   owner?: Profile;
   requestDetails?: Record<string, unknown> | null;
@@ -510,7 +511,20 @@ function MyBookingsPageContent({
         );
       }
 
+      let hostLabels: Record<string, string> = {};
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.access_token) {
+        try {
+          const response = await fetch("/api/bookings/host-labels", {
+            headers: { Authorization: `Bearer ${session.access_token}` },
+          });
+          if (response.ok) hostLabels = (await response.json()).labels || {};
+        } catch {
+          // A missing host label must not prevent booking or payment access.
+        }
+      }
       const enriched = rawBookings.map((b) => ({
+        hostName: hostLabels[b.id],
         ...b,
         space: spacesMap.get(b.space_id),
         owner: b.owner_id ? ownersMap.get(b.owner_id) : undefined,
@@ -1172,7 +1186,7 @@ function MyBookingsPageContent({
                                   <span className="inline-flex min-w-0 items-center gap-1.5">
                                     <User className="h-3.5 w-3.5 shrink-0 text-gray-500" />
                                     <span className="truncate">
-                                      {getDisplayName(booking.owner) || "Owner"}
+                                      {booking.hostName || getDisplayName(booking.owner)}
                                     </span>
                                   </span>
                                   <span className="inline-flex shrink-0 items-center gap-1 text-gray-500">
@@ -1270,9 +1284,9 @@ function MyBookingsPageContent({
                                 <div className="flex items-start gap-2">
                                   <User className="mt-0.5 h-4 w-4 shrink-0 text-gray-500" />
                                   <div>
-                                    <p className="text-xs font-medium text-gray-500">Owner</p>
+                                    <p className="text-xs font-medium text-gray-500">Host</p>
                                     <p className="font-medium text-[#192a3a]">
-                                      {getDisplayName(booking.owner)}
+                                      {booking.hostName || getDisplayName(booking.owner)}
                                     </p>
                                   </div>
                                 </div>

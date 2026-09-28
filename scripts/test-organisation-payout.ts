@@ -11,6 +11,11 @@ import { computeAccess } from "../lib/access/compute-access";
 import { summarizeHostingAccess } from "../lib/access/hosting-access";
 import { resolveOrganisationPayoutReadiness } from "../lib/access/organisation-payout-readiness";
 import type { AccessContext, OrganisationAccessGrant } from "../lib/access/roles";
+import { summarizePaidLines } from "../lib/admin-finance-filters";
+import {
+  buildFinanceLineItems,
+  type FinanceBookingInput,
+} from "../lib/finance-booking-lines";
 import {
   canShowOrganisationPayoutLedger,
   hasForbiddenOrganisationPayoutWriteKeys,
@@ -120,6 +125,9 @@ const financePanel = readFileSync(
   "utf8"
 );
 const financePage = readFileSync("app/dashboard/finance/page.tsx", "utf8");
+const hostFinanceApi = readFileSync("app/api/host/finance/route.ts", "utf8");
+const hostFinanceServer = readFileSync("lib/host-finance-server.ts", "utf8");
+const hostFinanceClient = readFileSync("lib/host-finance-client.ts", "utf8");
 const adminOrgsPage = readFileSync(
   "app/admin/verification/organisations/page.tsx",
   "utf8"
@@ -540,12 +548,142 @@ const personalHosting = summarizeHostingAccess({
   assert.match(financePage, /canShowOrganisationPayoutLedger/);
   assert.match(financePage, /showOrganisationCommercial/);
   assert.match(financePage, /OrganisationFinancePayouts/);
+  assert.match(financePage, /fetchHostFinance/);
+  assert.match(financePage, /!hosting.loading &&/);
+  assert.doesNotMatch(financePage, /fetchManagedSpaces/);
+  assert.doesNotMatch(financePage, /\.from\("bookings"\)/);
   assert.doesNotMatch(financePage, /Record payout/);
   assert.doesNotMatch(financePanel, /Record payout/);
   assert.doesNotMatch(financePanel, /account_number[^\n_]/);
   assert.match(financePanel, /Awaiting payout/);
   assert.match(financePanel, /Paid out/);
   assert.match(financePanel, /account_number_display/);
+  assert.match(financePanel, /No payouts yet/);
+  assert.match(financePanel, /payout not yet created/);
+  assert.match(hostFinanceApi, /requireAuthenticatedApi/);
+  assert.match(hostFinanceApi, /resolveRequestHostingContext/);
+  assert.match(hostFinanceApi, /showFinance/);
+  assert.match(hostFinanceApi, /loadHostFinancePayload/);
+  assert.doesNotMatch(hostFinanceApi, /SUPABASE_SERVICE_ROLE_KEY/);
+  assert.match(hostFinanceServer, /listManagedSpaceIdsForHostingContext/);
+  assert.match(hostFinanceServer, /context.kind === "unavailable"/);
+  assert.match(hostFinanceServer, /context.kind === "none"/);
+  assert.doesNotMatch(hostFinanceServer, /\.from\("organisation_payouts"\)/);
+  assert.match(hostFinanceClient, /\/api\/host\/finance/);
+  assert.match(hostFinanceClient, /AbortController/);
+  assert.doesNotMatch(hostFinanceClient, /SUPABASE_SERVICE_ROLE_KEY/);
+}
+
+{
+  const paidOrgBooking: FinanceBookingInput = {
+    id: BOOKING_1,
+    space_id: SPACE_A,
+    total_price: 100,
+    platform_fee: 15,
+    owner_earnings: 85,
+    status: "paid_confirmed",
+    payment_status: "paid",
+    created_at: "2026-09-28T09:17:44.632Z",
+    renter: null,
+    space: { title: "FMS V1 Test Space" },
+    booking_charges: [
+      {
+        id: "charge-1",
+        charge_type: "booking_total",
+        description: null,
+        billing_period_start: null,
+        billing_period_end: null,
+        amount: 100,
+        status: "paid",
+        paid_at: "2026-09-28T09:19:28.623Z",
+        payment_reference: "3413316",
+        statement_month: null,
+      },
+    ],
+  };
+  const paid = summarizePaidLines(buildFinanceLineItems([paidOrgBooking]));
+  assert.equal(paid.grossBookingValue, 100);
+  assert.equal(paid.totalPlatformFees, 15);
+  assert.equal(paid.totalOwnerEarnings, 85);
+
+  const unpaid = summarizePaidLines(
+    buildFinanceLineItems([
+      {
+        ...paidOrgBooking,
+        status: "accepted_awaiting_payment",
+        payment_status: "awaiting_payment",
+        booking_charges: [
+          { ...paidOrgBooking.booking_charges![0], status: "pending", paid_at: null },
+        ],
+      },
+    ])
+  );
+  assert.equal(unpaid.grossBookingValue, 0);
+  assert.equal(unpaid.totalOwnerEarnings, 0);
+
+  const cancelled = summarizePaidLines(
+    buildFinanceLineItems([
+      {
+        ...paidOrgBooking,
+        status: "cancelled",
+        payment_status: "unpaid",
+        booking_charges: [
+          { ...paidOrgBooking.booking_charges![0], status: "pending", paid_at: null },
+        ],
+      },
+    ])
+  );
+  assert.equal(cancelled.grossBookingValue, 0);
+
+  const eligibleBase = {
+    organisationId: ORG_A,
+    booking: {
+      id: BOOKING_1,
+      commercial_beneficiary_type: "organisation" as const,
+      commercial_beneficiary_organisation_id: ORG_A,
+      status: "paid_confirmed",
+      payment_status: "paid",
+      payout_status: "unpaid_to_owner",
+      payout_paid_at: null,
+      total_price: 100,
+      platform_fee: 15,
+      owner_earnings: 85,
+    },
+    pendingChargeCount: 0,
+    paidChargeCount: 1,
+    alreadyInPayout: false,
+  };
+  assert.equal(isOrganisationBookingPayoutEligible(eligibleBase), true);
+  assert.equal(
+    isOrganisationBookingPayoutEligible({ ...eligibleBase, alreadyInPayout: true }),
+    false
+  );
+  assert.equal(
+    isOrganisationBookingPayoutEligible({
+      ...eligibleBase,
+      booking: { ...eligibleBase.booking, payout_status: "paid" },
+    }),
+    false
+  );
+  assert.equal(
+    isOrganisationBookingPayoutEligible({
+      ...eligibleBase,
+      booking: {
+        ...eligibleBase.booking,
+        commercial_beneficiary_type: "personal",
+        commercial_beneficiary_organisation_id: null,
+      },
+    }),
+    false
+  );
+  const ledger = summariseOrganisationPayoutLedger({
+    eligible: [{ total_price: 100, platform_fee: 15, owner_earnings: 85 }],
+    history: [],
+  });
+  assert.equal(ledger.awaiting.gross, 100);
+  assert.equal(ledger.awaiting.fee, 15);
+  assert.equal(ledger.awaiting.net, 85);
+  assert.equal(ledger.paid_out.net, 0);
 }
 
 {

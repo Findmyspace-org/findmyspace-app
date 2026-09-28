@@ -53,6 +53,7 @@ export type InvoiceChargeRow = {
 };
 
 export type InvoiceBookingRow = {
+  hostName?: string | null;
   id: string;
   booking_unit: string | null;
   start_at: string;
@@ -242,7 +243,7 @@ export function buildInvoiceDocument(
       email: booking.renter?.email || "—",
     },
     owner: {
-      name: displayName(booking.owner) || "Host",
+      name: booking.hostName || displayName(booking.owner) || "Host",
       email: booking.owner?.email || "—",
     },
     space: {
@@ -250,8 +251,8 @@ export function buildInvoiceDocument(
       address: address || "—",
     },
     booking: {
-      periodStart: new Date(booking.start_at).toLocaleDateString("en-ZA"),
-      periodEnd: new Date(booking.end_at).toLocaleDateString("en-ZA"),
+      periodStart: new Date(booking.start_at).toLocaleDateString("en-ZA", { timeZone: "Africa/Johannesburg" }),
+      periodEnd: new Date(new Date(booking.end_at).getTime() - (booking.booking_unit === "hour" ? 0 : 86400000)).toLocaleDateString("en-ZA", { timeZone: "Africa/Johannesburg" }),
       unitLabel: bookingUnitLabel(booking.booking_unit),
       status: booking.status || "—",
       paymentStatus: booking.payment_status || "—",

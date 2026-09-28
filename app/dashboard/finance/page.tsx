@@ -9,7 +9,6 @@ import {
   Loader2,
   Search,
 } from "lucide-react";
-import { supabase } from "@/lib/supabase";
 import RequireAuth from "@/app/components/RequireAuth";
 import DashboardShell from "@/app/components/DashboardShell";
 import { HostingSummaryStrip } from "@/app/components/hosting/hosting-ui";
@@ -27,7 +26,6 @@ import {
   summarizePaidLines,
 } from "@/lib/admin-finance-filters";
 import { isChargeLinePendingForReporting } from "@/lib/finance-status";
-import { FINANCE_BOOKINGS_QUERY_LIMIT } from "@/lib/finance-query-limits";
 import { sumCommittedFutureIncomeGross } from "@/lib/monthly-contract-finance";
 
 type SpaceOption = { id: string; title: string | null };
@@ -45,7 +43,6 @@ function OwnerFinancePageContent() {
   const hosting = useHostingWorkspace(requestedOrganisationId);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [sessionEmail, setSessionEmail] = useState<string | null>(null);
   const [spaces, setSpaces] = useState<SpaceOption[]>([]);
   const [bookings, setBookings] = useState<FinanceBookingInput[]>([]);
 
@@ -66,71 +63,10 @@ function OwnerFinancePageContent() {
     setLoading(true);
     setError("");
     try {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      if (!session?.access_token) {
-        setError("Sign in to view your finance.");
-        setLoading(false);
-        return;
-      }
-      setSessionEmail(session.user.email ?? null);
-
-      const { fetchManagedSpaces } = await import("@/lib/host-managed-spaces-client");
-      const managed = await fetchManagedSpaces(
-        session.access_token,
-        requestedOrganisationId
-      );
-      setSpaces(managed.map((row) => ({ id: row.id, title: row.title })));
-      const managedIds = managed.map((row) => row.id);
-      if (managedIds.length === 0) {
-        setBookings([]);
-        setLoading(false);
-        return;
-      }
-
-      const { data: bookingRows, error: bookErr } = await (supabase
-        .from("bookings") as any)
-        .select(
-          `
-            id,
-            space_id,
-            booking_unit,
-            total_price,
-            platform_fee,
-            owner_earnings,
-            status,
-            payment_status,
-            paid_at,
-            created_at,
-            monthly_rent,
-            months_total,
-            months_paid,
-            deposit_amount,
-            initial_payment_amount,
-            next_payment_date,
-            renter:profiles!bookings_renter_id_fkey(first_name, last_name, email),
-            space:spaces(title),
-            booking_charges(
-              id,
-              charge_type,
-              description,
-              billing_period_start,
-              billing_period_end,
-              amount,
-              status,
-              paid_at,
-              payment_reference,
-              statement_month
-            )
-          `
-        )
-        .in("space_id", managedIds)
-        .order("created_at", { ascending: false })
-        .limit(FINANCE_BOOKINGS_QUERY_LIMIT);
-
-      if (bookErr) throw bookErr;
-      setBookings((bookingRows || []) as FinanceBookingInput[]);
+      const { fetchHostFinance } = await import("@/lib/host-finance-client");
+      const payload = await fetchHostFinance(requestedOrganisationId);
+      setSpaces(payload.spaces);
+      setBookings(payload.bookings);
     } catch (e: unknown) {
       const msg =
         e instanceof Error
@@ -142,6 +78,8 @@ function OwnerFinancePageContent() {
             ? (e as { message: string }).message
             : "Could not load finance data.";
       setError(msg);
+      setSpaces([]);
+      setBookings([]);
     } finally {
       setLoading(false);
     }
@@ -248,6 +186,17 @@ function OwnerFinancePageContent() {
             </div>
           )}
 
+          {!hosting.loading &&
+          canShowOrganisationPayoutLedger({
+            showOrganisationCommercial: hosting.summary.showOrganisationCommercial,
+            organisationId: hosting.organisationId,
+          }) &&
+          hosting.organisationId ? (
+            <div className="mb-6">
+              <OrganisationFinancePayouts organisationId={hosting.organisationId} />
+            </div>
+          ) : null}
+
           {loading ? (
             <div className="space-y-6">
               <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-gray-200 sm:grid-cols-3 xl:grid-cols-6">
@@ -312,13 +261,6 @@ function OwnerFinancePageContent() {
                   hint: card.sub,
                 }))}
               />
-
-              {canShowOrganisationPayoutLedger({
-                showOrganisationCommercial: hosting.summary.showOrganisationCommercial,
-                organisationId: hosting.organisationId,
-              }) && hosting.organisationId ? (
-                <OrganisationFinancePayouts organisationId={hosting.organisationId} />
-              ) : null}
 
               <div className="rounded-lg border border-gray-200 bg-white p-3">
                 <div className="mb-3 flex flex-wrap items-center gap-2 text-sm font-medium text-[#192a3a]">
@@ -419,10 +361,14 @@ function OwnerFinancePageContent() {
                       <tr>
                         <td colSpan={10} className="px-4 py-14 text-center">
                           <p className="text-sm font-medium text-gray-700">
-                            No transactions match
+                            {bookings.length === 0
+                              ? "No booking payments yet"
+                              : "No transactions match"}
                           </p>
                           <p className="mt-1 text-sm text-gray-500">
-                            Clear filters or widen the paid date range to see more activity.
+                            {bookings.length === 0
+                              ? "Paid bookings will appear here. Payouts are recorded separately and may still be pending."
+                              : "Clear filters or widen the paid date range to see more activity."}
                           </p>
                         </td>
                       </tr>

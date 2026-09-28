@@ -13,6 +13,19 @@ export function OrganisationFinancePayouts({
 }: {
   organisationId: string;
 }) {
+  return (
+    <OrganisationFinancePayoutsInner
+      key={organisationId}
+      organisationId={organisationId}
+    />
+  );
+}
+
+function OrganisationFinancePayoutsInner({
+  organisationId,
+}: {
+  organisationId: string;
+}) {
   const [bundle, setBundle] = useState<Omit<OrganisationPayoutBundle, "can_record"> | null>(
     null
   );
@@ -21,8 +34,6 @@ export function OrganisationFinancePayouts({
 
   useEffect(() => {
     let mounted = true;
-    setLoading(true);
-    setError("");
     fetchOrganisationPayouts(organisationId)
       .then((next) => {
         if (mounted) setBundle(next);
@@ -78,9 +89,12 @@ export function OrganisationFinancePayouts({
           {
             label: "Awaiting payout",
             value: formatPayoutMoney(bundle.totals.awaiting.net),
-            hint: bundle.payout_readiness.ready
-              ? "Paid to FindMySpace, not yet recorded as paid to the organisation"
-              : bundle.payout_readiness.label,
+            hint:
+              bundle.eligible.length > 0
+                ? "Pending — payout not yet created"
+                : bundle.payout_readiness.ready
+                  ? "No paid bookings are waiting for a payout"
+                  : bundle.payout_readiness.label,
           },
           {
             label: "Paid out",
@@ -99,9 +113,16 @@ export function OrganisationFinancePayouts({
           </p>
         ) : null}
         {bundle.history.length === 0 ? (
-          <p className="mt-3 text-sm text-gray-600">
-            No organisation payouts have been recorded yet.
-          </p>
+          <div className="mt-3 space-y-1">
+            <p className="text-sm text-gray-600">No payouts yet.</p>
+            <p className="text-xs text-gray-500">
+              {bundle.eligible.length > 0
+                ? `${bundle.eligible.length} paid booking${
+                    bundle.eligible.length === 1 ? "" : "s"
+                  } awaiting payout. Payment confirmation does not create a payout record.`
+                : "Paid bookings stay awaiting payout until FindMySpace records the transfer."}
+            </p>
+          </div>
         ) : (
           <ul className="mt-3 space-y-2">
             {bundle.history.map((row) => (

@@ -125,6 +125,7 @@ export default function BookingPaymentPage({ params }: PageProps) {
     if (booking.booking_unit === "month") {
       const start = new Date(booking.start_at);
       const end = new Date(booking.end_at);
+      end.setMonth(end.getMonth() - 1);
 
       return `${start.toLocaleDateString([], {
         year: "numeric",
@@ -137,9 +138,12 @@ export default function BookingPaymentPage({ params }: PageProps) {
 
     const start = new Date(booking.start_at);
     const end = new Date(booking.end_at);
+    end.setDate(end.getDate() - 1);
 
     return `${start.toLocaleDateString()} - ${end.toLocaleDateString()}`;
   }
+
+  const isPaid = booking?.payment_status === "paid";
 
   const canPay = useMemo(() => {
     return (
@@ -249,9 +253,9 @@ export default function BookingPaymentPage({ params }: PageProps) {
       <main className="min-h-screen bg-white px-6 py-10 text-black">
         <div className="mx-auto max-w-3xl">
           <div className="mb-8">
-            <h1 className="mb-2 text-4xl font-bold">Pay for booking</h1>
+            <h1 className="mb-2 text-4xl font-bold">{isPaid ? "Booking confirmed" : "Pay for booking"}</h1>
             <p className="text-gray-600">
-              Complete payment to confirm your booking.
+              {isPaid ? "Your payment has been received." : "Complete payment to confirm your booking."}
             </p>
           </div>
 
@@ -298,12 +302,12 @@ export default function BookingPaymentPage({ params }: PageProps) {
                   </div>
 
                   <div className="rounded-xl bg-gray-50 p-4">
-                    <p className="text-sm text-gray-500">Amount due</p>
+                    <p className="text-sm text-gray-500">{isPaid ? "Amount paid" : "Amount due"}</p>
                     <p className="mt-2 text-3xl font-semibold">
                       R{Number(booking.total_price || 0).toFixed(2)}
                     </p>
                     <p className="mt-2 text-sm text-gray-600">
-                      Pay securely with PayFast
+                      {isPaid ? "Payment confirmed" : "Pay securely with PayFast"}
                     </p>
                   </div>
                 </div>
