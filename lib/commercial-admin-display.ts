@@ -144,3 +144,30 @@ export function subscriptionTierGapWarning(
   }
   return null;
 }
+
+/**
+ * Distinguishes an uncovered inventory count from a configured R0 monthly fee.
+ * Returns null when the current count matches a tier.
+ */
+export function subscriptionUncoveredInventoryWarning(input: {
+  unresolvedReason: string | null | undefined;
+  inventoryCount: number | null | undefined;
+  inventoryBasis: "property" | "space" | "fixed" | null | undefined;
+  tiers: CommercialTermTier[];
+}): string | null {
+  if (input.unresolvedReason !== "no_matching_tier") return null;
+  const basis =
+    input.inventoryBasis === "property" ? "properties" : "spaces";
+  const count = input.inventoryCount ?? null;
+  const finiteMaxes = input.tiers
+    .map((tier) => tier.maxCount)
+    .filter((value): value is number => value != null);
+  const highestMax = finiteMaxes.length > 0 ? Math.max(...finiteMaxes) : null;
+  if (count != null && highestMax != null && count > highestMax) {
+    return `No subscription tier covers ${highestMax + 1}+ ${basis}`;
+  }
+  if (count != null) {
+    return `No matching tier for ${count} ${basis}`;
+  }
+  return "No matching subscription tier";
+}

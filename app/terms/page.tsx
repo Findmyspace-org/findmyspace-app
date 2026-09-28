@@ -76,16 +76,22 @@ export default function TermsPage() {
         <h2 className="mb-3 text-xl font-semibold">4. Fees & Payments</h2>
 
         <ul className="list-disc pl-5 text-sm text-gray-700 space-y-2">
-          <li>A platform commission is deducted from each booking</li>
-          <li>A payment processing fee of approximately 3.5% applies</li>
-          <li>VAT (if applicable) may be deducted</li>
           <li>
-            Owners will receive the net payout after all applicable fees and deductions
+            FindMySpace may charge transaction and platform fees according to the
+            commercial arrangement applicable to the listing or host.
+          </li>
+          <li>
+            Transaction fees may apply to payments processed through FindMySpace.
+          </li>
+          <li>
+            Renters pay the listed booking amount. Hosts receive the net amount
+            after applicable FindMySpace fees.
           </li>
         </ul>
 
         <p className="mt-3 text-sm text-gray-700">
-          A breakdown of fees is shown during listing and booking.
+          Hosts can see the commercial arrangement that applies to their listing
+          when creating or editing a space.
         </p>
       </section>
 

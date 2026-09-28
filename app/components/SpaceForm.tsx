@@ -69,6 +69,7 @@ import {
   validateSpacePricingPeriodFormFields,
 } from "@/lib/space-pricing-period-sync";
 import type { MinBookingDurationUnit } from "@/lib/space-min-booking";
+import { HostCommercialArrangementCard } from "@/app/components/HostCommercialArrangementCard";
 
 const MapPicker = dynamic(() => import("@/app/components/MapPicker"), {
   ssr: false,
@@ -615,13 +616,6 @@ export default function SpaceForm({
     }));
   }, [imageFiles]);
 
-  function getCommissionRate(unit: string) {
-    if (unit === "hour") return 0.20;
-    if (unit === "day") return 0.15;
-    if (unit === "month") return 0.15;
-    return 0.15;
-  }
-
   async function addImageFiles(files: FileList | null) {
     if (!files?.length) return;
     try {
@@ -659,21 +653,6 @@ export default function SpaceForm({
       if (current === index + direction) return index;
       return current;
     });
-  }
-
-  function calculatePayoutBreakdown(price: number) {
-    const rate = getCommissionRate(bookingUnit);
-    const paymentFee = price * 0.035;
-    const commission = price * rate;
-    const vatOnCommission = commission * 0.16;
-    const payout = price - paymentFee - commission - vatOnCommission;
-
-    return {
-      paymentFee,
-      commission,
-      vatOnCommission,
-      payout,
-    };
   }
 
   function pickReverseAddressFields(
@@ -2039,59 +2018,24 @@ export default function SpaceForm({
           />
         </div>
 
-        {bookingUnit === "hour" && pricePerHour && Number(pricePerHour) > 0 ? (() => {
-          const breakdown = calculatePayoutBreakdown(Number(pricePerHour));
+        {(() => {
+          const gross =
+            bookingUnit === "hour"
+              ? Number(pricePerHour)
+              : bookingUnit === "day"
+                ? Number(pricePerDay)
+                : Number(pricePerMonth);
           return (
-            <div className="mt-3 rounded-xl border border-[#e5e7eb] bg-[#f8fafc] p-3 text-sm text-[#334155] sm:p-4">
-              <p className="font-semibold text-[#0f172a]">Estimated payout breakdown</p>
-              <div className="mt-2 space-y-0.5 text-sm">
-                <p>Customer price: R{Number(pricePerHour).toFixed(2)}</p>
-                <p>Payment fee (3.5%): -R{breakdown.paymentFee.toFixed(2)}</p>
-                <p>Platform commission ({(getCommissionRate(bookingUnit) * 100).toFixed(0)}%): -R{breakdown.commission.toFixed(2)}</p>
-                <p>VAT on commission (16%): -R{breakdown.vatOnCommission.toFixed(2)}</p>
-                <p className="pt-1.5 font-semibold text-[#0f172a]">
-                  You will receive approximately R{breakdown.payout.toFixed(2)}
-                </p>
-              </div>
-            </div>
+            <HostCommercialArrangementCard
+              organisationId={organisationId}
+              propertyId={selectedPropertyId || propertyId}
+              grossAmount={Number.isFinite(gross) && gross > 0 ? gross : null}
+              grossLabel={
+                bookingUnit === "month" ? "Listed monthly price" : "Listed price"
+              }
+            />
           );
-        })() : null}
-
-        {bookingUnit === "day" && pricePerDay && Number(pricePerDay) > 0 ? (() => {
-          const breakdown = calculatePayoutBreakdown(Number(pricePerDay));
-          return (
-            <div className="mt-3 rounded-xl border border-[#e5e7eb] bg-[#f8fafc] p-3 text-sm text-[#334155] sm:p-4">
-              <p className="font-semibold text-[#0f172a]">Estimated payout breakdown</p>
-              <div className="mt-2 space-y-0.5 text-sm">
-                <p>Customer price: R{Number(pricePerDay).toFixed(2)}</p>
-                <p>Payment fee (3.5%): -R{breakdown.paymentFee.toFixed(2)}</p>
-                <p>Platform commission ({(getCommissionRate(bookingUnit) * 100).toFixed(0)}%): -R{breakdown.commission.toFixed(2)}</p>
-                <p>VAT on commission (16%): -R{breakdown.vatOnCommission.toFixed(2)}</p>
-                <p className="pt-1.5 font-semibold text-[#0f172a]">
-                  You will receive approximately R{breakdown.payout.toFixed(2)}
-                </p>
-              </div>
-            </div>
-          );
-        })() : null}
-
-        {bookingUnit === "month" && pricePerMonth && Number(pricePerMonth) > 0 ? (() => {
-          const breakdown = calculatePayoutBreakdown(Number(pricePerMonth));
-          return (
-            <div className="mt-3 rounded-xl border border-[#e5e7eb] bg-[#f8fafc] p-3 text-sm text-[#334155] sm:p-4">
-              <p className="font-semibold text-[#0f172a]">Estimated payout breakdown</p>
-              <div className="mt-2 space-y-0.5 text-sm">
-                <p>Customer price: R{Number(pricePerMonth).toFixed(2)}</p>
-                <p>Payment fee (3.5%): -R{breakdown.paymentFee.toFixed(2)}</p>
-                <p>Platform commission ({(getCommissionRate(bookingUnit) * 100).toFixed(0)}%): -R{breakdown.commission.toFixed(2)}</p>
-                <p>VAT on commission (16%): -R{breakdown.vatOnCommission.toFixed(2)}</p>
-                <p className="pt-1.5 font-semibold text-[#0f172a]">
-                  You will receive approximately R{breakdown.payout.toFixed(2)} per month
-                </p>
-              </div>
-            </div>
-          );
-        })() : null}
+        })()}
 
         {bookingUnit === "month" ? (
           <div className="mt-3 sm:mt-4 sm:max-w-md">

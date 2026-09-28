@@ -75,6 +75,7 @@ import {
   isOwnerClaimOnboardingStatus,
   isOwnerListingLockedForEdit,
 } from "@/lib/listing-lifecycle";
+import { HostCommercialArrangementCard } from "@/app/components/HostCommercialArrangementCard";
 
 type PageProps = {
   params: Promise<{ id: string }>;
@@ -1141,6 +1142,16 @@ function EditListingPageContent(_props: PageProps) {
                     inputClassName="w-full rounded-sm border border-gray-400 px-4 py-3 outline-none"
                     labelClassName="mb-1 block text-xs font-medium text-gray-700"
                   />
+                  {listingId ? (
+                    <HostCommercialArrangementCard
+                      organisationId={organisationId}
+                      spaceId={listingId}
+                      grossAmount={
+                        Number(priceAmount) > 0 ? Number(priceAmount) : null
+                      }
+                      grossLabel="Listed price"
+                    />
+                  ) : null}
                 </div>
 
                 {priceUnit === "month" ? (

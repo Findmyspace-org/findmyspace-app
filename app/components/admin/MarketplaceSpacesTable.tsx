@@ -3,7 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { useCallback, useState } from "react";
-import { Building2, ImageIcon, Pencil, Save } from "lucide-react";
+import { Building2, ImageIcon } from "lucide-react";
 import { adminApiFetch } from "@/lib/admin-api-client";
 import {
   adminCanonicalSpaceEditHref,
@@ -188,7 +188,6 @@ export function MarketplaceSpacesTable({
   onReload,
 }: MarketplaceSpacesTableProps) {
   const [viewId, setViewId] = useState<string | null>(null);
-  const [feeEditId, setFeeEditId] = useState<string | null>(null);
   const [statusLoadingId, setStatusLoadingId] = useState<string | null>(null);
   const [archiveTarget, setArchiveTarget] = useState<MarketplaceListingRecord | null>(null);
 
@@ -283,7 +282,7 @@ export function MarketplaceSpacesTable({
               <th className="min-w-0 px-2 py-3 font-medium">Space</th>
               <th className="w-[7.5rem] px-2 py-3 font-medium">Status</th>
               <th className="hidden w-24 px-2 py-3 font-medium sm:table-cell">Type</th>
-              <th className="hidden w-20 px-2 py-3 font-medium md:table-cell">Fee</th>
+              <th className="hidden w-28 px-2 py-3 font-medium md:table-cell">Terms</th>
               <th className="hidden w-28 px-2 py-3 font-medium lg:table-cell">Owner</th>
               <th className="w-[5.5rem] px-2 py-3 text-right font-medium">Actions</th>
             </tr>
@@ -311,8 +310,6 @@ export function MarketplaceSpacesTable({
                 public_listing_mode: space.public_listing_mode ?? null,
               });
               const statusOptions = buildStatusOptions(space);
-              const feeEditing = feeEditId === space.id;
-              const savedFee = Number(space.platform_fee_percent ?? 15);
 
               const menuActions = [
                 {
@@ -353,12 +350,6 @@ export function MarketplaceSpacesTable({
                   label:
                     quickEditId === space.id ? "Close quick edit" : "Quick edit",
                   onClick: () => onToggleQuickEdit(space.id, space),
-                },
-                {
-                  key: "fee",
-                  label: feeEditing ? "Close fee editor" : "Change platform fee",
-                  onClick: () =>
-                    setFeeEditId((current) => (current === space.id ? null : space.id)),
                 },
                 ...(publicHref
                   ? [
@@ -472,46 +463,16 @@ export function MarketplaceSpacesTable({
                   <td className="hidden truncate px-2 py-3 text-xs text-gray-600 sm:table-cell">
                     {formatSpaceTypeLabel(space.space_type)}
                   </td>
-                  <td className="hidden px-2 py-3 md:table-cell">
-                    {feeEditing ? (
-                      <div className="flex items-center gap-1">
-                        <input
-                          type="number"
-                          min="0"
-                          max="100"
-                          step="0.01"
-                          value={feeInputs[space.id] ?? ""}
-                          onChange={(e) =>
-                            setFeeInputs((current) => ({
-                              ...current,
-                              [space.id]: e.target.value,
-                            }))
-                          }
-                          className="w-12 rounded border border-gray-300 px-1 py-0.5 text-xs outline-none"
-                          aria-label="Platform fee percent"
-                        />
-                        <span className="text-[10px] text-gray-500">%</span>
-                        <button
-                          type="button"
-                          onClick={() => void onSavePlatformFee(space.id)}
-                          disabled={savingFeeId === space.id}
-                          className="rounded border border-gray-300 p-0.5 text-gray-600 hover:bg-gray-50 disabled:opacity-50"
-                          title="Save platform fee"
-                        >
-                          <Save className="h-3 w-3" />
-                        </button>
-                      </div>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => setFeeEditId(space.id)}
-                        className="inline-flex items-center gap-1 text-xs text-gray-700 hover:text-[#0f2740]"
-                        title="Change platform fee"
-                      >
-                        <span>{savedFee}%</span>
-                        <Pencil className="h-3 w-3 opacity-60" />
-                      </button>
-                    )}
+                  <td className="hidden px-2 py-3 text-xs text-gray-600 md:table-cell">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setViewId((current) => (current === space.id ? null : space.id))
+                      }
+                      className="text-left text-[#0f2740] hover:underline"
+                    >
+                      Commercial terms
+                    </button>
                   </td>
                   <td className="hidden min-w-0 px-2 py-3 lg:table-cell">
                     <p className="truncate text-xs font-medium text-gray-800" title={ownerLabel}>
@@ -551,6 +512,15 @@ export function MarketplaceSpacesTable({
                       <MarketplaceSpaceDetailPanel
                         space={space}
                         ownerProfile={record.ownerProfile}
+                        feeInput={feeInputs[space.id] ?? ""}
+                        onFeeInputChange={(value) =>
+                          setFeeInputs((current) => ({
+                            ...current,
+                            [space.id]: value,
+                          }))
+                        }
+                        savingFee={savingFeeId === space.id}
+                        onSaveLegacyFee={() => void onSavePlatformFee(space.id)}
                       />
                     </td>
                   </tr>

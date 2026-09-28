@@ -233,12 +233,28 @@ export function billingMonthStart(
   return `${year}-${month}-01`;
 }
 
+export function assertBillableSubscriptionResolution(
+  resolution: SubscriptionResolution
+): { ok: true } | { ok: false; error: string } {
+  if (resolution.unresolvedReason) {
+    return {
+      ok: false,
+      error: `subscription_period_unresolved:${resolution.unresolvedReason}`,
+    };
+  }
+  return { ok: true };
+}
+
 export function buildSubscriptionPeriodSnapshot(input: {
   billingAt: Date | string;
   billedScope: { scopeType: BillableInventoryScope; scopeId: string };
   commercialTermsId: string | null;
   resolution: SubscriptionResolution;
 }): CommercialSubscriptionPeriodPreview {
+  const allowed = assertBillableSubscriptionResolution(input.resolution);
+  if (!allowed.ok) {
+    throw new Error(allowed.error);
+  }
   return {
     billingMonth: billingMonthStart(input.billingAt),
     scopeType: input.billedScope.scopeType,

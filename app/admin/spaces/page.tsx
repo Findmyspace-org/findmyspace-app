@@ -431,7 +431,7 @@ export default function AdminSpacesPage() {
     const rawValue = feeInputs[spaceId];
 
     if (rawValue === "") {
-      setMessage("Please enter a platform fee.");
+      setMessage("Please enter a legacy fallback fee.");
       setSavingFeeId(null);
       return;
     }
@@ -439,7 +439,7 @@ export default function AdminSpacesPage() {
     const parsedValue = Number(Number(rawValue).toFixed(2));
 
     if (!Number.isFinite(parsedValue) || parsedValue < 0 || parsedValue > 100) {
-      setMessage("Platform fee must be a number between 0 and 100.");
+      setMessage("Legacy fallback fee must be a number between 0 and 100.");
       setSavingFeeId(null);
       return;
     }
@@ -477,7 +477,9 @@ export default function AdminSpacesPage() {
       [spaceId]: String(parsedValue),
     }));
 
-    setMessage(`Platform fee updated to ${parsedValue}% for this listing.`);
+    setMessage(
+      `Legacy fallback fee updated to ${parsedValue}% for this listing. Live bookings still use commercial terms when they exist.`
+    );
     setSavingFeeId(null);
   }
 
@@ -983,7 +985,7 @@ export default function AdminSpacesPage() {
                             <div className="rounded-sm border border-gray-200 bg-white p-2">
                               <div className="flex flex-wrap items-center gap-2">
                                 <span className="text-sm font-medium text-gray-700">
-                                  Platform fee
+                                  Legacy fallback fee
                                 </span>
                                 <input
                                   type="number"
@@ -1002,7 +1004,7 @@ export default function AdminSpacesPage() {
                                 <span className="text-sm text-gray-600">%</span>
                                 <span className="text-xs text-gray-500">
                                   Current: {Number(space.platform_fee_percent ?? 15)}%
-                                  {" "}· legacy fallback only
+                                  {" "}· used only when no commercial terms exist
                                 </span>
                                 <div className="ml-auto">
                                   <button

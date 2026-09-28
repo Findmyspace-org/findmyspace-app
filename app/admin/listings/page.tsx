@@ -338,7 +338,7 @@ function AdminListingsPageContent() {
     const rawValue = feeInputs[spaceId];
 
     if (rawValue === "") {
-      setMessage("Please enter a platform fee.");
+      setMessage("Please enter a legacy fallback fee.");
       setSavingFeeId(null);
       return;
     }
@@ -346,7 +346,7 @@ function AdminListingsPageContent() {
     const parsedValue = Number(Number(rawValue).toFixed(2));
 
     if (!Number.isFinite(parsedValue) || parsedValue < 0 || parsedValue > 100) {
-      setMessage("Platform fee must be a number between 0 and 100.");
+      setMessage("Legacy fallback fee must be a number between 0 and 100.");
       setSavingFeeId(null);
       return;
     }
@@ -381,7 +381,9 @@ function AdminListingsPageContent() {
       [spaceId]: String(parsedValue),
     }));
 
-    setMessage(`Platform fee updated to ${parsedValue}% for this space.`);
+    setMessage(
+      `Legacy fallback fee updated to ${parsedValue}% for this space. Live bookings still use commercial terms when they exist.`
+    );
     setSavingFeeId(null);
   }
 

@@ -48,6 +48,10 @@ type OwnerProfile = {
 type MarketplaceSpaceDetailPanelProps = {
   space: DetailSpace;
   ownerProfile: OwnerProfile;
+  feeInput?: string;
+  onFeeInputChange?: (value: string) => void;
+  savingFee?: boolean;
+  onSaveLegacyFee?: () => void;
 };
 
 function DetailRow({ label, children }: { label: string; children: ReactNode }) {
@@ -64,6 +68,10 @@ function DetailRow({ label, children }: { label: string; children: ReactNode }) 
 export function MarketplaceSpaceDetailPanel({
   space,
   ownerProfile,
+  feeInput,
+  onFeeInputChange,
+  savingFee,
+  onSaveLegacyFee,
 }: MarketplaceSpaceDetailPanelProps) {
   const location =
     [space.suburb, space.city].filter(Boolean).join(", ") ||
@@ -125,10 +133,35 @@ export function MarketplaceSpaceDetailPanel({
         <DetailRow label="Bookable">
           {space.is_bookable ? "Yes" : "No"}
         </DetailRow>
-        <DetailRow label="Platform fee">
-          {Number(space.platform_fee_percent ?? 15)}%
+        <DetailRow label="Legacy fallback fee">
+          {onSaveLegacyFee && onFeeInputChange ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                type="number"
+                min="0"
+                max="100"
+                step="0.01"
+                value={feeInput ?? ""}
+                onChange={(event) => onFeeInputChange(event.target.value)}
+                className="w-20 rounded border border-gray-300 px-2 py-1 text-sm"
+                aria-label="Legacy fallback fee percent"
+              />
+              <span className="text-xs text-gray-500">%</span>
+              <button
+                type="button"
+                onClick={onSaveLegacyFee}
+                disabled={savingFee}
+                className="rounded border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                {savingFee ? "Saving…" : "Save"}
+              </button>
+            </div>
+          ) : (
+            <>{Number(space.platform_fee_percent ?? 15)}%</>
+          )}
           <p className="mt-1 text-xs text-gray-500">
-            Legacy combined rate used only when no commercial terms apply.
+            Used only when no effective commercial terms exist. Live bookings use
+            the commercial terms below.
           </p>
         </DetailRow>
         <DetailRow label="Created">

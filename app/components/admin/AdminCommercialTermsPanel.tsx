@@ -17,6 +17,7 @@ import {
   PLATFORM_DEFAULT_UNCONFIGURED_BODY,
   PLATFORM_DEFAULT_UNCONFIGURED_TITLE,
   subscriptionTierGapWarning,
+  subscriptionUncoveredInventoryWarning,
   type CommercialPrecedenceStep,
 } from "@/lib/commercial-admin-display";
 
@@ -240,6 +241,13 @@ export function AdminCommercialTermsPanel({
       }))
     );
   }, [model, pricingMode, tiers]);
+  const uncoveredWarning = subscriptionUncoveredInventoryWarning({
+    unresolvedReason: subscription?.unresolvedReason ?? null,
+    inventoryCount: subscription?.inventoryCount ?? null,
+    inventoryBasis: subscription?.inventoryBasis ?? null,
+    tiers: resolved?.tiers ?? [],
+  });
+  const subscriptionUnresolved = Boolean(subscription?.unresolvedReason);
   const unconfiguredPlatform =
     scopeType === "platform" && resolved?.accountingMode === "legacy_combined";
 
@@ -297,11 +305,14 @@ export function AdminCommercialTermsPanel({
                     </dd>
                   </div>
                   <div>
-                    <dt className="font-medium text-gray-500">Resolved monthly fee</dt>
+                    <dt className="font-medium text-gray-500">Monthly subscription</dt>
                     <dd>
-                      {money(
-                        subscription?.monthlyAmount ?? resolved.monthlySubscriptionAmount
-                      )}
+                      {subscriptionUnresolved
+                        ? "Unresolved — not a R0 subscription"
+                        : money(
+                            subscription?.monthlyAmount ??
+                              resolved.monthlySubscriptionAmount
+                          )}
                     </dd>
                   </div>
                   {subscription?.inventoryCount != null ? (
@@ -338,9 +349,15 @@ export function AdminCommercialTermsPanel({
                     </p>
                   ) : null}
                   {subscription?.unresolvedReason === "no_matching_tier" ? (
-                    <p className="sm:col-span-2 text-amber-800">
-                      No matching subscription tier
-                    </p>
+                    <div className="sm:col-span-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-amber-950">
+                      <p className="font-semibold">
+                        {uncoveredWarning || "No matching subscription tier"}
+                      </p>
+                      <p className="mt-1">
+                        This is not a valid R0 subscription. Do not create a billable
+                        subscription period until a covering tier is saved.
+                      </p>
+                    </div>
                   ) : null}
                   {subscription?.unresolvedReason === "ambiguous_overlapping_tiers" ? (
                     <p className="sm:col-span-2 text-amber-800">

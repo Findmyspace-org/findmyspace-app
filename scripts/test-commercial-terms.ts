@@ -31,6 +31,7 @@ import {
   type ResolvedCommercialTerms,
 } from "../lib/commercial-terms";
 import {
+  assertBillableSubscriptionResolution,
   buildSubscriptionPeriodSnapshot,
   matchSubscriptionTier,
   matchingSubscriptionTiers,
@@ -43,6 +44,7 @@ import {
   commercialParentContext,
   decorateCommercialSearchHit,
   subscriptionTierGapWarning,
+  subscriptionUncoveredInventoryWarning,
 } from "../lib/commercial-admin-display";
 import {
   countBillableInventory,
@@ -56,6 +58,15 @@ import {
   type FinanceBookingInput,
 } from "../lib/finance-booking-lines";
 import { summarizePaidLines } from "../lib/admin-finance-filters";
+import {
+  bookingHasCommercialSnapshot,
+  commercialSnapshotUpdateAllowed,
+} from "../lib/commercial-snapshot-freeze";
+import {
+  formatHostCommercialArrangement,
+  HOST_COMMERCIAL_NEUTRAL,
+  toHostCommercialArrangementDto,
+} from "../lib/host-commercial-copy";
 
 const ORG = "21cf12c3-3235-4cd3-8106-801d120dc7b5";
 const PROP = "b13d1be1-0bc6-437d-8deb-d43b881fe5cb";
@@ -489,6 +500,60 @@ const splitCommission: ResolvedCommercialTerms = {
   assert.equal(summary.totalPlatformCommission, 100);
   assert.equal(summary.totalTransactionFees, 50);
   assert.equal(lines.every((line) => line.feeLegacyCombined === false), true);
+}
+
+{
+  const subscriptionBooking: FinanceBookingInput = {
+    id: "sub-booking",
+    space_id: SPACE,
+    total_price: 100,
+    platform_fee: 5,
+    owner_earnings: 95,
+    commercial_model: "subscription",
+    platform_commission_amount: 0,
+    transaction_fee_amount: 5,
+    status: "paid_confirmed",
+    payment_status: "paid",
+    created_at: "2026-09-28T16:00:00.000Z",
+    renter: { first_name: "Sub", last_name: "Renter", email: null },
+    space: { title: "Dal Josaphat - Athletics" },
+    booking_charges: [
+      {
+        id: "sub-c1",
+        charge_type: "booking_total",
+        description: null,
+        billing_period_start: null,
+        billing_period_end: null,
+        amount: 100,
+        status: "paid",
+        paid_at: "2026-09-28T16:00:00.000Z",
+        payment_reference: "pf-sub",
+        statement_month: null,
+      },
+    ],
+  };
+  const freeBooking: FinanceBookingInput = {
+    ...subscriptionBooking,
+    id: "free-booking",
+    commercial_model: "free",
+    booking_charges: [
+      {
+        ...subscriptionBooking.booking_charges![0],
+        id: "free-c1",
+      },
+    ],
+  };
+  const lines = buildFinanceLineItems([subscriptionBooking, freeBooking]);
+  const summary = summarizePaidLines(lines);
+  assert.equal(summary.grossBookingValue, 200);
+  assert.equal(summary.totalPlatformFees, 10);
+  assert.equal(summary.totalOwnerEarnings, 190);
+  assert.equal(summary.totalPlatformCommission, 0);
+  assert.equal(summary.totalTransactionFees, 10);
+  assert.equal(
+    lines.every((line) => line.feeLegacyCombined === false),
+    true
+  );
 }
 
 {
@@ -1259,6 +1324,259 @@ const spaceTiers: CommercialTermTier[] = [
   assert.doesNotMatch(termsServer, /commercial_subscription_periods/);
   const bookingCharges = readFileSync("lib/invoice.ts", "utf8");
   assert.doesNotMatch(bookingCharges, /commercial_subscription_periods/);
+}
+
+{
+  const legacyRow = {
+    commercial_model: null,
+    platform_commission_percent: null,
+    transaction_fee_percent: null,
+    platform_commission_amount: null,
+    transaction_fee_amount: null,
+    monthly_subscription_amount: null,
+    commercial_terms_id: null,
+    commercial_terms_source: null,
+    commercial_terms_effective_at: null,
+  };
+  assert.equal(bookingHasCommercialSnapshot(legacyRow), false);
+  const backfill = commercialSnapshotUpdateAllowed(legacyRow, {
+    ...legacyRow,
+    commercial_model: "commission",
+  });
+  assert.equal(backfill.ok, false);
+  if (!backfill.ok) assert.equal(backfill.reason, "legacy_backfill");
+  assert.equal(commercialSnapshotUpdateAllowed(legacyRow, legacyRow).ok, true);
+
+  const snapshotted = {
+    commercial_model: "commission",
+    platform_commission_percent: 10,
+    transaction_fee_percent: 5,
+    platform_commission_amount: 10,
+    transaction_fee_amount: 5,
+    monthly_subscription_amount: 0,
+    commercial_terms_id: "fb73f905-f560-4c25-bff8-548508904afa",
+    commercial_terms_source: "platform",
+    commercial_terms_effective_at: "2026-09-28T15:30:00.000Z",
+  };
+  assert.equal(bookingHasCommercialSnapshot(snapshotted), true);
+  const mutated = commercialSnapshotUpdateAllowed(snapshotted, {
+    ...snapshotted,
+    platform_commission_percent: 12,
+  });
+  assert.equal(mutated.ok, false);
+  if (!mutated.ok) assert.equal(mutated.reason, "mutate_snapshot");
+  assert.equal(commercialSnapshotUpdateAllowed(snapshotted, snapshotted).ok, true);
+}
+
+{
+  const hostCommission = formatHostCommercialArrangement(splitCommission);
+  assert.equal(
+    hostCommission,
+    "10% platform commission + 5% transaction fee"
+  );
+  const hostFree = formatHostCommercialArrangement({
+    ...splitCommission,
+    model: "free",
+    commissionPercent: 0,
+  });
+  assert.equal(hostFree, "0% platform commission + 5% transaction fee");
+  const hostSub = formatHostCommercialArrangement({
+    ...splitCommission,
+    model: "subscription",
+    commissionPercent: 0,
+    monthlySubscriptionAmount: 250,
+    subscriptionPricingMode: "by_space_count",
+    subscription: {
+      billedScopeType: "organisation",
+      billedScopeId: ORG,
+      pricingMode: "by_space_count",
+      inventoryBasis: "space",
+      inventoryCount: 2,
+      matchedTier: {
+        id: "t1",
+        minCount: 1,
+        maxCount: 3,
+        monthlyAmount: 250,
+        label: "1-3 Spaces",
+        sortOrder: 0,
+      },
+      monthlyAmount: 250,
+      unresolvedReason: null,
+    },
+  });
+  assert.equal(
+    hostSub,
+    "R250.00/month subscription + 5% transaction fee on online payments"
+  );
+  const hostUnresolved = formatHostCommercialArrangement({
+    ...splitCommission,
+    model: "subscription",
+    commissionPercent: 0,
+    monthlySubscriptionAmount: 0,
+    subscription: {
+      billedScopeType: "organisation",
+      billedScopeId: ORG,
+      pricingMode: "by_space_count",
+      inventoryBasis: "space",
+      inventoryCount: 4,
+      matchedTier: null,
+      monthlyAmount: 0,
+      unresolvedReason: "no_matching_tier",
+    },
+  });
+  assert.equal(hostUnresolved, HOST_COMMERCIAL_NEUTRAL);
+  const hostDto = toHostCommercialArrangementDto({
+    ...splitCommission,
+    model: "subscription",
+    commissionPercent: 0,
+    tiers: [
+      {
+        id: "t1",
+        minCount: 1,
+        maxCount: 3,
+        monthlyAmount: 250,
+        label: "1-3 Spaces",
+        sortOrder: 0,
+      },
+    ],
+    subscription: {
+      billedScopeType: "organisation",
+      billedScopeId: ORG,
+      pricingMode: "by_space_count",
+      inventoryBasis: "space",
+      inventoryCount: 4,
+      matchedTier: null,
+      monthlyAmount: 0,
+      unresolvedReason: "no_matching_tier",
+    },
+  });
+  assert.equal(hostDto.subscriptionUnresolved, true);
+  assert.equal(hostDto.monthlyAmount, null);
+  assert.equal(
+    hostDto.subscriptionUnresolvedMessage,
+    "No subscription tier covers 4+ spaces"
+  );
+}
+
+{
+  const uncovered = subscriptionUncoveredInventoryWarning({
+    unresolvedReason: "no_matching_tier",
+    inventoryCount: 4,
+    inventoryBasis: "space",
+    tiers: [
+      {
+        id: "t1",
+        minCount: 1,
+        maxCount: 3,
+        monthlyAmount: 250,
+        label: "1-3 Spaces",
+        sortOrder: 0,
+      },
+    ],
+  });
+  assert.equal(uncovered, "No subscription tier covers 4+ spaces");
+  assert.equal(
+    subscriptionUncoveredInventoryWarning({
+      unresolvedReason: null,
+      inventoryCount: 2,
+      inventoryBasis: "space",
+      tiers: [
+        {
+          id: "t1",
+          minCount: 1,
+          maxCount: 3,
+          monthlyAmount: 250,
+          label: "1-3 Spaces",
+          sortOrder: 0,
+        },
+      ],
+    }),
+    null
+  );
+}
+
+{
+  const unresolved = resolveSubscriptionAmount({
+    model: "subscription",
+    pricingMode: "by_space_count",
+    fixedMonthlyAmount: 0,
+    tiers: [
+      {
+        id: "t1",
+        minCount: 1,
+        maxCount: 3,
+        monthlyAmount: 250,
+        label: "1-3 Spaces",
+        sortOrder: 0,
+      },
+    ],
+    inventory: {
+      scopeType: "organisation",
+      scopeId: ORG,
+      propertyCount: 3,
+      spaceCount: 4,
+      organisationBillable: true,
+    },
+    billedScope: { scopeType: "organisation", scopeId: ORG },
+  });
+  assert.equal(unresolved.unresolvedReason, "no_matching_tier");
+  assert.equal(unresolved.monthlyAmount, 0);
+  assert.equal(assertBillableSubscriptionResolution(unresolved).ok, false);
+  assert.throws(() =>
+    buildSubscriptionPeriodSnapshot({
+      billingAt: "2026-09-28T12:00:00+02:00",
+      billedScope: { scopeType: "organisation", scopeId: ORG },
+      commercialTermsId: "2486aade-6746-44e3-bbf5-4e0478a81345",
+      resolution: unresolved,
+    })
+  );
+}
+
+{
+  const spaceForm = readFileSync("app/components/SpaceForm.tsx", "utf8");
+  assert.doesNotMatch(spaceForm, /3\.5%/);
+  assert.doesNotMatch(spaceForm, /VAT on commission/);
+  assert.doesNotMatch(spaceForm, /getCommissionRate/);
+  assert.match(spaceForm, /HostCommercialArrangementCard/);
+
+  const termsPage = readFileSync("app/terms/page.tsx", "utf8");
+  assert.doesNotMatch(termsPage, /3\.5%/);
+  assert.match(
+    termsPage,
+    /commercial arrangement applicable to the listing or host/
+  );
+
+  const marketplace = readFileSync(
+    "app/components/admin/MarketplaceSpacesTable.tsx",
+    "utf8"
+  );
+  assert.doesNotMatch(marketplace, /Change platform fee/);
+  assert.match(marketplace, /Commercial terms/);
+
+  const detail = readFileSync(
+    "app/components/admin/MarketplaceSpaceDetailPanel.tsx",
+    "utf8"
+  );
+  assert.match(detail, /Legacy fallback fee/);
+
+  const hostRoute = readFileSync(
+    "app/api/host/commercial-arrangement/route.ts",
+    "utf8"
+  );
+  assert.match(hostRoute, /toHostCommercialArrangementDto/);
+  assert.doesNotMatch(hostRoute, /adminNote/);
+  assert.doesNotMatch(hostRoute, /termsId/);
+
+  const freeze = readFileSync("lib/commercial-snapshot-freeze.ts", "utf8");
+  assert.match(freeze, /legacy_backfill/);
+
+  const migration073 = readFileSync(
+    "supabase/migrations/073_20260928_freeze_legacy_booking_commercial_snapshots.sql",
+    "utf8"
+  );
+  assert.match(migration073, /Legacy bookings cannot be backfilled/);
+  assert.doesNotMatch(migration073, /UPDATE public\.bookings\s+SET/i);
+  assert.doesNotMatch(migration073, /INSERT INTO public\.bookings/i);
 }
 
 console.log("commercial-terms tests passed");

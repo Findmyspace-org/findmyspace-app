@@ -272,6 +272,9 @@ export function formatCommercialArrangement(
     return `Legacy combined ${Number(terms.commissionPercent).toFixed(2)}% FindMySpace fee`;
   }
   if (terms.model === "subscription") {
+    if (terms.subscription?.unresolvedReason) {
+      return `Subscription unresolved · ${tx}% transaction`;
+    }
     const monthly = Number(
       terms.subscription?.monthlyAmount ?? terms.monthlySubscriptionAmount
     ).toFixed(2);
