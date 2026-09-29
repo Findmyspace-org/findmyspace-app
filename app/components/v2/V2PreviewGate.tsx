@@ -7,14 +7,13 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { fetchAdminSession } from "@/lib/admin-session-client";
 import { getBrowserSession } from "@/lib/supabase-browser-session";
 import {
   CLASSIC_HOME_HREF,
   parseUiVersion,
   UI_VERSION_QUERY_PARAM,
-  V2_PREVIEW_HREF,
 } from "@/lib/v2/ui-version";
 
 type V2PreviewIdentity = {
@@ -43,7 +42,12 @@ export default function V2PreviewGate({
   children: ReactNode;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
+  const searchParamsString = searchParams.toString();
+  const requestedHref = searchParamsString
+    ? `${pathname}?${searchParamsString}`
+    : pathname;
   const requestedVersion = parseUiVersion(
     searchParams.get(UI_VERSION_QUERY_PARAM)
   );
@@ -64,7 +68,7 @@ export default function V2PreviewGate({
 
         if (!session?.access_token) {
           router.replace(
-            `/login?next=${encodeURIComponent(V2_PREVIEW_HREF)}`
+            `/login?next=${encodeURIComponent(requestedHref)}`
           );
           return;
         }
@@ -98,7 +102,7 @@ export default function V2PreviewGate({
     return () => {
       cancelled = true;
     };
-  }, [requestedVersion, router]);
+  }, [requestedHref, requestedVersion, router]);
 
   if (!identity) {
     return (

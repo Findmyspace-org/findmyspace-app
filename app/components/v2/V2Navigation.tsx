@@ -8,7 +8,11 @@ import {
   Home,
   type LucideIcon,
 } from "lucide-react";
-import { V2_PREVIEW_HREF } from "@/lib/v2/ui-version";
+import {
+  V2_BROWSE_HREF,
+  V2_PREVIEW_HREF,
+} from "@/lib/v2/ui-version";
+import V2AccountMenu from "./V2AccountMenu";
 
 type V2NavigationItem = {
   label: string;
@@ -18,8 +22,13 @@ type V2NavigationItem = {
 
 const V2_DESKTOP_NAV: V2NavigationItem[] = [
   {
+    label: "Home",
+    href: V2_PREVIEW_HREF,
+    icon: Home,
+  },
+  {
     label: "Browse",
-    href: "/spaces",
+    href: V2_BROWSE_HREF,
     icon: Compass,
   },
   {
@@ -30,11 +39,6 @@ const V2_DESKTOP_NAV: V2NavigationItem[] = [
 ];
 
 const V2_MOBILE_NAV: V2NavigationItem[] = [
-  {
-    label: "Home",
-    href: V2_PREVIEW_HREF,
-    icon: Home,
-  },
   ...V2_DESKTOP_NAV,
 ];
 
@@ -87,6 +91,7 @@ export function V2MobileNavigation() {
           </Link>
         );
       })}
+      <V2AccountMenu variant="mobile" />
     </nav>
   );
 }

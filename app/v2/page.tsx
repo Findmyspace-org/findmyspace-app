@@ -15,6 +15,11 @@ import {
 import V2FeaturedSpaces from "@/app/components/v2/V2FeaturedSpaces";
 import { V2Container } from "@/app/components/v2/V2Primitives";
 import type { SpaceIntentKey } from "@/lib/space-intents";
+import {
+  buildV2Href,
+  V2_BROWSE_HREF,
+  V2_BROWSE_PATH,
+} from "@/lib/v2/ui-version";
 
 const QUICK_TYPES: Array<{
   label: string;
@@ -53,13 +58,15 @@ export default function V2HomePage() {
         <section className="fms-v2-home-hero" aria-labelledby="v2-home-title">
           <div className="fms-v2-home-hero-copy">
             <p className="fms-v2-eyebrow">Space, made simple</p>
-            <h1 id="v2-home-title">Find your space.</h1>
+            <h1 id="v2-home-title">
+              The right space in the right place.
+            </h1>
             <p className="fms-v2-home-intro">
               Venues, parking, meeting spaces and unique places around you.
             </p>
 
             <form
-              action="/spaces"
+              action={V2_BROWSE_PATH}
               method="get"
               className="fms-v2-home-search"
               role="search"
@@ -67,6 +74,7 @@ export default function V2HomePage() {
               <label htmlFor="v2-location-search" className="fms-v2-sr-only">
                 Where are you looking?
               </label>
+              <input type="hidden" name="ui" value="v2" />
               <Search aria-hidden />
               <input
                 id="v2-location-search"
@@ -87,7 +95,9 @@ export default function V2HomePage() {
                 return (
                   <Link
                     key={item.intent}
-                    href={`/spaces?intent=${item.intent}`}
+                    href={buildV2Href(V2_BROWSE_PATH, {
+                      intent: item.intent,
+                    })}
                     className="fms-v2-quick-type"
                   >
                     <Icon aria-hidden />
@@ -124,7 +134,10 @@ export default function V2HomePage() {
           </div>
 
           <div className="fms-v2-editorial-grid">
-            <Link href="/spaces?q=Paarl" className="fms-v2-editorial-card">
+            <Link
+              href={buildV2Href(V2_BROWSE_PATH, { q: "Paarl" })}
+              className="fms-v2-editorial-card"
+            >
               <Image
                 src="/images/categories/host.png"
                 alt=""
@@ -139,7 +152,7 @@ export default function V2HomePage() {
             </Link>
 
             <Link
-              href="/spaces?intent=work"
+              href={buildV2Href(V2_BROWSE_PATH, { intent: "work" })}
               className="fms-v2-editorial-card"
             >
               <Image
@@ -184,7 +197,7 @@ export default function V2HomePage() {
             })}
           </ol>
 
-          <Link href="/spaces" className="fms-v2-discovery-link">
+          <Link href={V2_BROWSE_HREF} className="fms-v2-discovery-link">
             <Compass aria-hidden />
             Browse all spaces
           </Link>

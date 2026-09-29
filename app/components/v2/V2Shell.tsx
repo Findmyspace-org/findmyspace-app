@@ -4,17 +4,15 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import type { ReactNode } from "react";
 import { CLASSIC_HOME_HREF } from "@/lib/v2/ui-version";
+import V2AccountMenu from "./V2AccountMenu";
 import { V2Logo } from "./V2Brand";
 import {
   V2DesktopNavigation,
   V2MobileNavigation,
 } from "./V2Navigation";
 import { V2Badge, V2Container } from "./V2Primitives";
-import { useV2PreviewIdentity } from "./V2PreviewGate";
 
 export default function V2Shell({ children }: { children: ReactNode }) {
-  const identity = useV2PreviewIdentity();
-
   return (
     <div className="fms-v2-root">
       <header className="fms-v2-header">
@@ -30,9 +28,10 @@ export default function V2Shell({ children }: { children: ReactNode }) {
           <V2DesktopNavigation />
 
           <div className="fms-v2-header-actions">
-            <span className="fms-v2-account-label">
-              {identity.email || "Super Admin"}
-            </span>
+            <Link href="/list-your-space" className="fms-v2-list-space-link">
+              List your space
+            </Link>
+            <V2AccountMenu variant="desktop" />
             <V2Badge tone="brand">V2 preview</V2Badge>
             <Link
               href={CLASSIC_HOME_HREF}
@@ -55,7 +54,7 @@ export default function V2Shell({ children }: { children: ReactNode }) {
             <p>Find the right space, in the right place.</p>
           </div>
           <nav aria-label="V2 footer navigation">
-            <Link href="/spaces">Browse</Link>
+            <Link href="/v2/spaces?ui=v2">Browse</Link>
             <Link href="/list-your-space">List your space</Link>
             <Link href="/contact">Contact</Link>
             <Link href="/terms">Terms</Link>
