@@ -107,6 +107,11 @@
   gap: var(--fms-v2-space-2);
 }
 
+.fms-v2-header-actions .fms-v2-badge {
+  background: var(--fms-v2-surface-muted);
+  color: var(--fms-v2-text-muted);
+}
+
 .fms-v2-exit-link {
   display: inline-flex;
   min-height: 2.5rem;
@@ -1118,9 +1123,13 @@
   display: none;
 }
 
-.fms-v2-browse-intents a {
+.fms-v2-browse-intents a,
+.fms-v2-browse-intents button {
+  display: inline-flex;
   min-height: 2.5rem;
   flex-shrink: 0;
+  align-items: center;
+  gap: var(--fms-v2-space-2);
   border: 1px solid var(--fms-v2-border);
   border-radius: 999px;
   background: var(--fms-v2-white);
@@ -1136,17 +1145,10 @@
   color: var(--fms-v2-white);
 }
 
-.fms-v2-browse-filter-bar {
-  display: none;
-  margin-top: var(--fms-v2-space-6);
-}
-
-.fms-v2-desktop-filter-fields,
 .fms-v2-mobile-filter-fields {
   gap: var(--fms-v2-space-3);
 }
 
-.fms-v2-desktop-filter-fields label,
 .fms-v2-mobile-filter-fields label {
   display: grid;
   gap: var(--fms-v2-space-2);
@@ -1156,7 +1158,6 @@
   letter-spacing: 0.04em;
 }
 
-.fms-v2-desktop-filter-fields select,
 .fms-v2-mobile-filter-fields select {
   width: 100%;
   min-height: 2.875rem;
@@ -1167,45 +1168,6 @@
   color: var(--fms-v2-navy-soft);
   font: inherit;
   font-weight: 700;
-}
-
-.fms-v2-select-with-icon {
-  position: relative;
-  display: block;
-}
-
-.fms-v2-select-with-icon > svg {
-  position: absolute;
-  top: 50%;
-  left: 0.75rem;
-  width: 1rem;
-  height: 1rem;
-  transform: translateY(-50%);
-  color: var(--fms-v2-text-muted);
-  pointer-events: none;
-}
-
-.fms-v2-select-with-icon select {
-  padding-left: 2.25rem;
-}
-
-.fms-v2-apply-filters {
-  min-height: 2.875rem;
-  align-self: end;
-  border: 1px solid var(--fms-v2-navy);
-  border-radius: var(--fms-v2-radius-sm);
-  background: var(--fms-v2-navy);
-  padding: 0.7rem 1rem;
-  color: var(--fms-v2-white);
-  font-size: 0.8125rem;
-  font-weight: 800;
-}
-
-.fms-v2-browse-mobile-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--fms-v2-space-2);
-  margin-top: var(--fms-v2-space-5, 1.25rem);
 }
 
 .fms-v2-filter-button,
@@ -1244,20 +1206,32 @@
 
 .fms-v2-results-heading {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
   justify-content: space-between;
   gap: var(--fms-v2-space-4);
   margin-block: var(--fms-v2-space-8) var(--fms-v2-space-4);
 }
 
-.fms-v2-results-heading p {
+.fms-v2-results-summary,
+.fms-v2-results-tools {
+  display: flex;
+  align-items: center;
+  gap: var(--fms-v2-space-3);
+}
+
+.fms-v2-results-tools {
+  justify-content: space-between;
+}
+
+.fms-v2-results-summary p {
   margin: 0;
   color: var(--fms-v2-navy);
   font-size: 0.875rem;
   font-weight: 800;
 }
 
-.fms-v2-results-heading a {
+.fms-v2-results-summary a {
   display: inline-flex;
   align-items: center;
   gap: var(--fms-v2-space-2);
@@ -1266,9 +1240,27 @@
   font-weight: 800;
 }
 
-.fms-v2-results-heading a svg {
+.fms-v2-results-summary a svg {
   width: 0.875rem;
   height: 0.875rem;
+}
+
+.fms-v2-sort-control {
+  display: inline-flex;
+  min-height: 2.5rem;
+  align-items: center;
+  gap: 0.3rem;
+  color: var(--fms-v2-text-muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.fms-v2-sort-control select {
+  border: 0;
+  background: transparent;
+  color: var(--fms-v2-navy);
+  font: inherit;
+  font-weight: 800;
 }
 
 .fms-v2-browse-grid {
@@ -1488,33 +1480,34 @@
     padding-block: 5rem;
   }
 
+  .fms-v2-quick-types,
+  .fms-v2-browse-intents {
+    flex-wrap: wrap;
+    overflow: visible;
+  }
+
   .fms-v2-browse {
     padding-block: 4rem 7rem;
   }
 
-  .fms-v2-browse-filter-bar {
-    display: flex;
-    align-items: end;
-    gap: var(--fms-v2-space-3);
-  }
-
-  .fms-v2-desktop-filter-fields {
-    display: grid;
-    flex: 1;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .fms-v2-browse-mobile-actions {
-    justify-content: flex-end;
-    margin-top: var(--fms-v2-space-3);
-  }
-
-  .fms-v2-filter-button {
-    display: none;
+  .fms-v2-results-heading {
+    flex-direction: row;
+    align-items: center;
   }
 
   .fms-v2-browse-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .fms-v2-filter-sheet {
+    top: 5.5rem;
+    right: 2rem;
+    bottom: auto;
+    left: auto;
+    width: min(26rem, calc(100vw - 4rem));
+    border: 1px solid var(--fms-v2-border);
+    border-radius: var(--fms-v2-radius-lg);
+    box-shadow: 0 18px 45px rgba(15, 23, 42, 0.14);
   }
 
   .fms-v2-space-grid {

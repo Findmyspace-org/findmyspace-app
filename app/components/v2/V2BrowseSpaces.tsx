@@ -2,14 +2,13 @@
 
 import Link from "next/link";
 import {
-  ArrowUpDown,
   Map,
   Search,
   SlidersHorizontal,
   X,
 } from "lucide-react";
 import { useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   LISTING_SPACE_TYPE_OPTIONS,
   buildAttributeSearchText,
@@ -36,12 +35,19 @@ import { V2Container } from "./V2Primitives";
 import { useV2PublicSpaces } from "./useV2PublicSpaces";
 
 const DEFAULT_SORT = "price_high_low";
+const PRIMARY_INTENTS = [
+  { label: "Events", value: "host" },
+  { label: "Work", value: "work" },
+  { label: "Parking", value: "park" },
+  { label: "Sports", value: "do" },
+] as const;
 
 function hiddenValue(value: string) {
   return value && value !== "all" ? value : "";
 }
 
 export default function V2BrowseSpaces() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const [filtersOpen, setFiltersOpen] = useState(false);
   const { spaces, loading, error } = useV2PublicSpaces();
@@ -141,6 +147,18 @@ export default function V2BrowseSpaces() {
   const filterFields = (
     <>
       <label>
+        <span>Purpose</span>
+        <select name="intent" defaultValue={intent || ""}>
+          <option value="">All purposes</option>
+          {SPACE_INTENTS.map((item) => (
+            <option key={item.key} value={item.key}>
+              {item.label}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <label>
         <span>Space type</span>
         <select name="type" defaultValue={typeFilter}>
           <option value="all">All space types</option>
@@ -163,17 +181,6 @@ export default function V2BrowseSpaces() {
           ))}
         </select>
       </label>
-
-      <label>
-        <span>Sort</span>
-        <span className="fms-v2-select-with-icon">
-          <ArrowUpDown aria-hidden />
-          <select name="sort" defaultValue={sort}>
-            <option value="price_high_low">Featured</option>
-            <option value="price_low_high">Price: low to high</option>
-          </select>
-        </span>
-      </label>
     </>
   );
 
@@ -181,7 +188,6 @@ export default function V2BrowseSpaces() {
     <V2Container>
       <section className="fms-v2-browse" aria-labelledby="v2-browse-heading">
         <header className="fms-v2-browse-heading">
-          <p className="fms-v2-eyebrow">FindMySpace</p>
           <h1 id="v2-browse-heading">Browse spaces</h1>
           <p>Find a space that fits where you are and what you need.</p>
         </header>
@@ -225,69 +231,66 @@ export default function V2BrowseSpaces() {
             href={browseHref({ intent: null })}
             aria-current={!intent ? "page" : undefined}
           >
-            All spaces
+            All
           </Link>
-          {SPACE_INTENTS.map((item) => (
+          {PRIMARY_INTENTS.map((item) => (
             <Link
-              key={item.key}
-              href={browseHref({ intent: item.key, type: null })}
-              aria-current={intent === item.key ? "page" : undefined}
+              key={item.value}
+              href={browseHref({ intent: item.value, type: null })}
+              aria-current={intent === item.value ? "page" : undefined}
             >
-              {item.shortLabel}
+              {item.label}
             </Link>
           ))}
-        </div>
-
-        <form
-          action={V2_BROWSE_PATH}
-          method="get"
-          className="fms-v2-browse-filter-bar"
-        >
-          <input type="hidden" name="ui" value="v2" />
-          <input type="hidden" name="q" value={search} />
-          <input
-            type="hidden"
-            name="intent"
-            value={hiddenValue(intent || "")}
-          />
-          <div className="fms-v2-desktop-filter-fields">{filterFields}</div>
-          <button type="submit" className="fms-v2-apply-filters">
-            Apply
-          </button>
-        </form>
-
-        <div className="fms-v2-browse-mobile-actions">
           <button
             type="button"
             onClick={() => setFiltersOpen(true)}
             className="fms-v2-filter-button"
           >
             <SlidersHorizontal aria-hidden />
-            Filters
+            More filters
             {activeFilterCount > 0 ? <span>{activeFilterCount}</span> : null}
           </button>
-          {mapCompatible ? (
-            <Link href={classicMapHref} className="fms-v2-map-link">
-              <Map aria-hidden />
-              Map
-            </Link>
-          ) : null}
         </div>
 
         <div className="fms-v2-results-heading">
-          <p>
-            {loading
-              ? "Finding spaces…"
-              : `${filteredSpaces.length} space${
-                  filteredSpaces.length === 1 ? "" : "s"
-                }`}
-          </p>
-          {search || activeFilterCount > 0 ? (
-            <Link href={V2_BROWSE_HREF}>
-              <X aria-hidden />
-              Clear
-            </Link>
-          ) : null}
+          <div className="fms-v2-results-summary">
+            <p>
+              {loading
+                ? "Finding spaces…"
+                : `${filteredSpaces.length} space${
+                    filteredSpaces.length === 1 ? "" : "s"
+                  }`}
+            </p>
+            {search || activeFilterCount > 0 ? (
+              <Link href={V2_BROWSE_HREF}>
+                <X aria-hidden />
+                Clear
+              </Link>
+            ) : null}
+          </div>
+
+          <div className="fms-v2-results-tools">
+            {mapCompatible ? (
+              <Link href={classicMapHref} className="fms-v2-map-link">
+                <Map aria-hidden />
+                Map
+              </Link>
+            ) : null}
+            <label className="fms-v2-sort-control">
+              <span>Sort:</span>
+              <select
+                value={sort}
+                onChange={(event) =>
+                  router.replace(browseHref({ sort: event.target.value }))
+                }
+                aria-label="Sort spaces"
+              >
+                <option value="price_high_low">Featured</option>
+                <option value="price_low_high">Price: low to high</option>
+              </select>
+            </label>
+          </div>
         </div>
 
         {loading ? (
@@ -342,7 +345,7 @@ export default function V2BrowseSpaces() {
             <div className="fms-v2-filter-sheet-heading">
               <div>
                 <p className="fms-v2-eyebrow">Refine</p>
-                <h2>Filters</h2>
+                <h2>More filters</h2>
               </div>
               <button
                 type="button"
@@ -354,11 +357,7 @@ export default function V2BrowseSpaces() {
             </div>
             <input type="hidden" name="ui" value="v2" />
             <input type="hidden" name="q" value={search} />
-            <input
-              type="hidden"
-              name="intent"
-              value={hiddenValue(intent || "")}
-            />
+            <input type="hidden" name="sort" value={sort} />
             <div className="fms-v2-mobile-filter-fields">{filterFields}</div>
             <div className="fms-v2-filter-sheet-actions">
               <Link href={V2_BROWSE_HREF}>Clear</Link>

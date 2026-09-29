@@ -57,7 +57,6 @@ export default function V2HomePage() {
       <V2Container>
         <section className="fms-v2-home-hero" aria-labelledby="v2-home-title">
           <div className="fms-v2-home-hero-copy">
-            <p className="fms-v2-eyebrow">Space, made simple</p>
             <h1 id="v2-home-title">
               The right space in the right place.
             </h1>
