@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
+import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { CLASSIC_HOME_HREF } from "@/lib/v2/ui-version";
 import V2AccountMenu from "./V2AccountMenu";
@@ -13,6 +14,9 @@ import {
 import { V2Badge, V2Container } from "./V2Primitives";
 
 export default function V2Shell({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
+  const isSpaceDetail = pathname.startsWith("/v2/spaces/");
+
   return (
     <div className="fms-v2-root">
       <header className="fms-v2-header">
@@ -62,7 +66,7 @@ export default function V2Shell({ children }: { children: ReactNode }) {
         </V2Container>
       </footer>
 
-      <V2MobileNavigation />
+      {!isSpaceDetail ? <V2MobileNavigation /> : null}
     </div>
   );
 }

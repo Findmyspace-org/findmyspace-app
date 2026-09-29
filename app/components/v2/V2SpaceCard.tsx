@@ -10,6 +10,7 @@ import {
   formatSpacePriceDisplay,
   type SpacePricingInput,
 } from "@/lib/space-pricing";
+import { buildV2Href } from "@/lib/v2/ui-version";
 import { V2MapMarker } from "./V2Brand";
 
 export type V2PublicSpaceCardData = SpacePricingInput & {
@@ -39,7 +40,7 @@ export default function V2SpaceCard({
   return (
     <article className="fms-v2-space-card">
       <Link
-        href={`/spaces/${space.id}`}
+        href={buildV2Href(`/v2/spaces/${space.id}`)}
         className="fms-v2-space-card-link"
         aria-label={`View ${space.title}`}
       >
