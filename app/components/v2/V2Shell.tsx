@@ -15,7 +15,8 @@ import { V2Badge, V2Container } from "./V2Primitives";
 
 export default function V2Shell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const isSpaceDetail = pathname.startsWith("/v2/spaces/");
+  const hideMobileNav =
+    pathname.startsWith("/v2/spaces/") && pathname !== "/v2/spaces";
 
   return (
     <div className="fms-v2-root">
@@ -66,7 +67,7 @@ export default function V2Shell({ children }: { children: ReactNode }) {
         </V2Container>
       </footer>
 
-      {!isSpaceDetail ? <V2MobileNavigation /> : null}
+      {!hideMobileNav ? <V2MobileNavigation /> : null}
     </div>
   );
 }

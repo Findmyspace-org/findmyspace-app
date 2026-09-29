@@ -37,7 +37,7 @@ import {
   getV2PublicSpaceDetail,
   type V2PublicSpaceDetail,
 } from "@/lib/v2/public-space-detail";
-import { V2_BROWSE_HREF } from "@/lib/v2/ui-version";
+import { buildV2BookHref, V2_BROWSE_HREF } from "@/lib/v2/ui-version";
 import { formatListingAddress } from "@/lib/za-provinces";
 
 type DetailFact = {
@@ -120,7 +120,7 @@ export default async function V2SpaceDetailPage({
   const classicDetailHref = `/spaces/${space.id}`;
   const action = bookable
     ? {
-        href: `${classicDetailHref}?book=1`,
+        href: buildV2BookHref(space.id),
         label: "Request to book",
         note: "Choose your dates and send the host a request.",
       }

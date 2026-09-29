@@ -25,6 +25,14 @@ export function buildV2Href(
   return `${pathname}?${params.toString()}`;
 }
 
+export function buildV2SpaceHref(spaceId: string): string {
+  return buildV2Href(`/v2/spaces/${spaceId}`);
+}
+
+export function buildV2BookHref(spaceId: string): string {
+  return buildV2Href(`/v2/spaces/${spaceId}/book`);
+}
+
 /**
  * A URL value can request the V2 presentation, but it never grants access.
  * The V2 preview gate separately verifies the existing platform-admin session.

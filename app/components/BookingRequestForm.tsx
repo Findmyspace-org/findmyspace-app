@@ -95,6 +95,12 @@ type BookingRequestFormProps = {
   minMonths?: number | null;
   /** Single line for summary (address) */
   spaceLocation?: string;
+  /** Outer wrapper class. Defaults to Classic card styles. */
+  className?: string;
+  /** Auth return path. Defaults to Classic `?book=1` sheet. */
+  authReturnPath?: string;
+  /** Success "Continue browsing" href. Defaults to `/spaces`. */
+  successBrowseHref?: string;
 };
 
 
@@ -128,6 +134,9 @@ export default function BookingRequestForm({
   minDays = null,
   minMonths = null,
   spaceLocation = "",
+  className,
+  authReturnPath,
+  successBrowseHref,
 }: BookingRequestFormProps) {
   const [statusMessage, setStatusMessage] = useState("");
   const [loading, setLoading] = useState(false);
@@ -179,6 +188,9 @@ export default function BookingRequestForm({
 
   const persistReadyRef = useRef(false);
   const unitKind = normalizeBookingUnit(bookingUnit);
+  const resolvedAuthReturnPath =
+    authReturnPath ?? `/spaces/${spaceId}?book=1`;
+  const resolvedSuccessBrowseHref = successBrowseHref ?? "/spaces";
 
   useLayoutEffect(() => {
     if (typeof window === "undefined") return;
@@ -1291,7 +1303,12 @@ export default function BookingRequestForm({
 
   return (
     <>
-      <div className="rounded-md border border-gray-200 bg-white p-4 shadow-sm sm:p-6">
+      <div
+        className={
+          className ??
+          "rounded-md border border-gray-200 bg-white p-4 shadow-sm sm:p-6"
+        }
+      >
         <h2 className="mb-3 text-2xl font-semibold text-[#192a3a]">
           Book this space
         </h2>
@@ -1946,7 +1963,7 @@ export default function BookingRequestForm({
                 View your bookings
               </Link>
               <Link
-                href="/spaces"
+                href={resolvedSuccessBrowseHref}
                 className="flex w-full min-h-[48px] items-center justify-center rounded-md border border-gray-300 bg-white px-4 py-3 text-center text-sm font-medium text-[#192a3a] hover:bg-gray-50"
               >
                 Continue browsing
@@ -1959,7 +1976,7 @@ export default function BookingRequestForm({
       <AuthModal
         open={authModalOpen}
         mode={authMode}
-        nextPath={`/spaces/${spaceId}?book=1`}
+        nextPath={resolvedAuthReturnPath}
         onClose={() => setAuthModalOpen(false)}
         onSwitchMode={(nextMode: "login" | "signup") =>
           setAuthMode(nextMode)
