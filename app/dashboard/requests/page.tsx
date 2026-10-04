@@ -124,7 +124,7 @@ type BlockingBooking = {
 type EnrichedBooking = Booking & {
   space?: Space;
   renter?: Profile;
-  /** From booking_request_details.data; RLS allows owner + renter only */
+  /** From booking_request_details via host request-context API */
   requestDetails?: Record<string, unknown> | null;
 };
 
@@ -1314,13 +1314,15 @@ function OwnerBookingRequestsPageContent({
       const {
         data: { session },
       } = await supabase.auth.getSession();
+      const sessionAccessToken = session?.access_token || null;
       let scopedBookings: Booking[] = [];
-      if (session?.access_token) {
+      let spacesFromManaged = new Map<string, Space>();
+      if (sessionAccessToken) {
         const { fetchManagedSpaces } = await import(
           "@/lib/host-managed-spaces-client"
         );
         const managed = await fetchManagedSpaces(
-          session.access_token,
+          sessionAccessToken,
           requestedOrganisationId
         );
         const managedIds = managed.map((space) => space.id);
@@ -1341,107 +1343,50 @@ function OwnerBookingRequestsPageContent({
           }
           scopedBookings = (bookingsData || []) as Booking[];
         }
-      }
 
-      const detailByBookingId = new Map<string, Record<string, unknown>>();
-      if (scopedBookings.length > 0) {
-        const allBookingIds = scopedBookings.map((b) => b.id);
-        const { data: detailRows, error: detailsError } = await (
-          supabase.from("booking_request_details" as never) as any
-        )
-          .select("booking_id, data")
-          .in("booking_id", allBookingIds);
-
-        if (detailsError) {
-          console.error("booking_request_details load:", detailsError);
-        } else {
-          for (const row of (detailRows || []) as Array<{
-            booking_id: string;
-            data: unknown;
-          }>) {
-            if (
-              row.data &&
-              typeof row.data === "object" &&
-              !Array.isArray(row.data)
-            ) {
-              detailByBookingId.set(row.booking_id, row.data as Record<string, unknown>);
-            }
-          }
-        }
-      }
-
-      const spaceIds = Array.from(new Set(scopedBookings.map((b) => b.space_id)));
-      const renterIds = Array.from(new Set(scopedBookings.map((b) => b.renter_id)));
-
-      let spacesMap = new Map<string, Space>();
-      let rentersMap = new Map<string, Profile>();
-
-      if (spaceIds.length > 0) {
-        const { data: spacesData, error: spacesError } = await supabase
-          .from("spaces")
-          .select("id, title, city, suburb, address_line_1, booking_unit, status")
-          .in("id", spaceIds);
-
-        if (spacesError) {
-          setMessage(spacesError.message);
-          setLoading(false);
-          return;
-        }
-
-        spacesMap = new Map(
-          ((spacesData || []) as Space[]).map((space) => [space.id, space])
-        );
-
-        const { data: imagesData, error: imagesError } = await supabase
-          .from("space_images")
-          .select("space_id, image_url, sort_order")
-          .in("space_id", spaceIds)
-          .order("sort_order", { ascending: true });
-
-        if (imagesError) {
-          setMessage(imagesError.message);
-          setLoading(false);
-          return;
-        }
-
-        const imageMap = new Map<string, string>();
-
-        for (const image of (imagesData || []) as Array<{
-          space_id: string;
-          image_url: string;
-          sort_order: number | null;
-        }>) {
-          if (!imageMap.has(image.space_id)) {
-            imageMap.set(image.space_id, image.image_url);
-          }
-        }
-
-        spacesMap = new Map(
-          Array.from(spacesMap.entries()).map(([id, space]) => [
-            id,
+        spacesFromManaged = new Map(
+          managed.map((space) => [
+            space.id,
             {
-              ...space,
-              cover_image_url: imageMap.get(id) || null,
+              id: space.id,
+              title: space.title || "Untitled space",
+              city: space.city ?? null,
+              suburb: space.suburb ?? null,
+              address_line_1: space.address_line_1 ?? null,
+              booking_unit: space.booking_unit ?? null,
+              status: space.status ?? null,
+              cover_image_url: space.cover_image_url ?? null,
             },
           ])
         );
       }
 
-      if (renterIds.length > 0) {
-        const { data: rentersData, error: rentersError } = await (supabase
-          .from("profiles") as any)
-          .select("id, first_name, last_name, email")
-          .in("id", renterIds);
+      const spaceIds = Array.from(new Set(scopedBookings.map((b) => b.space_id)));
+      const spacesMap = spacesFromManaged;
+      const detailByBookingId = new Map<string, Record<string, unknown>>();
+      const rentersMap = new Map<string, Profile>();
 
-        if (rentersError) {
-          setMessage(rentersError.message);
-          setLoading(false);
-          return;
+      if (sessionAccessToken && scopedBookings.length > 0) {
+        try {
+          const { fetchHostRequestContext } = await import(
+            "@/lib/host-request-context-client"
+          );
+          const context = await fetchHostRequestContext(
+            sessionAccessToken,
+            scopedBookings.map((booking) => booking.id),
+            requestedOrganisationId
+          );
+          for (const renter of context.renters) {
+            rentersMap.set(renter.id, renter);
+          }
+          for (const detail of context.details) {
+            if (detail.data) {
+              detailByBookingId.set(detail.booking_id, detail.data);
+            }
+          }
+        } catch (contextError) {
+          console.error("host request context load:", contextError);
         }
-
-        rentersMap = new Map(
-          ((rentersData || []) as Profile[]).map((profile) => [profile.id, profile])
-        );
       }
 
       const enriched: EnrichedBooking[] = scopedBookings.map((booking) => {
@@ -1522,21 +1467,20 @@ function OwnerBookingRequestsPageContent({
           .in("space_id", spaceIds);
 
         if (blockedDatesError) {
-          setMessage(blockedDatesError.message);
-          setLoading(false);
-          return;
-        }
+          console.error("blocked_dates load:", blockedDatesError);
+          setBlockedBySpace({});
+        } else {
+          const groupedBlocked: Record<string, RequestBlockedDate[]> = {};
 
-        const groupedBlocked: Record<string, RequestBlockedDate[]> = {};
-
-        for (const item of (blockedDatesData || []) as RequestBlockedDate[]) {
-          if (!groupedBlocked[item.space_id]) {
-            groupedBlocked[item.space_id] = [];
+          for (const item of (blockedDatesData || []) as RequestBlockedDate[]) {
+            if (!groupedBlocked[item.space_id]) {
+              groupedBlocked[item.space_id] = [];
+            }
+            groupedBlocked[item.space_id].push(item);
           }
-          groupedBlocked[item.space_id].push(item);
-        }
 
-        setBlockedBySpace(groupedBlocked);
+          setBlockedBySpace(groupedBlocked);
+        }
       } else {
         setBlockingBySpace({});
         setBlockedBySpace({});

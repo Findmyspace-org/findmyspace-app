@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireOwnerPropertyApi } from "@/lib/require-owner-property-api";
+import { requireManagedPropertyApi } from "@/lib/access/require-managed-api";
 import { parsePropertyTermsInput } from "@/lib/property-booking-terms";
 
 export async function PATCH(
@@ -7,7 +7,7 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const auth = await requireOwnerPropertyApi(req, id);
+  const auth = await requireManagedPropertyApi(req, id);
   if ("response" in auth) return auth.response;
 
   let body: Record<string, unknown>;

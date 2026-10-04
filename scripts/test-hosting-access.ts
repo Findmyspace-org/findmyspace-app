@@ -441,6 +441,8 @@ function navLabels(summary: ReturnType<typeof summarizeHostingAccess>) {
 {
   assert.match(requests, /fetchManagedSpaces/);
   assert.match(requests, /\.in\("space_id", managedIds\)/);
+  assert.match(requests, /fetchHostRequestContext/);
+  assert.doesNotMatch(requests, /from\("profiles"\)[\s\S]*renterIds/);
 }
 
 // P. calendar scoped to managed spaces
@@ -816,6 +818,29 @@ function navLabels(summary: ReturnType<typeof summarizeHostingAccess>) {
   assert.doesNotMatch(workspaceChrome, /is_host/);
   assert.match(people, /We&apos;ll[\s\S]*send them an invitation/);
   assert.match(people, /accept the[\s\S]*invitation/);
+}
+
+{
+  const requestContextApi = readFileSync(
+    "app/api/host/request-context/route.ts",
+    "utf8"
+  );
+  const requestContextServer = readFileSync(
+    "lib/host-request-context-server.ts",
+    "utf8"
+  );
+  const listingAccess = readFileSync("lib/space-listing-access.ts", "utf8");
+  const termsApi = readFileSync(
+    "app/api/owner/properties/[id]/terms/route.ts",
+    "utf8"
+  );
+  assert.match(requestContextApi, /requireAuthenticatedApi/);
+  assert.match(requestContextApi, /loadHostRequestContext/);
+  assert.match(requestContextServer, /listManagedSpaceIdsForHostingContext/);
+  assert.match(requestContextServer, /booking_request_details/);
+  assert.doesNotMatch(requestContextServer, /body\.userId/);
+  assert.match(listingAccess, /resolveAccessForSpace/);
+  assert.match(termsApi, /requireManagedPropertyApi/);
 }
 
 console.log("test-hosting-access: all assertions passed");

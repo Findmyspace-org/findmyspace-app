@@ -29,6 +29,13 @@ export function peopleAccessAllowsManagement(status: string): boolean {
   return status === "active" || status === "pending";
 }
 
+export function peopleAccessScopeLabel(role: string): string {
+  if (role === "org_admin") return "Organisation";
+  if (role === "property_manager") return "Property";
+  if (role === "space_manager") return "Space";
+  return role;
+}
+
 export function filterPeopleAccessGrants<T extends PeopleAccessStatusView>(
   grants: T[],
   filter: PeopleStatusFilter

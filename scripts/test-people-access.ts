@@ -59,6 +59,7 @@ import {
   filterPeopleAccessGrants,
   isHistoricalPeopleAccess,
   peopleAccessAllowsManagement,
+  peopleAccessScopeLabel,
 } from "../lib/access/people-access-view";
 
 const USER = "user-jane";
@@ -218,7 +219,13 @@ assert.doesNotMatch(peopleClient, /\/api\/organisations\/access\/activate/);
 assert.match(peoplePage, /Add person/);
 assert.match(peoplePage, /My Spaces/);
 assert.match(peoplePage, /People & access/);
+assert.match(peoplePage, /Send invitation/);
+assert.match(peoplePage, /Change property/);
+assert.match(peoplePage, /peopleAccessScopeLabel/);
 assert.doesNotMatch(peoplePage, /Paarl Girls/);
+assert.equal(peopleAccessScopeLabel("org_admin"), "Organisation");
+assert.equal(peopleAccessScopeLabel("property_manager"), "Property");
+assert.equal(peopleAccessScopeLabel("space_manager"), "Space");
 assert.match(peoplePage, /We&apos;ll[\s\S]*send them an invitation/);
 assert.match(peoplePage, /accept the[\s\S]*invitation/);
 assert.doesNotMatch(peoplePage, /access becomes active immediately/);

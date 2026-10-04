@@ -458,8 +458,13 @@ function assertOrgAdminCaps(access: ResolvedAccess, allowed: boolean) {
   assert.match(listingApi, /canEditSpace/);
   assert.doesNotMatch(listingApi, /owner_id !== user\.id/);
   assert.match(propertyApi, /owner_id !== user\.id/);
-  assert.match(listingAccess, /row\.owner_id === userId/);
+  assert.match(listingAccess, /resolveAccessForSpace/);
+  assert.match(listingAccess, /canEditSpace/);
+  assert.doesNotMatch(listingAccess, /row\.owner_id === userId/);
   assert.doesNotMatch(propertyApi, /resolveAccessForProperty/);
+  const termsApi = readFileSync("app/api/owner/properties/[id]/terms/route.ts", "utf8");
+  assert.match(termsApi, /requireManagedPropertyApi/);
+  assert.doesNotMatch(termsApi, /requireOwnerPropertyApi/);
   assert.doesNotMatch(
     bookingRequest,
     /resolveAccessForSpace|resolveAccessForProperty|resolveAccessForOrganisation|requireManagedListingApi|requireManagedPropertyApi/

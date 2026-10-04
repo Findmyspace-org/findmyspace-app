@@ -35,6 +35,7 @@ import {
   filterPeopleAccessGrants,
   isHistoricalPeopleAccess,
   peopleAccessAllowsManagement,
+  peopleAccessScopeLabel,
   type PeopleStatusFilter,
 } from "@/lib/access/people-access-view";
 
@@ -78,6 +79,9 @@ function PeoplePageContent() {
   const [accessLoading, setAccessLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
+  const [messageTone, setMessageTone] = useState<"error" | "success" | "warning">(
+    "error"
+  );
   const [filter, setFilter] = useState<PeopleStatusFilter>("all");
   const [email, setEmail] = useState("");
   const [role, setRole] = useState("org_admin");
@@ -102,6 +106,7 @@ function PeoplePageContent() {
   const loadOrganisations = useCallback(async () => {
     setOrganisationsLoading(true);
     setMessage("");
+    setMessageTone("error");
     try {
       const orgResult = await fetchManageableOrganisations();
       setOrganisations(orgResult.organisations || []);
@@ -132,6 +137,7 @@ function PeoplePageContent() {
     const requestId = ++accessRequestRef.current;
     setAccessLoading(true);
     setMessage("");
+    setMessageTone("error");
     setGrants([]);
     setProperties([]);
     setSpaces([]);
@@ -187,6 +193,7 @@ function PeoplePageContent() {
     if (!organisationId) return;
     setSaving(true);
     setMessage("");
+    setMessageTone("error");
     try {
       const result = await grantOrganisationAccessRequest(organisationId, {
         email,
@@ -199,6 +206,7 @@ function PeoplePageContent() {
       setEmail("");
       setIsPrimary(false);
       setNotifyAllBookings(false);
+      setMessageTone(result.invitationSent ? "success" : "warning");
       setMessage(
         result.invitationSent
           ? "Invitation sent."
@@ -218,11 +226,13 @@ function PeoplePageContent() {
     if (!organisationId) return;
     setSaving(true);
     setMessage("");
+    setMessageTone("error");
     try {
       const result = await resendOrganisationAccessInvitationRequest(
         organisationId,
         grant.id
       );
+      setMessageTone(result.invitationSent ? "success" : "warning");
       setMessage(
         result.invitationSent
           ? "Invitation sent."
@@ -243,6 +253,7 @@ function PeoplePageContent() {
     if (!window.confirm(`Remove access for ${grant.email}?`)) return;
     setSaving(true);
     setMessage("");
+    setMessageTone("error");
     try {
       await revokeOrganisationAccessRequest(organisationId, grant.id);
       await loadAccess(organisationId);
@@ -265,7 +276,15 @@ function PeoplePageContent() {
     >
       <div className="space-y-4">
         {message ? (
-          <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+          <p
+            className={`rounded-md border px-3 py-2 text-sm ${
+              messageTone === "success"
+                ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+                : messageTone === "warning"
+                ? "border-amber-200 bg-amber-50 text-amber-950"
+                : "border-red-200 bg-red-50 text-red-800"
+            }`}
+          >
             {message}
           </p>
         ) : null}
@@ -397,7 +416,7 @@ function PeoplePageContent() {
                 disabled={saving || loading}
                 className="mt-4 rounded-full bg-[#0c1d2f] px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
               >
-                {saving ? "Saving…" : "Add access"}
+                {saving ? "Sending…" : "Send invitation"}
               </button>
             </form>
 
@@ -443,6 +462,8 @@ function PeoplePageContent() {
                           <p className="text-sm text-gray-600">{grant.email}</p>
                           <p className="mt-1 text-sm text-gray-700">
                             {roleLabel(grant.role)}
+                            {" · "}
+                            {peopleAccessScopeLabel(grant.role)}
                             {grant.propertyName ? ` · ${grant.propertyName}` : ""}
                             {grant.spaceTitle ? ` · ${grant.spaceTitle}` : ""}
                           </p>
@@ -509,9 +530,47 @@ function PeoplePageContent() {
                                 : "Email all bookings"}
                             </button>
                           ) : null}
+                          {grant.role === "property_manager" &&
+                          properties.length > 0 ? (
+                            <select
+                              aria-label="Change property"
+                              className="rounded-full border border-gray-300 px-3 py-1.5 text-xs"
+                              value={grant.propertyId || ""}
+                              onChange={(event) => {
+                                const nextProperty = properties.find(
+                                  (property) => property.id === event.target.value
+                                );
+                                if (!nextProperty) return;
+                                void reassignOrganisationAccessRequest(
+                                  organisationId,
+                                  grant.id,
+                                  {
+                                    propertyId: nextProperty.id,
+                                    spaceId: null,
+                                  }
+                                )
+                                  .then(() => loadAccess(organisationId))
+                                  .catch((err) => {
+                                    setMessageTone("error");
+                                    setMessage(
+                                      err instanceof Error
+                                        ? err.message
+                                        : "Could not change property."
+                                    );
+                                  });
+                              }}
+                            >
+                              {properties.map((property) => (
+                                <option key={property.id} value={property.id}>
+                                  {property.name}
+                                </option>
+                              ))}
+                            </select>
+                          ) : null}
                           {grant.role === "space_manager" &&
                           spaces.length > 0 ? (
                             <select
+                              aria-label="Change space"
                               className="rounded-full border border-gray-300 px-3 py-1.5 text-xs"
                               value={grant.spaceId || ""}
                               onChange={(event) => {
@@ -528,13 +587,14 @@ function PeoplePageContent() {
                                   }
                                 )
                                   .then(() => loadAccess(organisationId))
-                                  .catch((err) =>
+                                  .catch((err) => {
+                                    setMessageTone("error");
                                     setMessage(
                                       err instanceof Error
                                         ? err.message
                                         : "Could not change space."
-                                    )
-                                  );
+                                    );
+                                  });
                               }}
                             >
                               {spaces.map((space) => (
