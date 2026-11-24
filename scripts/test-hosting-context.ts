@@ -801,4 +801,91 @@ const dashboardSrc = readFileSync("app/dashboard/page.tsx", "utf8");
   assert.equal(selector?.showSelector, true);
 }
 
+// PGH campus is an organisation property. Property ownership alone stays in
+// the personal workspace and does not list it. An active org_admin grant does,
+// including People, and does not grant Global Admin or another organisation.
+{
+  const pghSpaces = [
+    { id: SPACE_A, organisation_id: ORG_A, owner_id: null },
+    { id: "9f9f8700-0fa2-4086-87d7-7a58e1b2ff18", organisation_id: ORG_A, owner_id: null },
+    { id: SPACE_B, organisation_id: ORG_B, owner_id: null },
+  ];
+  const personal = resolveHostingContext({
+    requestedId: null,
+    organisationIds: [],
+    primaryOrganisationId: null,
+    isLegacyHost: true,
+  });
+  assert.equal(personal.kind, "personal");
+  assert.deepEqual(scopedIds(pghSpaces, personal), []);
+
+  const schoolAdmin = summarizeHostingAccess({
+    profileRole: "user",
+    isHostProfile: false,
+    ownedSpaceCount: 0,
+    ownedPropertyCount: 1,
+    grants: [
+      grant({
+        organisationId: ORG_A,
+        role: "org_admin",
+        propertyId: null,
+        spaceId: null,
+        status: "active",
+      }),
+    ],
+  });
+  assert.equal(schoolAdmin.isGlobalAdmin, false);
+  assert.equal(schoolAdmin.isOrganisationAdmin, true);
+  assert.equal(schoolAdmin.showPeople, true);
+  assert.equal(schoolAdmin.primaryOrganisationId, ORG_A);
+  const schoolContext = hostingContextFromSummary(schoolAdmin, null);
+  assert.equal(schoolContext.kind, "organisation");
+  assert.equal(schoolContext.organisationId, ORG_A);
+  assert.deepEqual(scopedIds(pghSpaces, schoolContext), [
+    SPACE_A,
+    "9f9f8700-0fa2-4086-87d7-7a58e1b2ff18",
+  ]);
+  const schoolCapabilities = summarizeHostingAccessForContext(
+    {
+      profileRole: "user",
+      isHostProfile: false,
+      ownedSpaceCount: 0,
+      ownedPropertyCount: 1,
+      grants: schoolAdmin.organisationIds.map(() =>
+        grant({
+          organisationId: ORG_A,
+          role: "org_admin",
+          status: "active",
+        })
+      ),
+    },
+    schoolContext
+  );
+  assert.equal(schoolCapabilities.showPeople, true);
+  assert.equal(schoolCapabilities.showProperties, true);
+  assert.equal(schoolCapabilities.isGlobalAdmin, false);
+
+  const delegated = summarizeHostingAccessForContext(
+    {
+      profileRole: "user",
+      isHostProfile: false,
+      ownedSpaceCount: 0,
+      ownedPropertyCount: 0,
+      grants: [
+        grant({
+          organisationId: ORG_A,
+          role: "space_manager",
+          propertyId: PROP_A,
+          spaceId: SPACE_A,
+          status: "active",
+        }),
+      ],
+    },
+    { kind: "organisation", organisationId: ORG_A }
+  );
+  assert.equal(delegated.showPeople, false);
+  assert.equal(delegated.isOrganisationAdmin, false);
+  assert.equal(delegated.isSpaceManager, true);
+}
+
 console.log("test-hosting-context: ok");
