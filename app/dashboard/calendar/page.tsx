@@ -28,6 +28,7 @@ import { useHostingWorkspace } from "@/lib/use-hosting-workspace";
 import { ORGANISATION_QUERY_PARAM } from "@/lib/access/organisation-workspace";
 import { downloadInvoicePdf } from "@/lib/invoice-download-client";
 import OwnerCalendarLegend from "@/app/dashboard/_components/calendar/OwnerCalendarLegend";
+import { ownerApiFetch } from "@/lib/owner-api-client";
 import { supabase } from "@/lib/supabase";
 import {
     ownerListingBookingStatusLabel,
@@ -1940,12 +1941,17 @@ function CalendarPageContent() {
     }
 
     async function handleRemoveBlockedDate(blockedDate: CalendarBlockedDate) {
-        const { error } = await (supabase.from("blocked_dates") as any)
-            .delete()
-            .eq("id", blockedDate.id);
-
-        if (error) {
-            setSlotError(error.message || "Could not remove blocked availability.");
+        try {
+            await ownerApiFetch(
+                `/api/host/spaces/${blockedDate.space_id}/blocked-dates?id=${encodeURIComponent(blockedDate.id)}`,
+                { method: "DELETE" }
+            );
+        } catch (error) {
+            setSlotError(
+                error instanceof Error
+                    ? error.message
+                    : "Could not remove blocked availability."
+            );
             return;
         }
 
@@ -1982,38 +1988,35 @@ function CalendarPageContent() {
         setSlotSaving(true);
         setSlotError("");
 
-        if (matchingBlockedDate) {
-            const { error } = await (supabase.from("blocked_dates") as any)
-                .delete()
-                .eq("id", matchingBlockedDate.id);
-
-            if (error) {
-                setSlotError(error.message || "Could not unblock availability.");
-                setSlotSaving(false);
-                return;
+        try {
+            if (matchingBlockedDate) {
+                await ownerApiFetch(
+                    `/api/host/spaces/${selectedSlotSpace.id}/blocked-dates?id=${encodeURIComponent(matchingBlockedDate.id)}`,
+                    { method: "DELETE" }
+                );
+                setBlockedDates((current) =>
+                    current.filter((item) => item.id !== matchingBlockedDate.id)
+                );
+            } else {
+                const result = (await ownerApiFetch(
+                    `/api/host/spaces/${selectedSlotSpace.id}/blocked-dates`,
+                    {
+                        method: "POST",
+                        body: JSON.stringify({
+                            startAt: syncedRange.startIso,
+                            endAt: syncedRange.endIso,
+                            reason: blockReason.trim() || null,
+                        }),
+                    }
+                )) as { blockedDate: CalendarBlockedDate };
+                setBlockedDates((current) => [...current, result.blockedDate]);
             }
-
-            setBlockedDates((current) =>
-                current.filter((item) => item.id !== matchingBlockedDate.id)
+        } catch (error) {
+            setSlotError(
+                error instanceof Error ? error.message : "Could not block availability."
             );
-        } else {
-            const { data, error } = await (supabase.from("blocked_dates") as any)
-                .insert({
-                    space_id: selectedSlotSpace.id,
-                    start_at: syncedRange.startIso,
-                    end_at: syncedRange.endIso,
-                    reason: blockReason.trim() || null,
-                })
-                .select("id, space_id, start_at, end_at, reason")
-                .single();
-
-            if (error) {
-                setSlotError(error.message || "Could not block availability.");
-                setSlotSaving(false);
-                return;
-            }
-
-            setBlockedDates((current) => [...current, data as CalendarBlockedDate]);
+            setSlotSaving(false);
+            return;
         }
 
         setSlotSaving(false);

@@ -18,6 +18,7 @@ import {
 import { resolveOrganisationBookingReadiness } from "@/lib/access/organisation-booking-readiness";
 import { isLegacyOwnerSelfBooking } from "@/lib/booking-self-booking";
 import { isArchivedProperty } from "@/lib/property-archive";
+import { publicAvailabilityMessage } from "@/lib/availability/messages";
 import { validatePayFastPayableAmount } from "@/lib/payfast-amount";
 import {
   buildBookingTermsAcceptancePayload,
@@ -394,7 +395,9 @@ export async function createBookingRequestServer(
     .single();
 
   if (insertError || !insertedBooking) {
-    throw new Error(insertError?.message || "Could not create booking.");
+    throw new Error(
+      publicAvailabilityMessage(insertError?.message || "Could not create booking.")
+    );
   }
 
   const bookingId = (insertedBooking as { id: string }).id;
