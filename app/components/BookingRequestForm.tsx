@@ -1428,7 +1428,7 @@ export default function BookingRequestForm({
             </p>
           </>
         )}
-        {getMinimumQuantity() > 0 && (
+        {!selectedFlexibleRate && getMinimumQuantity() > 0 && (
           <p className="mb-2 text-sm text-gray-600">
             Minimum booking:{" "}
             <span className="font-medium">{getMinimumLabel(getMinimumQuantity())}</span>
@@ -1557,7 +1557,7 @@ export default function BookingRequestForm({
             </div>
           )}
 
-          {(bookingUnit === "hour" || bookingUnit === "day") && (
+          {!selectedFlexibleRate && (bookingUnit === "hour" || bookingUnit === "day") && (
             <div className="rounded-md border border-gray-200 bg-[#f4f7f9] px-3 py-2.5 text-xs leading-relaxed text-gray-700">
               <span className="font-semibold text-[#192a3a]">Booking steps:</span>{" "}
               {bookingUnit === "hour" ? (
@@ -1575,22 +1575,22 @@ export default function BookingRequestForm({
 
           {selectedFlexibleRate && selectedFlexibleRate.period !== "hour" && (
             <div className="space-y-3">
-              <label className="block text-sm font-semibold text-[#192a3a]" htmlFor="flexible-start-date">
+              <label className="block text-sm font-semibold text-[#192a3a]" htmlFor={`flexible-start-date-${spaceId}`}>
                 Start date <span className="text-red-600">*</span>
               </label>
               <input
-                id="flexible-start-date"
+                id={`flexible-start-date-${spaceId}`}
                 type="date"
                 value={flexDate}
                 min={new Date().toISOString().slice(0, 10)}
                 onChange={(event) => setFlexDate(event.target.value)}
                 className="w-full rounded-md border-2 border-gray-300 px-3 py-3"
               />
-              <label className="block text-sm font-semibold text-[#192a3a]" htmlFor="flexible-quantity">
+              <label className="block text-sm font-semibold text-[#192a3a]" htmlFor={`flexible-quantity-${spaceId}`}>
                 Number of {FLEXIBLE_PERIOD_LABELS[selectedFlexibleRate.period].replace("Per ", "")}s
               </label>
               <input
-                id="flexible-quantity"
+                id={`flexible-quantity-${spaceId}`}
                 type="number"
                 min={1}
                 max={36}

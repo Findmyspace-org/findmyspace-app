@@ -1,13 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import FlexibleBookingRatesEditor, {
   emptyFlexibleRateDraft,
   flexibleDraftFromRates,
   ratesFromFlexibleDraft,
 } from "@/app/components/FlexibleBookingRatesEditor";
-import { FLEXIBLE_PERIOD_LABELS, type FlexiblePeriod } from "@/lib/booking-periods";
-import { resolveFlexibleBooking, type EnabledFlexibleRate } from "@/lib/flexible-booking";
+import BookingRequestForm from "@/app/components/BookingRequestForm";
+import type { EnabledFlexibleRate } from "@/lib/flexible-booking";
 
 const SAMPLE: EnabledFlexibleRate[] = [
   { period: "hour", amount: 250 },
@@ -23,35 +23,9 @@ export default function FlexibleBookingPreviewPage() {
   const [draft, setDraft] = useState(flexibleDraftFromRates(SAMPLE));
   const [createDraft, setCreateDraft] = useState(emptyFlexibleRateDraft());
   const [createEnabled, setCreateEnabled] = useState(false);
-  const [period, setPeriod] = useState<FlexiblePeriod>("month");
-  const [startDate, setStartDate] = useState("2026-01-31");
-  const [quantity, setQuantity] = useState(1);
-  const [hourStart, setHourStart] = useState("08:00");
-  const [hourEnd, setHourEnd] = useState("10:00");
 
   const saved = ratesFromFlexibleDraft(draft);
-  const rates = useFlexibleRates && saved.ok ? saved.rates : [];
-  const active = rates.find((rate) => rate.period === period) ?? rates[0] ?? null;
-
-  const quote = useMemo(() => {
-    if (!active) return null;
-    if (active.period === "hour") {
-      const start = new Date(`2026-06-01T${hourStart}:00+02:00`);
-      const end = new Date(`2026-06-01T${hourEnd}:00+02:00`);
-      return resolveFlexibleBooking({
-        rates,
-        ratePeriod: "hour",
-        startAt: start.toISOString(),
-        endAt: end.toISOString(),
-      });
-    }
-    return resolveFlexibleBooking({
-      rates,
-      ratePeriod: active.period,
-      startDate,
-      quantity,
-    });
-  }, [active, hourEnd, hourStart, quantity, rates, startDate]);
+  const rates = useFlexibleRates && saved.ok ? saved.rates : SAMPLE;
 
   return (
     <main className="min-h-screen bg-[#f4f6f8] px-4 py-8 text-[#192a3a]">
@@ -87,98 +61,44 @@ export default function FlexibleBookingPreviewPage() {
 
         <section className="rounded-xl bg-white p-5 shadow-sm lg:col-span-2">
           <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-            Renter booking
+            Renter booking form
           </p>
-          <h2 className="mt-1 text-2xl font-semibold">Request this space</h2>
-          {rates.length === 0 ? (
-            <p className="mt-4 text-sm text-gray-600">
-              This listing is using its existing price. Turn booking options on to preview a flexible request.
-            </p>
-          ) : (
-            <div className="mt-4 space-y-4">
-              {rates.length > 1 ? (
-                <div className="flex flex-wrap gap-2">
-                  {rates.map((rate) => (
-                    <button
-                      key={rate.period}
-                      type="button"
-                      onClick={() => setPeriod(rate.period)}
-                      className={`rounded-md border px-3 py-2 text-sm ${
-                        active?.period === rate.period
-                          ? "border-[#192a3a] bg-[#192a3a] text-white"
-                          : "border-gray-300 bg-white"
-                      }`}
-                    >
-                      {FLEXIBLE_PERIOD_LABELS[rate.period]} · R{rate.amount.toFixed(2)}
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-sm">
-                  {FLEXIBLE_PERIOD_LABELS[rates[0].period]} · R{rates[0].amount.toFixed(2)}
-                </p>
-              )}
-              {active?.period === "hour" ? (
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <label className="text-sm">
-                    Start time
-                    <input
-                      type="time"
-                      value={hourStart}
-                      onChange={(event) => setHourStart(event.target.value)}
-                      className="mt-1 w-full rounded-md border px-3 py-2"
-                    />
-                  </label>
-                  <label className="text-sm">
-                    End time
-                    <input
-                      type="time"
-                      value={hourEnd}
-                      onChange={(event) => setHourEnd(event.target.value)}
-                      className="mt-1 w-full rounded-md border px-3 py-2"
-                    />
-                  </label>
-                </div>
-              ) : (
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <label className="text-sm">
-                    Start date
-                    <input
-                      type="date"
-                      value={startDate}
-                      onChange={(event) => setStartDate(event.target.value)}
-                      className="mt-1 w-full rounded-md border px-3 py-2"
-                    />
-                  </label>
-                  <label className="text-sm">
-                    Number of periods
-                    <input
-                      type="number"
-                      min={1}
-                      max={36}
-                      value={quantity}
-                      onChange={(event) => setQuantity(Number(event.target.value))}
-                      className="mt-1 w-full rounded-md border px-3 py-2"
-                    />
-                  </label>
-                </div>
-              )}
-              {quote?.ok ? (
-                <div className="rounded-md border bg-[#f8fafb] p-4 text-sm">
-                  <p>Booking period: {quote.quote.periodLabel}</p>
-                  <p>Starts: {quote.quote.startLabel}</p>
-                  <p>Ends: {quote.quote.endLabel}</p>
-                  <p>Number of periods: {quote.quote.quantityLabel}</p>
-                  <p>Price per period: R{quote.quote.unitPrice.toFixed(2)}</p>
-                  <p className="mt-2 text-base font-semibold">
-                    Total: R{quote.quote.totalPrice.toFixed(2)}
-                  </p>
-                </div>
-              ) : (
-                <p className="text-sm text-red-700">{quote && !quote.ok ? quote.error : "Choose a period."}</p>
-              )}
-            </div>
-          )}
+          <h2 className="mt-1 text-2xl font-semibold">All six periods</h2>
+          <div className="mt-4">
+            <BookingRequestForm
+              spaceId="00000000-0000-4000-8000-000000000001"
+              ownerId={null}
+              bookingUnit="day"
+              priceAmount={1500}
+              priceUnit="day"
+              pricePerHour={250}
+              pricePerDay={1500}
+              pricePerMonth={8000}
+              flexibleRates={rates}
+              spaceLocation="Paarl, Western Cape"
+            />
+          </div>
+        </section>
+
+        <section className="rounded-xl bg-white p-5 shadow-sm lg:col-span-2">
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+            Renter booking form
+          </p>
+          <h2 className="mt-1 text-2xl font-semibold">Quarter only</h2>
+          <div className="mt-4">
+            <BookingRequestForm
+              spaceId="00000000-0000-4000-8000-000000000002"
+              ownerId={null}
+              bookingUnit="day"
+              priceAmount={20000}
+              priceUnit="day"
+              pricePerHour={null}
+              pricePerDay={null}
+              pricePerMonth={null}
+              flexibleRates={[{ period: "quarter", amount: 20000 }]}
+              spaceLocation="Paarl, Western Cape"
+            />
+          </div>
         </section>
       </div>
     </main>

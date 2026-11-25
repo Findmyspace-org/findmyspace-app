@@ -282,4 +282,5 @@ const legacyOwner = computeAccess({
 assert.equal(legacyOwner.canEditSpace, true);
 
 execFileSync("bash", ["scripts/test-flexible-booking-db.sh"], { stdio: "inherit" });
+execFileSync("bash", ["scripts/test-phase2-combined-db.sh"], { stdio: "inherit" });
 console.log("flexible booking period checks passed");
