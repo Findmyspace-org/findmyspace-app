@@ -38,6 +38,11 @@ import {
   propertyRequiresTermsAcceptance,
   type PropertyBookingTerms,
 } from "@/lib/property-booking-terms";
+import { FLEXIBLE_PERIOD_LABELS, type FlexiblePeriod } from "@/lib/booking-periods";
+import {
+  resolveFlexibleBooking,
+  type EnabledFlexibleRate,
+} from "@/lib/flexible-booking";
 import {
   type CustomFieldAnswerValue,
   type SpaceBookingRequirementField,
@@ -95,6 +100,7 @@ type BookingRequestFormProps = {
   minMonths?: number | null;
   /** Single line for summary (address) */
   spaceLocation?: string;
+  flexibleRates?: EnabledFlexibleRate[];
 };
 
 
@@ -128,6 +134,7 @@ export default function BookingRequestForm({
   minDays = null,
   minMonths = null,
   spaceLocation = "",
+  flexibleRates = [],
 }: BookingRequestFormProps) {
   const [statusMessage, setStatusMessage] = useState("");
   const [loading, setLoading] = useState(false);
@@ -158,6 +165,9 @@ export default function BookingRequestForm({
 
   const [monthStart, setMonthStart] = useState("");
   const [monthEnd, setMonthEnd] = useState("");
+  const [ratePeriod, setRatePeriod] = useState<string>(flexibleRates[0]?.period ?? "");
+  const [flexDate, setFlexDate] = useState("");
+  const [flexQty, setFlexQty] = useState(1);
 
   const [spaceSettings, setSpaceSettings] = useState<SpacePaymentSettings | null>(null);
 
@@ -221,6 +231,12 @@ export default function BookingRequestForm({
     loadAvailabilityData();
     loadSpacePaymentSettings();
   }, [spaceId]);
+
+  useEffect(() => {
+    if (!flexibleRates.some((rate) => rate.period === ratePeriod)) {
+      setRatePeriod(flexibleRates[0]?.period ?? "");
+    }
+  }, [flexibleRates, ratePeriod]);
 
   useEffect(() => {
     let cancelled = false;
@@ -449,7 +465,30 @@ export default function BookingRequestForm({
     };
   }
 
+  const selectedFlexibleRate =
+    flexibleRates.find((rate) => rate.period === ratePeriod) ?? flexibleRates[0] ?? null;
+
+  function flexiblePreview() {
+    if (!selectedFlexibleRate) return null;
+    if (selectedFlexibleRate.period === "hour") {
+      if (!hourDate || !hourStart || !hourEnd || hourEnd <= hourStart) return null;
+      return resolveFlexibleBooking({
+        rates: flexibleRates,
+        ratePeriod: "hour",
+        startAt: buildUtcDateTime(hourDate, hourStart).toISOString(),
+        endAt: buildUtcDateTime(hourDate, hourEnd).toISOString(),
+      });
+    }
+    return resolveFlexibleBooking({
+      rates: flexibleRates,
+      ratePeriod: selectedFlexibleRate.period,
+      quantity: flexQty,
+      startDate: flexDate,
+    });
+  }
+
   function getUnitPrice() {
+    if (selectedFlexibleRate) return selectedFlexibleRate.amount;
     const resolvedUnit = resolveSpacePriceUnit(pricingContext());
     if (resolvedUnit === "event") {
       return resolveSpacePriceAmount(pricingContext()) || 0;
@@ -522,6 +561,24 @@ export default function BookingRequestForm({
   function buildRequestedRange() {
     let startAt = "";
     let endAt = "";
+
+    if (selectedFlexibleRate) {
+      const preview = flexiblePreview();
+      if (!preview) {
+        return {
+          startAt: "",
+          endAt: "",
+          error:
+            selectedFlexibleRate.period === "hour"
+              ? "Please select a date and start/end times."
+              : "Choose a start date.",
+        };
+      }
+      if (!preview.ok) {
+        return { startAt: "", endAt: "", error: preview.error };
+      }
+      return { startAt: preview.quote.startAt, endAt: preview.quote.endAt, error: "" };
+    }
 
     if (bookingUnit === "hour") {
       if (!hourDate || !hourStart || !hourEnd) {
@@ -613,6 +670,10 @@ export default function BookingRequestForm({
   }
 
   function calculateQuantity(startAt: string, endAt: string) {
+    if (selectedFlexibleRate) {
+      const preview = flexiblePreview();
+      return preview && preview.ok ? preview.quote.quantity : 0;
+    }
     const start = new Date(startAt);
     const end = new Date(endAt);
 
@@ -735,6 +796,12 @@ export default function BookingRequestForm({
   ]);
 
   const bookingSelectionComplete = useMemo(() => {
+    if (selectedFlexibleRate) {
+      if (selectedFlexibleRate.period === "hour") {
+        return Boolean(hourDate && hourStart && hourEnd);
+      }
+      return Boolean(flexDate && flexQty >= 1);
+    }
     if (bookingUnit === "hour") {
       return Boolean(hourDate && hourStart && hourEnd);
     }
@@ -754,6 +821,9 @@ export default function BookingRequestForm({
     dayEnd,
     monthStart,
     monthEnd,
+    selectedFlexibleRate,
+    flexDate,
+    flexQty,
   ]);
 
   const requiresPropertyTerms = useMemo(
@@ -844,7 +914,7 @@ export default function BookingRequestForm({
       };
     }
 
-    if (bookingUnit === "month") {
+    if (!selectedFlexibleRate && bookingUnit === "month") {
       const monthlyRent = unitPrice;
       const depositAmount = Number((monthlyRent * depositMonths).toFixed(2));
       const initialPaymentAmount = Number(
@@ -903,6 +973,10 @@ export default function BookingRequestForm({
     priceAmount,
     priceUnit,
     spaceSettings,
+    flexibleRates,
+    ratePeriod,
+    flexDate,
+    flexQty,
   ]);
 
   function validateStructuredBookingFields(): string | null {
@@ -1136,7 +1210,7 @@ export default function BookingRequestForm({
         setLoading(false);
         return;
       }
-      const minimum = getMinimumQuantity();
+      const minimum = selectedFlexibleRate ? 0 : getMinimumQuantity();
       if (minimum > 0 && quantity < minimum) {
         setStatusMessage(
           `This space has a minimum booking duration of ${getMinimumLabel(minimum)}.`
@@ -1174,9 +1248,12 @@ export default function BookingRequestForm({
         JSON.stringify({
           spaceId,
           ownerId: ownerId || null,
-          bookingUnit: bookingUnit || "day",
+          bookingUnit: selectedFlexibleRate?.period || bookingUnit || "day",
           startAt,
           endAt,
+          ratePeriod: selectedFlexibleRate?.period ?? null,
+          quantity: selectedFlexibleRate ? flexQty : null,
+          startDate: selectedFlexibleRate ? flexDate : null,
           notes: structuredNotes.trim() ? structuredNotes.trim() : null,
           acceptedPropertyTerms: requiresPropertyTerms ? acceptedPropertyTerms : false,
           requirementAnswers: customFieldAnswers,
@@ -1186,6 +1263,9 @@ export default function BookingRequestForm({
           bookingUnit: string;
           startAt: string;
           endAt: string;
+          ratePeriod: string | null;
+          quantity: number | null;
+          startDate: string | null;
           notes: string | null;
           acceptedPropertyTerms: boolean;
           requirementAnswers: Record<string, CustomFieldAnswerValue>;
@@ -1289,6 +1369,8 @@ export default function BookingRequestForm({
     setRequestSentModalOpen(false);
   }
 
+  const flexibleQuote = selectedFlexibleRate ? flexiblePreview() : null;
+
   return (
     <>
       <div className="rounded-md border border-gray-200 bg-white p-4 shadow-sm sm:p-6">
@@ -1308,13 +1390,44 @@ export default function BookingRequestForm({
           you can pay to confirm your dates.
         </p>
 
-        <p className="mb-2 text-sm text-gray-600">
-          Booking type: <span className="font-medium">{bookingUnit || "day"}</span>
-        </p>
-
-        <p className="mb-2 text-sm text-gray-600">
-          Price: <span className="font-medium">{getPriceLabel()}</span>
-        </p>
+        {flexibleRates.length > 1 ? (
+          <div className="mb-4">
+            <p className="mb-2 text-sm font-semibold text-[#192a3a]">Booking period</p>
+            <div className="flex flex-wrap gap-2">
+              {flexibleRates.map((rate) => (
+                <button
+                  key={rate.period}
+                  type="button"
+                  onClick={() => setRatePeriod(rate.period)}
+                  className={`rounded-md border px-3 py-2 text-sm ${
+                    selectedFlexibleRate?.period === rate.period
+                      ? "border-[#192a3a] bg-[#192a3a] text-white"
+                      : "border-gray-300 bg-white text-[#192a3a]"
+                  }`}
+                >
+                  {FLEXIBLE_PERIOD_LABELS[rate.period as FlexiblePeriod]} · R{rate.amount.toFixed(2)}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : selectedFlexibleRate ? (
+          <p className="mb-2 text-sm text-gray-600">
+            Booking period:{" "}
+            <span className="font-medium">
+              {FLEXIBLE_PERIOD_LABELS[selectedFlexibleRate.period]} · R
+              {selectedFlexibleRate.amount.toFixed(2)}
+            </span>
+          </p>
+        ) : (
+          <>
+            <p className="mb-2 text-sm text-gray-600">
+              Booking type: <span className="font-medium">{bookingUnit || "day"}</span>
+            </p>
+            <p className="mb-2 text-sm text-gray-600">
+              Price: <span className="font-medium">{getPriceLabel()}</span>
+            </p>
+          </>
+        )}
         {getMinimumQuantity() > 0 && (
           <p className="mb-2 text-sm text-gray-600">
             Minimum booking:{" "}
@@ -1335,7 +1448,32 @@ export default function BookingRequestForm({
 
         {bookingSummary.quantity > 0 && bookingSummary.unitPrice > 0 && (
           <div className="mb-6 rounded-md border border-gray-200 bg-[#f8fafb] p-4 text-sm text-gray-700">
-            {bookingUnit === "month" ? (
+            {selectedFlexibleRate ? (
+              <>
+                <p>
+                  <b>Booking period:</b> {FLEXIBLE_PERIOD_LABELS[selectedFlexibleRate.period]}
+                </p>
+                <p>
+                  <b>Starts:</b> {flexibleQuote?.ok ? flexibleQuote.quote.startLabel : "Choose a start"}
+                </p>
+                <p>
+                  <b>Ends:</b> {flexibleQuote?.ok ? flexibleQuote.quote.endLabel : "Calculated from the start"}
+                </p>
+                <p>
+                  <b>Number of periods:</b>{" "}
+                  {flexibleQuote?.ok ? flexibleQuote.quote.quantityLabel : bookingSummary.quantity}
+                </p>
+                <p>
+                  <b>Price per period:</b> R{selectedFlexibleRate.amount.toFixed(2)}
+                </p>
+                <p className="text-xs text-gray-600">
+                  Paid in full after the host approves. FindMySpace fees are deducted from the host payout and are not added to this total.
+                </p>
+                <p className="mt-2 text-base font-semibold text-[#192a3a]">
+                  Total: R{bookingSummary.totalPrice.toFixed(2)}
+                </p>
+              </>
+            ) : bookingUnit === "month" ? (
               <>
                 <p>
                   <b>Monthly rent:</b> R{bookingSummary.monthlyRent.toFixed(2)}
@@ -1435,7 +1573,39 @@ export default function BookingRequestForm({
             </div>
           )}
 
-          {bookingUnit === "hour" && (
+          {selectedFlexibleRate && selectedFlexibleRate.period !== "hour" && (
+            <div className="space-y-3">
+              <label className="block text-sm font-semibold text-[#192a3a]" htmlFor="flexible-start-date">
+                Start date <span className="text-red-600">*</span>
+              </label>
+              <input
+                id="flexible-start-date"
+                type="date"
+                value={flexDate}
+                min={new Date().toISOString().slice(0, 10)}
+                onChange={(event) => setFlexDate(event.target.value)}
+                className="w-full rounded-md border-2 border-gray-300 px-3 py-3"
+              />
+              <label className="block text-sm font-semibold text-[#192a3a]" htmlFor="flexible-quantity">
+                Number of {FLEXIBLE_PERIOD_LABELS[selectedFlexibleRate.period].replace("Per ", "")}s
+              </label>
+              <input
+                id="flexible-quantity"
+                type="number"
+                min={1}
+                max={36}
+                step={1}
+                value={flexQty}
+                onChange={(event) => setFlexQty(Number(event.target.value))}
+                className="w-full rounded-md border-2 border-gray-300 px-3 py-3"
+              />
+              <p className="text-xs text-gray-600">
+                The end date is calculated from this start date. A month, quarter, or year keeps the same day of the month, or the last day when that month is shorter.
+              </p>
+            </div>
+          )}
+
+          {(selectedFlexibleRate ? selectedFlexibleRate.period === "hour" : bookingUnit === "hour") && (
             <>
               <div className="rounded-lg border-2 border-gray-300 bg-white p-4 shadow-sm">
                 <label
@@ -1493,7 +1663,7 @@ export default function BookingRequestForm({
             </>
           )}
 
-          {bookingUnit === "day" && (
+          {!selectedFlexibleRate && bookingUnit === "day" && (
             <div className="space-y-2">
               <p className="text-sm font-semibold text-[#192a3a]">
                 Stay dates <span className="text-red-600">*</span>
@@ -1515,7 +1685,7 @@ export default function BookingRequestForm({
             </div>
           )}
 
-          {bookingUnit === "month" && (
+          {!selectedFlexibleRate && bookingUnit === "month" && (
             <MonthAvailabilityCalendar
               existingBookings={existingBookings}
               blockedDates={blockedDates}

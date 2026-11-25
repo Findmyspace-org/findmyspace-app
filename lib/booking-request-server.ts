@@ -19,6 +19,10 @@ import { resolveOrganisationBookingReadiness } from "@/lib/access/organisation-b
 import { isLegacyOwnerSelfBooking } from "@/lib/booking-self-booking";
 import { isArchivedProperty } from "@/lib/property-archive";
 import { publicAvailabilityMessage } from "@/lib/availability/messages";
+import { resolveFlexibleBooking, type EnabledFlexibleRate } from "@/lib/flexible-booking";
+import { isFlexiblePeriod } from "@/lib/booking-periods";
+import type { ResolvedCommercialTerms } from "@/lib/commercial-terms";
+import { calculateBookingCommercials } from "@/lib/commercial-calculator";
 import { validatePayFastPayableAmount } from "@/lib/payfast-amount";
 import {
   buildBookingTermsAcceptancePayload,
@@ -51,6 +55,13 @@ export type BookingRequestPayload = {
   requirementAnswers?: Record<string, CustomFieldAnswerValue>;
   /** Ignored. Snapshot organisation comes from the property. */
   organisationId?: string | null;
+  /**
+   * Flexible-rate selections. Prices and enabled periods are loaded from
+   * the database. These fields are ignored when the space has no rates.
+   */
+  ratePeriod?: string | null;
+  quantity?: number | null;
+  startDate?: string | null;
 };
 
 type SpacePricingRow = {
@@ -156,6 +167,58 @@ export async function loadSpaceBookingPrerequisites(
   );
 
   return { propertyTerms, fields };
+}
+
+async function loadEnabledFlexibleRates(
+  admin: SupabaseClient,
+  spaceId: string
+): Promise<EnabledFlexibleRate[]> {
+  const { data, error } = await admin
+    .from("space_booking_rates")
+    .select("period, amount, enabled")
+    .eq("space_id", spaceId)
+    .eq("enabled", true);
+  if (error) {
+    const message = String(error.message || "");
+    if (
+      error.code === "42P01" ||
+      error.code === "PGRST205" ||
+      /space_booking_rates/i.test(message)
+    ) {
+      return [];
+    }
+    throw new Error("Could not load booking options.");
+  }
+  return (data ?? []).flatMap((row) => {
+    const period = String(row.period || "");
+    const amount = Number(row.amount);
+    if (!isFlexiblePeriod(period) || !(amount > 0)) return [];
+    return [{ period, amount }];
+  });
+}
+
+function flexibleTotals(totalPrice: number, terms: ResolvedCommercialTerms) {
+  const commercialSplit = calculateBookingCommercials(totalPrice, {
+    model: terms.model,
+    commissionPercent: terms.commissionPercent,
+    transactionFeePercent: terms.transactionFeePercent,
+    accountingMode: terms.accountingMode,
+  });
+  return {
+    unitPrice: totalPrice,
+    quantity: 1,
+    totalPrice,
+    depositAmount: 0,
+    monthlyRent: 0,
+    initialPaymentAmount: totalPrice,
+    nextPaymentDate: null as string | null,
+    monthsTotal: 0,
+    monthsPaid: 0,
+    platformFee: commercialSplit.totalFindmyspaceFee,
+    ownerAmount: commercialSplit.hostEarnings,
+    commercialSplit,
+    commercialTerms: terms,
+  };
 }
 
 export async function createBookingRequestServer(
@@ -277,13 +340,53 @@ export async function createBookingRequestServer(
   });
   const beneficiarySnapshot = snapshotBookingBeneficiary(beneficiary);
 
-  const unit = bookingUnit || space.booking_unit || "day";
-  const quantity = calculateBookingQuantity(unit, startAt, endAt);
+  const flexibleRates = await loadEnabledFlexibleRates(admin, spaceId);
+  let unit = bookingUnit || space.booking_unit || "day";
+  let quantity = 0;
+  let resolvedStart = startAt;
+  let resolvedEnd = endAt;
+  let flexibleSnapshot: {
+    pricing_mode: "flexible";
+    rate_period: string;
+    unit_price: number;
+    billed_quantity: number;
+    totalPrice: number;
+  } | null = null;
+
+  if (flexibleRates.length > 0) {
+    const resolved = resolveFlexibleBooking({
+      rates: flexibleRates,
+      ratePeriod: payload.ratePeriod,
+      quantity: payload.quantity,
+      startDate: payload.startDate,
+      startAt,
+      endAt,
+    });
+    if (!resolved.ok) {
+      throw new Error(resolved.error);
+    }
+    unit = resolved.quote.storedBookingUnit;
+    quantity = resolved.quote.quantity;
+    resolvedStart = resolved.quote.startAt;
+    resolvedEnd = resolved.quote.endAt;
+    flexibleSnapshot = {
+      pricing_mode: "flexible",
+      rate_period: resolved.quote.period,
+      unit_price: resolved.quote.unitPrice,
+      billed_quantity: resolved.quote.quantity,
+      totalPrice: resolved.quote.totalPrice,
+    };
+  } else if (payload.ratePeriod) {
+    throw new Error("This listing does not offer that booking period.");
+  } else {
+    quantity = calculateBookingQuantity(unit, startAt, endAt);
+  }
+
   if (quantity <= 0) {
     throw new Error("Please choose a valid booking period.");
   }
 
-  const minimum = getMinimumQuantity(space, unit);
+  const minimum = flexibleSnapshot ? 0 : getMinimumQuantity(space, unit);
   if (minimum > 0 && quantity < minimum) {
     throw new Error("This booking does not meet the minimum duration.");
   }
@@ -302,13 +405,9 @@ export async function createBookingRequestServer(
     console.error("commercial terms resolve failed; using legacy combined fee", err);
   }
 
-  const totals = computeBookingTotals(
-    space,
-    unit,
-    quantity,
-    startAt,
-    commercialTerms
-  );
+  const totals = flexibleSnapshot
+    ? flexibleTotals(flexibleSnapshot.totalPrice, commercialTerms)
+    : computeBookingTotals(space, unit, quantity, resolvedStart, commercialTerms);
   if (!totals) {
     throw new Error("This listing does not have valid pricing yet.");
   }
@@ -365,8 +464,16 @@ export async function createBookingRequestServer(
     commercial_beneficiary_organisation_id:
       beneficiarySnapshot.commercial_beneficiary_organisation_id,
     booking_unit: unit,
-    start_at: startAt,
-    end_at: endAt,
+    start_at: resolvedStart,
+    end_at: resolvedEnd,
+    ...(flexibleSnapshot
+      ? {
+          pricing_mode: flexibleSnapshot.pricing_mode,
+          rate_period: flexibleSnapshot.rate_period,
+          unit_price: flexibleSnapshot.unit_price,
+          billed_quantity: flexibleSnapshot.billed_quantity,
+        }
+      : {}),
     total_price: totalPrice,
     platform_fee: platformFee,
     owner_earnings: ownerAmount,
@@ -379,12 +486,13 @@ export async function createBookingRequestServer(
     payment_status: "unpaid",
     payout_status: "unpaid_to_owner",
     notes: notes?.trim() ? notes.trim() : null,
-    monthly_rent: unit === "month" ? monthlyRent : null,
-    deposit_amount: unit === "month" ? depositAmount : null,
-    initial_payment_amount: unit === "month" ? initialPaymentAmount : null,
-    next_payment_date: unit === "month" ? nextPaymentDate : null,
-    months_total: unit === "month" ? monthsTotal : null,
-    months_paid: unit === "month" ? monthsPaid : null,
+    monthly_rent: !flexibleSnapshot && unit === "month" ? monthlyRent : null,
+    deposit_amount: !flexibleSnapshot && unit === "month" ? depositAmount : null,
+    initial_payment_amount:
+      !flexibleSnapshot && unit === "month" ? initialPaymentAmount : null,
+    next_payment_date: !flexibleSnapshot && unit === "month" ? nextPaymentDate : null,
+    months_total: !flexibleSnapshot && unit === "month" ? monthsTotal : null,
+    months_paid: !flexibleSnapshot && unit === "month" ? monthsPaid : null,
     ...termsPayload,
   };
 
@@ -407,10 +515,10 @@ export async function createBookingRequestServer(
       bookingId,
       bookingUnit: unit,
       totalPrice,
-      monthlyRent: unit === "month" ? monthlyRent : undefined,
-      depositAmount: unit === "month" ? depositAmount : undefined,
-      startAt,
-      endAt,
+      monthlyRent: !flexibleSnapshot && unit === "month" ? monthlyRent : undefined,
+      depositAmount: !flexibleSnapshot && unit === "month" ? depositAmount : undefined,
+      startAt: resolvedStart,
+      endAt: resolvedEnd,
     });
 
     if (chargeRows.length > 0) {

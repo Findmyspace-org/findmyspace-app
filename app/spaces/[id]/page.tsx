@@ -42,6 +42,8 @@ import {
 } from "@/lib/space-min-booking";
 import { buildPublicSpaceShareMetadata } from "@/lib/space-share-metadata";
 import { getCanonicalPublicSiteUrl } from "@/lib/site-url";
+import type { EnabledFlexibleRate } from "@/lib/flexible-booking";
+import { isFlexiblePeriod } from "@/lib/booking-periods";
 
 import {
   ArrowLeft,
@@ -192,6 +194,21 @@ function formatLabel(value: string | null) {
   return formatSpaceTypeLabel(value);
 }
 
+async function loadPublicFlexibleRates(spaceId: string): Promise<EnabledFlexibleRate[]> {
+  const { data, error } = await supabase
+    .from("space_booking_rates")
+    .select("period, amount, enabled")
+    .eq("space_id", spaceId)
+    .eq("enabled", true);
+  if (error || !data) return [];
+  return data.flatMap((row) => {
+    const period = String((row as { period?: string }).period || "");
+    const amount = Number((row as { amount?: number }).amount);
+    if (!isFlexiblePeriod(period) || !(amount > 0)) return [];
+    return [{ period, amount }];
+  });
+}
+
 export default async function Page({
   params,
 }: {
@@ -232,6 +249,7 @@ export default async function Page({
   const depositLabel = formatSpaceDepositDetail(space);
   const minBookingLabel = formatMinBookingDuration(space);
   const bookingUnit = resolveRentalBookingUnit(space);
+  const flexibleRates = await loadPublicFlexibleRates(space.id);
 
   const address = formatListingAddress({
     street_address: space.street_address,
@@ -593,6 +611,7 @@ export default async function Page({
                 minDays={space.min_booking_days}
                 minMonths={space.min_booking_months}
                 spaceLocation={address}
+                flexibleRates={flexibleRates}
               />
             </div>
 

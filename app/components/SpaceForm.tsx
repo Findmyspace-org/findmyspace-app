@@ -21,6 +21,10 @@ import {
 } from "@/lib/google-maps-url-apply-client";
 import { isGoogleMapsUrl } from "@/lib/google-maps-url";
 import { ownerApiFetch } from "@/lib/owner-api-client";
+import FlexibleBookingRatesEditor, {
+  emptyFlexibleRateDraft,
+  ratesFromFlexibleDraft,
+} from "@/app/components/FlexibleBookingRatesEditor";
 import { createOrganisationListingRequest } from "@/lib/organisation-commercial-client";
 import { listOrganisationPropertiesRequest } from "@/lib/organisation-property-client";
 import { resolveOrganisationListingPropertyChoice } from "@/lib/organisation-property";
@@ -215,6 +219,8 @@ export default function SpaceForm({
   const [country, setCountry] = useState("South Africa");
   const [spaceType, setSpaceType] = useState("storage");
   const [bookingUnit, setBookingUnit] = useState("day");
+  const [useFlexibleRates, setUseFlexibleRates] = useState(false);
+  const [flexibleRateDraft, setFlexibleRateDraft] = useState(emptyFlexibleRateDraft);
 
   const [pricePerHour, setPricePerHour] = useState("");
   const [pricePerDay, setPricePerDay] = useState("");
@@ -516,6 +522,9 @@ export default function SpaceForm({
   ]);
 
   const priceMissing = useMemo(() => {
+    if (useFlexibleRates) {
+      return !ratesFromFlexibleDraft(flexibleRateDraft).ok;
+    }
     if (bookingUnit === "hour") {
       return !pricePerHour || Number(pricePerHour) <= 0;
     }
@@ -523,7 +532,7 @@ export default function SpaceForm({
       return !pricePerMonth || Number(pricePerMonth) <= 0;
     }
     return !pricePerDay || Number(pricePerDay) <= 0;
-  }, [bookingUnit, pricePerHour, pricePerDay, pricePerMonth]);
+  }, [bookingUnit, pricePerHour, pricePerDay, pricePerMonth, useFlexibleRates, flexibleRateDraft]);
 
   function validateListingStep(stepIndex: number): string | null {
     if (stepIndex === 0) {
@@ -1178,7 +1187,16 @@ export default function SpaceForm({
       const depositMonths =
         depositType === "one_month" ? 1 : depositType === "two_months" ? 2 : 0;
 
-      if (bookingUnit === "hour") {
+      const flexibleParsed = useFlexibleRates
+        ? ratesFromFlexibleDraft(flexibleRateDraft)
+        : null;
+      if (useFlexibleRates && (!flexibleParsed || !flexibleParsed.ok)) {
+        setMessage(flexibleParsed && !flexibleParsed.ok ? flexibleParsed.error : "Enter booking prices.");
+        setLoading(false);
+        return;
+      }
+
+      if (!useFlexibleRates && bookingUnit === "hour") {
         if (!pricePerHour || Number(pricePerHour) <= 0) {
           setMessage("Please enter a valid hourly price.");
           setLoading(false);
@@ -1192,7 +1210,7 @@ export default function SpaceForm({
         }
       }
 
-      if (bookingUnit === "day") {
+      if (!useFlexibleRates && bookingUnit === "day") {
         if (!pricePerDay || Number(pricePerDay) <= 0) {
           setMessage("Please enter a valid daily price.");
           setLoading(false);
@@ -1206,7 +1224,7 @@ export default function SpaceForm({
         }
       }
 
-      if (bookingUnit === "month") {
+      if (!useFlexibleRates && bookingUnit === "month") {
         if (parsedMonthlyPaymentDay < 1 || parsedMonthlyPaymentDay > 28) {
           setMessage("Monthly payment day must be between 1 and 28.");
           setLoading(false);
@@ -1302,18 +1320,37 @@ export default function SpaceForm({
         }
       }
 
+      const flexibleMirror =
+        flexibleParsed && flexibleParsed.ok ? flexibleParsed.rates[0] : null;
       const spacePayload: SpaceInsertPayload = {
         owner_id: user.id,
         title,
         description,
         space_type: spaceType,
-        booking_unit: bookingUnit,
-        price_per_hour:
-          bookingUnit === "hour" && pricePerHour ? Number(pricePerHour) : null,
-        price_per_day:
-          bookingUnit === "day" && pricePerDay ? Number(pricePerDay) : null,
-        price_per_month:
-          bookingUnit === "month" && pricePerMonth ? Number(pricePerMonth) : null,
+        booking_unit: flexibleMirror
+          ? flexibleMirror.period === "hour"
+            ? "hour"
+            : "day"
+          : bookingUnit,
+        price_per_hour: flexibleMirror
+          ? flexibleMirror.period === "hour"
+            ? flexibleMirror.amount
+            : null
+          : bookingUnit === "hour" && pricePerHour
+            ? Number(pricePerHour)
+            : null,
+        price_per_day: flexibleMirror
+          ? flexibleMirror.period === "hour"
+            ? null
+            : flexibleMirror.amount
+          : bookingUnit === "day" && pricePerDay
+            ? Number(pricePerDay)
+            : null,
+        price_per_month: flexibleMirror
+          ? null
+          : bookingUnit === "month" && pricePerMonth
+            ? Number(pricePerMonth)
+            : null,
         min_booking_hours:
           bookingUnit === "hour" ? Number(minBookingHours || 1) : null,
         min_booking_days:
@@ -1332,10 +1369,12 @@ export default function SpaceForm({
         status: "pending",
         verification_status: "pending",
         ownership_proof_status: "pending",
-        deposit_type: bookingUnit === "month" ? depositType : "none",
-        deposit_months: bookingUnit === "month" ? depositMonths : 0,
-        monthly_payment_day: bookingUnit === "month" ? parsedMonthlyPaymentDay : 1,
-        deposit_required: bookingUnit === "month" && depositType !== "none",
+        deposit_type: flexibleMirror ? "none" : bookingUnit === "month" ? depositType : "none",
+        deposit_months: flexibleMirror ? 0 : bookingUnit === "month" ? depositMonths : 0,
+        monthly_payment_day: flexibleMirror ? 1 : bookingUnit === "month" ? parsedMonthlyPaymentDay : 1,
+        deposit_required: flexibleMirror
+          ? false
+          : bookingUnit === "month" && depositType !== "none",
         deposit_amount: null,
         ...(advId
           ? {
@@ -1381,6 +1420,26 @@ export default function SpaceForm({
         setMessage("Could not create listing.");
         setLoading(false);
         return;
+      }
+
+      if (flexibleParsed && flexibleParsed.ok) {
+        try {
+          await ownerApiFetch(`/api/host/listings/${insertedSpace.id}/booking-rates`, {
+            method: "PUT",
+            body: JSON.stringify({
+              useFlexibleRates: true,
+              rates: flexibleParsed.rates,
+            }),
+          });
+        } catch (rateError) {
+          setMessage(
+            rateError instanceof Error
+              ? `The listing was created, but booking options were not saved. ${rateError.message}`
+              : "The listing was created, but booking options were not saved."
+          );
+          setLoading(false);
+          return;
+        }
       }
 
       if (imageFiles.length > 0) {
@@ -1912,6 +1971,12 @@ export default function SpaceForm({
             <p className="mt-1 text-xs leading-snug text-[#64748b]">
               {SPACE_PRICING_PERIOD_HELPER_TEXT}
             </p>
+            <FlexibleBookingRatesEditor
+              useFlexibleRates={useFlexibleRates}
+              draft={flexibleRateDraft}
+              onUseFlexibleRatesChange={setUseFlexibleRates}
+              onDraftChange={setFlexibleRateDraft}
+            />
           </div>
           {bookingUnit === "hour" ? (
             <>

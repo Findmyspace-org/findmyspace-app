@@ -288,5 +288,65 @@ BEGIN
     RAISE EXCEPTION 'competing pending request was not declined';
   END IF;
 
+  -- A long reservation rejects a shorter request inside it.
+  PERFORM public.test_insert_booking(
+    space_pay,
+    'confirmed',
+    '2026-07-10 00:00+02',
+    '2026-10-10 00:00+02'
+  );
+  BEGIN
+    PERFORM public.test_insert_booking(
+      space_pay,
+      'pending_owner',
+      '2026-08-01 10:00+02',
+      '2026-08-01 12:00+02'
+    );
+    RAISE EXCEPTION 'request inside a long reservation was accepted';
+  EXCEPTION
+    WHEN OTHERS THEN
+      IF SQLERRM NOT LIKE 'space_unavailable:%' THEN
+        RAISE;
+      END IF;
+  END;
+
+  -- Moving a block onto a confirmed booking is rejected. The old row stays.
+  BEGIN
+    UPDATE public.blocked_dates
+    SET start_at = '2026-06-04 14:00+02', end_at = '2026-06-04 16:00+02'
+    WHERE id = block_id;
+    RAISE EXCEPTION 'block modification over a confirmed booking succeeded';
+  EXCEPTION
+    WHEN OTHERS THEN
+      IF SQLERRM NOT LIKE '%Confirmed booking%' THEN
+        RAISE EXCEPTION 'block modification did not name the booking: %', SQLERRM;
+      END IF;
+  END;
+  IF (
+    SELECT start_at FROM public.blocked_dates WHERE id = block_id
+  ) IS DISTINCT FROM '2026-06-05 08:00+02'::timestamptz THEN
+    RAISE EXCEPTION 'rejected block modification changed the saved period';
+  END IF;
+
+  -- After expiry, a later confirmed booking holds the slot. A late payment
+  -- update cannot revive the expired row over that reservation.
+  PERFORM public.test_insert_booking(
+    space_pay,
+    'confirmed',
+    '2026-07-01 09:00+02',
+    '2026-07-01 10:00+02'
+  );
+  BEGIN
+    UPDATE public.bookings
+    SET status = 'paid_confirmed', payment_status = 'paid'
+    WHERE id = paid_id;
+    RAISE EXCEPTION 'late payment revived an expired booking over a new reservation';
+  EXCEPTION
+    WHEN OTHERS THEN
+      IF SQLERRM NOT LIKE 'space_unavailable:%' THEN
+        RAISE;
+      END IF;
+  END;
+
   PERFORM public.delete_blocked_date(block_id, space_block);
 END $$;

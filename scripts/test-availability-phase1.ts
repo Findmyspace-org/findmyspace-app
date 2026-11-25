@@ -351,6 +351,18 @@ const pghGrant = execSync(
 assert.match(pghGrant, /mvandermerwe@paarlgirlshigh\.com/);
 assert.match(pghGrant, /21cf12c3-3235-4cd3-8106-801d120dc7b5/);
 
+assert.match(migration, /SET search_path = pg_catalog, public/);
+assert.match(migration, /REVOKE ALL ON FUNCTION public\.insert_blocked_date/);
+assert.match(migration, /REVOKE ALL ON FUNCTION public\.delete_blocked_date/);
+assert.match(migration, /REVOKE ALL ON FUNCTION public\.apply_host_booking_response/);
+assert.doesNotMatch(migration, /renter_id|email|full_name/i);
+assert.match(migration, /Confirmed booking from/);
+assert.match(migration, /Blocked period from/);
+assert.doesNotMatch(
+  readFileSync("lib/booking-request-server.ts", "utf8"),
+  /\.update\(\s*\{[^}]*start_at/
+);
+
 execFileSync("bash", ["scripts/test-availability-phase1-db.sh"], {
   stdio: "inherit",
 });
