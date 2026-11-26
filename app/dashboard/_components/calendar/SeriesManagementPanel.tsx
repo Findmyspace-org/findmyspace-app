@@ -24,9 +24,12 @@ type ChangeEvent = {
   created_at: string;
 };
 
+type PendingRequest = { id: string; status: string; created_at: string };
+
 type PreviewState = {
   sessions: SessionRow[];
   events: ChangeEvent[];
+  pendingRequests?: PendingRequest[];
   notice: string | null;
   conflict: string | null;
   paidProtection: string | null;
@@ -37,6 +40,7 @@ type Props = {
   occurrenceId: string | null;
   occurrenceStart: string;
   occurrenceEnd: string;
+  canDecide?: boolean;
   preview?: PreviewState;
   onChanged?: () => void;
 };
@@ -59,15 +63,18 @@ export default function SeriesManagementPanel({
   occurrenceId,
   occurrenceStart,
   occurrenceEnd,
+  canDecide = false,
   preview,
   onChanged,
 }: Props) {
   const [scope, setScope] = useState("occurrence");
+  const [selectedSession, setSelectedSession] = useState(occurrenceId || "");
   const [newStart, setNewStart] = useState(localInput(occurrenceStart));
   const [newEnd, setNewEnd] = useState(localInput(occurrenceEnd));
   const [reason, setReason] = useState("");
   const [sessions, setSessions] = useState<SessionRow[]>(preview?.sessions ?? []);
   const [events, setEvents] = useState<ChangeEvent[]>(preview?.events ?? []);
+  const [pendingRequests, setPendingRequests] = useState<PendingRequest[]>(preview?.pendingRequests ?? []);
   const [notice, setNotice] = useState<string | null>(preview?.notice ?? null);
   const [conflict, setConflict] = useState<string | null>(preview?.conflict ?? null);
   const [paidProtection, setPaidProtection] = useState<string | null>(preview?.paidProtection ?? null);
@@ -84,11 +91,15 @@ export default function SeriesManagementPanel({
           }>,
           ownerApiFetch(`/api/bookings/${bookingId}/change-events`) as Promise<{
             events?: ChangeEvent[];
+            pendingRequests?: PendingRequest[];
           }>,
         ]);
         if (cancelled) return;
-        setSessions(series.sessions ?? []);
+        const loaded = series.sessions ?? [];
+        setSessions(loaded);
         setEvents(history.events ?? []);
+        setPendingRequests(history.pendingRequests ?? []);
+        setSelectedSession((current) => current || loaded.find((session) => !session.excluded && !session.cancelled)?.id || "");
       } catch {
         if (!cancelled) setNotice("The schedule could not be loaded.");
       }
@@ -97,6 +108,26 @@ export default function SeriesManagementPanel({
       cancelled = true;
     };
   }, [bookingId, preview]);
+
+  async function decide(requestId: string, accept: boolean) {
+    if (preview) return;
+    setSaving(true);
+    setNotice(null);
+    setConflict(null);
+    try {
+      await ownerApiFetch(`/api/bookings/change-requests/${requestId}`, {
+        method: "POST",
+        body: JSON.stringify({ accept }),
+      });
+      setNotice(accept ? "The renter accepted the move. The paid total is unchanged." : "The renter declined the move. The original time remains.");
+      setPendingRequests((current) => current.filter((request) => request.id !== requestId));
+      onChanged?.();
+    } catch (error) {
+      setConflict(error instanceof Error ? error.message : "The original booking was kept.");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   async function submit(action: "reschedule" | "exclude") {
     if (preview) return;
@@ -110,7 +141,7 @@ export default function SeriesManagementPanel({
         body: JSON.stringify({
           action,
           scope,
-          occurrenceId,
+          occurrenceId: selectedSession || occurrenceId,
           newStart: action === "reschedule" ? new Date(newStart).toISOString() : null,
           newEnd: action === "reschedule" ? new Date(newEnd).toISOString() : null,
           reason,
@@ -137,6 +168,18 @@ export default function SeriesManagementPanel({
         {included.length} included session{included.length === 1 ? "" : "s"}
         {leftOut.length ? `, ${leftOut.length} excluded or cancelled` : ""}. Completed sessions stay as they were.
       </p>
+      {sessions.length > 0 ? (
+        <label className="block text-sm">
+          <span className="mb-1 block font-medium text-[#192a3a]">Session</span>
+          <select value={selectedSession} onChange={(event) => setSelectedSession(event.target.value)} className="w-full rounded-md border border-gray-300 px-2 py-1.5">
+            {sessions.map((session) => (
+              <option key={session.id} value={session.id}>
+                {session.date}{session.excluded || session.cancelled ? " (not included)" : ""}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : null}
       <fieldset className="space-y-2 text-sm text-gray-800">
         <legend className="mb-1 font-medium text-[#192a3a]">Which sessions</legend>
         <label className="flex gap-2">
@@ -174,6 +217,19 @@ export default function SeriesManagementPanel({
           Cancel selected sessions
         </button>
       </div>
+      {pendingRequests.map((request) => (
+        <div key={request.id} className="rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-950">
+          <p>A move is waiting for the renter. Accepting it changes the calendar and leaves the paid total as it is. Declining it keeps the original time.</p>
+          {canDecide ? (
+            <div className="mt-2 flex gap-2">
+              <button type="button" disabled={saving || Boolean(preview)} onClick={() => void decide(request.id, true)} className="rounded-md bg-[#192a3a] px-3 py-1.5 text-white">Accept</button>
+              <button type="button" disabled={saving || Boolean(preview)} onClick={() => void decide(request.id, false)} className="rounded-md border border-gray-300 bg-white px-3 py-1.5">Decline</button>
+            </div>
+          ) : (
+            <p className="mt-2">The renter accepts or declines this from My bookings. This notice is not acceptance.</p>
+          )}
+        </div>
+      ))}
       {notice ? <p className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-950">{notice}</p> : null}
       {conflict ? <p className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800">{conflict}</p> : null}
       {paidProtection ? <p className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">{paidProtection}</p> : null}

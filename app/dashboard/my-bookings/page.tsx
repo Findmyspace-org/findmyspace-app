@@ -31,6 +31,7 @@ import {
   Mail,
   Phone,
 } from "lucide-react";
+import SeriesManagementPanel from "@/app/dashboard/_components/calendar/SeriesManagementPanel";
 import { downloadInvoicePdf } from "@/lib/invoice-download-client";
 import { isCommunicationAllowed } from "@/lib/booking-communication";
 import { renterPaymentStatusLabel } from "@/lib/booking-ui-labels";
@@ -1361,6 +1362,16 @@ function MyBookingsPageContent({
                               data={booking.requestDetails ?? null}
                               title="Your booking request details"
                             />
+
+                            {booking.booking_unit === "recurring_hour" ? (
+                              <SeriesManagementPanel
+                                bookingId={booking.id}
+                                occurrenceId={null}
+                                occurrenceStart={booking.start_at}
+                                occurrenceEnd={booking.end_at}
+                                canDecide
+                              />
+                            ) : null}
 
                             <BookingRequirementResponsesLoader
                               bookingId={booking.id}

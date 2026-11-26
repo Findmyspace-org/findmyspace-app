@@ -30,7 +30,13 @@ export async function GET(
     .eq("booking_id", bookingId)
     .order("created_at", { ascending: false });
   if (error) {
-    return NextResponse.json({ events: [] });
+    return NextResponse.json({ events: [], pendingRequests: [] });
   }
-  return NextResponse.json({ events: data ?? [] });
+  const { data: pending } = await auth.admin
+    .from("booking_change_requests")
+    .select("id, status, created_at")
+    .eq("booking_id", bookingId)
+    .eq("status", "pending_renter")
+    .order("created_at", { ascending: false });
+  return NextResponse.json({ events: data ?? [], pendingRequests: pending ?? [] });
 }
