@@ -17,7 +17,11 @@ export default function OwnerCalendarLegend() {
       </span>
       <span className="inline-flex items-center gap-2">
         <span className="h-3 w-3 rounded-full bg-gray-400" />
-        Blocked
+        Blocked once
+      </span>
+      <span className="inline-flex items-center gap-2">
+        <span className="h-3 w-3 rounded-full bg-amber-700" />
+        Recurring block
       </span>
     </div>
   );

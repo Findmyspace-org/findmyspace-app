@@ -40,6 +40,12 @@ import {
 } from "@/lib/property-booking-terms";
 import { FLEXIBLE_PERIOD_LABELS, type FlexiblePeriod } from "@/lib/booking-periods";
 import {
+  availabilityRuleFromRow,
+  describeAvailabilityRule,
+  ruleOverlapsInterval,
+  type AvailabilityRule,
+} from "@/lib/availability-rules";
+import {
   resolveFlexibleBooking,
   type EnabledFlexibleRate,
 } from "@/lib/flexible-booking";
@@ -141,6 +147,7 @@ export default function BookingRequestForm({
   const [availabilityLoading, setAvailabilityLoading] = useState(true);
   const [existingBookings, setExistingBookings] = useState<ExistingBooking[]>([]);
   const [blockedDates, setBlockedDates] = useState<BlockedDate[]>([]);
+  const [availabilityRules, setAvailabilityRules] = useState<AvailabilityRule[]>([]);
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [authMode, setAuthMode] = useState<"signup" | "login">("signup");
   const [acceptedTerms, setAcceptedTerms] = useState(false);
@@ -439,6 +446,21 @@ export default function BookingRequestForm({
       // silently fail for blocked dates as well
     } else {
       setBlockedDates((blockedData || []) as BlockedDate[]);
+    }
+    const { data: ruleData, error: ruleError } = await (supabase
+      .from("availability_rules") as any)
+      .select("id, space_id, reason, weekdays, whole_day, local_start, local_end, starts_on, ends_on")
+      .eq("space_id", spaceId)
+      .is("removed_at", null);
+
+    if (ruleError) {
+      setAvailabilityRules([]);
+    } else {
+      setAvailabilityRules(
+        ((ruleData || []) as Array<Parameters<typeof availabilityRuleFromRow>[0]>)
+          .map((row) => availabilityRuleFromRow(row))
+          .filter((rule): rule is AvailabilityRule => Boolean(rule))
+      );
     }
     setAvailabilityLoading(false);
   }
@@ -754,7 +776,13 @@ export default function BookingRequestForm({
         toBusinessLocalDate(blocked.end_at)
       )
     );
+    const blockingRule = availabilityRules.find((rule) =>
+      ruleOverlapsInterval(rule, requestedStart, requestedEnd).overlaps
+    );
 
+    if (blockingRule) {
+      return `These dates or times are not available. ${describeAvailabilityRule(blockingRule)}`;
+    }
     return hasBookingConflict || hasBlockedConflict
       ? "These dates or times are not available."
       : "";
@@ -769,6 +797,7 @@ export default function BookingRequestForm({
     monthEnd,
     existingBookings,
     blockedDates,
+    availabilityRules,
   ]);
 
   const liveMinimumMessage = useMemo(() => {
@@ -1195,6 +1224,17 @@ export default function BookingRequestForm({
           toBusinessLocalDate(blocked.end_at)
         )
       );
+      const blockingRule = availabilityRules.find((rule) =>
+        ruleOverlapsInterval(rule, requestedStart, requestedEnd).overlaps
+      );
+
+      if (blockingRule) {
+        setStatusMessage(
+          `These dates or times are not available. ${describeAvailabilityRule(blockingRule)}`
+        );
+        setLoading(false);
+        return;
+      }
 
       if (hasBookingConflict || hasBlockedConflict) {
         setStatusMessage("Those dates or times are not available.");
