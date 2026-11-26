@@ -28,6 +28,8 @@ import { useHostingWorkspace } from "@/lib/use-hosting-workspace";
 import { ORGANISATION_QUERY_PARAM } from "@/lib/access/organisation-workspace";
 import { downloadInvoicePdf } from "@/lib/invoice-download-client";
 import OwnerCalendarLegend from "@/app/dashboard/_components/calendar/OwnerCalendarLegend";
+import SeriesManagementPanel from "@/app/dashboard/_components/calendar/SeriesManagementPanel";
+import RestrictionExceptionPanel from "@/app/dashboard/_components/calendar/RestrictionExceptionPanel";
 import { ownerApiFetch } from "@/lib/owner-api-client";
 import { supabase } from "@/lib/supabase";
 import AvailabilityBlockDialog from "@/app/components/AvailabilityBlockDialog";
@@ -36,7 +38,9 @@ import {
     describeAvailabilityRule,
     expandAvailabilityRule,
     type AvailabilityRule,
+    type AvailabilityRuleException,
 } from "@/lib/availability-rules";
+import { johannesburgLocalToUtc, parseCivilDate } from "@/lib/booking-periods";
 import {
     ownerListingBookingStatusLabel,
     renterPaymentStatusLabel,
@@ -51,6 +55,8 @@ type CalendarSpace = {
     suburb: string | null;
     status: string | null;
     booking_unit: string | null;
+    property_id?: string | null;
+    property_name?: string | null;
 };
 
 type CalendarBooking = {
@@ -72,6 +78,8 @@ type CalendarBooking = {
     seriesSession?: boolean;
     seriesSummary?: string | null;
     seriesCount?: number | null;
+    parentBookingId?: string | null;
+    occurrenceId?: string | null;
 };
 
 function bookingBlocksCalendarSlot(booking: CalendarBooking) {
@@ -97,15 +105,16 @@ type CalendarBlockedDate = {
     start_at: string;
     end_at: string;
     reason: string | null;
-    source?: "once" | "recurring";
+    source?: "once" | "recurring" | "opened";
     ruleId?: string;
+    exceptionId?: string;
     summary?: string;
 };
 
 type TimelineSegment = {
     id: string;
     kind: "booking" | "blocked";
-    tone?: "once" | "recurring";
+    tone?: "once" | "recurring" | "opened";
     startIndex: number;
     endIndex: number;
     colorClass: string;
@@ -165,7 +174,11 @@ function getVisibleRange(currentDate: Date, bookingType: CalendarBookingType) {
     return { start, end };
 }
 
-function getBookingColorClass(status?: string | null, paymentStatus?: string | null) {
+function getBookingColorClass(
+    status?: string | null,
+    paymentStatus?: string | null,
+    bookingUnit?: string | null
+) {
     if (status === "pending" || status === "pending_owner") {
         return "bg-yellow-400 text-yellow-950";
     }
@@ -189,6 +202,9 @@ function getBookingColorClass(status?: string | null, paymentStatus?: string | n
         status === "completed" ||
         paymentStatus === "paid"
     ) {
+        if (["day", "week", "month", "quarter", "year"].includes(bookingUnit || "")) {
+            return "bg-emerald-700 text-white";
+        }
         return "bg-emerald-500 text-white";
     }
 
@@ -428,8 +444,15 @@ function buildSegmentsForSpace(
             startIndex: segment.startIndex,
             endIndex: segment.endIndex,
             colorClass: booking.seriesSession
-                ? "bg-indigo-700 text-white"
-                : getBookingColorClass(booking.status, booking.payment_status),
+                ? booking.status === "pending" || booking.status === "pending_owner"
+                    ? "bg-yellow-400 text-yellow-950 ring-1 ring-indigo-700"
+                    : booking.status === "approved" ||
+                        booking.status === "accepted_awaiting_payment" ||
+                        booking.status === "awaiting_payment" ||
+                        booking.payment_status === "awaiting_payment"
+                      ? "bg-blue-500 text-white ring-1 ring-indigo-700"
+                      : "bg-indigo-700 text-white"
+                : getBookingColorClass(booking.status, booking.payment_status, booking.booking_unit),
             label: buildBookingLabel(bookingType, booking),
             hasConflict: false,
             isTruncatedStart: bookingRange.start < rangeStart,
@@ -453,7 +476,7 @@ function buildSegmentsForSpace(
         rawSegments.push({
             id: blocked.id,
             kind: "blocked",
-            tone: blocked.source === "recurring" ? "recurring" : "once",
+            tone: blocked.source === "recurring" ? "recurring" : blocked.source === "opened" ? "opened" : "once",
             startIndex: segment.startIndex,
             endIndex: segment.endIndex,
             colorClass: "text-white",
@@ -642,6 +665,9 @@ type CalendarToolbarProps = {
     areaFilter: string;
     onAreaFilterChange: (value: string) => void;
     areaOptions: string[];
+    propertyFilter: string;
+    onPropertyFilterChange: (value: string) => void;
+    propertyOptions: Array<{ id: string; name: string }>;
     statusFilter: string;
     onStatusFilterChange: (value: string) => void;
     dateRangeFilter: string;
@@ -660,6 +686,9 @@ function CalendarToolbar({
     areaFilter,
     onAreaFilterChange,
     areaOptions,
+    propertyFilter,
+    onPropertyFilterChange,
+    propertyOptions,
     statusFilter,
     onStatusFilterChange,
     dateRangeFilter,
@@ -688,6 +717,19 @@ function CalendarToolbar({
                         className="w-full rounded-md border border-gray-300 bg-white py-2 pl-10 pr-3 text-sm outline-none focus:border-[#192a3a]"
                     />
                 </div>
+
+                <select
+                    value={propertyFilter}
+                    onChange={(e) => onPropertyFilterChange(e.target.value)}
+                    className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-[#192a3a] outline-none focus:border-[#192a3a]"
+                >
+                    <option value="all">All properties</option>
+                    {propertyOptions.map((property) => (
+                        <option key={property.id} value={property.id}>
+                            {property.name}
+                        </option>
+                    ))}
+                </select>
 
                 <select
                     value={areaFilter}
@@ -899,7 +941,7 @@ function CalendarSegmentButton({
                     onBlockedDateClick(blockedDate);
                 }
             }}
-            className={`pointer-events-auto absolute top-1/2 flex h-6 -translate-y-1/2 items-center px-2 text-[11px] font-medium shadow-sm ${segment.colorClass} ${getSegmentShapeClass(segment)} ${segment.hasConflict ? "ring-2 ring-red-300" : ""} ${segment.kind === "blocked" ? segment.tone === "recurring" ? "bg-[repeating-linear-gradient(135deg,#b45309_0px,#b45309_10px,#78350f_10px,#78350f_20px)] text-white" : "bg-[repeating-linear-gradient(135deg,rgba(156,163,175,1)_0px,rgba(156,163,175,1)_10px,rgba(107,114,128,1)_10px,rgba(107,114,128,1)_20px)]" : ""}`}
+            className={`pointer-events-auto absolute top-1/2 flex h-6 -translate-y-1/2 items-center px-2 text-[11px] font-medium shadow-sm ${segment.colorClass} ${getSegmentShapeClass(segment)} ${segment.hasConflict ? "ring-2 ring-red-300" : ""} ${segment.kind === "blocked" ? segment.tone === "recurring" ? "bg-[repeating-linear-gradient(135deg,#b45309_0px,#b45309_10px,#78350f_10px,#78350f_20px)] text-white" : segment.tone === "opened" ? "border border-emerald-700 bg-white text-emerald-900" : "bg-[repeating-linear-gradient(135deg,rgba(156,163,175,1)_0px,rgba(156,163,175,1)_10px,rgba(107,114,128,1)_10px,rgba(107,114,128,1)_20px)]" : ""}`}
             style={{
                 left,
                 width,
@@ -1073,9 +1115,10 @@ type BookingModalProps = {
     booking: CalendarBooking | null;
     space: CalendarSpace | null;
     onClose: () => void;
+    onChanged?: () => void;
 };
 
-function BookingModal({ open, booking, space, onClose }: BookingModalProps) {
+function BookingModal({ open, booking, space, onClose, onChanged }: BookingModalProps) {
     const [invoiceModalOpen, setInvoiceModalOpen] = useState(false);
     const [invoiceHtml, setInvoiceHtml] = useState<string | null>(null);
     const [invoiceLoading, setInvoiceLoading] = useState(false);
@@ -1232,7 +1275,17 @@ function BookingModal({ open, booking, space, onClose }: BookingModalProps) {
                                     {booking.seriesSummary}
                                     {booking.seriesCount ? ` ${booking.seriesCount} sessions.` : ""}
                                     {" "}This is one session. The days between sessions stay available.
+                                    {booking.parentBookingId ? ` Parent booking ${booking.parentBookingId}.` : ""}
                                 </p>
+                            ) : null}
+                            {booking.seriesSession && booking.parentBookingId ? (
+                                <SeriesManagementPanel
+                                    bookingId={booking.parentBookingId}
+                                    occurrenceId={booking.occurrenceId || booking.id}
+                                    occurrenceStart={booking.start_at}
+                                    occurrenceEnd={booking.end_at}
+                                    onChanged={onChanged}
+                                />
                             ) : null}
                             <p>
                                 <span className="font-medium text-[#192a3a]">Booking status:</span>{" "}
@@ -1461,6 +1514,9 @@ function CalendarPageContent() {
     const [bookingType, setBookingType] = useState<CalendarBookingType>("day");
     const [searchText, setSearchText] = useState("");
     const [areaFilter, setAreaFilter] = useState("all");
+    const [propertyFilter, setPropertyFilter] = useState("all");
+    const [calendarRevision, setCalendarRevision] = useState(0);
+    const [ruleExceptions, setRuleExceptions] = useState<AvailabilityRuleException[]>([]);
     const [statusFilter, setStatusFilter] = useState("all");
     const [dateRangeFilter, setDateRangeFilter] = useState("current");
     const [currentDate, setCurrentDate] = useState(new Date());
@@ -1501,6 +1557,8 @@ function CalendarPageContent() {
                 suburb: space.suburb ?? null,
                 status: space.status ?? null,
                 booking_unit: space.booking_unit ?? null,
+                property_id: space.property_id ?? null,
+                property_name: space.property_name ?? null,
             })) as CalendarSpace[];
             setSpaces(nextSpaces);
 
@@ -1567,13 +1625,16 @@ function CalendarPageContent() {
                                             startAt: string;
                                             endAt: string;
                                             excluded: boolean;
+                                            cancelled?: boolean;
                                         }>;
                                     };
                                     for (const session of detail.sessions || []) {
-                                        if (session.excluded) continue;
+                                        if (session.excluded || session.cancelled) continue;
                                         seriesSessions.push({
                                             ...parent,
                                             id: session.id,
+                                            parentBookingId: parent.id,
+                                            occurrenceId: session.id,
                                             start_at: session.startAt,
                                             end_at: session.endAt,
                                             renter: parent.renter ?? null,
@@ -1596,12 +1657,37 @@ function CalendarPageContent() {
                 setBlockedDates((blockedData || []) as CalendarBlockedDate[]);
 
                 const loadedRules: AvailabilityRule[] = [];
+                const loadedExceptions: AvailabilityRuleException[] = [];
                 await Promise.all(
                     spaceIds.map(async (spaceId) => {
                         try {
                             const result = (await ownerApiFetch(
                                 `/api/host/spaces/${spaceId}/availability-rules`
-                            )) as { rules?: Array<Parameters<typeof availabilityRuleFromRow>[0]> };
+                            )) as {
+                                rules?: Array<Parameters<typeof availabilityRuleFromRow>[0]>;
+                                exceptions?: Array<{
+                                    id: string;
+                                    rule_id: string;
+                                    exception_date: string;
+                                    action: "open" | "override";
+                                    local_start?: string | null;
+                                    local_end?: string | null;
+                                    whole_day?: boolean | null;
+                                    reason?: string | null;
+                                }>;
+                            };
+                            for (const exception of result.exceptions || []) {
+                                loadedExceptions.push({
+                                    id: exception.id,
+                                    ruleId: exception.rule_id,
+                                    date: String(exception.exception_date).slice(0, 10),
+                                    action: exception.action,
+                                    localStart: exception.local_start ? String(exception.local_start).slice(0, 5) : null,
+                                    localEnd: exception.local_end ? String(exception.local_end).slice(0, 5) : null,
+                                    wholeDay: Boolean(exception.whole_day),
+                                    reason: exception.reason ?? null,
+                                });
+                            }
                             for (const row of result.rules || []) {
                                 const rule = availabilityRuleFromRow(row);
                                 if (rule) loadedRules.push(rule);
@@ -1612,16 +1698,27 @@ function CalendarPageContent() {
                     })
                 );
                 setAvailabilityRules(loadedRules);
+                setRuleExceptions(loadedExceptions);
             } else {
                 setBookings([]);
                 setBlockedDates([]);
                 setAvailabilityRules([]);
+                setRuleExceptions([]);
             }
             setLoading(false);
         }
 
         loadSpaces();
-    }, [requestedOrganisationId]);
+    }, [requestedOrganisationId, calendarRevision]);
+
+    const propertyOptions = useMemo(() => {
+        const seen = new Map<string, string>();
+        for (const space of spaces) {
+            if (!space.property_id) continue;
+            seen.set(space.property_id, space.property_name || "Property");
+        }
+        return Array.from(seen, ([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
+    }, [spaces]);
 
     const areaOptions = useMemo(() => {
         const values = Array.from(
@@ -1639,8 +1736,7 @@ function CalendarPageContent() {
         const normalizedSearch = searchText.trim().toLowerCase();
 
         return spaces.filter((space) => {
-            const unitMatches = (space.booking_unit || "day") === bookingType;
-            if (!unitMatches) return false;
+            if (propertyFilter !== "all" && (space.property_id || "") !== propertyFilter) return false;
 
             if (areaFilter !== "all") {
                 const area = space.city || space.suburb || "";
@@ -1660,7 +1756,7 @@ function CalendarPageContent() {
 
             return searchable.includes(normalizedSearch);
         });
-    }, [spaces, bookingType, areaFilter, statusFilter, searchText]);
+    }, [spaces, propertyFilter, areaFilter, statusFilter, searchText]);
 
     const columns = useMemo(() => {
         if (bookingType === "hour") return buildHourlyColumns(currentDate);
@@ -2064,14 +2160,47 @@ function CalendarPageContent() {
             map[blockedDate.space_id].push(blockedDate);
         });
         availabilityRules.forEach((rule) => {
+            const exceptions = ruleExceptions.filter((item) => item.ruleId === rule.id);
             const occurrences = expandAvailabilityRule(rule, visibleRange.start, visibleRange.end);
             occurrences.forEach((occurrence) => {
+                const date = new Intl.DateTimeFormat("en-CA", {
+                    timeZone: "Africa/Johannesburg",
+                    year: "numeric",
+                    month: "2-digit",
+                    day: "2-digit",
+                }).format(occurrence.start);
+                const exception = exceptions.find((item) => item.date === date);
                 if (!map[rule.spaceId]) map[rule.spaceId] = [];
+                if (exception?.action === "open") {
+                    map[rule.spaceId].push({
+                        id: `open:${exception.id}`,
+                        space_id: rule.spaceId,
+                        start_at: occurrence.start.toISOString(),
+                        end_at: occurrence.end.toISOString(),
+                        reason: exception.reason || "Opened for this date",
+                        source: "opened",
+                        ruleId: rule.id,
+                        exceptionId: exception.id,
+                        summary: `Open on ${date}. The recurring restriction remains.`,
+                    });
+                    return;
+                }
+                let start = occurrence.start;
+                let end = occurrence.end;
+                if (exception?.action === "override" && exception.localStart && exception.localEnd) {
+                    const day = parseCivilDate(date);
+                    const [startHour, startMinute] = exception.localStart.split(":").map(Number);
+                    const [endHour, endMinute] = exception.localEnd.split(":").map(Number);
+                    if (day && Number.isFinite(startHour) && Number.isFinite(endHour)) {
+                        start = johannesburgLocalToUtc(day, startHour, startMinute);
+                        end = johannesburgLocalToUtc(day, endHour, endMinute);
+                    }
+                }
                 map[rule.spaceId].push({
-                    id: `rule:${rule.id}:${occurrence.start.toISOString()}`,
+                    id: `rule:${rule.id}:${start.toISOString()}`,
                     space_id: rule.spaceId,
-                    start_at: occurrence.start.toISOString(),
-                    end_at: occurrence.end.toISOString(),
+                    start_at: start.toISOString(),
+                    end_at: end.toISOString(),
                     reason: rule.reason,
                     source: "recurring",
                     ruleId: rule.id,
@@ -2080,7 +2209,7 @@ function CalendarPageContent() {
             });
         });
         return map;
-    }, [availabilityRules, blockedDates, visibleRange.end, visibleRange.start]);
+    }, [availabilityRules, blockedDates, ruleExceptions, visibleRange.end, visibleRange.start]);
 
     function closeDrawer() {
         setSelectedBooking(null);
@@ -2124,6 +2253,9 @@ function CalendarPageContent() {
                         areaFilter={areaFilter}
                         onAreaFilterChange={setAreaFilter}
                         areaOptions={areaOptions}
+                        propertyFilter={propertyFilter}
+                        onPropertyFilterChange={setPropertyFilter}
+                        propertyOptions={propertyOptions}
                         statusFilter={statusFilter}
                         onStatusFilterChange={setStatusFilter}
                         dateRangeFilter={dateRangeFilter}
@@ -2156,6 +2288,7 @@ function CalendarPageContent() {
                     booking={selectedBooking}
                     space={selectedDrawerSpace}
                     onClose={closeDrawer}
+                    onChanged={() => setCalendarRevision((value) => value + 1)}
                 />
 
                 <SideDrawer
@@ -2177,9 +2310,22 @@ function CalendarPageContent() {
                             <p className="text-sm text-gray-700">
                                 <span className="font-medium text-[#192a3a]">Reason:</span> {selectedBlockedDate.reason || "No reason added"}
                             </p>
-                            <p className="text-xs text-gray-600">
-                                Editing or removing changes the whole restriction. A single date cannot be skipped yet.
-                            </p>
+                            <RestrictionExceptionPanel
+                                spaceId={selectedBlockedDate.space_id}
+                                rule={availabilityRules.find((item) => item.id === selectedBlockedDate.ruleId) || {
+                                    id: selectedBlockedDate.ruleId,
+                                    spaceId: selectedBlockedDate.space_id,
+                                    reason: selectedBlockedDate.reason,
+                                    weekdays: [],
+                                    wholeDay: false,
+                                    localStart: null,
+                                    localEnd: null,
+                                    startsOn: "",
+                                    endsOn: null,
+                                }}
+                                occurrenceStart={selectedBlockedDate.start_at}
+                                onChanged={() => setCalendarRevision((value) => value + 1)}
+                            />
                             <button
                                 type="button"
                                 onClick={() => {
@@ -2206,7 +2352,35 @@ function CalendarPageContent() {
                             </button>
                         </section>
                     )}
-                    {selectedBlockedDate && selectedDrawerSpace && selectedBlockedDate.source !== "recurring" && (
+                    {selectedBlockedDate && selectedDrawerSpace && selectedBlockedDate.source === "opened" && selectedBlockedDate.exceptionId && (
+                        <section className="space-y-3 rounded-xl border border-emerald-200 bg-white p-4">
+                            <h3 className="text-sm font-semibold text-[#192a3a]">Opened exception</h3>
+                            <p className="text-sm text-gray-700">{selectedBlockedDate.summary}</p>
+                            <p className="text-sm text-gray-700">
+                                Restoring the block is refused when a booking already uses this time.
+                            </p>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    void ownerApiFetch(
+                                        `/api/host/spaces/${selectedBlockedDate.space_id}/availability-exceptions?exceptionId=${encodeURIComponent(selectedBlockedDate.exceptionId || "")}`,
+                                        { method: "DELETE" }
+                                    ).then(() => {
+                                        setCalendarRevision((value) => value + 1);
+                                        closeDrawer();
+                                    }).catch((error: unknown) => {
+                                        setSlotError(error instanceof Error ? error.message : "The date stays open.");
+                                    });
+                                }}
+                                className="inline-flex w-full items-center justify-between rounded-md border border-gray-300 px-3 py-2 text-sm text-[#192a3a] hover:bg-white"
+                            >
+                                <span>Restore this blocked date</span>
+                                <span>›</span>
+                            </button>
+                            {slotError ? <p className="text-sm text-red-700">{slotError}</p> : null}
+                        </section>
+                    )}
+                    {selectedBlockedDate && selectedDrawerSpace && selectedBlockedDate.source !== "recurring" && selectedBlockedDate.source !== "opened" && (
                         <BlockedDateDrawer
                             blockedDate={selectedBlockedDate}
                             space={selectedDrawerSpace}

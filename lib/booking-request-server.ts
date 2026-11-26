@@ -71,6 +71,8 @@ export type BookingRequestPayload = {
    * Client totals and occurrence lists are ignored.
    */
   recurring?: RecurringRequestInput | null;
+  /** Stable id for a repeated submit of the same recurring request. */
+  clientRequestId?: string | null;
 };
 
 type SpacePricingRow = {
@@ -527,6 +529,7 @@ export async function createBookingRequestServer(
     payment_status: "unpaid",
     payout_status: "unpaid_to_owner",
     notes: notes?.trim() ? notes.trim() : null,
+    ...(payload.clientRequestId ? { client_request_id: payload.clientRequestId } : {}),
     monthly_rent: !flexibleSnapshot && unit === "month" ? monthlyRent : null,
     deposit_amount: !flexibleSnapshot && unit === "month" ? depositAmount : null,
     initial_payment_amount:
@@ -537,40 +540,54 @@ export async function createBookingRequestServer(
     ...termsPayload,
   };
 
-  const { data: insertedBooking, error: insertError } = await admin
-    .from("bookings")
-    .insert(insertRow)
-    .select("id")
-    .single();
+  let bookingId = "";
+  let reusedRecurring = false;
+  if (recurringAttach) {
+    // Parent, series, occurrences, availability, and the booking charge commit
+    // together. Files and requirement answers follow. A failure here deletes
+    // the parent. A crash after the function commits can leave a complete
+    // request that is missing files; it cannot leave a parent with no sessions.
+    const { data: created, error: createError } = await admin.rpc("create_recurring_booking", {
+      p_booking: insertRow,
+      p_frequency: recurringAttach.frequency,
+      p_weekdays: recurringAttach.weekdays ?? [],
+      p_local_start: recurringAttach.localStart,
+      p_local_end: recurringAttach.localEnd,
+      p_starts_on: recurringAttach.startsOn,
+      p_ends_on: recurringAttach.endsOn,
+      p_excluded: recurringAttach.excludedDates ?? [],
+    });
+    if (createError || !created) {
+      throw new Error(
+        publicAvailabilityMessage(createError?.message || "Could not create booking.")
+      );
+    }
+    const createdRow = created as { id?: string; reused?: boolean };
+    if (!createdRow.id) {
+      throw new Error("Could not create booking.");
+    }
+    bookingId = createdRow.id;
+    reusedRecurring = Boolean(createdRow.reused);
+    if (reusedRecurring) return { bookingId };
+  } else {
+    const { data: insertedBooking, error: insertError } = await admin
+      .from("bookings")
+      .insert(insertRow)
+      .select("id")
+      .single();
 
-  if (insertError || !insertedBooking) {
-    throw new Error(
-      publicAvailabilityMessage(insertError?.message || "Could not create booking.")
-    );
+    if (insertError || !insertedBooking) {
+      throw new Error(
+        publicAvailabilityMessage(insertError?.message || "Could not create booking.")
+      );
+    }
+    bookingId = (insertedBooking as { id: string }).id;
   }
 
-  const bookingId = (insertedBooking as { id: string }).id;
-
   try {
-    if (recurringAttach) {
-      const { error: seriesError } = await admin.rpc("attach_recurring_series", {
-        p_booking_id: bookingId,
-        p_frequency: recurringAttach.frequency,
-        p_weekdays: recurringAttach.weekdays ?? [],
-        p_local_start: recurringAttach.localStart,
-        p_local_end: recurringAttach.localEnd,
-        p_starts_on: recurringAttach.startsOn,
-        p_ends_on: recurringAttach.endsOn,
-        p_excluded: recurringAttach.excludedDates ?? [],
-      });
-      if (seriesError) {
-        throw new Error(
-          publicAvailabilityMessage(seriesError.message || "Could not save the recurring sessions.")
-        );
-      }
-    }
-
-    const chargeRows = buildInitialBookingCharges({
+    const chargeRows = recurringAttach
+      ? []
+      : buildInitialBookingCharges({
       bookingId,
       bookingUnit: unit,
       totalPrice,

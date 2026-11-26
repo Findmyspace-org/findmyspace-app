@@ -168,7 +168,7 @@ assert.equal(charges[0].amount, 6000);
 assert.equal(validatePayFastPayableAmount(6000).ok, true);
 
 const server = readFileSync("lib/booking-request-server.ts", "utf8");
-assert.match(server, /attach_recurring_series/);
+assert.match(server, /create_recurring_booking/);
 assert.match(server, /pricing_mode: "recurring"/);
 assert.doesNotMatch(server, /payload\.totalPrice/);
 assert.doesNotMatch(server, /payload\.occurrences/);

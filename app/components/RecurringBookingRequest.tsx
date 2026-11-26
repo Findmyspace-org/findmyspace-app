@@ -42,6 +42,8 @@ export default function RecurringBookingRequest({
   idPrefix = "recurring",
   initialPattern = SAMPLE_RECURRING_PATTERN,
   onChange,
+  serverState = "idle",
+  serverQuote = null,
 }: {
   hourlyRate: number;
   minHours?: number | null;
@@ -51,6 +53,17 @@ export default function RecurringBookingRequest({
   idPrefix?: string;
   initialPattern?: RecurringPattern;
   onChange?: (pattern: RecurringPattern, quote: RecurringQuote | null) => void;
+  serverState?: "idle" | "checking" | "ready" | "error";
+  serverQuote?: {
+    summary: string;
+    includedCount: number;
+    hoursPerSession: number;
+    totalHours: number;
+    hourlyRate: number;
+    sessionPrice: number;
+    rentalSubtotal: number;
+    conflicts: string[];
+  } | null;
 }) {
   const [pattern, setPattern] = useState<RecurringPattern>(initialPattern);
   const [showSessions, setShowSessions] = useState(true);
@@ -60,7 +73,32 @@ export default function RecurringBookingRequest({
     [pattern, hourlyRate, minHours, maxOccurrences]
   );
   const quote = quoted.ok ? quoted.quote : null;
-  const unavailable = new Set(unavailableDates);
+  const unavailable = new Set([
+    ...unavailableDates,
+    ...(serverState === "ready" ? serverQuote?.conflicts ?? [] : []),
+  ]);
+  const shownQuote = serverState === "ready" && serverQuote
+    ? {
+        summary: serverQuote.summary,
+        includedCount: serverQuote.includedCount,
+        hoursPerSession: serverQuote.hoursPerSession,
+        totalHours: serverQuote.totalHours,
+        hourlyRate: serverQuote.hourlyRate,
+        sessionPrice: serverQuote.sessionPrice,
+        rentalSubtotal: serverQuote.rentalSubtotal,
+      }
+    : quote
+      ? {
+          summary: quote.summary,
+          includedCount: quote.includedCount,
+          hoursPerSession: quote.hoursPerSession,
+          totalHours: quote.totalHours,
+          hourlyRate: quote.hourlyRate,
+          sessionPrice: quote.sessionPrice,
+          rentalSubtotal: quote.rentalSubtotal,
+        }
+      : null;
+  const feeBase = shownQuote?.rentalSubtotal ?? quote?.rentalSubtotal;
   const blocking = quote
     ? quote.sessions.filter((session) => !session.excluded && unavailable.has(session.date))
     : [];
@@ -83,8 +121,8 @@ export default function RecurringBookingRequest({
   }
 
   const commercials =
-    quote && feePercent != null
-      ? calculateBookingCommercials(quote.rentalSubtotal, {
+    feeBase != null && feePercent != null
+      ? calculateBookingCommercials(feeBase, {
           model: "commission",
           commissionPercent: feePercent,
           transactionFeePercent: 0,
@@ -177,17 +215,24 @@ export default function RecurringBookingRequest({
 
       {!quoted.ok ? <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">{quoted.error}</p> : null}
 
-      {quote ? (
+      {serverState === "checking" ? (
+        <p className="rounded-md border border-sky-200 bg-sky-50 p-3 text-sm text-sky-950">Checking these sessions with the server…</p>
+      ) : null}
+      {serverState === "error" ? (
+        <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">The server could not confirm this schedule. Change it and check again before sending.</p>
+      ) : null}
+      {shownQuote && quote ? (
         <div className="rounded-md border border-gray-200 bg-[#f8fafb] p-4 text-sm text-gray-800">
-          <p><b>Pattern:</b> {quote.summary}</p>
+          <p><b>Pattern:</b> {shownQuote.summary}</p>
           <p><b>First session:</b> {quote.sessions.find((session) => !session.excluded)?.date} {quote.pattern.localStart}–{quote.pattern.localEnd}</p>
           <p><b>Last session:</b> {[...quote.sessions].reverse().find((session) => !session.excluded)?.date} {quote.pattern.localStart}–{quote.pattern.localEnd}</p>
-          <p><b>Sessions:</b> {quote.includedCount}</p>
-          <p><b>Hours per session:</b> {quote.hoursPerSession}</p>
-          <p><b>Total reserved hours:</b> {quote.totalHours}</p>
-          <p><b>Hourly rate:</b> R{quote.hourlyRate.toFixed(2)}</p>
-          <p><b>Price per session:</b> R{quote.sessionPrice.toFixed(2)}</p>
-          <p><b>Rental subtotal:</b> R{quote.rentalSubtotal.toFixed(2)}</p>
+          <p><b>Sessions:</b> {shownQuote.includedCount}</p>
+          <p><b>Hours per session:</b> {shownQuote.hoursPerSession}</p>
+          <p><b>Total reserved hours:</b> {shownQuote.totalHours}</p>
+          <p><b>Hourly rate:</b> R{shownQuote.hourlyRate.toFixed(2)}</p>
+          <p><b>Price per session:</b> R{shownQuote.sessionPrice.toFixed(2)}</p>
+          <p><b>Rental subtotal:</b> R{shownQuote.rentalSubtotal.toFixed(2)}</p>
+          {serverState === "ready" ? <p className="text-xs text-gray-600">These figures were checked on the server. Sending the request checks them again.</p> : null}
           <p>
             <b>Applicable fee:</b>{" "}
             {commercials

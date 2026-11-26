@@ -16,6 +16,14 @@ export default function OwnerCalendarLegend() {
         Confirmed
       </span>
       <span className="inline-flex items-center gap-2">
+        <span className="h-3 w-3 rounded-full bg-emerald-700" />
+        Continuous booking
+      </span>
+      <span className="inline-flex items-center gap-2">
+        <span className="h-3 w-3 rounded-full border border-emerald-700 bg-white" />
+        Opened exception
+      </span>
+      <span className="inline-flex items-center gap-2">
         <span className="h-3 w-3 rounded-full bg-gray-400" />
         Blocked once
       </span>

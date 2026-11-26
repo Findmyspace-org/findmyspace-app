@@ -33,6 +33,17 @@ export type AvailabilityRule = {
   endsOn: string | null;
 };
 
+export type AvailabilityRuleException = {
+  id: string;
+  ruleId: string;
+  date: string;
+  action: "open" | "override";
+  localStart: string | null;
+  localEnd: string | null;
+  wholeDay: boolean;
+  reason: string | null;
+};
+
 export type AvailabilityRuleDraft = {
   reason: string;
   weekdays: number[];

@@ -153,6 +153,20 @@ export default function BookingRequestForm({
   const [bookingStyle, setBookingStyle] = useState<"once" | "recurring">("once");
   const [recurringQuote, setRecurringQuote] = useState<RecurringQuote | null>(null);
   const [recurringPattern, setRecurringPattern] = useState<RecurringPattern | null>(null);
+  const [serverQuoteState, setServerQuoteState] = useState<"idle" | "checking" | "ready" | "error">("idle");
+  const [serverQuote, setServerQuote] = useState<{
+    summary: string;
+    includedCount: number;
+    hoursPerSession: number;
+    totalHours: number;
+    hourlyRate: number;
+    sessionPrice: number;
+    rentalSubtotal: number;
+    conflicts: string[];
+  } | null>(null);
+  const quoteRequest = useRef(0);
+  const clientRequestId = useRef("");
+  const clientRequestPattern = useRef("");
   const [statusMessage, setStatusMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [availabilityLoading, setAvailabilityLoading] = useState(true);
@@ -1117,6 +1131,65 @@ export default function BookingRequestForm({
     return urls;
   }
 
+  useEffect(() => {
+    if (demonstration || bookingStyle !== "recurring" || !recurringPattern || !spaceId) {
+      setServerQuote(null);
+      setServerQuoteState("idle");
+      return;
+    }
+    const patternKey = JSON.stringify(recurringPattern);
+    if (clientRequestPattern.current !== patternKey) {
+      clientRequestPattern.current = patternKey;
+      clientRequestId.current = crypto.randomUUID();
+    }
+    const requestId = ++quoteRequest.current;
+    setServerQuote(null);
+    setServerQuoteState("checking");
+    const timer = window.setTimeout(() => {
+      void fetch("/api/bookings/recurring-quote", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ spaceId, recurring: recurringPattern }),
+      })
+        .then(async (response) => {
+          if (requestId !== quoteRequest.current) return;
+          const json = (await response.json().catch(() => null)) as {
+            error?: string;
+            summary?: string;
+            includedCount?: number;
+            hoursPerSession?: number;
+            totalHours?: number;
+            hourlyRate?: number;
+            sessionPrice?: number;
+            rentalSubtotal?: number;
+            conflicts?: string[];
+          } | null;
+          if (!response.ok || !json || json.rentalSubtotal == null) {
+            setServerQuoteState("error");
+            setServerQuote(null);
+            return;
+          }
+          setServerQuote({
+            summary: json.summary || "",
+            includedCount: json.includedCount || 0,
+            hoursPerSession: json.hoursPerSession || 0,
+            totalHours: json.totalHours || 0,
+            hourlyRate: json.hourlyRate || 0,
+            sessionPrice: json.sessionPrice || 0,
+            rentalSubtotal: json.rentalSubtotal,
+            conflicts: json.conflicts || [],
+          });
+          setServerQuoteState("ready");
+        })
+        .catch(() => {
+          if (requestId !== quoteRequest.current) return;
+          setServerQuoteState("error");
+          setServerQuote(null);
+        });
+    }, 450);
+    return () => window.clearTimeout(timer);
+  }, [demonstration, bookingStyle, recurringPattern, spaceId]);
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setStatusMessage("");
@@ -1167,7 +1240,20 @@ export default function BookingRequestForm({
           return;
         }
         if (demonstration) {
-          setStatusMessage("This preview calculates the schedule only. It does not send a booking.");
+          setStatusMessage("This preview calculates the schedule only. It does not send a booking or a payment.");
+          setLoading(false);
+          return;
+        }
+        if (serverQuoteState !== "ready" || !serverQuote) {
+          setStatusMessage("Wait for the server to check these sessions before sending the request.");
+          setLoading(false);
+          return;
+        }
+        const unresolved = serverQuote.conflicts.filter(
+          (date) => !recurringPattern.excludedDates.includes(date)
+        );
+        if (unresolved.length > 0) {
+          setStatusMessage("Exclude the unavailable sessions or change the schedule.");
           setLoading(false);
           return;
         }
@@ -1190,6 +1276,7 @@ export default function BookingRequestForm({
             notes: structuredNotes.trim() ? structuredNotes.trim() : null,
             acceptedPropertyTerms: requiresPropertyTerms ? acceptedPropertyTerms : false,
             requirementAnswers: customFieldAnswers,
+            clientRequestId: clientRequestId.current,
             recurring: {
               frequency: recurringPattern.frequency,
               weekdays: recurringPattern.weekdays,
@@ -1563,6 +1650,8 @@ export default function BookingRequestForm({
             minHours={minHours}
             maxOccurrences={recurringMaxOccurrences}
             idPrefix={`recurring-${spaceId}`}
+            serverState={demonstration ? "idle" : serverQuoteState}
+            serverQuote={demonstration ? null : serverQuote}
             onChange={(pattern, quote) => {
               setRecurringPattern(pattern);
               setRecurringQuote(quote);

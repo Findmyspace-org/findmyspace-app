@@ -40,7 +40,7 @@ export async function GET(
 
   const { data: sessions } = await auth.admin
     .from("booking_occurrences")
-    .select("id, occurrence_date, start_at, end_at, excluded")
+    .select("id, occurrence_date, start_at, end_at, excluded, cancelled_at")
     .eq("booking_id", bookingId)
     .order("occurrence_date", { ascending: true });
 
@@ -81,6 +81,7 @@ export async function GET(
         start_at: string;
         end_at: string;
         excluded: boolean;
+        cancelled_at?: string | null;
       };
       return {
         id: item.id,
@@ -88,6 +89,7 @@ export async function GET(
         startAt: item.start_at,
         endAt: item.end_at,
         excluded: item.excluded,
+        cancelled: Boolean(item.cancelled_at),
       };
     }),
   });

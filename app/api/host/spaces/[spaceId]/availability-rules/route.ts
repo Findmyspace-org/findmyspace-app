@@ -47,12 +47,21 @@ export async function GET(
 
   if (error) {
     if (/availability_rules/i.test(error.message || "")) {
-      return NextResponse.json({ rules: [] });
+      return NextResponse.json({ rules: [], exceptions: [] });
     }
     return NextResponse.json({ error: "Could not load availability restrictions." }, { status: 500 });
   }
 
-  return NextResponse.json({ rules: data || [] });
+  const { data: exceptions, error: exceptionError } = await auth.admin
+    .from("availability_rule_exceptions")
+    .select("id, rule_id, exception_date, action, local_start, local_end, whole_day, reason")
+    .eq("space_id", spaceId)
+    .is("removed_at", null);
+  if (exceptionError) {
+    return NextResponse.json({ rules: data || [], exceptions: [] });
+  }
+
+  return NextResponse.json({ rules: data || [], exceptions: exceptions || [] });
 }
 
 export async function POST(

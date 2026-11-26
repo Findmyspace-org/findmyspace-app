@@ -278,6 +278,15 @@ function canCompareParentSpans(aUnit: string | null, bUnit: string | null) {
   return aUnit !== "recurring_hour" && bUnit !== "recurring_hour";
 }
 
+function intervalsOverlap(
+  left: Array<{ start: string; end: string }>,
+  right: Array<{ start: string; end: string }>
+) {
+  return left.some((a) =>
+    right.some((b) => a.start < b.end && a.end > b.start)
+  );
+}
+
 function rangesOverlap(
   aUnit: string | null,
   aStart: string,
@@ -411,7 +420,11 @@ function formatBookingRange(booking: Booking) {
 function normalizeBookingUnitValue(value?: string | null) {
   const normalized = (value || "").trim().toLowerCase();
 
+  if (normalized === "recurring_hour") return "recurring_hour";
   if (["hour", "hours", "hourly"].includes(normalized)) return "hour";
+  if (["week", "weeks", "weekly"].includes(normalized)) return "week";
+  if (["quarter", "quarters", "quarterly"].includes(normalized)) return "quarter";
+  if (["year", "years", "annual", "annually"].includes(normalized)) return "year";
   if (["day", "days", "daily"].includes(normalized)) return "day";
   if (["month", "months", "monthly"].includes(normalized)) return "month";
 
@@ -1235,6 +1248,9 @@ function OwnerBookingRequestsPageContent({
   const [sessionEmail, setSessionEmail] = useState<string | null>(null);
   const [sessionUserId, setSessionUserId] = useState<string | null>(null);
   const [bookings, setBookings] = useState<EnrichedBooking[]>([]);
+  const [occupiedByBooking, setOccupiedByBooking] = useState<
+    Record<string, Array<{ start: string; end: string }>>
+  >({});
   const [statusFilter, setStatusFilter] = useState("all");
   const [loading, setLoading] = useState(true);
   const { highlightedId } = useFocusHighlight({
@@ -1477,6 +1493,26 @@ function OwnerBookingRequestsPageContent({
       });
 
       setBookings(enriched);
+      const recurringIds = enriched
+        .filter((booking) => booking.booking_unit === "recurring_hour")
+        .map((booking) => booking.id);
+      if (recurringIds.length > 0) {
+        const { data: occurrenceRows } = await supabase
+          .from("booking_occurrences")
+          .select("booking_id, start_at, end_at, excluded")
+          .in("booking_id", recurringIds)
+          .eq("excluded", false);
+        const groupedIntervals: Record<string, Array<{ start: string; end: string }>> = {};
+        for (const id of recurringIds) groupedIntervals[id] = [];
+        for (const row of occurrenceRows || []) {
+          const item = row as { booking_id: string; start_at: string; end_at: string };
+          groupedIntervals[item.booking_id] = groupedIntervals[item.booking_id] || [];
+          groupedIntervals[item.booking_id].push({ start: item.start_at, end: item.end_at });
+        }
+        setOccupiedByBooking(groupedIntervals);
+      } else {
+        setOccupiedByBooking({});
+      }
 
       const initialReplies: Record<string, string> = {};
       enriched.forEach((booking) => {
@@ -1935,7 +1971,17 @@ function OwnerBookingRequestsPageContent({
                     other.start_at,
                     other.end_at
                   );
-                  if (!canCompareParentSpans(resolvedBookingUnit, otherUnit)) return false;
+                  if (!canCompareParentSpans(resolvedBookingUnit, otherUnit)) {
+                    const left = occupiedByBooking[booking.id];
+                    const right = occupiedByBooking[other.id];
+                    if (
+                      (resolvedBookingUnit === "recurring_hour" && !left) ||
+                      (otherUnit === "recurring_hour" && !right)
+                    ) {
+                      return false;
+                    }
+                    return intervalsOverlap(left || [{ start: booking.start_at, end: booking.end_at }], right || [{ start: other.start_at, end: other.end_at }]);
+                  }
 
                   return rangesOverlap(
                     resolvedBookingUnit,
@@ -1963,7 +2009,17 @@ function OwnerBookingRequestsPageContent({
                     other.start_at,
                     other.end_at
                   );
-                  if (!canCompareParentSpans(resolvedBookingUnit, otherUnit)) return false;
+                  if (!canCompareParentSpans(resolvedBookingUnit, otherUnit)) {
+                    const left = occupiedByBooking[booking.id];
+                    const right = occupiedByBooking[other.id];
+                    if (
+                      (resolvedBookingUnit === "recurring_hour" && !left) ||
+                      (otherUnit === "recurring_hour" && !right)
+                    ) {
+                      return false;
+                    }
+                    return intervalsOverlap(left || [{ start: booking.start_at, end: booking.end_at }], right || [{ start: other.start_at, end: other.end_at }]);
+                  }
 
                   return rangesOverlap(
                     resolvedBookingUnit,
