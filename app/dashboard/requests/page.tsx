@@ -89,6 +89,10 @@ type Booking = {
   payment_status: string | null;
   total_price: number | null;
   platform_fee?: number | null;
+  commercial_model?: "commission" | "subscription" | "free" | null;
+  platform_commission_percent?: number | null;
+  transaction_fee_percent?: number | null;
+  commercial_terms_source?: string | null;
   created_at: string | null;
   terms_accepted?: boolean | null;
   terms_accepted_at?: string | null;
@@ -1058,6 +1062,18 @@ function ExpandedBookingPanel({
                   <ApprovalDiscountFields
                     originalAmount={Number(booking.total_price || 0)}
                     platformFee={booking.platform_fee ?? null}
+                    terms={{
+                      model: booking.commercial_model ?? null,
+                      commissionPercent:
+                        booking.platform_commission_percent == null
+                          ? null
+                          : Number(booking.platform_commission_percent),
+                      transactionFeePercent:
+                        booking.transaction_fee_percent == null
+                          ? null
+                          : Number(booking.transaction_fee_percent),
+                      source: booking.commercial_terms_source ?? null,
+                    }}
                     onChange={setDiscount}
                   />
                 </div>
@@ -1437,7 +1453,7 @@ function OwnerBookingRequestsPageContent({
           const { data: bookingsData, error: bookingsError } = await supabase
             .from("bookings")
             .select(
-              "id, space_id, renter_id, owner_id, booking_unit, start_at, end_at, notes, owner_response_message, status, payment_status, total_price, platform_fee, created_at, terms_accepted, terms_accepted_at, accepted_terms_updated_at, accepted_terms_title, accepted_terms_label"
+              "id, space_id, renter_id, owner_id, booking_unit, start_at, end_at, notes, owner_response_message, status, payment_status, total_price, platform_fee, commercial_model, platform_commission_percent, transaction_fee_percent, commercial_terms_source, created_at, terms_accepted, terms_accepted_at, accepted_terms_updated_at, accepted_terms_title, accepted_terms_label"
             )
             .neq("renter_id", user.id)
             .in("space_id", managedIds)

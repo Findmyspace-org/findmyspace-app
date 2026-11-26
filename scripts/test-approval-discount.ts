@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { quoteApprovalDiscount } from "../lib/approval-discount";
 import { publicOccupiedIntervals } from "../lib/public-availability";
+import { supabaseTargetIsBlocked } from "../lib/supabase-target-guard";
 
 const percent = quoteApprovalDiscount({
   originalRental: 6000,
@@ -70,10 +71,73 @@ assert.equal(intervals.length, 1);
 assert.equal(intervals[0].startAt, "2027-01-04T12:00:00.000Z");
 assert.equal(intervals[0].endAt, "2027-01-04T14:00:00.000Z");
 
+const splitQuote = quoteApprovalDiscount({
+  originalRental: 6.44,
+  type: "percent",
+  value: 20,
+  platformFee: 0.96,
+  terms: {
+    model: "commission",
+    commissionPercent: 10,
+    transactionFeePercent: 5,
+    source: "organisation",
+  },
+});
+assert.equal(splitQuote.ok, true);
+if (splitQuote.ok) {
+  assert.equal(splitQuote.approvedRental, 5.15);
+  assert.equal(splitQuote.platformFee, 0.78);
+  assert.equal(splitQuote.transactionFee, 0.26);
+  assert.equal(splitQuote.platformCommission, 0.52);
+  assert.equal(splitQuote.hostPayout, 4.37);
+}
+
+const subscriptionQuote = quoteApprovalDiscount({
+  originalRental: 100,
+  type: "percent",
+  value: 20,
+  platformFee: 5,
+  terms: {
+    model: "subscription",
+    commissionPercent: 10,
+    transactionFeePercent: 5,
+    source: "organisation",
+  },
+});
+assert.equal(subscriptionQuote.ok, true);
+if (subscriptionQuote.ok) {
+  assert.equal(subscriptionQuote.platformFee, 4);
+  assert.equal(subscriptionQuote.platformCommission, 0);
+  assert.equal(subscriptionQuote.transactionFee, 4);
+}
+
+assert.equal(
+  supabaseTargetIsBlocked({
+    supabaseUrl: "https://ppdaubmxrmzgmxdnyxff.supabase.co",
+    vercelEnv: "preview",
+  }),
+  true
+);
+assert.equal(
+  supabaseTargetIsBlocked({
+    supabaseUrl: "https://ppdaubmxrmzgmxdnyxff.supabase.co",
+    vercelEnv: "production",
+  }),
+  false
+);
+assert.equal(
+  supabaseTargetIsBlocked({
+    supabaseUrl: "https://example.supabase.co",
+    vercelEnv: "preview",
+  }),
+  false
+);
+
 const form = readFileSync("app/components/BookingRequestForm.tsx", "utf8");
 assert.match(form, /\/api\/spaces\/\$\{spaceId\}\/availability/);
 assert.doesNotMatch(form, /describeAvailabilityRule/);
-assert.match(form, /booking_unit !== "recurring_hour"/);
+assert.match(form, /Availability could not be confirmed/);
+assert.doesNotMatch(form, /booking_unit !== "recurring_hour"/);
 
 const approval = readFileSync("lib/booking-host-response.ts", "utf8");
 assert.match(approval, /approve_booking_with_discount/);

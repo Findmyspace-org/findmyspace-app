@@ -1,7 +1,11 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { quoteApprovalDiscount, type DiscountType } from "@/lib/approval-discount";
+import {
+  quoteApprovalDiscount,
+  type DiscountType,
+  type SnapshottedBookingCommercials,
+} from "@/lib/approval-discount";
 
 export type ApprovalDiscountChoice = {
   type: DiscountType;
@@ -12,10 +16,12 @@ export type ApprovalDiscountChoice = {
 export function ApprovalDiscountFields({
   originalAmount,
   platformFee,
+  terms,
   onChange,
 }: {
   originalAmount: number;
   platformFee?: number | null;
+  terms?: SnapshottedBookingCommercials | null;
   onChange: (discount: ApprovalDiscountChoice | null) => void;
 }) {
   const [enabled, setEnabled] = useState(false);
@@ -32,8 +38,9 @@ export function ApprovalDiscountFields({
       type,
       value: parsed,
       platformFee: platformFee ?? null,
+      terms,
     });
-  }, [enabled, originalAmount, platformFee, type, value]);
+  }, [enabled, originalAmount, platformFee, terms, type, value]);
 
   function publish(nextEnabled: boolean, nextType: DiscountType, nextValue: string, nextReason: string) {
     const parsed = Number(nextValue);

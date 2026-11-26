@@ -40,7 +40,6 @@ import {
 } from "@/lib/property-booking-terms";
 import { FLEXIBLE_PERIOD_LABELS, type FlexiblePeriod } from "@/lib/booking-periods";
 import {
-  availabilityRuleFromRow,
   ruleOverlapsInterval,
   type AvailabilityRule,
 } from "@/lib/availability-rules";
@@ -169,6 +168,8 @@ export default function BookingRequestForm({
   const [statusMessage, setStatusMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [availabilityLoading, setAvailabilityLoading] = useState(true);
+  const [availabilityAttempt, setAvailabilityAttempt] = useState(0);
+  const [availabilityUnconfirmed, setAvailabilityUnconfirmed] = useState(false);
   const [existingBookings, setExistingBookings] = useState<ExistingBooking[]>([]);
   const [blockedDates, setBlockedDates] = useState<BlockedDate[]>([]);
   const [availabilityRules, setAvailabilityRules] = useState<AvailabilityRule[]>([]);
@@ -261,7 +262,7 @@ export default function BookingRequestForm({
   useEffect(() => {
     loadAvailabilityData();
     loadSpacePaymentSettings();
-  }, [spaceId]);
+  }, [spaceId, availabilityAttempt]);
 
   useEffect(() => {
     if (!flexibleRates.some((rate) => rate.period === ratePeriod)) {
@@ -469,65 +470,19 @@ export default function BookingRequestForm({
             }))
         );
         setAvailabilityRules([]);
+        setAvailabilityUnconfirmed(false);
         setAvailabilityLoading(false);
         return;
       }
     } catch {
-      // Submit still asks the server. A recurring parent span is not treated as occupied.
+      // The public availability check did not succeed.
     }
 
-    const { data, error } = await supabase
-      .from("bookings")
-      .select("id, booking_unit, start_at, end_at, status, payment_status")
-      .eq("space_id", spaceId)
-      .order("start_at", { ascending: true });
-
-    // console.log("PUBLIC bookings raw:", data);
-    // console.log("PUBLIC bookings error:", error);
-
-    if (error) {
-      console.warn("Failed to load bookings:", error);
-      setExistingBookings([]);
-      // silently fail for public users; no blocking UI message
-    } else {
-      setExistingBookings(
-        ((data || []) as ExistingBooking[]).filter((booking) => booking.booking_unit !== "recurring_hour")
-      );
-    }
-
-    const { data: blockedData, error: blockedError } = await (supabase
-      .from("blocked_dates") as any)
-      .select("id, space_id, start_at, end_at, reason")
-      .eq("space_id", spaceId)
-      .order("start_at", { ascending: true });
-
-    // console.log("PUBLIC blocked dates raw:", blockedData);
-    // console.log("PUBLIC blocked dates error:", blockedError);
-
-    if (blockedError) {
-      console.warn("Failed to load blocked dates:", blockedError);
-      setBlockedDates([]);
-      // silently fail for blocked dates as well
-    } else {
-      setBlockedDates(
-        ((blockedData || []) as BlockedDate[]).map((blocked) => ({ ...blocked, reason: null }))
-      );
-    }
-    const { data: ruleData, error: ruleError } = await (supabase
-      .from("availability_rules") as any)
-      .select("id, space_id, reason, weekdays, whole_day, local_start, local_end, starts_on, ends_on")
-      .eq("space_id", spaceId)
-      .is("removed_at", null);
-
-    if (ruleError) {
-      setAvailabilityRules([]);
-    } else {
-      setAvailabilityRules(
-        ((ruleData || []) as Array<Parameters<typeof availabilityRuleFromRow>[0]>)
-          .map((row) => availabilityRuleFromRow({ ...row, reason: null }))
-          .filter((rule): rule is AvailabilityRule => Boolean(rule))
-      );
-    }
+    // Do not paint a partial calendar as available. The server still rechecks on submit.
+    setExistingBookings([]);
+    setBlockedDates([]);
+    setAvailabilityRules([]);
+    setAvailabilityUnconfirmed(true);
     setAvailabilityLoading(false);
   }
 
@@ -1235,6 +1190,14 @@ export default function BookingRequestForm({
     setLoading(true);
 
     try {
+      if (availabilityUnconfirmed) {
+        setStatusMessage(
+          "Availability could not be confirmed. Retry before sending a request. Unconfirmed times are not treated as available."
+        );
+        setLoading(false);
+        return;
+      }
+
       if (!acceptedTerms) {
         setStatusMessage(
           "Please accept the platform Terms & Conditions and cancellation policy before booking."
@@ -1862,6 +1825,24 @@ export default function BookingRequestForm({
             </div>
           )}
 
+          {availabilityUnconfirmed && !availabilityLoading && (
+            <div
+              className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2.5 text-sm text-amber-950"
+              role="alert"
+            >
+              <p>
+                Availability could not be confirmed. Unconfirmed times are not treated as available.
+              </p>
+              <button
+                type="button"
+                className="mt-2 font-semibold underline"
+                onClick={() => setAvailabilityAttempt((attempt) => attempt + 1)}
+              >
+                Retry availability
+              </button>
+            </div>
+          )}
+
           {showStandardBooking && !selectedFlexibleRate && (bookingUnit === "hour" || bookingUnit === "day") && (
             <div className="rounded-md border border-gray-200 bg-[#f4f7f9] px-3 py-2.5 text-xs leading-relaxed text-gray-700">
               <span className="font-semibold text-[#192a3a]">Booking steps:</span>{" "}
@@ -2306,6 +2287,7 @@ export default function BookingRequestForm({
             disabled={
               loading ||
               availabilityLoading ||
+              availabilityUnconfirmed ||
               hostRequirementsLoading ||
               prerequisitesLoading ||
               Boolean(liveConflictMessage) ||
