@@ -24,7 +24,6 @@ const weekly = quoteRecurringBooking({
     excludedDates: [],
   },
 });
-assert.equal(weekly.ok, true);
 if (!weekly.ok) throw new Error(weekly.error);
 assert.equal(weekly.quote.includedCount, 12);
 assert.equal(weekly.quote.hoursPerSession, 2);
@@ -42,7 +41,6 @@ const excluded = quoteRecurringBooking({
   hourlyRate: 250,
   pattern: { ...weekly.quote.pattern, excludedDates: ["2027-02-01"] },
 });
-assert.equal(excluded.ok, true);
 if (!excluded.ok) throw new Error(excluded.error);
 assert.equal(excluded.quote.includedCount, 11);
 assert.equal(excluded.quote.rentalSubtotal, 5500);
@@ -59,7 +57,6 @@ const fortnightly = quoteRecurringBooking({
     excludedDates: [],
   },
 });
-assert.equal(fortnightly.ok, true);
 if (!fortnightly.ok) throw new Error(fortnightly.error);
 assert.deepEqual(
   fortnightly.quote.sessions.map((session) => session.date),
@@ -78,7 +75,6 @@ const daily = quoteRecurringBooking({
     excludedDates: [],
   },
 });
-assert.equal(daily.ok, true);
 if (!daily.ok) throw new Error(daily.error);
 assert.equal(daily.quote.includedCount, 5);
 
