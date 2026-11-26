@@ -9,6 +9,7 @@ import RequireAuth from "@/app/components/RequireAuth";
 import DashboardShell from "@/app/components/DashboardShell";
 import { RENTER_NAV } from "@/lib/dashboard-nav";
 import DecisionSuggestion from "@/app/components/DecisionSuggestion";
+import BookingDiscountSummary from "@/app/components/BookingDiscountSummary";
 import { getDisplayName } from "@/lib/utils";
 import {
   MapPin,
@@ -1702,6 +1703,9 @@ function MyBookingsPageContent({
                   <span className="font-medium text-[#192a3a]">Total:</span>{" "}
                   R{Number(paymentModalBooking.total_price || 0).toFixed(2)}
                 </p>
+                <div className="mt-3">
+                  <BookingDiscountSummary bookingId={paymentModalBooking.id} />
+                </div>
               </div>
 
               <div className="flex flex-col gap-2">

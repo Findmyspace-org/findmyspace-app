@@ -19,6 +19,7 @@ export async function POST(req: NextRequest, context: RouteContext) {
     reason?: string | null;
     fromDate?: string | null;
     weekdays?: number[] | null;
+    confirmIncompatible?: boolean;
   } | null;
   if (!body?.ruleId) {
     return NextResponse.json({ error: "Choose a restriction." }, { status: 400 });
@@ -34,6 +35,7 @@ export async function POST(req: NextRequest, context: RouteContext) {
       p_local_end: body.localEnd ?? null,
       p_actor: auth.userId,
       p_reason: body.reason ?? null,
+      p_confirm: Boolean(body.confirmIncompatible),
     });
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 409 });

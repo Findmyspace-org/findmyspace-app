@@ -27,6 +27,7 @@ import {
 import { supabase } from "@/lib/supabase";
 import { ownerApiFetch } from "@/lib/owner-api-client";
 import RecurringSeriesSummary from "@/app/components/RecurringSeriesSummary";
+import { ApprovalDiscountFields } from "@/app/dashboard/_components/ApprovalDiscountFields";
 import RequireAuth from "@/app/components/RequireAuth";
 import DashboardShell from "@/app/components/DashboardShell";
 import { useHostingWorkspace } from "@/lib/use-hosting-workspace";
@@ -87,6 +88,7 @@ type Booking = {
   status: string | null;
   payment_status: string | null;
   total_price: number | null;
+  platform_fee?: number | null;
   created_at: string | null;
   terms_accepted?: boolean | null;
   terms_accepted_at?: string | null;
@@ -181,7 +183,7 @@ type ExpandedBookingPanelProps = {
   overlappingPendingRequests: EnrichedBooking[];
   onToggleCommunication: (booking: EnrichedBooking) => void | Promise<void>;
   competingPendingRequests: EnrichedBooking[];
-  onApprove: () => void | Promise<void>;
+  onApprove: (discount?: { type: "percent" | "fixed"; value: number; reason: string } | null) => void | Promise<void>;
   onDecline: (reason: string) => void | Promise<void>;
   /** When set, all decision controls are disabled; spinner on matching `booking.id`. */
   busyBookingId: string | null;
@@ -974,6 +976,8 @@ function ExpandedBookingPanel({
     isCommunicationAllowed(booking) && booking.renter?.email;
   const canMessageRenter = isCommunicationAllowed(booking);
   const canDecide = isPendingRequestStatus(booking.status);
+  const waitingForDocuments = booking.status === "requirements_pending";
+  const [discount, setDiscount] = useState<{ type: "percent" | "fixed"; value: number; reason: string } | null>(null);
   const [declineOpen, setDeclineOpen] = useState(false);
   const [declineReason, setDeclineReason] = useState("");
   const decisionInFlight = busyBookingId !== null;
@@ -1038,15 +1042,31 @@ function ExpandedBookingPanel({
             <BookingRequirementResponsesLoader bookingId={booking.id} />
           </div>
 
-          {canDecide && (
+          {waitingForDocuments ? (
+            <p className="mb-4 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
+              This request is waiting for required information. It cannot be approved or paid until the renter finishes it.
+            </p>
+          ) : null}
+
+          {(canDecide || waitingForDocuments) && (
             <div className="mb-4 rounded-md border border-amber-200/80 bg-amber-50/50 p-3">
               <p className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-gray-600">
                 Your decision
               </p>
+              {canDecide ? (
+                <div className="mb-3">
+                  <ApprovalDiscountFields
+                    originalAmount={Number(booking.total_price || 0)}
+                    platformFee={booking.platform_fee ?? null}
+                    onChange={setDiscount}
+                  />
+                </div>
+              ) : null}
               <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+                {canDecide ? (
                 <button
                   type="button"
-                  onClick={() => void onApprove()}
+                  onClick={() => void onApprove(discount)}
                   disabled={decisionInFlight || hasBlockingConflict}
                   className="inline-flex items-center justify-center gap-2 rounded-md bg-[#192a3a] px-4 py-2 text-sm font-medium text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                 >
@@ -1055,6 +1075,7 @@ function ExpandedBookingPanel({
                   ) : null}
                   Approve &amp; request payment
                 </button>
+                ) : null}
 
                 {!declineOpen ? (
                   <button
@@ -1416,7 +1437,7 @@ function OwnerBookingRequestsPageContent({
           const { data: bookingsData, error: bookingsError } = await supabase
             .from("bookings")
             .select(
-              "id, space_id, renter_id, owner_id, booking_unit, start_at, end_at, notes, owner_response_message, status, payment_status, total_price, created_at, terms_accepted, terms_accepted_at, accepted_terms_updated_at, accepted_terms_title, accepted_terms_label"
+              "id, space_id, renter_id, owner_id, booking_unit, start_at, end_at, notes, owner_response_message, status, payment_status, total_price, platform_fee, created_at, terms_accepted, terms_accepted_at, accepted_terms_updated_at, accepted_terms_title, accepted_terms_label"
             )
             .neq("renter_id", user.id)
             .in("space_id", managedIds)
@@ -1754,7 +1775,8 @@ function OwnerBookingRequestsPageContent({
   async function updateBookingStatus(
     bookingId: string,
     nextStatus: "approved" | "declined" | "pending",
-    ownerMessageOverride?: string
+    ownerMessageOverride?: string,
+    discount?: { type: "percent" | "fixed"; value: number; reason: string } | null
   ) {
     setMessage("");
     setBusyBookingId(bookingId);
@@ -1787,6 +1809,7 @@ function OwnerBookingRequestsPageContent({
       bookingId,
       action,
       message: ownerResponseMessage || null,
+      discount: action === "approve" ? discount : null,
     });
 
     if (!result.ok) {
@@ -2123,7 +2146,7 @@ function OwnerBookingRequestsPageContent({
                         overlappingPendingRequests={overlappingPendingRequests}
                         onToggleCommunication={toggleCommunicationPanel}
                         competingPendingRequests={overlappingPendingRequests}
-                        onApprove={() => void updateBookingStatus(booking.id, "approved")}
+                        onApprove={(discount) => void updateBookingStatus(booking.id, "approved", undefined, discount)}
                         onDecline={(reason) =>
                           void updateBookingStatus(booking.id, "declined", reason)
                         }

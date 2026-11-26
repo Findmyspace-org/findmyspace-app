@@ -41,7 +41,6 @@ import {
 import { FLEXIBLE_PERIOD_LABELS, type FlexiblePeriod } from "@/lib/booking-periods";
 import {
   availabilityRuleFromRow,
-  describeAvailabilityRule,
   ruleOverlapsInterval,
   type AvailabilityRule,
 } from "@/lib/availability-rules";
@@ -439,6 +438,44 @@ export default function BookingRequestForm({
   async function loadAvailabilityData() {
     setAvailabilityLoading(true);
     setStatusMessage("");
+    try {
+      const response = await fetch(`/api/spaces/${spaceId}/availability`);
+      if (response.ok) {
+        const payload = (await response.json()) as {
+          intervals?: Array<{ startAt: string; endAt: string; kind: "reserved" | "pending" | "blocked" }>;
+        };
+        const intervals = payload.intervals || [];
+        setExistingBookings(
+          intervals
+            .filter((interval) => interval.kind !== "blocked")
+            .map((interval, index) => ({
+              id: `occupied-${index}`,
+              booking_unit: null,
+              start_at: interval.startAt,
+              end_at: interval.endAt,
+              status: interval.kind === "pending" ? "pending" : "confirmed",
+              payment_status: interval.kind === "pending" ? "unpaid" : "paid",
+            }))
+        );
+        setBlockedDates(
+          intervals
+            .filter((interval) => interval.kind === "blocked")
+            .map((interval, index) => ({
+              id: `blocked-${index}`,
+              space_id: spaceId,
+              start_at: interval.startAt,
+              end_at: interval.endAt,
+              reason: null,
+            }))
+        );
+        setAvailabilityRules([]);
+        setAvailabilityLoading(false);
+        return;
+      }
+    } catch {
+      // Submit still asks the server. A recurring parent span is not treated as occupied.
+    }
+
     const { data, error } = await supabase
       .from("bookings")
       .select("id, booking_unit, start_at, end_at, status, payment_status")
@@ -453,7 +490,9 @@ export default function BookingRequestForm({
       setExistingBookings([]);
       // silently fail for public users; no blocking UI message
     } else {
-      setExistingBookings((data || []) as ExistingBooking[]);
+      setExistingBookings(
+        ((data || []) as ExistingBooking[]).filter((booking) => booking.booking_unit !== "recurring_hour")
+      );
     }
 
     const { data: blockedData, error: blockedError } = await (supabase
@@ -470,7 +509,9 @@ export default function BookingRequestForm({
       setBlockedDates([]);
       // silently fail for blocked dates as well
     } else {
-      setBlockedDates((blockedData || []) as BlockedDate[]);
+      setBlockedDates(
+        ((blockedData || []) as BlockedDate[]).map((blocked) => ({ ...blocked, reason: null }))
+      );
     }
     const { data: ruleData, error: ruleError } = await (supabase
       .from("availability_rules") as any)
@@ -483,7 +524,7 @@ export default function BookingRequestForm({
     } else {
       setAvailabilityRules(
         ((ruleData || []) as Array<Parameters<typeof availabilityRuleFromRow>[0]>)
-          .map((row) => availabilityRuleFromRow(row))
+          .map((row) => availabilityRuleFromRow({ ...row, reason: null }))
           .filter((rule): rule is AvailabilityRule => Boolean(rule))
       );
     }
@@ -805,12 +846,10 @@ export default function BookingRequestForm({
       ruleOverlapsInterval(rule, requestedStart, requestedEnd).overlaps
     );
 
-    if (blockingRule) {
-      return `These dates or times are not available. ${describeAvailabilityRule(blockingRule)}`;
+    if (blockingRule || hasBookingConflict || hasBlockedConflict) {
+      return "These dates or times are not available.";
     }
-    return hasBookingConflict || hasBlockedConflict
-      ? "These dates or times are not available."
-      : "";
+    return "";
   }, [
     bookingUnit,
     hourDate,
@@ -1406,9 +1445,7 @@ export default function BookingRequestForm({
       );
 
       if (blockingRule) {
-        setStatusMessage(
-          `These dates or times are not available. ${describeAvailabilityRule(blockingRule)}`
-        );
+        setStatusMessage("These dates or times are not available.");
         setLoading(false);
         return;
       }

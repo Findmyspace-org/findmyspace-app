@@ -37,6 +37,7 @@ export default function RestrictionExceptionPanel({
   const [reason, setReason] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [needsConfirm, setNeedsConfirm] = useState(false);
   const [saving, setSaving] = useState(false);
 
   async function run(work: () => Promise<void>) {
@@ -44,11 +45,14 @@ export default function RestrictionExceptionPanel({
     setSaving(true);
     setMessage(null);
     setError(null);
+    setNeedsConfirm(false);
     try {
       await work();
       onChanged?.();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "The restriction was not changed.");
+      const text = caught instanceof Error ? caught.message : "The restriction was not changed.";
+      setNeedsConfirm(text.includes("exceptions_need_confirmation"));
+      setError(text.replace(/^exceptions_need_confirmation:\s*/, ""));
     } finally {
       setSaving(false);
     }
@@ -116,13 +120,14 @@ export default function RestrictionExceptionPanel({
                 localEnd,
                 wholeDay: false,
                 reason,
+                confirmIncompatible: needsConfirm,
               }),
             });
             setMessage(`Dates before ${date} keep the original restriction. This date and later dates use the new hours.`);
           })}
           className="rounded-md border border-gray-300 px-3 py-2 text-left text-sm text-[#192a3a] disabled:opacity-60"
         >
-          Change this date and future dates
+          {needsConfirm ? "Confirm and change future dates" : "Change this date and future dates"}
         </button>
       </div>
       <label className="block text-sm">

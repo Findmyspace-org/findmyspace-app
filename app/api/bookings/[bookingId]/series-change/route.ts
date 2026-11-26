@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { assertBookingRequirementAccess } from "@/lib/booking-requirement-access";
+import { recordBookingChangeNotice } from "@/lib/booking-change-notice";
 import { requireAuthenticatedApi } from "@/lib/require-authenticated-api";
 
 export const runtime = "nodejs";
@@ -66,6 +67,27 @@ export async function POST(
     const message = error.message || "Could not change the booking.";
     const status = message.includes("not authorized") ? 403 : 409;
     return NextResponse.json({ error: message.replace(/^.*?:\s*/, "") }, { status });
+  }
+  const result = (data || {}) as { change_request_id?: string };
+  if (result.change_request_id) {
+    const { data: booking } = await auth.admin
+      .from("bookings")
+      .select("renter_id")
+      .eq("id", bookingId)
+      .maybeSingle();
+    const renterId = (booking as { renter_id?: string | null } | null)?.renter_id;
+    if (renterId) {
+      await recordBookingChangeNotice(auth.admin, {
+        userId: renterId,
+        role: "renter",
+        type: "booking_change_proposed",
+        title: "A host proposed a new time",
+        message:
+          "A host proposed moving a paid session. The original time stays reserved until you accept the new time.",
+        href: "/dashboard/my-bookings",
+        relatedId: result.change_request_id,
+      });
+    }
   }
   return NextResponse.json(data);
 }

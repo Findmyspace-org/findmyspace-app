@@ -129,6 +129,26 @@ export default function SeriesManagementPanel({
     }
   }
 
+  async function withdraw(requestId: string) {
+    if (preview) return;
+    setSaving(true);
+    setNotice(null);
+    setConflict(null);
+    try {
+      await ownerApiFetch(`/api/bookings/change-requests/${requestId}`, {
+        method: "POST",
+        body: JSON.stringify({ withdraw: true }),
+      });
+      setNotice("The proposal was withdrawn. The original time stays reserved.");
+      setPendingRequests((current) => current.filter((request) => request.id !== requestId));
+      onChanged?.();
+    } catch (error) {
+      setConflict(error instanceof Error ? error.message : "The proposal was kept.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function submit(action: "reschedule" | "exclude") {
     if (preview) return;
     setSaving(true);
@@ -226,7 +246,17 @@ export default function SeriesManagementPanel({
               <button type="button" disabled={saving || Boolean(preview)} onClick={() => void decide(request.id, false)} className="rounded-md border border-gray-300 bg-white px-3 py-1.5">Decline</button>
             </div>
           ) : (
-            <p className="mt-2">The renter accepts or declines this from My bookings. This notice is not acceptance.</p>
+            <div className="mt-2 space-y-2">
+              <p>The renter accepts or declines this from My bookings. This notice is not acceptance.</p>
+              <button
+                type="button"
+                disabled={saving || Boolean(preview)}
+                onClick={() => void withdraw(request.id)}
+                className="rounded-md border border-gray-300 bg-white px-3 py-1.5"
+              >
+                Withdraw proposal
+              </button>
+            </div>
           )}
         </div>
       ))}

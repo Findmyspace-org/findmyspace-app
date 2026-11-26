@@ -493,7 +493,8 @@ export async function createBookingRequestServer(
       ? buildBookingTermsAcceptancePayload(propertyTerms, true)
       : {};
 
-  const insertRow = {
+  const requiresDocuments = fields.some((field) => field.required);
+  const insertRow: Record<string, unknown> = {
     space_id: spaceId,
     renter_id: renterId,
     owner_id: snapshot.ownerId,
@@ -525,8 +526,9 @@ export async function createBookingRequestServer(
       totals.commercialTerms,
       commercialLockedAt
     ),
-    status: "pending_owner",
+    status: requiresDocuments ? "requirements_pending" : "pending_owner",
     payment_status: "unpaid",
+    ...(requiresDocuments ? { requirements_ready: false } : {}),
     payout_status: "unpaid_to_owner",
     notes: notes?.trim() ? notes.trim() : null,
     ...(payload.clientRequestId ? { client_request_id: payload.clientRequestId } : {}),
@@ -542,6 +544,9 @@ export async function createBookingRequestServer(
 
   let bookingId = "";
   let reusedRecurring = false;
+  let documentsHeld = false;
+  let keepOnFailure = false;
+  let legacyDocumentWorkflow = false;
   if (recurringAttach) {
     // Parent, series, occurrences, availability, and the booking charge commit
     // together. Files and requirement answers follow. A failure here deletes
@@ -562,19 +567,60 @@ export async function createBookingRequestServer(
         publicAvailabilityMessage(createError?.message || "Could not create booking.")
       );
     }
-    const createdRow = created as { id?: string; reused?: boolean };
+    const createdRow = created as { id?: string; reused?: boolean; requirements_ready?: boolean };
     if (!createdRow.id) {
       throw new Error("Could not create booking.");
     }
     bookingId = createdRow.id;
     reusedRecurring = Boolean(createdRow.reused);
-    if (reusedRecurring) return { bookingId };
+    documentsHeld = createdRow.requirements_ready === false;
+    keepOnFailure = reusedRecurring;
+    if (reusedRecurring && !documentsHeld) return { bookingId };
   } else {
-    const { data: insertedBooking, error: insertError } = await admin
+    let { data: insertedBooking, error: insertError } = await admin
       .from("bookings")
       .insert(insertRow)
       .select("id")
       .single();
+
+    if (
+      insertError &&
+      requiresDocuments &&
+      /requirements_ready/i.test(insertError.message || "")
+    ) {
+      const legacyRow = { ...insertRow };
+      delete legacyRow.requirements_ready;
+      legacyRow.status = "pending_owner";
+      const retry = await admin.from("bookings").insert(legacyRow).select("id").single();
+      insertedBooking = retry.data;
+      insertError = retry.error;
+      legacyDocumentWorkflow = true;
+    }
+
+    if (
+      insertError &&
+      payload.clientRequestId &&
+      /duplicate|client_request_id|unique/i.test(insertError.message || "")
+    ) {
+      const { data: existing } = await admin
+        .from("bookings")
+        .select("id, status")
+        .eq("renter_id", renterId)
+        .eq("client_request_id", payload.clientRequestId)
+        .maybeSingle();
+      const existingRow = existing as { id: string; status: string | null } | null;
+      if (existingRow?.id) {
+        if (existingRow.status === "requirements_pending") {
+          bookingId = existingRow.id;
+          documentsHeld = true;
+          keepOnFailure = true;
+          insertError = null;
+          insertedBooking = { id: existingRow.id };
+        } else {
+          return { bookingId: existingRow.id };
+        }
+      }
+    }
 
     if (insertError || !insertedBooking) {
       throw new Error(
@@ -582,10 +628,13 @@ export async function createBookingRequestServer(
       );
     }
     bookingId = (insertedBooking as { id: string }).id;
+    if (!keepOnFailure && !legacyDocumentWorkflow && insertRow.status === "requirements_pending") {
+      documentsHeld = true;
+    }
   }
 
   try {
-    const chargeRows = recurringAttach
+    const chargeRows = recurringAttach || keepOnFailure
       ? []
       : buildInitialBookingCharges({
       bookingId,
@@ -603,8 +652,19 @@ export async function createBookingRequestServer(
     }
 
     const responseRows: Record<string, unknown>[] = [];
+    const answeredFieldIds = new Set<string>();
+    if (keepOnFailure) {
+      const { data: existingAnswers } = await admin
+        .from("booking_requirement_responses")
+        .select("field_id")
+        .eq("booking_id", bookingId);
+      for (const row of (existingAnswers || []) as Array<{ field_id: string }>) {
+        if (row.field_id) answeredFieldIds.add(row.field_id);
+      }
+    }
 
     for (const field of fields) {
+      if (answeredFieldIds.has(field.id)) continue;
       let filePath: string | null = null;
       let value: CustomFieldAnswerValue = requirementAnswers[field.id] ?? null;
 
@@ -653,9 +713,19 @@ export async function createBookingRequestServer(
       if (responsesError) throw responsesError;
     }
 
+    if (documentsHeld) {
+      const { error: finalizeError } = await admin.rpc("finalize_booking_requirements", {
+        p_booking_id: bookingId,
+        p_actor: renterId,
+      });
+      if (finalizeError) throw finalizeError;
+    }
+
     return { bookingId };
   } catch (err) {
-    await admin.from("bookings").delete().eq("id", bookingId);
+    if (!keepOnFailure) {
+      await admin.from("bookings").delete().eq("id", bookingId);
+    }
     throw err;
   }
 }

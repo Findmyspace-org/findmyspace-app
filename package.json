@@ -50,6 +50,7 @@
     "test:availability-rules": "tsx scripts/test-availability-rules.ts",
     "test:recurring-bookings": "tsx scripts/test-recurring-bookings.ts",
     "test:series-management": "tsx scripts/test-series-management.ts",
+    "test:approval-discounts": "tsx scripts/test-approval-discount.ts",
     "test:invoice-pdf": "tsx scripts/test-invoice-pdf.ts",
     "test:payfast-hardening": "tsx scripts/test-payfast-hardening.ts",
     "test:space-bookable": "tsx scripts/test-space-bookable.ts",

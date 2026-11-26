@@ -67,6 +67,12 @@ function parseCompetingIds(payload: unknown): string[] {
   return raw.filter((id): id is string => typeof id === "string" && id.length > 0);
 }
 
+export type ApprovalDiscountRequest = {
+  type: "percent" | "fixed";
+  value: number;
+  reason?: string | null;
+};
+
 export async function applyHostBookingResponse(
   admin: SupabaseClient,
   params: {
@@ -74,6 +80,7 @@ export async function applyHostBookingResponse(
     actorUserId: string;
     action: HostResponseAction;
     message: string | null;
+    discount?: ApprovalDiscountRequest | null;
   }
 ): Promise<{
   booking: BookingRow;
@@ -92,8 +99,13 @@ export async function applyHostBookingResponse(
   }
 
   const row = booking as BookingRow;
-  if (!canHostRespondToStatus(row.status)) {
+  const decliningIncomplete =
+    params.action === "decline" && row.status === "requirements_pending";
+  if (!canHostRespondToStatus(row.status) && !decliningIncomplete) {
     throw new Error(STALE_HOST_RESPONSE_MESSAGE);
+  }
+  if (params.discount && params.action !== "approve") {
+    throw new Error("A discount is only applied when the request is approved.");
   }
 
   const message = params.message?.trim() || null;
@@ -122,15 +134,22 @@ export async function applyHostBookingResponse(
       (space as { booking_unit?: string | null } | null)?.booking_unit ?? null;
   }
 
-  const { data: rpcData, error: rpcError } = await admin.rpc(
-    "apply_host_booking_response",
-    {
-      p_booking_id: params.bookingId,
-      p_actor_id: params.actorUserId,
-      p_action: params.action,
-      p_message: message,
-    }
-  );
+  const { data: rpcData, error: rpcError } = params.discount
+    ? await admin.rpc("approve_booking_with_discount", {
+        p_booking_id: params.bookingId,
+        p_actor_id: params.actorUserId,
+        p_action: params.action,
+        p_message: message,
+        p_discount_type: params.discount.type,
+        p_discount_value: params.discount.value,
+        p_discount_reason: params.discount.reason ?? null,
+      })
+    : await admin.rpc("apply_host_booking_response", {
+        p_booking_id: params.bookingId,
+        p_actor_id: params.actorUserId,
+        p_action: params.action,
+        p_message: message,
+      });
 
   if (rpcError) {
     const raw = rpcError.message || "Could not update booking.";
