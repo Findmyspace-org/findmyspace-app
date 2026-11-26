@@ -33,6 +33,8 @@ import FlexibleBookingRatesEditor, {
   ratesFromFlexibleDraft,
   flexibleDraftFromRates,
 } from "@/app/components/FlexibleBookingRatesEditor";
+import RecurringBookingsSetting from "@/app/components/RecurringBookingsSetting";
+import { resolveRecurringHourlyRate } from "@/lib/recurring-bookings";
 import type { EnabledFlexibleRate } from "@/lib/flexible-booking";
 import {
   spacePricingFormFromRow,
@@ -238,6 +240,9 @@ function EditListingPageContent(_props: PageProps) {
   const [bookingUnit, setBookingUnit] = useState("day");
   const [useFlexibleRates, setUseFlexibleRates] = useState(false);
   const [flexibleRateDraft, setFlexibleRateDraft] = useState(emptyFlexibleRateDraft);
+  const [recurringEnabled, setRecurringEnabled] = useState(false);
+  const [recurringMaxOccurrences, setRecurringMaxOccurrences] = useState("");
+  const [recurringAvailable, setRecurringAvailable] = useState(false);
   const [priceAmount, setPriceAmount] = useState("");
   const [priceUnit, setPriceUnit] = useState("day");
   const [depositRequired, setDepositRequired] = useState(false);
@@ -398,6 +403,20 @@ function EditListingPageContent(_props: PageProps) {
         useFlexibleRates: false,
         draft: emptyFlexibleRateDraft(),
       });
+    }
+    try {
+      const recurringPayload = (await ownerApiFetch(
+        `/api/host/listings/${id}/recurring-bookings`
+      )) as { enabled?: boolean; maxOccurrences?: number | null; available?: boolean };
+      setRecurringAvailable(recurringPayload.available !== false);
+      setRecurringEnabled(Boolean(recurringPayload.enabled));
+      setRecurringMaxOccurrences(
+        recurringPayload.maxOccurrences == null ? "" : String(recurringPayload.maxOccurrences)
+      );
+    } catch {
+      setRecurringAvailable(false);
+      setRecurringEnabled(false);
+      setRecurringMaxOccurrences("");
     }
     const pricingForm = spacePricingFormFromRow(data);
     setPriceAmount(pricingForm.priceAmount);
@@ -649,6 +668,17 @@ function EditListingPageContent(_props: PageProps) {
       setSaving(false);
       return false;
     }
+    const recurringHourly = resolveRecurringHourlyRate({
+      flexibleRates: flexibleRates && flexibleRates.ok ? flexibleRates.rates : [],
+      pricePerHour: priceUnit === "hour" ? Number(priceAmount) : null,
+      priceUnit,
+      priceAmount: Number(priceAmount),
+    });
+    if (recurringEnabled && !recurringHourly.ok) {
+      setSaveFailure(recurringHourly.error);
+      setSaving(false);
+      return false;
+    }
 
     let parsedMonthlyPaymentDay = 1;
     const effectiveBookingUnit =
@@ -823,6 +853,26 @@ function EditListingPageContent(_props: PageProps) {
       }
     }
 
+    if (listingId && (recurringAvailable || recurringEnabled)) {
+      try {
+        await ownerApiFetch(`/api/host/listings/${listingId}/recurring-bookings`, {
+          method: "PUT",
+          body: JSON.stringify({
+            enabled: recurringEnabled,
+            maxOccurrences: recurringMaxOccurrences.trim() ? Number(recurringMaxOccurrences) : null,
+          }),
+        });
+      } catch (recurringError) {
+        setSaveFailure(
+          recurringError instanceof Error
+            ? recurringError.message
+            : "The listing was saved, but recurring bookings were not updated."
+        );
+        setSaving(false);
+        return false;
+      }
+    }
+
     setRenterRequirementsCommitted(true);
 
     savedListingBaselineRef.current = buildOwnerListingSnapshot({
@@ -863,6 +913,9 @@ function EditListingPageContent(_props: PageProps) {
     attributes,
     flexibleRateDraft,
     useFlexibleRates,
+    recurringEnabled,
+    recurringMaxOccurrences,
+    recurringAvailable,
     bookingIntelData,
     bookingRequirements,
     bookingUnit,
@@ -1212,6 +1265,33 @@ function EditListingPageContent(_props: PageProps) {
                     disabled={editingLocked}
                     onUseFlexibleRatesChange={setUseFlexibleRates}
                     onDraftChange={setFlexibleRateDraft}
+                  />
+                  <RecurringBookingsSetting
+                    enabled={recurringEnabled}
+                    maxOccurrences={recurringMaxOccurrences}
+                    disabled={editingLocked}
+                    hourlyRate={(() => {
+                      const parsed = useFlexibleRates ? ratesFromFlexibleDraft(flexibleRateDraft) : null;
+                      const resolved = resolveRecurringHourlyRate({
+                        flexibleRates: parsed && parsed.ok ? parsed.rates : [],
+                        pricePerHour: priceUnit === "hour" ? Number(priceAmount) : null,
+                        priceUnit,
+                        priceAmount: Number(priceAmount),
+                      });
+                      return resolved.ok ? resolved.amount : null;
+                    })()}
+                    unavailableReason={(() => {
+                      const parsed = useFlexibleRates ? ratesFromFlexibleDraft(flexibleRateDraft) : null;
+                      const resolved = resolveRecurringHourlyRate({
+                        flexibleRates: parsed && parsed.ok ? parsed.rates : [],
+                        pricePerHour: priceUnit === "hour" ? Number(priceAmount) : null,
+                        priceUnit,
+                        priceAmount: Number(priceAmount),
+                      });
+                      return resolved.ok ? null : resolved.error;
+                    })()}
+                    onEnabledChange={setRecurringEnabled}
+                    onMaxOccurrencesChange={setRecurringMaxOccurrences}
                   />
                   {listingId ? (
                     <HostCommercialArrangementCard

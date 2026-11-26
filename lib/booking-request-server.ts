@@ -25,6 +25,10 @@ import type { ResolvedCommercialTerms } from "@/lib/commercial-terms";
 import { calculateBookingCommercials } from "@/lib/commercial-calculator";
 import { validatePayFastPayableAmount } from "@/lib/payfast-amount";
 import {
+  resolveServerRecurringQuote,
+  type RecurringRequestInput,
+} from "@/lib/recurring-booking-server";
+import {
   buildBookingTermsAcceptancePayload,
   normalizePropertyTermsRow,
   propertyRequiresTermsAcceptance,
@@ -62,6 +66,11 @@ export type BookingRequestPayload = {
   ratePeriod?: string | null;
   quantity?: number | null;
   startDate?: string | null;
+  /**
+   * Recurring schedule. The server regenerates every session and price.
+   * Client totals and occurrence lists are ignored.
+   */
+  recurring?: RecurringRequestInput | null;
 };
 
 type SpacePricingRow = {
@@ -239,7 +248,7 @@ export async function createBookingRequestServer(
     payload as BookingRequestPayload & Record<string, unknown>
   ) as BookingRequestPayload;
 
-  if (!spaceId || !startAt || !endAt) {
+  if (!spaceId || (!payload.recurring && (!startAt || !endAt))) {
     throw new Error("Missing required booking fields.");
   }
 
@@ -346,14 +355,43 @@ export async function createBookingRequestServer(
   let resolvedStart = startAt;
   let resolvedEnd = endAt;
   let flexibleSnapshot: {
-    pricing_mode: "flexible";
+    pricing_mode: "flexible" | "recurring";
     rate_period: string;
     unit_price: number;
     billed_quantity: number;
     totalPrice: number;
   } | null = null;
+  let recurringAttach: RecurringRequestInput | null = null;
 
-  if (flexibleRates.length > 0) {
+  if (payload.recurring) {
+    const resolved = await resolveServerRecurringQuote(admin, spaceId, payload.recurring);
+    if (resolved.conflicts.length > 0) {
+      throw new Error(
+        `These sessions are not available: ${resolved.conflicts.slice(0, 8).join(", ")}. Exclude a session or change the schedule.`
+      );
+    }
+    const included = resolved.quote.sessions.filter((session) => !session.excluded);
+    unit = "recurring_hour";
+    quantity = resolved.quote.totalHours;
+    resolvedStart = included[0].start.toISOString();
+    resolvedEnd = included[included.length - 1].end.toISOString();
+    flexibleSnapshot = {
+      pricing_mode: "recurring",
+      rate_period: "hour",
+      unit_price: resolved.quote.hourlyRate,
+      billed_quantity: resolved.quote.totalHours,
+      totalPrice: resolved.quote.rentalSubtotal,
+    };
+    recurringAttach = {
+      frequency: resolved.quote.pattern.frequency,
+      weekdays: resolved.quote.pattern.frequency === "daily" ? [] : resolved.quote.pattern.weekdays,
+      localStart: resolved.quote.pattern.localStart,
+      localEnd: resolved.quote.pattern.localEnd,
+      startsOn: resolved.quote.pattern.startsOn,
+      endsOn: resolved.quote.pattern.endsOn,
+      excludedDates: resolved.quote.pattern.excludedDates,
+    };
+  } else if (flexibleRates.length > 0) {
     const resolved = resolveFlexibleBooking({
       rates: flexibleRates,
       ratePeriod: payload.ratePeriod,
@@ -472,6 +510,9 @@ export async function createBookingRequestServer(
           rate_period: flexibleSnapshot.rate_period,
           unit_price: flexibleSnapshot.unit_price,
           billed_quantity: flexibleSnapshot.billed_quantity,
+          ...(flexibleSnapshot.pricing_mode === "recurring"
+            ? { reserves_via_occurrences: true }
+            : {}),
         }
       : {}),
     total_price: totalPrice,
@@ -511,6 +552,24 @@ export async function createBookingRequestServer(
   const bookingId = (insertedBooking as { id: string }).id;
 
   try {
+    if (recurringAttach) {
+      const { error: seriesError } = await admin.rpc("attach_recurring_series", {
+        p_booking_id: bookingId,
+        p_frequency: recurringAttach.frequency,
+        p_weekdays: recurringAttach.weekdays ?? [],
+        p_local_start: recurringAttach.localStart,
+        p_local_end: recurringAttach.localEnd,
+        p_starts_on: recurringAttach.startsOn,
+        p_ends_on: recurringAttach.endsOn,
+        p_excluded: recurringAttach.excludedDates ?? [],
+      });
+      if (seriesError) {
+        throw new Error(
+          publicAvailabilityMessage(seriesError.message || "Could not save the recurring sessions.")
+        );
+      }
+    }
+
     const chargeRows = buildInitialBookingCharges({
       bookingId,
       bookingUnit: unit,

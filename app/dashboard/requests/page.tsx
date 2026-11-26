@@ -25,6 +25,8 @@ import {
   XCircle,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { ownerApiFetch } from "@/lib/owner-api-client";
+import RecurringSeriesSummary from "@/app/components/RecurringSeriesSummary";
 import RequireAuth from "@/app/components/RequireAuth";
 import DashboardShell from "@/app/components/DashboardShell";
 import { useHostingWorkspace } from "@/lib/use-hosting-workspace";
@@ -270,6 +272,10 @@ function normalizeBookingRange(
   }
 
   return { start, end };
+}
+
+function canCompareParentSpans(aUnit: string | null, bUnit: string | null) {
+  return aUnit !== "recurring_hour" && bUnit !== "recurring_hour";
 }
 
 function rangesOverlap(
@@ -759,6 +765,68 @@ function BookingConversationPanel({
 }
 
 
+function RecurringRequestDetails({
+  booking,
+}: {
+  booking: {
+    id: string;
+    booking_unit: string | null;
+    total_price: number | null;
+    renter?: { first_name?: string | null; last_name?: string | null } | null;
+  };
+}) {
+  const [detail, setDetail] = useState<{
+    series: {
+      summary: string;
+      sessionCount: number;
+      hoursPerSession: number;
+      hourlyRate: number;
+      excludedDates: string[];
+    };
+    sessions: Array<{ date: string; startAt: string; endAt: string; excluded: boolean }>;
+  } | null>(null);
+
+  useEffect(() => {
+    if (booking.booking_unit !== "recurring_hour") return;
+    let cancelled = false;
+    ownerApiFetch(`/api/bookings/${booking.id}/recurring-series`)
+      .then((result) => {
+        if (!cancelled) setDetail(result as NonNullable<typeof detail>);
+      })
+      .catch(() => {
+        if (!cancelled) setDetail(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [booking.id, booking.booking_unit]);
+
+  if (booking.booking_unit !== "recurring_hour" || !detail?.series) return null;
+  const first = detail.sessions.find((session) => !session.excluded);
+  const last = [...detail.sessions].reverse().find((session) => !session.excluded);
+  const renterName = [booking.renter?.first_name, booking.renter?.last_name].filter(Boolean).join(" ") || "Renter";
+  return (
+    <RecurringSeriesSummary
+      renterName={renterName}
+      pattern={detail.series.summary}
+      firstSession={first ? `${first.date} ${new Date(first.startAt).toLocaleTimeString("en-ZA", { hour: "2-digit", minute: "2-digit", timeZone: "Africa/Johannesburg" })}` : "—"}
+      lastSession={last ? `${last.date} ${new Date(last.endAt).toLocaleTimeString("en-ZA", { hour: "2-digit", minute: "2-digit", timeZone: "Africa/Johannesburg" })}` : "—"}
+      sessionCount={detail.series.sessionCount}
+      hoursPerSession={detail.series.hoursPerSession}
+      hourlyRate={detail.series.hourlyRate}
+      rentalSubtotal={Number(booking.total_price || 0)}
+      feeAmount={null}
+      hostPayout={null}
+      sessions={detail.sessions.map((session) => ({
+        date: session.date,
+        startLabel: new Date(session.startAt).toLocaleTimeString("en-ZA", { hour: "2-digit", minute: "2-digit", timeZone: "Africa/Johannesburg" }),
+        endLabel: new Date(session.endAt).toLocaleTimeString("en-ZA", { hour: "2-digit", minute: "2-digit", timeZone: "Africa/Johannesburg" }),
+        excluded: session.excluded,
+      }))}
+    />
+  );
+}
+
 function BookingRow({
   booking,
   stage,
@@ -946,6 +1014,8 @@ function ExpandedBookingPanel({
                 <p className="whitespace-pre-wrap text-[#192a3a]">{booking.notes}</p>
               </div>
             )}
+
+          <RecurringRequestDetails booking={booking} />
 
           <div className="mb-4">
             <BookingRequestDetailsPanel data={requestDetailData} />
@@ -1859,6 +1929,13 @@ function OwnerBookingRequestsPageContent({
                   if (other.id === booking.id) return false;
                   if (other.space_id !== booking.space_id) return false;
                   if (!isBlockingRequestStatus(other.status)) return false;
+                  const otherUnit = resolveBookingUnit(
+                    other.booking_unit,
+                    other.space?.booking_unit,
+                    other.start_at,
+                    other.end_at
+                  );
+                  if (!canCompareParentSpans(resolvedBookingUnit, otherUnit)) return false;
 
                   return rangesOverlap(
                     resolvedBookingUnit,
@@ -1880,6 +1957,13 @@ function OwnerBookingRequestsPageContent({
                   if (other.id === booking.id) return false;
                   if (other.space_id !== booking.space_id) return false;
                   if (!isPendingRequestStatus(other.status)) return false;
+                  const otherUnit = resolveBookingUnit(
+                    other.booking_unit,
+                    other.space?.booking_unit,
+                    other.start_at,
+                    other.end_at
+                  );
+                  if (!canCompareParentSpans(resolvedBookingUnit, otherUnit)) return false;
 
                   return rangesOverlap(
                     resolvedBookingUnit,

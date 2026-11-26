@@ -49,6 +49,8 @@ import {
   resolveFlexibleBooking,
   type EnabledFlexibleRate,
 } from "@/lib/flexible-booking";
+import RecurringBookingRequest from "@/app/components/RecurringBookingRequest";
+import { resolveRecurringHourlyRate, type RecurringPattern, type RecurringQuote } from "@/lib/recurring-bookings";
 import {
   type CustomFieldAnswerValue,
   type SpaceBookingRequirementField,
@@ -107,6 +109,9 @@ type BookingRequestFormProps = {
   /** Single line for summary (address) */
   spaceLocation?: string;
   flexibleRates?: EnabledFlexibleRate[];
+  recurringBookingsEnabled?: boolean;
+  recurringMaxOccurrences?: number | null;
+  demonstration?: boolean;
 };
 
 
@@ -141,7 +146,13 @@ export default function BookingRequestForm({
   minMonths = null,
   spaceLocation = "",
   flexibleRates = [],
+  recurringBookingsEnabled = false,
+  recurringMaxOccurrences = null,
+  demonstration = false,
 }: BookingRequestFormProps) {
+  const [bookingStyle, setBookingStyle] = useState<"once" | "recurring">("once");
+  const [recurringQuote, setRecurringQuote] = useState<RecurringQuote | null>(null);
+  const [recurringPattern, setRecurringPattern] = useState<RecurringPattern | null>(null);
   const [statusMessage, setStatusMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [availabilityLoading, setAvailabilityLoading] = useState(true);
@@ -1137,6 +1148,85 @@ export default function BookingRequestForm({
         return;
       }
 
+      if (bookingStyle === "recurring") {
+        if (!recurringQuote || !recurringPattern) {
+          setStatusMessage("Choose a complete recurring schedule.");
+          setLoading(false);
+          return;
+        }
+        const included = recurringQuote.sessions.filter((session) => !session.excluded);
+        if (included.length < 1) {
+          setStatusMessage("Include at least one session.");
+          setLoading(false);
+          return;
+        }
+        const recurringPayable = validatePayFastPayableAmount(recurringQuote.rentalSubtotal);
+        if (!recurringPayable.ok) {
+          setStatusMessage(recurringPayable.error);
+          setLoading(false);
+          return;
+        }
+        if (demonstration) {
+          setStatusMessage("This preview calculates the schedule only. It does not send a booking.");
+          setLoading(false);
+          return;
+        }
+        const {
+          data: { session: recurringSession },
+        } = await supabase.auth.getSession();
+        if (!recurringSession?.access_token) {
+          setStatusMessage("Please sign in again to continue.");
+          setLoading(false);
+          return;
+        }
+        const recurringBody = new FormData();
+        recurringBody.append(
+          "payload",
+          JSON.stringify({
+            spaceId,
+            bookingUnit: "recurring_hour",
+            startAt: included[0].start.toISOString(),
+            endAt: included[included.length - 1].end.toISOString(),
+            notes: structuredNotes.trim() ? structuredNotes.trim() : null,
+            acceptedPropertyTerms: requiresPropertyTerms ? acceptedPropertyTerms : false,
+            requirementAnswers: customFieldAnswers,
+            recurring: {
+              frequency: recurringPattern.frequency,
+              weekdays: recurringPattern.weekdays,
+              localStart: recurringPattern.localStart,
+              localEnd: recurringPattern.localEnd,
+              startsOn: recurringPattern.startsOn,
+              endsOn: recurringPattern.endsOn,
+              excludedDates: recurringPattern.excludedDates,
+            },
+          })
+        );
+        for (const field of customRequirementFields) {
+          if (field.field_type !== "file_upload") continue;
+          const file = customFieldFiles[field.id];
+          if (file) recurringBody.append(`file_${field.id}`, file);
+        }
+        const recurringResponse = await fetch("/api/bookings/request", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${recurringSession.access_token}` },
+          body: recurringBody,
+        });
+        const recurringJson = (await recurringResponse.json().catch(() => null)) as {
+          bookingId?: string;
+          error?: string;
+        } | null;
+        if (!recurringResponse.ok || !recurringJson?.bookingId) {
+          setStatusMessage(recurringJson?.error || "Could not send booking request.");
+          setLoading(false);
+          return;
+        }
+        clearBookingDraft();
+        setStatusMessage("");
+        setRequestSentModalOpen(true);
+        setLoading(false);
+        return;
+      }
+
       const payable = validatePayFastPayableAmount(bookingSummary.totalPrice);
       if (!payable.ok) {
         setStatusMessage(payable.error);
@@ -1410,6 +1500,14 @@ export default function BookingRequestForm({
   }
 
   const flexibleQuote = selectedFlexibleRate ? flexiblePreview() : null;
+  const hourlyForRecurring = resolveRecurringHourlyRate({
+    flexibleRates,
+    pricePerHour,
+    priceUnit,
+    priceAmount,
+  });
+  const recurringAvailable = Boolean(recurringBookingsEnabled && hourlyForRecurring.ok);
+  const showStandardBooking = bookingStyle !== "recurring";
 
   return (
     <>
@@ -1430,7 +1528,48 @@ export default function BookingRequestForm({
           you can pay to confirm your dates.
         </p>
 
-        {flexibleRates.length > 1 ? (
+        {recurringAvailable && hourlyForRecurring.ok ? (
+          <div className="mb-4">
+            <p className="mb-2 text-sm font-semibold text-[#192a3a]">Booking style</p>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setBookingStyle("once")}
+                className={`rounded-md border px-3 py-2 text-sm ${
+                  bookingStyle === "once"
+                    ? "border-[#192a3a] bg-[#192a3a] text-white"
+                    : "border-gray-300 bg-white"
+                }`}
+              >
+                Once-off or continuous
+              </button>
+              <button
+                type="button"
+                onClick={() => setBookingStyle("recurring")}
+                className={`rounded-md border px-3 py-2 text-sm ${
+                  bookingStyle === "recurring"
+                    ? "border-[#192a3a] bg-[#192a3a] text-white"
+                    : "border-gray-300 bg-white"
+                }`}
+              >
+                Recurring
+              </button>
+            </div>
+          </div>
+        ) : null}
+        {bookingStyle === "recurring" && recurringAvailable && hourlyForRecurring.ok ? (
+          <RecurringBookingRequest
+            hourlyRate={hourlyForRecurring.amount}
+            minHours={minHours}
+            maxOccurrences={recurringMaxOccurrences}
+            idPrefix={`recurring-${spaceId}`}
+            onChange={(pattern, quote) => {
+              setRecurringPattern(pattern);
+              setRecurringQuote(quote);
+            }}
+          />
+        ) : null}
+        {showStandardBooking && (flexibleRates.length > 1 ? (
           <div className="mb-4">
             <p className="mb-2 text-sm font-semibold text-[#192a3a]">Booking period</p>
             <div className="flex flex-wrap gap-2">
@@ -1467,15 +1606,15 @@ export default function BookingRequestForm({
               Price: <span className="font-medium">{getPriceLabel()}</span>
             </p>
           </>
-        )}
-        {!selectedFlexibleRate && getMinimumQuantity() > 0 && (
+        ))}
+        {showStandardBooking && !selectedFlexibleRate && getMinimumQuantity() > 0 && (
           <p className="mb-2 text-sm text-gray-600">
             Minimum booking:{" "}
             <span className="font-medium">{getMinimumLabel(getMinimumQuantity())}</span>
           </p>
         )}
 
-        {bookingSelectionComplete && (
+        {showStandardBooking && bookingSelectionComplete && (
           <p className="mb-3 text-sm font-medium text-[#192a3a]">
             {unitKind === "hour" && hourDate && `${hourDate} · ${hourStart}–${hourEnd}`}
             {unitKind === "day" && dayStart && dayEnd && `${dayStart} → ${dayEnd}`}
@@ -1486,7 +1625,7 @@ export default function BookingRequestForm({
           </p>
         )}
 
-        {bookingSummary.quantity > 0 && bookingSummary.unitPrice > 0 && (
+        {showStandardBooking && bookingSummary.quantity > 0 && bookingSummary.unitPrice > 0 && (
           <div className="mb-6 rounded-md border border-gray-200 bg-[#f8fafb] p-4 text-sm text-gray-700">
             {selectedFlexibleRate ? (
               <>
@@ -1597,7 +1736,7 @@ export default function BookingRequestForm({
             </div>
           )}
 
-          {!selectedFlexibleRate && (bookingUnit === "hour" || bookingUnit === "day") && (
+          {showStandardBooking && !selectedFlexibleRate && (bookingUnit === "hour" || bookingUnit === "day") && (
             <div className="rounded-md border border-gray-200 bg-[#f4f7f9] px-3 py-2.5 text-xs leading-relaxed text-gray-700">
               <span className="font-semibold text-[#192a3a]">Booking steps:</span>{" "}
               {bookingUnit === "hour" ? (
@@ -1613,7 +1752,7 @@ export default function BookingRequestForm({
             </div>
           )}
 
-          {selectedFlexibleRate && selectedFlexibleRate.period !== "hour" && (
+          {showStandardBooking && selectedFlexibleRate && selectedFlexibleRate.period !== "hour" && (
             <div className="space-y-3">
               <label className="block text-sm font-semibold text-[#192a3a]" htmlFor={`flexible-start-date-${spaceId}`}>
                 Start date <span className="text-red-600">*</span>
@@ -1645,7 +1784,7 @@ export default function BookingRequestForm({
             </div>
           )}
 
-          {(selectedFlexibleRate ? selectedFlexibleRate.period === "hour" : bookingUnit === "hour") && (
+          {showStandardBooking && (selectedFlexibleRate ? selectedFlexibleRate.period === "hour" : bookingUnit === "hour") && (
             <>
               <div className="rounded-lg border-2 border-gray-300 bg-white p-4 shadow-sm">
                 <label
@@ -1703,7 +1842,7 @@ export default function BookingRequestForm({
             </>
           )}
 
-          {!selectedFlexibleRate && bookingUnit === "day" && (
+          {showStandardBooking && !selectedFlexibleRate && bookingUnit === "day" && (
             <div className="space-y-2">
               <p className="text-sm font-semibold text-[#192a3a]">
                 Stay dates <span className="text-red-600">*</span>
@@ -1725,7 +1864,7 @@ export default function BookingRequestForm({
             </div>
           )}
 
-          {!selectedFlexibleRate && bookingUnit === "month" && (
+          {showStandardBooking && !selectedFlexibleRate && bookingUnit === "month" && (
             <MonthAvailabilityCalendar
               existingBookings={existingBookings}
               blockedDates={blockedDates}

@@ -48,6 +48,7 @@
     "test:availability-phase1": "tsx scripts/test-availability-phase1.ts",
     "test:flexible-booking": "tsx scripts/test-flexible-booking-periods.ts",
     "test:availability-rules": "tsx scripts/test-availability-rules.ts",
+    "test:recurring-bookings": "tsx scripts/test-recurring-bookings.ts",
     "test:invoice-pdf": "tsx scripts/test-invoice-pdf.ts",
     "test:payfast-hardening": "tsx scripts/test-payfast-hardening.ts",
     "test:space-bookable": "tsx scripts/test-space-bookable.ts",

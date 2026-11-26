@@ -69,6 +69,9 @@ type CalendarBooking = {
         email?: string | null;
         phone?: string | null;
     } | null;
+    seriesSession?: boolean;
+    seriesSummary?: string | null;
+    seriesCount?: number | null;
 };
 
 function bookingBlocksCalendarSlot(booking: CalendarBooking) {
@@ -238,6 +241,9 @@ function clampSegmentIndices(
 }
 
 function buildBookingLabel(bookingType: CalendarBookingType, item: CalendarBooking | CalendarBlockedDate) {
+    if ("renter_id" in item && item.seriesSession) {
+        return bookingType === "hour" ? "Recurring" : "Recurring session";
+    }
     if ("renter_id" in item) {
         if (item.status === "expired") {
             return bookingType === "hour" ? "Expired booking" : "Expired";
@@ -421,7 +427,9 @@ function buildSegmentsForSpace(
             kind: "booking",
             startIndex: segment.startIndex,
             endIndex: segment.endIndex,
-            colorClass: getBookingColorClass(booking.status, booking.payment_status),
+            colorClass: booking.seriesSession
+                ? "bg-indigo-700 text-white"
+                : getBookingColorClass(booking.status, booking.payment_status),
             label: buildBookingLabel(bookingType, booking),
             hasConflict: false,
             isTruncatedStart: bookingRange.start < rangeStart,
@@ -1218,6 +1226,14 @@ function BookingModal({ open, booking, space, onClose }: BookingModalProps) {
                                     </p>
                                 </>
                             )}
+                            {booking.seriesSummary ? (
+                                <p>
+                                    <span className="font-medium text-[#192a3a]">Recurring schedule:</span>{" "}
+                                    {booking.seriesSummary}
+                                    {booking.seriesCount ? ` ${booking.seriesCount} sessions.` : ""}
+                                    {" "}This is one session. The days between sessions stay available.
+                                </p>
+                            ) : null}
                             <p>
                                 <span className="font-medium text-[#192a3a]">Booking status:</span>{" "}
                                 {ownerListingBookingStatusLabel(booking.status)}
@@ -1535,12 +1551,46 @@ function CalendarPageContent() {
                     const rows = (bookingData || []) as Array<
                         CalendarBooking & { renter?: CalendarBooking["renter"] }
                     >;
-                    setBookings(
-                        rows.map((row) => ({
-                            ...row,
-                            renter: row.renter ?? null,
-                        }))
+                    const parents = rows.filter((row) => row.booking_unit !== "recurring_hour");
+                    const seriesSessions: CalendarBooking[] = [];
+                    await Promise.all(
+                        rows
+                            .filter((row) => row.booking_unit === "recurring_hour")
+                            .map(async (parent) => {
+                                try {
+                                    const detail = (await ownerApiFetch(
+                                        `/api/bookings/${parent.id}/recurring-series`
+                                    )) as {
+                                        series?: { summary?: string; sessionCount?: number } | null;
+                                        sessions?: Array<{
+                                            id: string;
+                                            startAt: string;
+                                            endAt: string;
+                                            excluded: boolean;
+                                        }>;
+                                    };
+                                    for (const session of detail.sessions || []) {
+                                        if (session.excluded) continue;
+                                        seriesSessions.push({
+                                            ...parent,
+                                            id: session.id,
+                                            start_at: session.startAt,
+                                            end_at: session.endAt,
+                                            renter: parent.renter ?? null,
+                                            seriesSession: true,
+                                            seriesSummary: detail.series?.summary ?? null,
+                                            seriesCount: detail.series?.sessionCount ?? null,
+                                        });
+                                    }
+                                } catch {
+                                    // Leave the parent span off the calendar rather than paint every day as occupied.
+                                }
+                            })
                     );
+                    setBookings([
+                        ...parents.map((row) => ({ ...row, renter: row.renter ?? null })),
+                        ...seriesSessions,
+                    ]);
                 }
 
                 setBlockedDates((blockedData || []) as CalendarBlockedDate[]);

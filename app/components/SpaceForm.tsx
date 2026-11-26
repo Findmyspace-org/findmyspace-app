@@ -25,6 +25,8 @@ import FlexibleBookingRatesEditor, {
   emptyFlexibleRateDraft,
   ratesFromFlexibleDraft,
 } from "@/app/components/FlexibleBookingRatesEditor";
+import RecurringBookingsSetting from "@/app/components/RecurringBookingsSetting";
+import { resolveRecurringHourlyRate } from "@/lib/recurring-bookings";
 import { createOrganisationListingRequest } from "@/lib/organisation-commercial-client";
 import { listOrganisationPropertiesRequest } from "@/lib/organisation-property-client";
 import { resolveOrganisationListingPropertyChoice } from "@/lib/organisation-property";
@@ -220,6 +222,8 @@ export default function SpaceForm({
   const [spaceType, setSpaceType] = useState("storage");
   const [bookingUnit, setBookingUnit] = useState("day");
   const [useFlexibleRates, setUseFlexibleRates] = useState(false);
+  const [recurringEnabled, setRecurringEnabled] = useState(false);
+  const [recurringMaxOccurrences, setRecurringMaxOccurrences] = useState("");
   const [flexibleRateDraft, setFlexibleRateDraft] = useState(emptyFlexibleRateDraft);
 
   const [pricePerHour, setPricePerHour] = useState("");
@@ -1196,6 +1200,23 @@ export default function SpaceForm({
         return;
       }
 
+      const recurringRate = resolveRecurringHourlyRate({
+        flexibleRates: flexibleParsed && flexibleParsed.ok ? flexibleParsed.rates : [],
+        pricePerHour: Number(pricePerHour),
+        priceUnit: bookingUnit,
+        priceAmount:
+          bookingUnit === "hour"
+            ? Number(pricePerHour)
+            : bookingUnit === "day"
+              ? Number(pricePerDay)
+              : Number(pricePerMonth),
+      });
+      if (recurringEnabled && !recurringRate.ok) {
+        setMessage(recurringRate.error);
+        setLoading(false);
+        return;
+      }
+
       if (!useFlexibleRates && bookingUnit === "hour") {
         if (!pricePerHour || Number(pricePerHour) <= 0) {
           setMessage("Please enter a valid hourly price.");
@@ -1442,6 +1463,28 @@ export default function SpaceForm({
         }
       }
 
+      if (recurringEnabled) {
+        try {
+          await ownerApiFetch(`/api/host/listings/${insertedSpace.id}/recurring-bookings`, {
+            method: "PUT",
+            body: JSON.stringify({
+              enabled: true,
+              maxOccurrences: recurringMaxOccurrences.trim()
+                ? Number(recurringMaxOccurrences)
+                : null,
+            }),
+          });
+        } catch (recurringError) {
+          setMessage(
+            recurringError instanceof Error
+              ? `The listing was created, but recurring bookings were not enabled. ${recurringError.message}`
+              : "The listing was created, but recurring bookings were not enabled."
+          );
+          setLoading(false);
+          return;
+        }
+      }
+
       if (imageFiles.length > 0) {
         if (organisationId) {
           const upload = await uploadSpacePhotos(
@@ -1645,6 +1688,14 @@ export default function SpaceForm({
       setShareCopied(false);
     }
   }
+
+  const parsedFlexibleRates = useFlexibleRates ? ratesFromFlexibleDraft(flexibleRateDraft) : null;
+  const recurringHourly = resolveRecurringHourlyRate({
+    flexibleRates: parsedFlexibleRates && parsedFlexibleRates.ok ? parsedFlexibleRates.rates : [],
+    pricePerHour: Number(pricePerHour),
+    priceUnit: bookingUnit,
+    priceAmount: Number(pricePerHour),
+  });
 
   if (createdListingId) {
     return (
@@ -1976,6 +2027,14 @@ export default function SpaceForm({
               draft={flexibleRateDraft}
               onUseFlexibleRatesChange={setUseFlexibleRates}
               onDraftChange={setFlexibleRateDraft}
+            />
+            <RecurringBookingsSetting
+              enabled={recurringEnabled}
+              maxOccurrences={recurringMaxOccurrences}
+              hourlyRate={recurringHourly.ok ? recurringHourly.amount : null}
+              unavailableReason={recurringHourly.ok ? null : recurringHourly.error}
+              onEnabledChange={setRecurringEnabled}
+              onMaxOccurrencesChange={setRecurringMaxOccurrences}
             />
           </div>
           {bookingUnit === "hour" ? (
