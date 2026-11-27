@@ -9,12 +9,10 @@
  */
 
 import { readFileSync, existsSync, readdirSync } from "node:fs";
-import { execSync } from "node:child_process";
 import { join } from "node:path";
 import {
   EXPECTED_PROJECT_REF,
   assertFindmyspaceSupabaseTarget,
-  linkFindmyspaceSupabaseCli,
 } from "./lib/assert-findmyspace-supabase-target.mjs";
 
 const MIGRATION_NAME_RE =
@@ -124,14 +122,16 @@ async function main() {
   await querySql(projectRef, accessToken, sql);
   console.log("Migration SQL applied.");
 
-  console.log(`Linking Supabase CLI to ${EXPECTED_PROJECT_REF}...`);
-  linkFindmyspaceSupabaseCli(env, accessToken);
-
+  const historyName = filename.slice(`${version}_`.length).replace(/\.sql$/, "");
+  let tag = `migration_${version}_body`;
+  while (sql.includes(`$${tag}$`)) tag += "x";
   console.log(`Recording migration ${version} in schema_migrations...`);
-  execSync(`npx supabase@latest migration repair --status applied ${version}`, {
-    env: { ...env, SUPABASE_ACCESS_TOKEN: accessToken },
-    stdio: "inherit",
-  });
+  await querySql(
+    projectRef,
+    accessToken,
+    `insert into supabase_migrations.schema_migrations (version, name, statements)
+     values ('${version}', '${historyName}', array[$${tag}$${sql}$${tag}$]::text[])`
+  );
 
   console.log("Migration apply completed.");
   console.log(`project: ${projectRef}`);
