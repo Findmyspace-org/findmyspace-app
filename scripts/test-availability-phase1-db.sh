@@ -1,13 +1,14 @@
 #!/bin/bash
 # Isolated PostgreSQL checks for migration 081. Does not touch production.
 set -euo pipefail
+source "$(cd "$(dirname "$0")/.." && pwd)/scripts/lib/disposable-psql.sh"
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DB="availability_phase1"
-PSQL=(sudo -u postgres psql -v ON_ERROR_STOP=1 -d "$DB")
+PSQL=(disposable_psql -v ON_ERROR_STOP=1 -d "$DB")
 
-sudo -u postgres psql -v ON_ERROR_STOP=1 -c "DROP DATABASE IF EXISTS ${DB};" >/dev/null
-sudo -u postgres psql -v ON_ERROR_STOP=1 -c "CREATE DATABASE ${DB};" >/dev/null
+disposable_psql -v ON_ERROR_STOP=1 -c "DROP DATABASE IF EXISTS ${DB};" >/dev/null
+disposable_psql -v ON_ERROR_STOP=1 -c "CREATE DATABASE ${DB};" >/dev/null
 "${PSQL[@]}" -f "$ROOT/scripts/sql/availability-phase1-setup.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/supabase/migrations/081_20261124_space_availability_guard.sql" >/dev/null
 "${PSQL[@]}" -f "$ROOT/scripts/sql/availability-phase1-cases.sql" >/dev/null
@@ -22,7 +23,7 @@ SPACE_APPROVE="20000000-0000-4000-8000-000000000005"
 "${PSQL[@]}" -c "SELECT public.test_insert_booking('${SPACE_REJECT}'::uuid, 'confirmed', '2026-09-01 08:00+02', '2026-09-01 12:00+02');" >/dev/null
 
 run_pending() {
-  sudo -u postgres psql -d "$DB" -v ON_ERROR_STOP=1 -c \
+  disposable_psql -d "$DB" -v ON_ERROR_STOP=1 -c \
     "SELECT public.test_insert_booking('${1}'::uuid, 'pending_owner', '${2}', '${3}');" \
     >"$4" 2>&1
 }
@@ -64,9 +65,9 @@ fi
 SECOND="30000000-0000-4000-8000-000000000005"
 "${PSQL[@]}" -c "INSERT INTO public.bookings (id, space_id, status, payment_status, start_at, end_at) VALUES ('${SECOND}', '${SPACE_APPROVE}', 'pending', 'unpaid', '2026-09-04 15:00+02', '2026-09-04 17:00+02');" >/dev/null
 
-sudo -u postgres psql -d "$DB" -c "SELECT set_config('request.jwt.claim.role', 'service_role', false); SELECT public.apply_host_booking_response('${SPACE_APPROVE}', '${ACTOR}', 'approve', NULL);" >/tmp/avail-approve-a.txt 2>&1 &
+disposable_psql -d "$DB" -c "SELECT set_config('request.jwt.claim.role', 'service_role', false); SELECT public.apply_host_booking_response('${SPACE_APPROVE}', '${ACTOR}', 'approve', NULL);" >/tmp/avail-approve-a.txt 2>&1 &
 pid_a=$!
-sudo -u postgres psql -d "$DB" -c "SELECT set_config('request.jwt.claim.role', 'service_role', false); SELECT public.apply_host_booking_response('${SECOND}', '${ACTOR}', 'approve', NULL);" >/tmp/avail-approve-b.txt 2>&1 &
+disposable_psql -d "$DB" -c "SELECT set_config('request.jwt.claim.role', 'service_role', false); SELECT public.apply_host_booking_response('${SECOND}', '${ACTOR}', 'approve', NULL);" >/tmp/avail-approve-b.txt 2>&1 &
 pid_b=$!
 set +e
 wait "$pid_a"
@@ -79,7 +80,7 @@ if [[ "$accepted" != "1" ]]; then
   exit 1
 fi
 
-sudo -u postgres psql -d "$DB" -c "SELECT public.test_hold_then_confirm('${SPACE_HOLD}'::uuid, '2026-09-03 08:00+02', '2026-09-03 12:00+02', 'hold-confirm');" >/tmp/avail-hold.txt 2>&1 &
+disposable_psql -d "$DB" -c "SELECT public.test_hold_then_confirm('${SPACE_HOLD}'::uuid, '2026-09-03 08:00+02', '2026-09-03 12:00+02', 'hold-confirm');" >/tmp/avail-hold.txt 2>&1 &
 hold_pid=$!
 for _ in $(seq 1 50); do
   ready="$("${PSQL[@]}" -tA -c "SELECT COALESCE((SELECT ready FROM public.test_gate WHERE name = 'hold-confirm'), false);")"
@@ -111,7 +112,7 @@ fi
 
 BOOKING_RACE="40000000-0000-4000-8000-000000000004"
 "${PSQL[@]}" -c "INSERT INTO public.bookings (id, space_id, status, payment_status, start_at, end_at) VALUES ('${BOOKING_RACE}', '${SPACE_RACE}', 'pending_owner', 'unpaid', '2026-09-05 08:00+02', '2026-09-05 12:00+02');" >/dev/null
-sudo -u postgres psql -d "$DB" -c "SELECT public.test_hold_then_approve('${BOOKING_RACE}', '${ACTOR}', 'hold-approve');" >/tmp/avail-approve-hold.txt 2>&1 &
+disposable_psql -d "$DB" -c "SELECT public.test_hold_then_approve('${BOOKING_RACE}', '${ACTOR}', 'hold-approve');" >/tmp/avail-approve-hold.txt 2>&1 &
 approve_pid=$!
 for _ in $(seq 1 50); do
   ready="$("${PSQL[@]}" -tA -c "SELECT COALESCE((SELECT ready FROM public.test_gate WHERE name = 'hold-approve'), false);")"
@@ -127,7 +128,7 @@ if [[ "${ready:-}" != "t" ]]; then
   exit 1
 fi
 set +e
-sudo -u postgres psql -d "$DB" -v ON_ERROR_STOP=1 -c \
+disposable_psql -d "$DB" -v ON_ERROR_STOP=1 -c \
   "INSERT INTO public.blocked_dates (space_id, start_at, end_at, reason) VALUES ('${SPACE_RACE}', '2026-09-05 09:00+02', '2026-09-05 10:00+02', 'maintenance');" \
   >/tmp/avail-block-race.txt 2>&1
 block_code=$?

@@ -345,7 +345,7 @@ assert.doesNotMatch(migration, /UPDATE public\.profiles/i);
 assert.doesNotMatch(migration, /INSERT INTO public\.organisation_access/i);
 
 const pghGrant = execSync(
-  "git show cursor/pgh-org-admin-access-bc94:supabase/migrations/080_20261124_pgh_org_admin_grant.sql",
+  "git show origin/cursor/pgh-org-admin-access-bc94:supabase/migrations/080_20261124_pgh_org_admin_grant.sql",
   { encoding: "utf8" }
 );
 assert.match(pghGrant, /mvandermerwe@paarlgirlshigh\.com/);

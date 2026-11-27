@@ -2,10 +2,11 @@
 # Disposable database for migrations 081, 082, 083 and 084.
 # Never connect this script to the FindMySpace project.
 set -euo pipefail
+source "$(cd "$(dirname "$0")/.." && pwd)/scripts/lib/disposable-psql.sh"
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DB="availability_phase4"
-PSQL=(sudo -u postgres psql -v ON_ERROR_STOP=1)
+PSQL=(disposable_psql -v ON_ERROR_STOP=1)
 
 "${PSQL[@]}" -d postgres -c "DROP DATABASE IF EXISTS ${DB};" >/dev/null
 "${PSQL[@]}" -d postgres -c "CREATE DATABASE ${DB};" >/dev/null
@@ -55,9 +56,9 @@ SQL
 "${PSQL[@]}" -d "$DB" -v ON_ERROR_STOP=1 -c "SELECT public.attach_recurring_series('${ID_A}'::uuid, 'weekly', ARRAY[1]::smallint[], '14:00', '16:00', '2027-09-06', '2027-09-13', ARRAY[]::date[]) FROM (SELECT set_config('request.jwt.claim.role', 'service_role', true)) AS config;" >/dev/null
 "${PSQL[@]}" -d "$DB" -v ON_ERROR_STOP=1 -c "SELECT public.attach_recurring_series('${ID_B}'::uuid, 'weekly', ARRAY[1]::smallint[], '14:00', '16:00', '2027-09-06', '2027-09-13', ARRAY[]::date[]) FROM (SELECT set_config('request.jwt.claim.role', 'service_role', true)) AS config;" >/dev/null
 
-sudo -u postgres psql -d "$DB" -v ON_ERROR_STOP=1 -c "SELECT set_config('request.jwt.claim.role', 'service_role', false); SELECT public.apply_host_booking_response('${ID_A}'::uuid, '${ACTOR}'::uuid, 'approve', NULL);" >/tmp/phase4-race-a.txt 2>&1 &
+disposable_psql -d "$DB" -v ON_ERROR_STOP=1 -c "SELECT set_config('request.jwt.claim.role', 'service_role', false); SELECT public.apply_host_booking_response('${ID_A}'::uuid, '${ACTOR}'::uuid, 'approve', NULL);" >/tmp/phase4-race-a.txt 2>&1 &
 pid_a=$!
-sudo -u postgres psql -d "$DB" -v ON_ERROR_STOP=1 -c "SELECT set_config('request.jwt.claim.role', 'service_role', false); SELECT public.apply_host_booking_response('${ID_B}'::uuid, '${ACTOR}'::uuid, 'approve', NULL);" >/tmp/phase4-race-b.txt 2>&1 &
+disposable_psql -d "$DB" -v ON_ERROR_STOP=1 -c "SELECT set_config('request.jwt.claim.role', 'service_role', false); SELECT public.apply_host_booking_response('${ID_B}'::uuid, '${ACTOR}'::uuid, 'approve', NULL);" >/tmp/phase4-race-b.txt 2>&1 &
 pid_b=$!
 set +e
 wait "$pid_a"
@@ -99,9 +100,9 @@ SQL
 )"
 "${PSQL[@]}" -d "$DB" -c "SELECT public.attach_recurring_series('${SERIES}'::uuid, 'weekly', ARRAY[1]::smallint[], '14:00', '16:00', '2027-09-20', '2027-09-27', ARRAY[]::date[]) FROM (SELECT set_config('request.jwt.claim.role', 'service_role', true)) AS config;" >/dev/null
 
-sudo -u postgres psql -d "$DB" -v ON_ERROR_STOP=1 -c "SELECT set_config('request.jwt.claim.role', 'service_role', false); SELECT public.apply_host_booking_response('${SERIES}'::uuid, '${ACTOR}'::uuid, 'approve', NULL);" >/tmp/phase4-race-series.txt 2>&1 &
+disposable_psql -d "$DB" -v ON_ERROR_STOP=1 -c "SELECT set_config('request.jwt.claim.role', 'service_role', false); SELECT public.apply_host_booking_response('${SERIES}'::uuid, '${ACTOR}'::uuid, 'approve', NULL);" >/tmp/phase4-race-series.txt 2>&1 &
 pid_a=$!
-sudo -u postgres psql -d "$DB" -v ON_ERROR_STOP=1 -c "SELECT set_config('request.jwt.claim.role', 'service_role', false); SELECT public.apply_host_booking_response('${ONCE}'::uuid, '${ACTOR}'::uuid, 'approve', NULL);" >/tmp/phase4-race-once.txt 2>&1 &
+disposable_psql -d "$DB" -v ON_ERROR_STOP=1 -c "SELECT set_config('request.jwt.claim.role', 'service_role', false); SELECT public.apply_host_booking_response('${ONCE}'::uuid, '${ACTOR}'::uuid, 'approve', NULL);" >/tmp/phase4-race-once.txt 2>&1 &
 pid_b=$!
 set +e
 wait "$pid_a"
@@ -134,9 +135,9 @@ SQL
 )"
 "${PSQL[@]}" -d "$DB" -c "SELECT public.attach_recurring_series('${RULE_SERIES}'::uuid, 'weekly', ARRAY[1]::smallint[], '10:00', '11:00', '2027-10-04', '2027-10-11', ARRAY[]::date[]) FROM (SELECT set_config('request.jwt.claim.role', 'service_role', true)) AS config;" >/dev/null
 
-sudo -u postgres psql -d "$DB" -v ON_ERROR_STOP=1 -c "SELECT set_config('request.jwt.claim.role', 'service_role', false); SELECT public.apply_host_booking_response('${RULE_SERIES}'::uuid, '${ACTOR}'::uuid, 'approve', NULL);" >/tmp/phase4-race-approve.txt 2>&1 &
+disposable_psql -d "$DB" -v ON_ERROR_STOP=1 -c "SELECT set_config('request.jwt.claim.role', 'service_role', false); SELECT public.apply_host_booking_response('${RULE_SERIES}'::uuid, '${ACTOR}'::uuid, 'approve', NULL);" >/tmp/phase4-race-approve.txt 2>&1 &
 pid_a=$!
-sudo -u postgres psql -d "$DB" -v ON_ERROR_STOP=1 -c "SELECT set_config('request.jwt.claim.role', 'service_role', false); SELECT public.save_availability_rule('${SPACE}'::uuid, '${ACTOR}'::uuid, '{\"reason\":\"race\",\"weekdays\":[1],\"wholeDay\":false,\"localStart\":\"08:00\",\"localEnd\":\"15:00\",\"startsOn\":\"2027-10-04\"}'::jsonb);" >/tmp/phase4-race-rule.txt 2>&1 &
+disposable_psql -d "$DB" -v ON_ERROR_STOP=1 -c "SELECT set_config('request.jwt.claim.role', 'service_role', false); SELECT public.save_availability_rule('${SPACE}'::uuid, '${ACTOR}'::uuid, '{\"reason\":\"race\",\"weekdays\":[1],\"wholeDay\":false,\"localStart\":\"08:00\",\"localEnd\":\"15:00\",\"startsOn\":\"2027-10-04\"}'::jsonb);" >/tmp/phase4-race-rule.txt 2>&1 &
 pid_b=$!
 set +e
 wait "$pid_a"

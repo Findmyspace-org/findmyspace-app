@@ -25,7 +25,13 @@ LANGUAGE plpgsql
 AS $$
 BEGIN
   PERFORM dblink_exec(
-    'host=/var/run/postgresql dbname=availability_phase1 user=postgres',
+    format(
+      'host=%s port=%s dbname=%s user=%s',
+      split_part(current_setting('unix_socket_directories'), ',', 1),
+      current_setting('port'),
+      current_database(),
+      current_user
+    ),
     format(
       'INSERT INTO public.test_gate(name, ready) VALUES (%L, true)
        ON CONFLICT (name) DO UPDATE SET ready = true',

@@ -103,6 +103,10 @@ const migration = readFileSync(
   "utf8"
 );
 assert.match(migration, /CREATE TABLE IF NOT EXISTS public\.availability_rules/);
+assert.match(migration, /availability_rules_legacy_weekly_empty/);
+assert.match(migration, /without deleting or transforming them/);
+assert.doesNotMatch(migration, /DROP TABLE public\.availability_rules/i);
+assert.doesNotMatch(migration, /DELETE FROM public\.availability_rules/i);
 assert.match(migration, /REVOKE ALL ON FUNCTION public\.save_availability_rule/);
 assert.match(migration, /SET search_path = pg_catalog, public/);
 assert.doesNotMatch(migration, /CREATE TABLE public\.booking_series/);
@@ -199,4 +203,5 @@ assert.equal(
 assert.equal(computeAccess(ctx(PGH_SPACES[0], [])).canEditSpace, false);
 
 execFileSync("bash", ["scripts/test-phase3-availability-db.sh"], { stdio: "inherit" });
+execFileSync("bash", ["scripts/test-legacy-availability-db.sh"], { stdio: "inherit" });
 console.log("availability rule checks passed");

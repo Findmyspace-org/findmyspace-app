@@ -2,10 +2,11 @@
 # Disposable database for migrations 081 and 082 together.
 # Never connect this script to the FindMySpace project.
 set -euo pipefail
+source "$(cd "$(dirname "$0")/.." && pwd)/scripts/lib/disposable-psql.sh"
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DB="availability_phase2"
-PSQL=(sudo -u postgres psql -v ON_ERROR_STOP=1)
+PSQL=(disposable_psql -v ON_ERROR_STOP=1)
 
 "${PSQL[@]}" -d postgres -c "DROP DATABASE IF EXISTS ${DB};" >/dev/null
 "${PSQL[@]}" -d postgres -c "CREATE DATABASE ${DB};" >/dev/null

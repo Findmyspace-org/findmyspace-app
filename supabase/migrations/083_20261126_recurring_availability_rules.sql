@@ -9,12 +9,97 @@
 -- bookings, payments, prices, ownership, or existing blocked periods.
 -- Recurring bookings and single-date exceptions are not created here.
 -- School terms are chosen start and end dates, not calendar quarters.
+--
+-- Production already has an empty weekly availability_rules table
+-- (day_of_week, start_time, end_time, is_available). CREATE TABLE IF NOT
+-- EXISTS would leave that shape in place. When that legacy table has zero
+-- rows, this migration renames it to availability_rules_legacy_weekly_empty
+-- and then creates the recurring structure. The renamed table, its policies,
+-- and its constraints stay in the database. If the legacy table contains any
+-- row, migration 083 stops and leaves those rows unchanged.
 
 DO $$
 BEGIN
   IF to_regprocedure('public.lock_space_availability(uuid)') IS NULL THEN
     RAISE EXCEPTION 'migration 081 must be applied before recurring availability rules';
   END IF;
+END $$;
+
+DO $$
+DECLARE
+  row_count bigint;
+  has_legacy boolean;
+  has_recurring boolean;
+BEGIN
+  IF to_regclass('public.availability_rules') IS NULL THEN
+    RETURN;
+  END IF;
+
+  SELECT EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'availability_rules'
+      AND column_name = 'day_of_week'
+  ) INTO has_legacy;
+
+  SELECT EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'availability_rules'
+      AND column_name = 'weekdays'
+  ) INTO has_recurring;
+
+  IF has_recurring AND NOT has_legacy THEN
+    RETURN;
+  END IF;
+
+  IF NOT has_legacy OR has_recurring THEN
+    RAISE EXCEPTION
+      'availability_rules has an unrecognised structure. Migration 083 stopped without changing it.';
+  END IF;
+
+  LOCK TABLE public.availability_rules IN ACCESS EXCLUSIVE MODE;
+  SELECT count(*) INTO row_count FROM public.availability_rules;
+  IF row_count <> 0 THEN
+    RAISE EXCEPTION
+      'availability_rules contains % legacy row(s). Migration 083 stopped without deleting or transforming them.',
+      row_count;
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'public.availability_rules'::regclass
+      AND conname = 'availability_rules_pkey'
+  ) THEN
+    ALTER TABLE public.availability_rules
+      RENAME CONSTRAINT availability_rules_pkey TO availability_rules_legacy_weekly_empty_pkey;
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'public.availability_rules'::regclass
+      AND conname = 'availability_rules_space_id_fkey'
+  ) THEN
+    ALTER TABLE public.availability_rules
+      RENAME CONSTRAINT availability_rules_space_id_fkey TO availability_rules_legacy_weekly_empty_space_fkey;
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'public.availability_rules'::regclass
+      AND conname = 'availability_rules_day_of_week_check'
+  ) THEN
+    ALTER TABLE public.availability_rules
+      RENAME CONSTRAINT availability_rules_day_of_week_check TO availability_rules_legacy_weekly_empty_day_check;
+  END IF;
+  IF to_regclass('public.idx_availability_rules_space_id') IS NOT NULL THEN
+    ALTER INDEX public.idx_availability_rules_space_id
+      RENAME TO idx_availability_rules_legacy_weekly_empty_space;
+  END IF;
+
+  ALTER TABLE public.availability_rules RENAME TO availability_rules_legacy_weekly_empty;
+  COMMENT ON TABLE public.availability_rules_legacy_weekly_empty IS
+    'Empty pre-083 weekly availability table, renamed with its policies and constraints. It is not read by the booking calendar.';
 END $$;
 
 CREATE TABLE IF NOT EXISTS public.availability_rules (
@@ -113,6 +198,9 @@ BEGIN
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
     REVOKE INSERT, UPDATE, DELETE ON public.availability_rules FROM authenticated;
     GRANT SELECT ON public.availability_rules TO authenticated;
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN
+    GRANT SELECT, INSERT, UPDATE, DELETE ON public.availability_rules TO service_role;
   END IF;
 END $$;
 
