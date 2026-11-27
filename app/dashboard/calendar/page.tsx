@@ -28,7 +28,19 @@ import { useHostingWorkspace } from "@/lib/use-hosting-workspace";
 import { ORGANISATION_QUERY_PARAM } from "@/lib/access/organisation-workspace";
 import { downloadInvoicePdf } from "@/lib/invoice-download-client";
 import OwnerCalendarLegend from "@/app/dashboard/_components/calendar/OwnerCalendarLegend";
+import SeriesManagementPanel from "@/app/dashboard/_components/calendar/SeriesManagementPanel";
+import RestrictionExceptionPanel from "@/app/dashboard/_components/calendar/RestrictionExceptionPanel";
+import { ownerApiFetch } from "@/lib/owner-api-client";
 import { supabase } from "@/lib/supabase";
+import AvailabilityBlockDialog from "@/app/components/AvailabilityBlockDialog";
+import {
+    availabilityRuleFromRow,
+    describeAvailabilityRule,
+    expandAvailabilityRule,
+    type AvailabilityRule,
+    type AvailabilityRuleException,
+} from "@/lib/availability-rules";
+import { johannesburgLocalToUtc, parseCivilDate } from "@/lib/booking-periods";
 import {
     ownerListingBookingStatusLabel,
     renterPaymentStatusLabel,
@@ -43,6 +55,8 @@ type CalendarSpace = {
     suburb: string | null;
     status: string | null;
     booking_unit: string | null;
+    property_id?: string | null;
+    property_name?: string | null;
 };
 
 type CalendarBooking = {
@@ -61,6 +75,11 @@ type CalendarBooking = {
         email?: string | null;
         phone?: string | null;
     } | null;
+    seriesSession?: boolean;
+    seriesSummary?: string | null;
+    seriesCount?: number | null;
+    parentBookingId?: string | null;
+    occurrenceId?: string | null;
 };
 
 function bookingBlocksCalendarSlot(booking: CalendarBooking) {
@@ -86,11 +105,16 @@ type CalendarBlockedDate = {
     start_at: string;
     end_at: string;
     reason: string | null;
+    source?: "once" | "recurring" | "opened";
+    ruleId?: string;
+    exceptionId?: string;
+    summary?: string;
 };
 
 type TimelineSegment = {
     id: string;
     kind: "booking" | "blocked";
+    tone?: "once" | "recurring" | "opened";
     startIndex: number;
     endIndex: number;
     colorClass: string;
@@ -150,7 +174,11 @@ function getVisibleRange(currentDate: Date, bookingType: CalendarBookingType) {
     return { start, end };
 }
 
-function getBookingColorClass(status?: string | null, paymentStatus?: string | null) {
+function getBookingColorClass(
+    status?: string | null,
+    paymentStatus?: string | null,
+    bookingUnit?: string | null
+) {
     if (status === "pending" || status === "pending_owner") {
         return "bg-yellow-400 text-yellow-950";
     }
@@ -174,6 +202,9 @@ function getBookingColorClass(status?: string | null, paymentStatus?: string | n
         status === "completed" ||
         paymentStatus === "paid"
     ) {
+        if (["day", "week", "month", "quarter", "year"].includes(bookingUnit || "")) {
+            return "bg-emerald-700 text-white";
+        }
         return "bg-emerald-500 text-white";
     }
 
@@ -226,6 +257,9 @@ function clampSegmentIndices(
 }
 
 function buildBookingLabel(bookingType: CalendarBookingType, item: CalendarBooking | CalendarBlockedDate) {
+    if ("renter_id" in item && item.seriesSession) {
+        return bookingType === "hour" ? "Recurring" : "Recurring session";
+    }
     if ("renter_id" in item) {
         if (item.status === "expired") {
             return bookingType === "hour" ? "Expired booking" : "Expired";
@@ -409,7 +443,16 @@ function buildSegmentsForSpace(
             kind: "booking",
             startIndex: segment.startIndex,
             endIndex: segment.endIndex,
-            colorClass: getBookingColorClass(booking.status, booking.payment_status),
+            colorClass: booking.seriesSession
+                ? booking.status === "pending" || booking.status === "pending_owner"
+                    ? "bg-yellow-400 text-yellow-950 ring-1 ring-indigo-700"
+                    : booking.status === "approved" ||
+                        booking.status === "accepted_awaiting_payment" ||
+                        booking.status === "awaiting_payment" ||
+                        booking.payment_status === "awaiting_payment"
+                      ? "bg-blue-500 text-white ring-1 ring-indigo-700"
+                      : "bg-indigo-700 text-white"
+                : getBookingColorClass(booking.status, booking.payment_status, booking.booking_unit),
             label: buildBookingLabel(bookingType, booking),
             hasConflict: false,
             isTruncatedStart: bookingRange.start < rangeStart,
@@ -433,10 +476,11 @@ function buildSegmentsForSpace(
         rawSegments.push({
             id: blocked.id,
             kind: "blocked",
+            tone: blocked.source === "recurring" ? "recurring" : blocked.source === "opened" ? "opened" : "once",
             startIndex: segment.startIndex,
             endIndex: segment.endIndex,
-            colorClass: "bg-gray-400 text-white",
-            label: buildBookingLabel(bookingType, blocked),
+            colorClass: "text-white",
+            label: blocked.summary || buildBookingLabel(bookingType, blocked),
             hasConflict: false,
             isTruncatedStart: blockedRange.start < rangeStart,
             isTruncatedEnd: blockedRange.end > rangeEnd,
@@ -621,6 +665,9 @@ type CalendarToolbarProps = {
     areaFilter: string;
     onAreaFilterChange: (value: string) => void;
     areaOptions: string[];
+    propertyFilter: string;
+    onPropertyFilterChange: (value: string) => void;
+    propertyOptions: Array<{ id: string; name: string }>;
     statusFilter: string;
     onStatusFilterChange: (value: string) => void;
     dateRangeFilter: string;
@@ -639,6 +686,9 @@ function CalendarToolbar({
     areaFilter,
     onAreaFilterChange,
     areaOptions,
+    propertyFilter,
+    onPropertyFilterChange,
+    propertyOptions,
     statusFilter,
     onStatusFilterChange,
     dateRangeFilter,
@@ -667,6 +717,19 @@ function CalendarToolbar({
                         className="w-full rounded-md border border-gray-300 bg-white py-2 pl-10 pr-3 text-sm outline-none focus:border-[#192a3a]"
                     />
                 </div>
+
+                <select
+                    value={propertyFilter}
+                    onChange={(e) => onPropertyFilterChange(e.target.value)}
+                    className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-[#192a3a] outline-none focus:border-[#192a3a]"
+                >
+                    <option value="all">All properties</option>
+                    {propertyOptions.map((property) => (
+                        <option key={property.id} value={property.id}>
+                            {property.name}
+                        </option>
+                    ))}
+                </select>
 
                 <select
                     value={areaFilter}
@@ -878,7 +941,7 @@ function CalendarSegmentButton({
                     onBlockedDateClick(blockedDate);
                 }
             }}
-            className={`pointer-events-auto absolute top-1/2 flex h-6 -translate-y-1/2 items-center px-2 text-[11px] font-medium shadow-sm ${segment.colorClass} ${getSegmentShapeClass(segment)} ${segment.hasConflict ? "ring-2 ring-red-300" : ""} ${segment.kind === "blocked" ? "bg-[repeating-linear-gradient(135deg,rgba(156,163,175,1)_0px,rgba(156,163,175,1)_10px,rgba(107,114,128,1)_10px,rgba(107,114,128,1)_20px)]" : ""}`}
+            className={`pointer-events-auto absolute top-1/2 flex h-6 -translate-y-1/2 items-center px-2 text-[11px] font-medium shadow-sm ${segment.colorClass} ${getSegmentShapeClass(segment)} ${segment.hasConflict ? "ring-2 ring-red-300" : ""} ${segment.kind === "blocked" ? segment.tone === "recurring" ? "bg-[repeating-linear-gradient(135deg,#b45309_0px,#b45309_10px,#78350f_10px,#78350f_20px)] text-white" : segment.tone === "opened" ? "border border-emerald-700 bg-white text-emerald-900" : "bg-[repeating-linear-gradient(135deg,rgba(156,163,175,1)_0px,rgba(156,163,175,1)_10px,rgba(107,114,128,1)_10px,rgba(107,114,128,1)_20px)]" : ""}`}
             style={{
                 left,
                 width,
@@ -1052,9 +1115,10 @@ type BookingModalProps = {
     booking: CalendarBooking | null;
     space: CalendarSpace | null;
     onClose: () => void;
+    onChanged?: () => void;
 };
 
-function BookingModal({ open, booking, space, onClose }: BookingModalProps) {
+function BookingModal({ open, booking, space, onClose, onChanged }: BookingModalProps) {
     const [invoiceModalOpen, setInvoiceModalOpen] = useState(false);
     const [invoiceHtml, setInvoiceHtml] = useState<string | null>(null);
     const [invoiceLoading, setInvoiceLoading] = useState(false);
@@ -1205,6 +1269,24 @@ function BookingModal({ open, booking, space, onClose }: BookingModalProps) {
                                     </p>
                                 </>
                             )}
+                            {booking.seriesSummary ? (
+                                <p>
+                                    <span className="font-medium text-[#192a3a]">Recurring schedule:</span>{" "}
+                                    {booking.seriesSummary}
+                                    {booking.seriesCount ? ` ${booking.seriesCount} sessions.` : ""}
+                                    {" "}This is one session. The days between sessions stay available.
+                                    {booking.parentBookingId ? ` Parent booking ${booking.parentBookingId}.` : ""}
+                                </p>
+                            ) : null}
+                            {booking.seriesSession && booking.parentBookingId ? (
+                                <SeriesManagementPanel
+                                    bookingId={booking.parentBookingId}
+                                    occurrenceId={booking.occurrenceId || booking.id}
+                                    occurrenceStart={booking.start_at}
+                                    occurrenceEnd={booking.end_at}
+                                    onChanged={onChanged}
+                                />
+                            ) : null}
                             <p>
                                 <span className="font-medium text-[#192a3a]">Booking status:</span>{" "}
                                 {ownerListingBookingStatusLabel(booking.status)}
@@ -1382,130 +1464,6 @@ function BlockedDateDrawer({ blockedDate, space, onRemove }: BlockedDateDrawerPr
     );
 }
 
-type SlotBlockModalProps = {
-    open: boolean;
-    space: CalendarSpace | null;
-    bookingType: CalendarBookingType;
-    slotSaving: boolean;
-    slotError: string;
-    selectedSlotBlockedDate: CalendarBlockedDate | null;
-    slotStartInput: string;
-    setSlotStartInput: React.Dispatch<React.SetStateAction<string>>;
-    slotEndInput: string;
-    setSlotEndInput: React.Dispatch<React.SetStateAction<string>>;
-    blockReason: string;
-    setBlockReason: React.Dispatch<React.SetStateAction<string>>;
-    onClose: () => void;
-    onSave: () => void;
-};
-
-function SlotBlockModal({
-    open,
-    space,
-    bookingType,
-    slotSaving,
-    slotError,
-    selectedSlotBlockedDate,
-    slotStartInput,
-    setSlotStartInput,
-    slotEndInput,
-    setSlotEndInput,
-    blockReason,
-    setBlockReason,
-    onClose,
-    onSave,
-}: SlotBlockModalProps) {
-    if (!open || !space) return null;
-
-    return (
-        <>
-            <div className="fixed inset-0 z-40 bg-black/20" onClick={() => { if (!slotSaving) onClose(); }} />
-
-            <div className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl border border-gray-200 bg-white p-5 shadow-2xl">
-                <div className="flex items-start justify-between gap-4">
-                    <div>
-                        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
-                            {selectedSlotBlockedDate ? "Blocked range" : "Availability range"}
-                        </p>
-                        <h3 className="mt-1 text-lg font-semibold text-[#192a3a]">
-                            {space.title || "Untitled space"}
-                        </h3>
-                    </div>
-
-                    <button
-                        type="button"
-                        onClick={onClose}
-                        className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-gray-300 text-gray-600 hover:bg-gray-50"
-                    >
-                        <X className="h-4 w-4" />
-                    </button>
-                </div>
-
-                {slotError && (
-                    <div className="mt-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                        {slotError}
-                    </div>
-                )}
-
-                <div className="mt-4 grid gap-4">
-                    <div>
-                        <label className="mb-2 block text-sm font-medium text-[#192a3a]">Start</label>
-                        <input
-                            type={bookingType === "hour" ? "datetime-local" : bookingType === "day" ? "date" : "month"}
-                            value={slotStartInput}
-                            onChange={(e) => setSlotStartInput(e.target.value)}
-                            disabled={slotSaving}
-                            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm outline-none focus:border-[#192a3a] disabled:bg-gray-100"
-                        />
-                    </div>
-
-                    <div>
-                        <label className="mb-2 block text-sm font-medium text-[#192a3a]">End</label>
-                        <input
-                            type={bookingType === "hour" ? "datetime-local" : bookingType === "day" ? "date" : "month"}
-                            value={slotEndInput}
-                            onChange={(e) => setSlotEndInput(e.target.value)}
-                            disabled={slotSaving}
-                            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm outline-none focus:border-[#192a3a] disabled:bg-gray-100"
-                        />
-                    </div>
-                </div>
-
-                <div className="mt-4">
-                    <label className="mb-2 block text-sm font-medium text-[#192a3a]">Block reason</label>
-                    <textarea
-                        value={blockReason}
-                        onChange={(e) => setBlockReason(e.target.value)}
-                        rows={3}
-                        disabled={slotSaving}
-                        placeholder="Add a reason for blocking this range"
-                        className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm outline-none focus:border-[#192a3a] disabled:bg-gray-100"
-                    />
-                </div>
-
-                <div className="mt-5 flex justify-end gap-3">
-                    <button
-                        type="button"
-                        onClick={onClose}
-                        className="rounded-md border border-gray-300 px-4 py-2 text-sm text-[#192a3a] hover:bg-gray-50"
-                    >
-                        Cancel
-                    </button>
-
-                    <button
-                        type="button"
-                        onClick={onSave}
-                        disabled={slotSaving}
-                        className={`rounded-md px-4 py-2 text-sm text-white ${selectedSlotBlockedDate ? "bg-red-600 hover:bg-red-700" : "bg-[#192a3a] hover:opacity-90"} disabled:cursor-not-allowed disabled:opacity-60`}
-                    >
-                        {slotSaving ? "Saving..." : selectedSlotBlockedDate ? "Unblock availability" : "Block availability"}
-                    </button>
-                </div>
-            </div>
-        </>
-    );
-}
-
 type SideDrawerProps = {
     open: boolean;
     title: string;
@@ -1556,6 +1514,9 @@ function CalendarPageContent() {
     const [bookingType, setBookingType] = useState<CalendarBookingType>("day");
     const [searchText, setSearchText] = useState("");
     const [areaFilter, setAreaFilter] = useState("all");
+    const [propertyFilter, setPropertyFilter] = useState("all");
+    const [calendarRevision, setCalendarRevision] = useState(0);
+    const [ruleExceptions, setRuleExceptions] = useState<AvailabilityRuleException[]>([]);
     const [statusFilter, setStatusFilter] = useState("all");
     const [dateRangeFilter, setDateRangeFilter] = useState("current");
     const [currentDate, setCurrentDate] = useState(new Date());
@@ -1565,6 +1526,8 @@ function CalendarPageContent() {
 
     const [bookings, setBookings] = useState<CalendarBooking[]>([]);
     const [blockedDates, setBlockedDates] = useState<CalendarBlockedDate[]>([]);
+    const [availabilityRules, setAvailabilityRules] = useState<AvailabilityRule[]>([]);
+    const [editingRule, setEditingRule] = useState<AvailabilityRule | null>(null);
 
     useEffect(() => {
         async function loadSpaces() {
@@ -1594,6 +1557,8 @@ function CalendarPageContent() {
                 suburb: space.suburb ?? null,
                 status: space.status ?? null,
                 booking_unit: space.booking_unit ?? null,
+                property_id: space.property_id ?? null,
+                property_name: space.property_name ?? null,
             })) as CalendarSpace[];
             setSpaces(nextSpaces);
 
@@ -1644,24 +1609,116 @@ function CalendarPageContent() {
                     const rows = (bookingData || []) as Array<
                         CalendarBooking & { renter?: CalendarBooking["renter"] }
                     >;
-                    setBookings(
-                        rows.map((row) => ({
-                            ...row,
-                            renter: row.renter ?? null,
-                        }))
+                    const parents = rows.filter((row) => row.booking_unit !== "recurring_hour");
+                    const seriesSessions: CalendarBooking[] = [];
+                    await Promise.all(
+                        rows
+                            .filter((row) => row.booking_unit === "recurring_hour")
+                            .map(async (parent) => {
+                                try {
+                                    const detail = (await ownerApiFetch(
+                                        `/api/bookings/${parent.id}/recurring-series`
+                                    )) as {
+                                        series?: { summary?: string; sessionCount?: number } | null;
+                                        sessions?: Array<{
+                                            id: string;
+                                            startAt: string;
+                                            endAt: string;
+                                            excluded: boolean;
+                                            cancelled?: boolean;
+                                        }>;
+                                    };
+                                    for (const session of detail.sessions || []) {
+                                        if (session.excluded || session.cancelled) continue;
+                                        seriesSessions.push({
+                                            ...parent,
+                                            id: session.id,
+                                            parentBookingId: parent.id,
+                                            occurrenceId: session.id,
+                                            start_at: session.startAt,
+                                            end_at: session.endAt,
+                                            renter: parent.renter ?? null,
+                                            seriesSession: true,
+                                            seriesSummary: detail.series?.summary ?? null,
+                                            seriesCount: detail.series?.sessionCount ?? null,
+                                        });
+                                    }
+                                } catch {
+                                    // Leave the parent span off the calendar rather than paint every day as occupied.
+                                }
+                            })
                     );
+                    setBookings([
+                        ...parents.map((row) => ({ ...row, renter: row.renter ?? null })),
+                        ...seriesSessions,
+                    ]);
                 }
 
                 setBlockedDates((blockedData || []) as CalendarBlockedDate[]);
+
+                const loadedRules: AvailabilityRule[] = [];
+                const loadedExceptions: AvailabilityRuleException[] = [];
+                await Promise.all(
+                    spaceIds.map(async (spaceId) => {
+                        try {
+                            const result = (await ownerApiFetch(
+                                `/api/host/spaces/${spaceId}/availability-rules`
+                            )) as {
+                                rules?: Array<Parameters<typeof availabilityRuleFromRow>[0]>;
+                                exceptions?: Array<{
+                                    id: string;
+                                    rule_id: string;
+                                    exception_date: string;
+                                    action: "open" | "override";
+                                    local_start?: string | null;
+                                    local_end?: string | null;
+                                    whole_day?: boolean | null;
+                                    reason?: string | null;
+                                }>;
+                            };
+                            for (const exception of result.exceptions || []) {
+                                loadedExceptions.push({
+                                    id: exception.id,
+                                    ruleId: exception.rule_id,
+                                    date: String(exception.exception_date).slice(0, 10),
+                                    action: exception.action,
+                                    localStart: exception.local_start ? String(exception.local_start).slice(0, 5) : null,
+                                    localEnd: exception.local_end ? String(exception.local_end).slice(0, 5) : null,
+                                    wholeDay: Boolean(exception.whole_day),
+                                    reason: exception.reason ?? null,
+                                });
+                            }
+                            for (const row of result.rules || []) {
+                                const rule = availabilityRuleFromRow(row);
+                                if (rule) loadedRules.push(rule);
+                            }
+                        } catch {
+                            // Once-off blocks still load when recurring rules are unavailable.
+                        }
+                    })
+                );
+                setAvailabilityRules(loadedRules);
+                setRuleExceptions(loadedExceptions);
             } else {
                 setBookings([]);
                 setBlockedDates([]);
+                setAvailabilityRules([]);
+                setRuleExceptions([]);
             }
             setLoading(false);
         }
 
         loadSpaces();
-    }, [requestedOrganisationId]);
+    }, [requestedOrganisationId, calendarRevision]);
+
+    const propertyOptions = useMemo(() => {
+        const seen = new Map<string, string>();
+        for (const space of spaces) {
+            if (!space.property_id) continue;
+            seen.set(space.property_id, space.property_name || "Property");
+        }
+        return Array.from(seen, ([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
+    }, [spaces]);
 
     const areaOptions = useMemo(() => {
         const values = Array.from(
@@ -1679,8 +1736,7 @@ function CalendarPageContent() {
         const normalizedSearch = searchText.trim().toLowerCase();
 
         return spaces.filter((space) => {
-            const unitMatches = (space.booking_unit || "day") === bookingType;
-            if (!unitMatches) return false;
+            if (propertyFilter !== "all" && (space.property_id || "") !== propertyFilter) return false;
 
             if (areaFilter !== "all") {
                 const area = space.city || space.suburb || "";
@@ -1700,7 +1756,7 @@ function CalendarPageContent() {
 
             return searchable.includes(normalizedSearch);
         });
-    }, [spaces, bookingType, areaFilter, statusFilter, searchText]);
+    }, [spaces, propertyFilter, areaFilter, statusFilter, searchText]);
 
     const columns = useMemo(() => {
         if (bookingType === "hour") return buildHourlyColumns(currentDate);
@@ -1940,12 +1996,17 @@ function CalendarPageContent() {
     }
 
     async function handleRemoveBlockedDate(blockedDate: CalendarBlockedDate) {
-        const { error } = await (supabase.from("blocked_dates") as any)
-            .delete()
-            .eq("id", blockedDate.id);
-
-        if (error) {
-            setSlotError(error.message || "Could not remove blocked availability.");
+        try {
+            await ownerApiFetch(
+                `/api/host/spaces/${blockedDate.space_id}/blocked-dates?id=${encodeURIComponent(blockedDate.id)}`,
+                { method: "DELETE" }
+            );
+        } catch (error) {
+            setSlotError(
+                error instanceof Error
+                    ? error.message
+                    : "Could not remove blocked availability."
+            );
             return;
         }
 
@@ -1982,38 +2043,35 @@ function CalendarPageContent() {
         setSlotSaving(true);
         setSlotError("");
 
-        if (matchingBlockedDate) {
-            const { error } = await (supabase.from("blocked_dates") as any)
-                .delete()
-                .eq("id", matchingBlockedDate.id);
-
-            if (error) {
-                setSlotError(error.message || "Could not unblock availability.");
-                setSlotSaving(false);
-                return;
+        try {
+            if (matchingBlockedDate) {
+                await ownerApiFetch(
+                    `/api/host/spaces/${selectedSlotSpace.id}/blocked-dates?id=${encodeURIComponent(matchingBlockedDate.id)}`,
+                    { method: "DELETE" }
+                );
+                setBlockedDates((current) =>
+                    current.filter((item) => item.id !== matchingBlockedDate.id)
+                );
+            } else {
+                const result = (await ownerApiFetch(
+                    `/api/host/spaces/${selectedSlotSpace.id}/blocked-dates`,
+                    {
+                        method: "POST",
+                        body: JSON.stringify({
+                            startAt: syncedRange.startIso,
+                            endAt: syncedRange.endIso,
+                            reason: blockReason.trim() || null,
+                        }),
+                    }
+                )) as { blockedDate: CalendarBlockedDate };
+                setBlockedDates((current) => [...current, result.blockedDate]);
             }
-
-            setBlockedDates((current) =>
-                current.filter((item) => item.id !== matchingBlockedDate.id)
+        } catch (error) {
+            setSlotError(
+                error instanceof Error ? error.message : "Could not block availability."
             );
-        } else {
-            const { data, error } = await (supabase.from("blocked_dates") as any)
-                .insert({
-                    space_id: selectedSlotSpace.id,
-                    start_at: syncedRange.startIso,
-                    end_at: syncedRange.endIso,
-                    reason: blockReason.trim() || null,
-                })
-                .select("id, space_id, start_at, end_at, reason")
-                .single();
-
-            if (error) {
-                setSlotError(error.message || "Could not block availability.");
-                setSlotSaving(false);
-                return;
-            }
-
-            setBlockedDates((current) => [...current, data as CalendarBlockedDate]);
+            setSlotSaving(false);
+            return;
         }
 
         setSlotSaving(false);
@@ -2027,6 +2085,63 @@ function CalendarPageContent() {
         setBlockReason("");
         setSlotStartInput("");
         setSlotEndInput("");
+        setEditingRule(null);
+    }
+
+    async function handleSaveRecurring(rule: AvailabilityRule) {
+        const spaceId = rule.spaceId && rule.spaceId !== "space" ? rule.spaceId : selectedSlotSpace?.id;
+        if (!spaceId) return;
+        setSlotSaving(true);
+        setSlotError("");
+        try {
+            const result = (await ownerApiFetch(
+                `/api/host/spaces/${spaceId}/availability-rules`,
+                {
+                    method: "POST",
+                    body: JSON.stringify({
+                        id: rule.id || undefined,
+                        reason: blockReason.trim() || rule.reason,
+                        weekdays: rule.weekdays,
+                        wholeDay: rule.wholeDay,
+                        localStart: rule.localStart,
+                        localEnd: rule.localEnd,
+                        startsOn: rule.startsOn,
+                        endsOn: rule.endsOn,
+                        noEnd: !rule.endsOn,
+                    }),
+                }
+            )) as { rule?: Parameters<typeof availabilityRuleFromRow>[0] };
+            const saved = result.rule ? availabilityRuleFromRow(result.rule) : null;
+            if (!saved) throw new Error("Could not save the restriction.");
+            setAvailabilityRules((current) => [
+                ...current.filter((item) => item.id !== saved.id),
+                saved,
+            ]);
+        } catch (error) {
+            setSlotError(error instanceof Error ? error.message : "Could not save the restriction.");
+            setSlotSaving(false);
+            return;
+        }
+        setSlotSaving(false);
+        setSlotModalOpen(false);
+        setEditingRule(null);
+        setSelectedSlotSpace(null);
+        setBlockReason("");
+    }
+
+    async function handleRemoveRule(ruleId: string, spaceId: string) {
+        try {
+            await ownerApiFetch(
+                `/api/host/spaces/${spaceId}/availability-rules?id=${encodeURIComponent(ruleId)}`,
+                { method: "DELETE" }
+            );
+        } catch (error) {
+            setSlotError(error instanceof Error ? error.message : "Could not remove the restriction.");
+            return;
+        }
+        setAvailabilityRules((current) => current.filter((rule) => rule.id !== ruleId));
+        setSelectedBlockedDate(null);
+        setSelectedDrawerSpace(null);
     }
 
     const bookingsBySpace = useMemo(() => {
@@ -2044,8 +2159,57 @@ function CalendarPageContent() {
             if (!map[blockedDate.space_id]) map[blockedDate.space_id] = [];
             map[blockedDate.space_id].push(blockedDate);
         });
+        availabilityRules.forEach((rule) => {
+            const exceptions = ruleExceptions.filter((item) => item.ruleId === rule.id);
+            const occurrences = expandAvailabilityRule(rule, visibleRange.start, visibleRange.end);
+            occurrences.forEach((occurrence) => {
+                const date = new Intl.DateTimeFormat("en-CA", {
+                    timeZone: "Africa/Johannesburg",
+                    year: "numeric",
+                    month: "2-digit",
+                    day: "2-digit",
+                }).format(occurrence.start);
+                const exception = exceptions.find((item) => item.date === date);
+                if (!map[rule.spaceId]) map[rule.spaceId] = [];
+                if (exception?.action === "open") {
+                    map[rule.spaceId].push({
+                        id: `open:${exception.id}`,
+                        space_id: rule.spaceId,
+                        start_at: occurrence.start.toISOString(),
+                        end_at: occurrence.end.toISOString(),
+                        reason: exception.reason || "Opened for this date",
+                        source: "opened",
+                        ruleId: rule.id,
+                        exceptionId: exception.id,
+                        summary: `Open on ${date}. The recurring restriction remains.`,
+                    });
+                    return;
+                }
+                let start = occurrence.start;
+                let end = occurrence.end;
+                if (exception?.action === "override" && exception.localStart && exception.localEnd) {
+                    const day = parseCivilDate(date);
+                    const [startHour, startMinute] = exception.localStart.split(":").map(Number);
+                    const [endHour, endMinute] = exception.localEnd.split(":").map(Number);
+                    if (day && Number.isFinite(startHour) && Number.isFinite(endHour)) {
+                        start = johannesburgLocalToUtc(day, startHour, startMinute);
+                        end = johannesburgLocalToUtc(day, endHour, endMinute);
+                    }
+                }
+                map[rule.spaceId].push({
+                    id: `rule:${rule.id}:${start.toISOString()}`,
+                    space_id: rule.spaceId,
+                    start_at: start.toISOString(),
+                    end_at: end.toISOString(),
+                    reason: rule.reason,
+                    source: "recurring",
+                    ruleId: rule.id,
+                    summary: describeAvailabilityRule(rule),
+                });
+            });
+        });
         return map;
-    }, [blockedDates]);
+    }, [availabilityRules, blockedDates, ruleExceptions, visibleRange.end, visibleRange.start]);
 
     function closeDrawer() {
         setSelectedBooking(null);
@@ -2065,6 +2229,7 @@ function CalendarPageContent() {
         setBlockReason("");
         setSlotStartInput("");
         setSlotEndInput("");
+        setEditingRule(null);
     }
 
     return (
@@ -2088,6 +2253,9 @@ function CalendarPageContent() {
                         areaFilter={areaFilter}
                         onAreaFilterChange={setAreaFilter}
                         areaOptions={areaOptions}
+                        propertyFilter={propertyFilter}
+                        onPropertyFilterChange={setPropertyFilter}
+                        propertyOptions={propertyOptions}
                         statusFilter={statusFilter}
                         onStatusFilterChange={setStatusFilter}
                         dateRangeFilter={dateRangeFilter}
@@ -2120,6 +2288,7 @@ function CalendarPageContent() {
                     booking={selectedBooking}
                     space={selectedDrawerSpace}
                     onClose={closeDrawer}
+                    onChanged={() => setCalendarRevision((value) => value + 1)}
                 />
 
                 <SideDrawer
@@ -2128,7 +2297,90 @@ function CalendarPageContent() {
                     subtitle="Blocked availability"
                     onClose={closeDrawer}
                 >
-                    {selectedBlockedDate && selectedDrawerSpace && (
+                    {selectedBlockedDate && selectedDrawerSpace && selectedBlockedDate.source === "recurring" && selectedBlockedDate.ruleId && (
+                        <section className="space-y-3 rounded-xl border border-amber-200 bg-amber-50/40 p-4">
+                            <h3 className="text-sm font-semibold text-[#192a3a]">Recurring restriction</h3>
+                            <p className="text-sm text-gray-700">{selectedBlockedDate.summary}</p>
+                            <p className="text-sm text-gray-700">
+                                <span className="font-medium text-[#192a3a]">This occurrence:</span>{" "}
+                                {new Date(selectedBlockedDate.start_at).toLocaleString("en-ZA", { timeZone: "Africa/Johannesburg" })}
+                                {" – "}
+                                {new Date(selectedBlockedDate.end_at).toLocaleString("en-ZA", { timeZone: "Africa/Johannesburg" })} SAST
+                            </p>
+                            <p className="text-sm text-gray-700">
+                                <span className="font-medium text-[#192a3a]">Reason:</span> {selectedBlockedDate.reason || "No reason added"}
+                            </p>
+                            <RestrictionExceptionPanel
+                                spaceId={selectedBlockedDate.space_id}
+                                rule={availabilityRules.find((item) => item.id === selectedBlockedDate.ruleId) || {
+                                    id: selectedBlockedDate.ruleId,
+                                    spaceId: selectedBlockedDate.space_id,
+                                    reason: selectedBlockedDate.reason,
+                                    weekdays: [],
+                                    wholeDay: false,
+                                    localStart: null,
+                                    localEnd: null,
+                                    startsOn: "",
+                                    endsOn: null,
+                                }}
+                                occurrenceStart={selectedBlockedDate.start_at}
+                                onChanged={() => setCalendarRevision((value) => value + 1)}
+                            />
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    const rule = availabilityRules.find((item) => item.id === selectedBlockedDate.ruleId);
+                                    if (!rule) return;
+                                    setEditingRule(rule);
+                                    setSelectedSlotSpace(selectedDrawerSpace);
+                                    setBlockReason(rule.reason || "");
+                                    setSlotError("");
+                                    setSlotModalOpen(true);
+                                }}
+                                className="inline-flex w-full items-center justify-between rounded-md border border-gray-300 px-3 py-2 text-sm text-[#192a3a] hover:bg-white"
+                            >
+                                <span>Edit restriction</span>
+                                <span>›</span>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => handleRemoveRule(selectedBlockedDate.ruleId!, selectedBlockedDate.space_id)}
+                                className="inline-flex w-full items-center justify-between rounded-md border border-red-300 px-3 py-2 text-sm text-red-700 hover:bg-red-50"
+                            >
+                                <span>Remove entire restriction</span>
+                                <span>›</span>
+                            </button>
+                        </section>
+                    )}
+                    {selectedBlockedDate && selectedDrawerSpace && selectedBlockedDate.source === "opened" && selectedBlockedDate.exceptionId && (
+                        <section className="space-y-3 rounded-xl border border-emerald-200 bg-white p-4">
+                            <h3 className="text-sm font-semibold text-[#192a3a]">Opened exception</h3>
+                            <p className="text-sm text-gray-700">{selectedBlockedDate.summary}</p>
+                            <p className="text-sm text-gray-700">
+                                Restoring the block is refused when a booking already uses this time.
+                            </p>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    void ownerApiFetch(
+                                        `/api/host/spaces/${selectedBlockedDate.space_id}/availability-exceptions?exceptionId=${encodeURIComponent(selectedBlockedDate.exceptionId || "")}`,
+                                        { method: "DELETE" }
+                                    ).then(() => {
+                                        setCalendarRevision((value) => value + 1);
+                                        closeDrawer();
+                                    }).catch((error: unknown) => {
+                                        setSlotError(error instanceof Error ? error.message : "The date stays open.");
+                                    });
+                                }}
+                                className="inline-flex w-full items-center justify-between rounded-md border border-gray-300 px-3 py-2 text-sm text-[#192a3a] hover:bg-white"
+                            >
+                                <span>Restore this blocked date</span>
+                                <span>›</span>
+                            </button>
+                            {slotError ? <p className="text-sm text-red-700">{slotError}</p> : null}
+                        </section>
+                    )}
+                    {selectedBlockedDate && selectedDrawerSpace && selectedBlockedDate.source !== "recurring" && selectedBlockedDate.source !== "opened" && (
                         <BlockedDateDrawer
                             blockedDate={selectedBlockedDate}
                             space={selectedDrawerSpace}
@@ -2137,21 +2389,28 @@ function CalendarPageContent() {
                     )}
                 </SideDrawer>
 
-                <SlotBlockModal
+                <AvailabilityBlockDialog
                     open={slotModalOpen}
-                    space={selectedSlotSpace}
-                    bookingType={bookingType}
-                    slotSaving={slotSaving}
-                    slotError={slotError}
-                    selectedSlotBlockedDate={selectedSlotBlockedDate}
-                    slotStartInput={slotStartInput}
-                    setSlotStartInput={setSlotStartInput}
-                    slotEndInput={slotEndInput}
-                    setSlotEndInput={setSlotEndInput}
-                    blockReason={blockReason}
-                    setBlockReason={setBlockReason}
+                    spaceTitle={selectedSlotSpace?.title || ""}
+                    saving={slotSaving}
+                    error={slotError}
+                    onceStart={slotStartInput}
+                    onceEnd={slotEndInput}
+                    onceInputType={bookingType === "hour" ? "datetime-local" : bookingType === "day" ? "date" : "month"}
+                    reason={blockReason}
+                    onReasonChange={setBlockReason}
+                    onOnceStartChange={setSlotStartInput}
+                    onOnceEndChange={setSlotEndInput}
                     onClose={closeSlotModal}
-                    onSave={handleSaveSlotBlock}
+                    onSaveOnce={handleSaveSlotBlock}
+                    onSaveRecurring={(rule) => {
+                        void handleSaveRecurring({
+                            ...rule,
+                            spaceId: editingRule?.spaceId || selectedSlotSpace?.id || rule.spaceId,
+                            id: editingRule?.id || "",
+                        });
+                    }}
+                    editingRule={editingRule}
                 />
                 </>
             </DashboardShell>

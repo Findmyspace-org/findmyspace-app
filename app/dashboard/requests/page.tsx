@@ -25,6 +25,9 @@ import {
   XCircle,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { ownerApiFetch } from "@/lib/owner-api-client";
+import RecurringSeriesSummary from "@/app/components/RecurringSeriesSummary";
+import { ApprovalDiscountFields } from "@/app/dashboard/_components/ApprovalDiscountFields";
 import RequireAuth from "@/app/components/RequireAuth";
 import DashboardShell from "@/app/components/DashboardShell";
 import { useHostingWorkspace } from "@/lib/use-hosting-workspace";
@@ -85,6 +88,11 @@ type Booking = {
   status: string | null;
   payment_status: string | null;
   total_price: number | null;
+  platform_fee?: number | null;
+  commercial_model?: "commission" | "subscription" | "free" | null;
+  platform_commission_percent?: number | null;
+  transaction_fee_percent?: number | null;
+  commercial_terms_source?: string | null;
   created_at: string | null;
   terms_accepted?: boolean | null;
   terms_accepted_at?: string | null;
@@ -179,7 +187,7 @@ type ExpandedBookingPanelProps = {
   overlappingPendingRequests: EnrichedBooking[];
   onToggleCommunication: (booking: EnrichedBooking) => void | Promise<void>;
   competingPendingRequests: EnrichedBooking[];
-  onApprove: () => void | Promise<void>;
+  onApprove: (discount?: { type: "percent" | "fixed"; value: number; reason: string } | null) => void | Promise<void>;
   onDecline: (reason: string) => void | Promise<void>;
   /** When set, all decision controls are disabled; spinner on matching `booking.id`. */
   busyBookingId: string | null;
@@ -270,6 +278,19 @@ function normalizeBookingRange(
   }
 
   return { start, end };
+}
+
+function canCompareParentSpans(aUnit: string | null, bUnit: string | null) {
+  return aUnit !== "recurring_hour" && bUnit !== "recurring_hour";
+}
+
+function intervalsOverlap(
+  left: Array<{ start: string; end: string }>,
+  right: Array<{ start: string; end: string }>
+) {
+  return left.some((a) =>
+    right.some((b) => a.start < b.end && a.end > b.start)
+  );
 }
 
 function rangesOverlap(
@@ -405,7 +426,11 @@ function formatBookingRange(booking: Booking) {
 function normalizeBookingUnitValue(value?: string | null) {
   const normalized = (value || "").trim().toLowerCase();
 
+  if (normalized === "recurring_hour") return "recurring_hour";
   if (["hour", "hours", "hourly"].includes(normalized)) return "hour";
+  if (["week", "weeks", "weekly"].includes(normalized)) return "week";
+  if (["quarter", "quarters", "quarterly"].includes(normalized)) return "quarter";
+  if (["year", "years", "annual", "annually"].includes(normalized)) return "year";
   if (["day", "days", "daily"].includes(normalized)) return "day";
   if (["month", "months", "monthly"].includes(normalized)) return "month";
 
@@ -759,6 +784,68 @@ function BookingConversationPanel({
 }
 
 
+function RecurringRequestDetails({
+  booking,
+}: {
+  booking: {
+    id: string;
+    booking_unit: string | null;
+    total_price: number | null;
+    renter?: { first_name?: string | null; last_name?: string | null } | null;
+  };
+}) {
+  const [detail, setDetail] = useState<{
+    series: {
+      summary: string;
+      sessionCount: number;
+      hoursPerSession: number;
+      hourlyRate: number;
+      excludedDates: string[];
+    };
+    sessions: Array<{ date: string; startAt: string; endAt: string; excluded: boolean }>;
+  } | null>(null);
+
+  useEffect(() => {
+    if (booking.booking_unit !== "recurring_hour") return;
+    let cancelled = false;
+    ownerApiFetch(`/api/bookings/${booking.id}/recurring-series`)
+      .then((result) => {
+        if (!cancelled) setDetail(result as NonNullable<typeof detail>);
+      })
+      .catch(() => {
+        if (!cancelled) setDetail(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [booking.id, booking.booking_unit]);
+
+  if (booking.booking_unit !== "recurring_hour" || !detail?.series) return null;
+  const first = detail.sessions.find((session) => !session.excluded);
+  const last = [...detail.sessions].reverse().find((session) => !session.excluded);
+  const renterName = [booking.renter?.first_name, booking.renter?.last_name].filter(Boolean).join(" ") || "Renter";
+  return (
+    <RecurringSeriesSummary
+      renterName={renterName}
+      pattern={detail.series.summary}
+      firstSession={first ? `${first.date} ${new Date(first.startAt).toLocaleTimeString("en-ZA", { hour: "2-digit", minute: "2-digit", timeZone: "Africa/Johannesburg" })}` : "—"}
+      lastSession={last ? `${last.date} ${new Date(last.endAt).toLocaleTimeString("en-ZA", { hour: "2-digit", minute: "2-digit", timeZone: "Africa/Johannesburg" })}` : "—"}
+      sessionCount={detail.series.sessionCount}
+      hoursPerSession={detail.series.hoursPerSession}
+      hourlyRate={detail.series.hourlyRate}
+      rentalSubtotal={Number(booking.total_price || 0)}
+      feeAmount={null}
+      hostPayout={null}
+      sessions={detail.sessions.map((session) => ({
+        date: session.date,
+        startLabel: new Date(session.startAt).toLocaleTimeString("en-ZA", { hour: "2-digit", minute: "2-digit", timeZone: "Africa/Johannesburg" }),
+        endLabel: new Date(session.endAt).toLocaleTimeString("en-ZA", { hour: "2-digit", minute: "2-digit", timeZone: "Africa/Johannesburg" }),
+        excluded: session.excluded,
+      }))}
+    />
+  );
+}
+
 function BookingRow({
   booking,
   stage,
@@ -893,6 +980,8 @@ function ExpandedBookingPanel({
     isCommunicationAllowed(booking) && booking.renter?.email;
   const canMessageRenter = isCommunicationAllowed(booking);
   const canDecide = isPendingRequestStatus(booking.status);
+  const waitingForDocuments = booking.status === "requirements_pending";
+  const [discount, setDiscount] = useState<{ type: "percent" | "fixed"; value: number; reason: string } | null>(null);
   const [declineOpen, setDeclineOpen] = useState(false);
   const [declineReason, setDeclineReason] = useState("");
   const decisionInFlight = busyBookingId !== null;
@@ -947,6 +1036,8 @@ function ExpandedBookingPanel({
               </div>
             )}
 
+          <RecurringRequestDetails booking={booking} />
+
           <div className="mb-4">
             <BookingRequestDetailsPanel data={requestDetailData} />
           </div>
@@ -955,15 +1046,43 @@ function ExpandedBookingPanel({
             <BookingRequirementResponsesLoader bookingId={booking.id} />
           </div>
 
-          {canDecide && (
+          {waitingForDocuments ? (
+            <p className="mb-4 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
+              This request is waiting for required information. It cannot be approved or paid until the renter finishes it.
+            </p>
+          ) : null}
+
+          {(canDecide || waitingForDocuments) && (
             <div className="mb-4 rounded-md border border-amber-200/80 bg-amber-50/50 p-3">
               <p className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-gray-600">
                 Your decision
               </p>
+              {canDecide ? (
+                <div className="mb-3">
+                  <ApprovalDiscountFields
+                    originalAmount={Number(booking.total_price || 0)}
+                    platformFee={booking.platform_fee ?? null}
+                    terms={{
+                      model: booking.commercial_model ?? null,
+                      commissionPercent:
+                        booking.platform_commission_percent == null
+                          ? null
+                          : Number(booking.platform_commission_percent),
+                      transactionFeePercent:
+                        booking.transaction_fee_percent == null
+                          ? null
+                          : Number(booking.transaction_fee_percent),
+                      source: booking.commercial_terms_source ?? null,
+                    }}
+                    onChange={setDiscount}
+                  />
+                </div>
+              ) : null}
               <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+                {canDecide ? (
                 <button
                   type="button"
-                  onClick={() => void onApprove()}
+                  onClick={() => void onApprove(discount)}
                   disabled={decisionInFlight || hasBlockingConflict}
                   className="inline-flex items-center justify-center gap-2 rounded-md bg-[#192a3a] px-4 py-2 text-sm font-medium text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                 >
@@ -972,6 +1091,7 @@ function ExpandedBookingPanel({
                   ) : null}
                   Approve &amp; request payment
                 </button>
+                ) : null}
 
                 {!declineOpen ? (
                   <button
@@ -1165,6 +1285,9 @@ function OwnerBookingRequestsPageContent({
   const [sessionEmail, setSessionEmail] = useState<string | null>(null);
   const [sessionUserId, setSessionUserId] = useState<string | null>(null);
   const [bookings, setBookings] = useState<EnrichedBooking[]>([]);
+  const [occupiedByBooking, setOccupiedByBooking] = useState<
+    Record<string, Array<{ start: string; end: string }>>
+  >({});
   const [statusFilter, setStatusFilter] = useState("all");
   const [loading, setLoading] = useState(true);
   const { highlightedId } = useFocusHighlight({
@@ -1330,7 +1453,7 @@ function OwnerBookingRequestsPageContent({
           const { data: bookingsData, error: bookingsError } = await supabase
             .from("bookings")
             .select(
-              "id, space_id, renter_id, owner_id, booking_unit, start_at, end_at, notes, owner_response_message, status, payment_status, total_price, created_at, terms_accepted, terms_accepted_at, accepted_terms_updated_at, accepted_terms_title, accepted_terms_label"
+              "id, space_id, renter_id, owner_id, booking_unit, start_at, end_at, notes, owner_response_message, status, payment_status, total_price, platform_fee, commercial_model, platform_commission_percent, transaction_fee_percent, commercial_terms_source, created_at, terms_accepted, terms_accepted_at, accepted_terms_updated_at, accepted_terms_title, accepted_terms_label"
             )
             .neq("renter_id", user.id)
             .in("space_id", managedIds)
@@ -1407,6 +1530,26 @@ function OwnerBookingRequestsPageContent({
       });
 
       setBookings(enriched);
+      const recurringIds = enriched
+        .filter((booking) => booking.booking_unit === "recurring_hour")
+        .map((booking) => booking.id);
+      if (recurringIds.length > 0) {
+        const { data: occurrenceRows } = await supabase
+          .from("booking_occurrences")
+          .select("booking_id, start_at, end_at, excluded")
+          .in("booking_id", recurringIds)
+          .eq("excluded", false);
+        const groupedIntervals: Record<string, Array<{ start: string; end: string }>> = {};
+        for (const id of recurringIds) groupedIntervals[id] = [];
+        for (const row of occurrenceRows || []) {
+          const item = row as { booking_id: string; start_at: string; end_at: string };
+          groupedIntervals[item.booking_id] = groupedIntervals[item.booking_id] || [];
+          groupedIntervals[item.booking_id].push({ start: item.start_at, end: item.end_at });
+        }
+        setOccupiedByBooking(groupedIntervals);
+      } else {
+        setOccupiedByBooking({});
+      }
 
       const initialReplies: Record<string, string> = {};
       enriched.forEach((booking) => {
@@ -1648,7 +1791,8 @@ function OwnerBookingRequestsPageContent({
   async function updateBookingStatus(
     bookingId: string,
     nextStatus: "approved" | "declined" | "pending",
-    ownerMessageOverride?: string
+    ownerMessageOverride?: string,
+    discount?: { type: "percent" | "fixed"; value: number; reason: string } | null
   ) {
     setMessage("");
     setBusyBookingId(bookingId);
@@ -1681,6 +1825,7 @@ function OwnerBookingRequestsPageContent({
       bookingId,
       action,
       message: ownerResponseMessage || null,
+      discount: action === "approve" ? discount : null,
     });
 
     if (!result.ok) {
@@ -1859,6 +2004,23 @@ function OwnerBookingRequestsPageContent({
                   if (other.id === booking.id) return false;
                   if (other.space_id !== booking.space_id) return false;
                   if (!isBlockingRequestStatus(other.status)) return false;
+                  const otherUnit = resolveBookingUnit(
+                    other.booking_unit,
+                    other.space?.booking_unit,
+                    other.start_at,
+                    other.end_at
+                  );
+                  if (!canCompareParentSpans(resolvedBookingUnit, otherUnit)) {
+                    const left = occupiedByBooking[booking.id];
+                    const right = occupiedByBooking[other.id];
+                    if (
+                      (resolvedBookingUnit === "recurring_hour" && !left) ||
+                      (otherUnit === "recurring_hour" && !right)
+                    ) {
+                      return false;
+                    }
+                    return intervalsOverlap(left || [{ start: booking.start_at, end: booking.end_at }], right || [{ start: other.start_at, end: other.end_at }]);
+                  }
 
                   return rangesOverlap(
                     resolvedBookingUnit,
@@ -1880,6 +2042,23 @@ function OwnerBookingRequestsPageContent({
                   if (other.id === booking.id) return false;
                   if (other.space_id !== booking.space_id) return false;
                   if (!isPendingRequestStatus(other.status)) return false;
+                  const otherUnit = resolveBookingUnit(
+                    other.booking_unit,
+                    other.space?.booking_unit,
+                    other.start_at,
+                    other.end_at
+                  );
+                  if (!canCompareParentSpans(resolvedBookingUnit, otherUnit)) {
+                    const left = occupiedByBooking[booking.id];
+                    const right = occupiedByBooking[other.id];
+                    if (
+                      (resolvedBookingUnit === "recurring_hour" && !left) ||
+                      (otherUnit === "recurring_hour" && !right)
+                    ) {
+                      return false;
+                    }
+                    return intervalsOverlap(left || [{ start: booking.start_at, end: booking.end_at }], right || [{ start: other.start_at, end: other.end_at }]);
+                  }
 
                   return rangesOverlap(
                     resolvedBookingUnit,
@@ -1983,7 +2162,7 @@ function OwnerBookingRequestsPageContent({
                         overlappingPendingRequests={overlappingPendingRequests}
                         onToggleCommunication={toggleCommunicationPanel}
                         competingPendingRequests={overlappingPendingRequests}
-                        onApprove={() => void updateBookingStatus(booking.id, "approved")}
+                        onApprove={(discount) => void updateBookingStatus(booking.id, "approved", undefined, discount)}
                         onDecline={(reason) =>
                           void updateBookingStatus(booking.id, "declined", reason)
                         }

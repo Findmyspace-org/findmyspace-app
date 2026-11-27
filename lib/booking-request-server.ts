@@ -18,7 +18,16 @@ import {
 import { resolveOrganisationBookingReadiness } from "@/lib/access/organisation-booking-readiness";
 import { isLegacyOwnerSelfBooking } from "@/lib/booking-self-booking";
 import { isArchivedProperty } from "@/lib/property-archive";
+import { publicAvailabilityMessage } from "@/lib/availability/messages";
+import { resolveFlexibleBooking, type EnabledFlexibleRate } from "@/lib/flexible-booking";
+import { isFlexiblePeriod } from "@/lib/booking-periods";
+import type { ResolvedCommercialTerms } from "@/lib/commercial-terms";
+import { calculateBookingCommercials } from "@/lib/commercial-calculator";
 import { validatePayFastPayableAmount } from "@/lib/payfast-amount";
+import {
+  resolveServerRecurringQuote,
+  type RecurringRequestInput,
+} from "@/lib/recurring-booking-server";
 import {
   buildBookingTermsAcceptancePayload,
   normalizePropertyTermsRow,
@@ -50,6 +59,20 @@ export type BookingRequestPayload = {
   requirementAnswers?: Record<string, CustomFieldAnswerValue>;
   /** Ignored. Snapshot organisation comes from the property. */
   organisationId?: string | null;
+  /**
+   * Flexible-rate selections. Prices and enabled periods are loaded from
+   * the database. These fields are ignored when the space has no rates.
+   */
+  ratePeriod?: string | null;
+  quantity?: number | null;
+  startDate?: string | null;
+  /**
+   * Recurring schedule. The server regenerates every session and price.
+   * Client totals and occurrence lists are ignored.
+   */
+  recurring?: RecurringRequestInput | null;
+  /** Stable id for a repeated submit of the same recurring request. */
+  clientRequestId?: string | null;
 };
 
 type SpacePricingRow = {
@@ -157,6 +180,58 @@ export async function loadSpaceBookingPrerequisites(
   return { propertyTerms, fields };
 }
 
+async function loadEnabledFlexibleRates(
+  admin: SupabaseClient,
+  spaceId: string
+): Promise<EnabledFlexibleRate[]> {
+  const { data, error } = await admin
+    .from("space_booking_rates")
+    .select("period, amount, enabled")
+    .eq("space_id", spaceId)
+    .eq("enabled", true);
+  if (error) {
+    const message = String(error.message || "");
+    if (
+      error.code === "42P01" ||
+      error.code === "PGRST205" ||
+      /space_booking_rates/i.test(message)
+    ) {
+      return [];
+    }
+    throw new Error("Could not load booking options.");
+  }
+  return (data ?? []).flatMap((row) => {
+    const period = String(row.period || "");
+    const amount = Number(row.amount);
+    if (!isFlexiblePeriod(period) || !(amount > 0)) return [];
+    return [{ period, amount }];
+  });
+}
+
+function flexibleTotals(totalPrice: number, terms: ResolvedCommercialTerms) {
+  const commercialSplit = calculateBookingCommercials(totalPrice, {
+    model: terms.model,
+    commissionPercent: terms.commissionPercent,
+    transactionFeePercent: terms.transactionFeePercent,
+    accountingMode: terms.accountingMode,
+  });
+  return {
+    unitPrice: totalPrice,
+    quantity: 1,
+    totalPrice,
+    depositAmount: 0,
+    monthlyRent: 0,
+    initialPaymentAmount: totalPrice,
+    nextPaymentDate: null as string | null,
+    monthsTotal: 0,
+    monthsPaid: 0,
+    platformFee: commercialSplit.totalFindmyspaceFee,
+    ownerAmount: commercialSplit.hostEarnings,
+    commercialSplit,
+    commercialTerms: terms,
+  };
+}
+
 export async function createBookingRequestServer(
   admin: SupabaseClient,
   renterId: string,
@@ -175,7 +250,7 @@ export async function createBookingRequestServer(
     payload as BookingRequestPayload & Record<string, unknown>
   ) as BookingRequestPayload;
 
-  if (!spaceId || !startAt || !endAt) {
+  if (!spaceId || (!payload.recurring && (!startAt || !endAt))) {
     throw new Error("Missing required booking fields.");
   }
 
@@ -276,13 +351,82 @@ export async function createBookingRequestServer(
   });
   const beneficiarySnapshot = snapshotBookingBeneficiary(beneficiary);
 
-  const unit = bookingUnit || space.booking_unit || "day";
-  const quantity = calculateBookingQuantity(unit, startAt, endAt);
+  const flexibleRates = await loadEnabledFlexibleRates(admin, spaceId);
+  let unit = bookingUnit || space.booking_unit || "day";
+  let quantity = 0;
+  let resolvedStart = startAt;
+  let resolvedEnd = endAt;
+  let flexibleSnapshot: {
+    pricing_mode: "flexible" | "recurring";
+    rate_period: string;
+    unit_price: number;
+    billed_quantity: number;
+    totalPrice: number;
+  } | null = null;
+  let recurringAttach: RecurringRequestInput | null = null;
+
+  if (payload.recurring) {
+    const resolved = await resolveServerRecurringQuote(admin, spaceId, payload.recurring);
+    if (resolved.conflicts.length > 0) {
+      throw new Error(
+        `These sessions are not available: ${resolved.conflicts.slice(0, 8).join(", ")}. Exclude a session or change the schedule.`
+      );
+    }
+    const included = resolved.quote.sessions.filter((session) => !session.excluded);
+    unit = "recurring_hour";
+    quantity = resolved.quote.totalHours;
+    resolvedStart = included[0].start.toISOString();
+    resolvedEnd = included[included.length - 1].end.toISOString();
+    flexibleSnapshot = {
+      pricing_mode: "recurring",
+      rate_period: "hour",
+      unit_price: resolved.quote.hourlyRate,
+      billed_quantity: resolved.quote.totalHours,
+      totalPrice: resolved.quote.rentalSubtotal,
+    };
+    recurringAttach = {
+      frequency: resolved.quote.pattern.frequency,
+      weekdays: resolved.quote.pattern.frequency === "daily" ? [] : resolved.quote.pattern.weekdays,
+      localStart: resolved.quote.pattern.localStart,
+      localEnd: resolved.quote.pattern.localEnd,
+      startsOn: resolved.quote.pattern.startsOn,
+      endsOn: resolved.quote.pattern.endsOn,
+      excludedDates: resolved.quote.pattern.excludedDates,
+    };
+  } else if (flexibleRates.length > 0) {
+    const resolved = resolveFlexibleBooking({
+      rates: flexibleRates,
+      ratePeriod: payload.ratePeriod,
+      quantity: payload.quantity,
+      startDate: payload.startDate,
+      startAt,
+      endAt,
+    });
+    if (!resolved.ok) {
+      throw new Error(resolved.error);
+    }
+    unit = resolved.quote.storedBookingUnit;
+    quantity = resolved.quote.quantity;
+    resolvedStart = resolved.quote.startAt;
+    resolvedEnd = resolved.quote.endAt;
+    flexibleSnapshot = {
+      pricing_mode: "flexible",
+      rate_period: resolved.quote.period,
+      unit_price: resolved.quote.unitPrice,
+      billed_quantity: resolved.quote.quantity,
+      totalPrice: resolved.quote.totalPrice,
+    };
+  } else if (payload.ratePeriod) {
+    throw new Error("This listing does not offer that booking period.");
+  } else {
+    quantity = calculateBookingQuantity(unit, startAt, endAt);
+  }
+
   if (quantity <= 0) {
     throw new Error("Please choose a valid booking period.");
   }
 
-  const minimum = getMinimumQuantity(space, unit);
+  const minimum = flexibleSnapshot ? 0 : getMinimumQuantity(space, unit);
   if (minimum > 0 && quantity < minimum) {
     throw new Error("This booking does not meet the minimum duration.");
   }
@@ -301,13 +445,9 @@ export async function createBookingRequestServer(
     console.error("commercial terms resolve failed; using legacy combined fee", err);
   }
 
-  const totals = computeBookingTotals(
-    space,
-    unit,
-    quantity,
-    startAt,
-    commercialTerms
-  );
+  const totals = flexibleSnapshot
+    ? flexibleTotals(flexibleSnapshot.totalPrice, commercialTerms)
+    : computeBookingTotals(space, unit, quantity, resolvedStart, commercialTerms);
   if (!totals) {
     throw new Error("This listing does not have valid pricing yet.");
   }
@@ -353,7 +493,8 @@ export async function createBookingRequestServer(
       ? buildBookingTermsAcceptancePayload(propertyTerms, true)
       : {};
 
-  const insertRow = {
+  const requiresDocuments = fields.some((field) => field.required);
+  const insertRow: Record<string, unknown> = {
     space_id: spaceId,
     renter_id: renterId,
     owner_id: snapshot.ownerId,
@@ -364,8 +505,19 @@ export async function createBookingRequestServer(
     commercial_beneficiary_organisation_id:
       beneficiarySnapshot.commercial_beneficiary_organisation_id,
     booking_unit: unit,
-    start_at: startAt,
-    end_at: endAt,
+    start_at: resolvedStart,
+    end_at: resolvedEnd,
+    ...(flexibleSnapshot
+      ? {
+          pricing_mode: flexibleSnapshot.pricing_mode,
+          rate_period: flexibleSnapshot.rate_period,
+          unit_price: flexibleSnapshot.unit_price,
+          billed_quantity: flexibleSnapshot.billed_quantity,
+          ...(flexibleSnapshot.pricing_mode === "recurring"
+            ? { reserves_via_occurrences: true }
+            : {}),
+        }
+      : {}),
     total_price: totalPrice,
     platform_fee: platformFee,
     owner_earnings: ownerAmount,
@@ -374,40 +526,124 @@ export async function createBookingRequestServer(
       totals.commercialTerms,
       commercialLockedAt
     ),
-    status: "pending_owner",
+    status: requiresDocuments ? "requirements_pending" : "pending_owner",
     payment_status: "unpaid",
+    ...(requiresDocuments ? { requirements_ready: false } : {}),
     payout_status: "unpaid_to_owner",
     notes: notes?.trim() ? notes.trim() : null,
-    monthly_rent: unit === "month" ? monthlyRent : null,
-    deposit_amount: unit === "month" ? depositAmount : null,
-    initial_payment_amount: unit === "month" ? initialPaymentAmount : null,
-    next_payment_date: unit === "month" ? nextPaymentDate : null,
-    months_total: unit === "month" ? monthsTotal : null,
-    months_paid: unit === "month" ? monthsPaid : null,
+    ...(payload.clientRequestId ? { client_request_id: payload.clientRequestId } : {}),
+    monthly_rent: !flexibleSnapshot && unit === "month" ? monthlyRent : null,
+    deposit_amount: !flexibleSnapshot && unit === "month" ? depositAmount : null,
+    initial_payment_amount:
+      !flexibleSnapshot && unit === "month" ? initialPaymentAmount : null,
+    next_payment_date: !flexibleSnapshot && unit === "month" ? nextPaymentDate : null,
+    months_total: !flexibleSnapshot && unit === "month" ? monthsTotal : null,
+    months_paid: !flexibleSnapshot && unit === "month" ? monthsPaid : null,
     ...termsPayload,
   };
 
-  const { data: insertedBooking, error: insertError } = await admin
-    .from("bookings")
-    .insert(insertRow)
-    .select("id")
-    .single();
+  let bookingId = "";
+  let reusedRecurring = false;
+  let documentsHeld = false;
+  let keepOnFailure = false;
+  let legacyDocumentWorkflow = false;
+  if (recurringAttach) {
+    // Parent, series, occurrences, availability, and the booking charge commit
+    // together. Files and requirement answers follow. A failure here deletes
+    // the parent. A crash after the function commits can leave a complete
+    // request that is missing files; it cannot leave a parent with no sessions.
+    const { data: created, error: createError } = await admin.rpc("create_recurring_booking", {
+      p_booking: insertRow,
+      p_frequency: recurringAttach.frequency,
+      p_weekdays: recurringAttach.weekdays ?? [],
+      p_local_start: recurringAttach.localStart,
+      p_local_end: recurringAttach.localEnd,
+      p_starts_on: recurringAttach.startsOn,
+      p_ends_on: recurringAttach.endsOn,
+      p_excluded: recurringAttach.excludedDates ?? [],
+    });
+    if (createError || !created) {
+      throw new Error(
+        publicAvailabilityMessage(createError?.message || "Could not create booking.")
+      );
+    }
+    const createdRow = created as { id?: string; reused?: boolean; requirements_ready?: boolean };
+    if (!createdRow.id) {
+      throw new Error("Could not create booking.");
+    }
+    bookingId = createdRow.id;
+    reusedRecurring = Boolean(createdRow.reused);
+    documentsHeld = createdRow.requirements_ready === false;
+    keepOnFailure = reusedRecurring;
+    if (reusedRecurring && !documentsHeld) return { bookingId };
+  } else {
+    let { data: insertedBooking, error: insertError } = await admin
+      .from("bookings")
+      .insert(insertRow)
+      .select("id")
+      .single();
 
-  if (insertError || !insertedBooking) {
-    throw new Error(insertError?.message || "Could not create booking.");
+    if (
+      insertError &&
+      requiresDocuments &&
+      /requirements_ready/i.test(insertError.message || "")
+    ) {
+      const legacyRow = { ...insertRow };
+      delete legacyRow.requirements_ready;
+      legacyRow.status = "pending_owner";
+      const retry = await admin.from("bookings").insert(legacyRow).select("id").single();
+      insertedBooking = retry.data;
+      insertError = retry.error;
+      legacyDocumentWorkflow = true;
+    }
+
+    if (
+      insertError &&
+      payload.clientRequestId &&
+      /duplicate|client_request_id|unique/i.test(insertError.message || "")
+    ) {
+      const { data: existing } = await admin
+        .from("bookings")
+        .select("id, status")
+        .eq("renter_id", renterId)
+        .eq("client_request_id", payload.clientRequestId)
+        .maybeSingle();
+      const existingRow = existing as { id: string; status: string | null } | null;
+      if (existingRow?.id) {
+        if (existingRow.status === "requirements_pending") {
+          bookingId = existingRow.id;
+          documentsHeld = true;
+          keepOnFailure = true;
+          insertError = null;
+          insertedBooking = { id: existingRow.id };
+        } else {
+          return { bookingId: existingRow.id };
+        }
+      }
+    }
+
+    if (insertError || !insertedBooking) {
+      throw new Error(
+        publicAvailabilityMessage(insertError?.message || "Could not create booking.")
+      );
+    }
+    bookingId = (insertedBooking as { id: string }).id;
+    if (!keepOnFailure && !legacyDocumentWorkflow && insertRow.status === "requirements_pending") {
+      documentsHeld = true;
+    }
   }
 
-  const bookingId = (insertedBooking as { id: string }).id;
-
   try {
-    const chargeRows = buildInitialBookingCharges({
+    const chargeRows = recurringAttach || keepOnFailure
+      ? []
+      : buildInitialBookingCharges({
       bookingId,
       bookingUnit: unit,
       totalPrice,
-      monthlyRent: unit === "month" ? monthlyRent : undefined,
-      depositAmount: unit === "month" ? depositAmount : undefined,
-      startAt,
-      endAt,
+      monthlyRent: !flexibleSnapshot && unit === "month" ? monthlyRent : undefined,
+      depositAmount: !flexibleSnapshot && unit === "month" ? depositAmount : undefined,
+      startAt: resolvedStart,
+      endAt: resolvedEnd,
     });
 
     if (chargeRows.length > 0) {
@@ -416,8 +652,19 @@ export async function createBookingRequestServer(
     }
 
     const responseRows: Record<string, unknown>[] = [];
+    const answeredFieldIds = new Set<string>();
+    if (keepOnFailure) {
+      const { data: existingAnswers } = await admin
+        .from("booking_requirement_responses")
+        .select("field_id")
+        .eq("booking_id", bookingId);
+      for (const row of (existingAnswers || []) as Array<{ field_id: string }>) {
+        if (row.field_id) answeredFieldIds.add(row.field_id);
+      }
+    }
 
     for (const field of fields) {
+      if (answeredFieldIds.has(field.id)) continue;
       let filePath: string | null = null;
       let value: CustomFieldAnswerValue = requirementAnswers[field.id] ?? null;
 
@@ -466,9 +713,19 @@ export async function createBookingRequestServer(
       if (responsesError) throw responsesError;
     }
 
+    if (documentsHeld) {
+      const { error: finalizeError } = await admin.rpc("finalize_booking_requirements", {
+        p_booking_id: bookingId,
+        p_actor: renterId,
+      });
+      if (finalizeError) throw finalizeError;
+    }
+
     return { bookingId };
   } catch (err) {
-    await admin.from("bookings").delete().eq("id", bookingId);
+    if (!keepOnFailure) {
+      await admin.from("bookings").delete().eq("id", bookingId);
+    }
     throw err;
   }
 }

@@ -125,12 +125,22 @@ export function buildFinanceLineItems(bookings: FinanceBookingInput[]): FinanceL
     const pf = Number(b.platform_fee || 0);
     const oe = Number(b.owner_earnings ?? 0);
     const split = bookingHasSplitFees(b);
-    const commissionTotal = split
+    let commissionTotal = split
       ? Number(b.platform_commission_amount || 0)
       : null;
-    const transactionTotal = split
+    let transactionTotal = split
       ? Number(b.transaction_fee_amount || 0)
       : null;
+    if (
+      commissionTotal != null &&
+      transactionTotal != null &&
+      Math.abs(commissionTotal + transactionTotal - pf) > 0.02
+    ) {
+      // The frozen snapshot keeps the original split. After an approval discount,
+      // platform_fee is the recalculated fee. Do not present the old split as current.
+      commissionTotal = null;
+      transactionTotal = null;
+    }
     const charges = b.booking_charges || [];
     const propertyTitle = b.space?.title || "Listing";
     const renterLabel = getDisplayName(b.renter);

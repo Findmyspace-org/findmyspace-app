@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireManagedBookingApi } from "@/lib/access/require-managed-api";
-import { applyHostBookingResponse } from "@/lib/booking-host-response";
+import { applyHostBookingResponse, type ApprovalDiscountRequest } from "@/lib/booking-host-response";
 import { notifyBookingEvent } from "@/lib/booking-event-notify";
 
 export async function POST(
@@ -11,7 +11,11 @@ export async function POST(
   const auth = await requireManagedBookingApi(req, bookingId);
   if ("response" in auth) return auth.response;
 
-  let body: { action?: string; message?: string | null };
+  let body: {
+    action?: string;
+    message?: string | null;
+    discount?: { type?: string; value?: number; reason?: string | null } | null;
+  };
   try {
     body = await req.json();
   } catch {
@@ -23,12 +27,25 @@ export async function POST(
     return NextResponse.json({ error: "Invalid action." }, { status: 400 });
   }
 
+  const discount: ApprovalDiscountRequest | null =
+    body.discount?.type === "fixed" || body.discount?.type === "percent"
+      ? {
+          type: body.discount.type as "percent" | "fixed",
+          value: Number(body.discount.value),
+          reason: body.discount.reason ?? null,
+        }
+      : null;
+  if (body.discount && !discount) {
+    return NextResponse.json({ error: "Choose a percentage or a fixed amount." }, { status: 400 });
+  }
+
   try {
     const result = await applyHostBookingResponse(auth.admin, {
       bookingId: auth.bookingId,
       actorUserId: auth.userId,
       action,
       message: body.message ?? null,
+      discount,
     });
 
     const notify = async (id: string, eventType: "booking_approved_payment_needed" | "booking_declined") => {

@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import {
+  PRODUCTION_DATABASE_BLOCKED_MESSAGE,
+  serverSupabaseTargetBlocked,
+} from "@/lib/supabase-target-guard";
 
 export type AuthenticatedApiOk = { userId: string; admin: SupabaseClient };
 export type AuthenticatedApiFail = { response: NextResponse };
@@ -10,6 +14,12 @@ export async function requireAuthenticatedApi(
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (serverSupabaseTargetBlocked()) {
+    return {
+      response: NextResponse.json({ error: PRODUCTION_DATABASE_BLOCKED_MESSAGE }, { status: 503 }),
+    };
+  }
 
   if (!supabaseUrl || !anonKey || !serviceKey) {
     return {

@@ -3,6 +3,7 @@ export async function postHostBookingResponse(params: {
   bookingId: string;
   action: "approve" | "decline";
   message?: string | null;
+  discount?: { type: "percent" | "fixed"; value: number; reason?: string | null } | null;
 }): Promise<{
   ok: boolean;
   error?: string;
@@ -18,6 +19,7 @@ export async function postHostBookingResponse(params: {
     body: JSON.stringify({
       action: params.action,
       message: params.message ?? null,
+      discount: params.discount ?? null,
     }),
   });
   const json = (await res.json().catch(() => null)) as {

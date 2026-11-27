@@ -9,6 +9,7 @@ import RequireAuth from "@/app/components/RequireAuth";
 import DashboardShell from "@/app/components/DashboardShell";
 import { RENTER_NAV } from "@/lib/dashboard-nav";
 import DecisionSuggestion from "@/app/components/DecisionSuggestion";
+import BookingDiscountSummary from "@/app/components/BookingDiscountSummary";
 import { getDisplayName } from "@/lib/utils";
 import {
   MapPin,
@@ -31,6 +32,7 @@ import {
   Mail,
   Phone,
 } from "lucide-react";
+import SeriesManagementPanel from "@/app/dashboard/_components/calendar/SeriesManagementPanel";
 import { downloadInvoicePdf } from "@/lib/invoice-download-client";
 import { isCommunicationAllowed } from "@/lib/booking-communication";
 import { renterPaymentStatusLabel } from "@/lib/booking-ui-labels";
@@ -1362,6 +1364,16 @@ function MyBookingsPageContent({
                               title="Your booking request details"
                             />
 
+                            {booking.booking_unit === "recurring_hour" ? (
+                              <SeriesManagementPanel
+                                bookingId={booking.id}
+                                occurrenceId={null}
+                                occurrenceStart={booking.start_at}
+                                occurrenceEnd={booking.end_at}
+                                canDecide
+                              />
+                            ) : null}
+
                             <BookingRequirementResponsesLoader
                               bookingId={booking.id}
                               title="Information you submitted"
@@ -1691,6 +1703,9 @@ function MyBookingsPageContent({
                   <span className="font-medium text-[#192a3a]">Total:</span>{" "}
                   R{Number(paymentModalBooking.total_price || 0).toFixed(2)}
                 </p>
+                <div className="mt-3">
+                  <BookingDiscountSummary bookingId={paymentModalBooking.id} />
+                </div>
               </div>
 
               <div className="flex flex-col gap-2">
